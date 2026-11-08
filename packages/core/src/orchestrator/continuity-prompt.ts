@@ -439,6 +439,39 @@ export function plainOpeners(seed: string, met: boolean): string[] {
   return [...new Set(out)];
 }
 
+/**
+ * Offers to carry on the conversation that just ended, naming no thread of it nor any older one (each offers help:
+ * `@foundry/ai` `offersHelp`).
+ */
+const CONTINUATIONS = [
+  'Want me to help you pick up where we just left off?',
+  'Shall I help you work through the next step from there?',
+  'Want to go through the next step from where we left off?',
+  'Want help picking up right where we left off?',
+];
+
+/**
+ * The opening lines of a conversation started right after the person's last one with this vEIR, before that one is
+ * distilled, in the order this `seed` tries them: a greeting, then an offer to carry on where it stopped ("Good to see
+ * you again. Want me to help you pick up where we just left off?"). Lab run 42457618242: a chat started a minute after
+ * the last one ended heard "Good to have you back. What's coming up that I can help you prep for?", as if nothing had
+ * just been said. It names no thread: the notebook may not hold that conversation yet, and an older thread may be one
+ * it settled or moved on from (LAB-R6c). Every line greets someone met before (`orchestrator/continuity.ts`
+ * `chooseOpener` says one only to them).
+ */
+export function continuationOpeners(seed: string): string[] {
+  const h = mixed(seedOf(seed));
+  const out: string[] = [];
+  for (let k = 0; k < GREETINGS_AGAIN.length * CONTINUATIONS.length; k += 1) {
+    const greeting = GREETINGS_AGAIN[(h + k) % GREETINGS_AGAIN.length] ?? GREETINGS_AGAIN[0];
+    const offer =
+      CONTINUATIONS[((h >>> 7) + k + Math.floor(k / GREETINGS_AGAIN.length)) % CONTINUATIONS.length] ??
+      CONTINUATIONS[0];
+    out.push(`${greeting ?? ''} ${offer ?? ''}`.trim());
+  }
+  return [...new Set(out)];
+}
+
 /** Offers of help with one thread, before the notebook's own words for it ({@link threadOpeners}). */
 const THREAD_OFFERS = [
   'I can help you prepare the next step on this:',

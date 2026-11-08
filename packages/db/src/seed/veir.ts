@@ -421,9 +421,10 @@ async function seedNotebook(
         'Treat the group chat as the competitor: the map has to be faster than sending a message.',
       ),
     ],
-    // In the shape distillation writes it: its own greeting, then one sentence that names the thread.
+    // In the shape distillation writes it: its own greeting, then one sentence that names the thread and offers help
+    // with it (never a quiz: `@foundry/ai` `offersHelp`).
     nextOpener:
-      'Good to see you again. How many of the library-staff interviews have you done, and would any library share its ' +
+      'Good to see you again. Want help finishing the library-staff interviews and getting a library to share its ' +
       'occupancy counts?',
     // Both were drawn from the past conversation: deleting it clears them.
     summarySources: [sessionId],

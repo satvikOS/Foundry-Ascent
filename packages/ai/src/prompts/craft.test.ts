@@ -359,7 +359,9 @@ describe('conversation craft in the system prompt', () => {
     // why i even try", "i have nothing left to give"), and a first reply names work only when it names some.
     // 2026-11-07.8: the help and moving-on lines, like the hedged one, say to answer how they are first when that is what
     // they bring: no reading of words can name every way of saying it, and the model reads the whole message.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.8');
+    // 2026-11-08.1: the agenda lab (42457618242): a founder stuck or asking for help twice running is told the next step
+    // was already given, never repeated or argued for: the work itself, in full, in this reply.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-08.1');
   });
 });
 

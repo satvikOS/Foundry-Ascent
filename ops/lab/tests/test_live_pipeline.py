@@ -17,6 +17,7 @@ from conversation_lab.live.calibration import agreement, build_packet
 from conversation_lab.live.checks import (
     BLOCKING,
     Turn,
+    in_quotation,
     judgmental_notes,
     no_answer,
     no_answer_reading,
@@ -1955,3 +1956,53 @@ def test_the_students_worth_or_reserves_is_never_a_no_answer(student: str) -> No
 )
 def test_a_task_left_undone_is_still_read_explicitly(student: str) -> None:
     assert no_answer_reading(student, "So who sits in those layers?") == "said"
+
+
+# Lab run 42457618242: a question inside a line the vEIR quoted for the student to send, closed after its "?" with
+# punctuation or words after it, or one of several sentences in the quotation, was counted as a re-ask after a
+# no-answer. A quotation is the student's line to say or send (the product's validators/social.ts ``putToFounder``).
+_SIGN_OFF = (
+    "Got it. Walk me through the approval path: when the sleeve goes into a clinic, who has to sign off, and in what "
+    "order?"
+)
+_QUOTED_LINES = [
+    'That is normal. Send this:\n\n"When the sleeve goes into a clinic, who has to sign off? Walk me through the '
+    'sequence."',
+    'That is normal. Say something like: "Can you confirm the approval sequence? For example, does the clinic sign '
+    'off before the hospital?".',
+    'Fair. Email the advisor: "When the sleeve goes into a clinic, who has to sign off, and in what order?". That '
+    "settles it.",
+    "Fair. Ask the clinic lead \u201cWhen the sleeve goes into a clinic, who has to sign off, and in what order?\u201d "
+    "and note what they say.",
+    'Fair. Try: "When the sleeve goes into a clinic, who has to sign off? And in what order?" Then we plan around it.',
+    'Fair. Ask them "Who has to sign off when the sleeve goes into a clinic, and in what order?" and see what they '
+    "say.",
+]
+
+
+@pytest.mark.parametrize("coach", _QUOTED_LINES)
+def test_a_question_inside_a_quotation_the_coach_wrote_is_never_a_reask(coach: str) -> None:
+    call = [T("1.1", "getting the sleeve into clinics", _SIGN_OFF), T("1.2", "i dont know", coach)]
+    codes = run_checks(call).codes()
+    assert "reasked_after_unknown" not in codes, coach
+    assert "repeated_question" not in codes, coach
+
+
+def test_a_quotation_is_read_however_it_closes_and_the_same_question_unquoted_still_counts() -> None:
+    multi = 'Say something like: "Can you confirm the approval sequence? For example, does X mean Y?".'
+    assert in_quotation(multi, 'Say something like: "Can you confirm the approval sequence?')
+    assert in_quotation(multi, "For example, does X mean Y?")
+    assert not put_to_student(multi, 'Say something like: "Can you confirm the approval sequence?')
+    after = 'Ask: "Who signs off?" Then tell me. So who has to sign off when the sleeve goes into a clinic?'
+    assert in_quotation(after, 'Ask: "Who signs off?')
+    assert not in_quotation(after, "So who has to sign off when the sleeve goes into a clinic?")
+    # Unquoted, put to the student after their no-answer, the same question is the re-ask it always was.
+    unquoted = "Fair. So when the sleeve goes into a clinic, who has to sign off, and in what order?"
+    call = [T("1.1", "getting the sleeve into clinics", _SIGN_OFF), T("1.2", "i dont know", unquoted)]
+    assert "reasked_after_unknown" in run_checks(call).codes()
+    # A quoted draft is no question put to the student: asking them later is not counted against it.
+    drafted = [
+        T("1.1", "getting the sleeve into clinics", 'Send the advisor this: "Which class is the sleeve in?"'),
+        T("1.2", "ok", "Good. Which class do you expect the sleeve to be in, and why?"),
+    ]
+    assert "repeated_question" not in run_checks(drafted).codes()

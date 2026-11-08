@@ -415,7 +415,9 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   (`DistillService.writeOpener`, purpose `distill`, the caps and the kill switch; `buildOpenerPrompt`,
   `sanitizeOpener`): the live thread named specifically, with an offer of concrete help (to walk them through it,
   prepare it with them), never a bare question (`offersHelp`: a line that only asks about the thread is dropped, here
-  and at distillation), never a thread the founder left aside (`leftAside`: what the latest conversation opened on
+  and at distillation, and a stored line no person wrote, drawn from a conversation or of unknown origin, is said only
+  when it passes the same check, else the thread is offered as below: lab run 42457618242 opened on a legacy "Did you
+  manage to book the advisor session…?"; a person's own line is said as written), never a thread the founder left aside (`leftAside`: what the latest conversation opened on
   unanswered, and a stale line's thread), never written over a teammate's sound line. It is written into the notebook
   against the version read (`notebook.opener_written`), drawn from the person's latest conversation, never over a
   person's line or edits still waiting for a distillation. **One attempt per version of the notebook and state of
@@ -440,7 +442,10 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   distilled yet) the conversation opens with a short, warm greeting that
   names nothing and offers help ("Welcome back. What can I help
   you prepare for?"; `plainOpeners`), phrased for that conversation and never with a greeting or invitation the person's last conversations opened with, and never "since we last spoke" (it may be said seconds
-  after a call); nothing the founder said is ever read by rule for what to open on (production 2026-11-06: "hows
+  after a call). The first conversation opened within three hours of one with this vEIR that is not distilled yet
+  offers instead to carry that one on, still naming no thread ("Good to see you again. Want me to help you pick up
+  where we just left off?"; `continuationOpeners`; lab run 42457618242: back to back, the founder heard an invitation
+  that named nothing); one opened after that with nothing said greets without a subject; nothing the founder said is ever read by rule for what to open on (production 2026-11-06: "hows
   your perosnal life going on.." became "Hi, want to carry on with your perosnal life?"). Every distilled line is
   said to the founder: where it calls them by name the name goes (a call says it back within the name budget), and
   elsewhere their name or "the founder" becomes "you",
@@ -453,7 +458,7 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   shown) opens the conversation without one. A hello
   right after the opener is answered with a hello, never the recall again (`<conversation_state>` reads the
   founder's first message as the reply to the replayed opener).
-- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-07.8`). The call that
+- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-08.1`). The call that
   prompted it: a returning founder named a goal and got "walk me through where you are…", a vague answer got a
   question, a short answer got the first question again in other words, and a founder with no answer was asked again.
   Prompt rules saying "follow the founder" had lost to context that was mostly one topic, so each turn now carries:
@@ -544,7 +549,11 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     check-in on the founder themselves ("Is there someone close to you you can talk to today?": `SUPPORT_CHECK_IN`, or
     a reply that escalated for wellbeing) is never taught into or answered for them, and asking after them again is
     never left out as a re-ask. Two replies in a row that ended in a question make the next one give substance and ask
-    nothing.
+    nothing. A founder stuck (the precise reading) or asking for the work twice running (`stuckAgain`; lab run
+    42457618242: "i didnt do that", "it didn't come up", "i dont know, can you just help me prepare" met "send the
+    advisor that email" three replies running) is told the next step was already given: never repeated or argued for,
+    the work done in full in this reply (the draft, the script, the list or the plan), or what they asked for, how they
+    are first; never on a message in distress, after one, or on no answer to a check-in on them.
   - Conversation craft says the same for every turn (help, stuck or no answer: do the work; teach how such things
     generally work, hedged: device classes, reimbursement codes, approval committees), rule 5 makes general education
     on high-risk topics explicit (never their own class, cost or timeline), DIAGNOSE gives its read before any

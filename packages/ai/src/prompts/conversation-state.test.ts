@@ -1083,3 +1083,71 @@ describe('goals and check-ins as founders say them (review of the 2026-11-07 fix
     expect(SUPPORT_CHECK_IN.test('How are you feeling about the situation?')).toBe(true);
   });
 });
+
+describe('stuck twice running: the next step is not given again (lab run 42457618242)', () => {
+  // Synthetic wording, the lab's shape: the vEIR's reply gave a next step, and the founder could not use it.
+  const STEP =
+    'The fastest way forward is to send the advisor a short email asking which device class applies. Can you send that today?';
+  const AGAIN =
+    'Then send the advisor that email today: two lines, asking which device class applies. What stops you sending it?';
+  const LINE = 'You already gave them a next step last time; do not repeat it or argue for it again.';
+  const WORK =
+    'Do the work now, in full, in this reply (write the draft, the script, the list or the plan they need), or help with what they just asked for.';
+  const VALVE = 'If they are telling you how they are rather than asking for the work, respond to that first';
+  const flat = (block: string): string => block.replace(/\n\s+/g, ' ');
+  const history = (...founder: string[]) =>
+    founder.map((founderText, i) => ({ founderText, answer: i === 0 ? STEP : AGAIN }));
+
+  it.each([
+    [['taking the insole to market', 'i didnt do that'], 'it didnt come up'],
+    [['taking the insole to market', 'i didnt do that'], 'i dont know, can you just help me prepare'],
+    [['taking the insole to market', 'can you just write it for me'], 'i didnt do that'],
+    [['taking the insole to market', 'help me get started'], 'i dont know where to start, you tell me'],
+  ])('after %j, %j gets the line: the work in full, never the same step', (earlier, text) => {
+    const state = deriveConversationState(history(...earlier), text);
+    expect(state.stuckAgain).toBe(true);
+    const block = flat(renderConversationState(state));
+    expect(block).toContain(LINE);
+    expect(block).toContain(WORK);
+    // The person-first valve stays.
+    expect(block).toContain(VALVE);
+  });
+
+  it('never on the first message that is stuck or asks for help', () => {
+    for (const text of ['i didnt do that', 'i dont know, can you just help me prepare']) {
+      const state = deriveConversationState(history('taking the insole to market'), text);
+      expect(state.stuckAgain, text).toBeUndefined();
+      expect(flat(renderConversationState(state)), text).not.toContain(LINE);
+    }
+    // Nor when the message before it said something of its own.
+    const moved = deriveConversationState(
+      history('taking the insole to market', 'We sell to podiatry clinics first.'),
+      'i didnt do that',
+    );
+    expect(moved.stuckAgain).toBeUndefined();
+  });
+
+  it('never on a message in distress, nor right after one, nor on no answer to a check-in on them', () => {
+    const distress = deriveConversationState(
+      history('taking the insole to market', 'i didnt do that'),
+      "i dont know why im still here, i can't do this anymore",
+    );
+    expect(distress.distress).toBe(true);
+    expect(distress.stuckAgain).toBeUndefined();
+    expect(flat(renderConversationState(distress))).not.toContain(LINE);
+    const afterDistress = deriveConversationState(
+      history('taking the insole to market', "i dont know why im still here, i can't do this anymore"),
+      'i dont know',
+    );
+    expect(afterDistress.stuckAgain).toBeUndefined();
+    const checkIn = deriveConversationState(
+      [
+        { founderText: 'taking the insole to market', answer: STEP },
+        { founderText: 'i didnt do that', answer: 'That sounds like a lot. How are you holding up?' },
+      ],
+      'i dont know',
+    );
+    expect(checkIn.answersCheckIn).toBe(true);
+    expect(checkIn.stuckAgain).toBeUndefined();
+  });
+});

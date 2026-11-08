@@ -1,10 +1,11 @@
-import { threadWords, withoutRepeatedGreeting } from '@foundry/ai';
+import { isPersonalOpener, offersHelp, threadWords, withoutRepeatedGreeting } from '@foundry/ai';
 import { describe, expect, it } from 'vitest';
 
 import { withLeftOff } from './context-budget.js';
 import {
   LEFT_OFF_HEADING,
   LEFT_OFF_MAX_CHARS,
+  continuationOpeners,
   plainInvitation,
   plainOpeners,
   relativeWhen,
@@ -294,6 +295,46 @@ describe('plainOpeners: the opener when the notebook holds no line the model wro
     const all = plainOpeners('one', true);
     expect(new Set(all.map((l) => l.split(/(?<=[.!])\s/)[0])).size).toBe(8);
     expect(new Set(all.map((l) => l.split(/(?<=[.!])\s/)[1])).size).toBe(7);
+  });
+});
+
+describe('continuationOpeners: a conversation started right after the last one (lab run 42457618242)', () => {
+  const seeds = Array.from({ length: 24 }, (_, i) => `conversation-${String(i)}`);
+
+  it('greets, offers help to carry that conversation on and names no thread of it nor any older one', () => {
+    for (const seed of seeds) {
+      for (const line of continuationOpeners(seed)) {
+        expect([...threadWords(line)], line).toEqual([]);
+        expect(offersHelp(line), line).toBe(true);
+        expect(isPersonalOpener(line), line).toBe(false);
+        expect(line, line).toMatch(/left off|from there/);
+        expect(line, line).not.toMatch(/\b(?:ago|yesterday|last time|we talked|since we last)\b/i);
+        expect(line, line).not.toMatch(/good to talk again|carry on with/i);
+        // A greeting of its own, so a call says it as written.
+        expect(withoutRepeatedGreeting(line).removed, line).toBe(true);
+        expect(validatedOpener(line, GUARDS), line).toBe(line);
+        expect(line.length, line).toBeLessThanOrEqual(90);
+        // The shape of every topic-free opener: a greeting, then one question.
+        expect(line, line).toMatch(/^[^.!?]+[.!] [^.!?]+\?$/);
+      }
+    }
+  });
+
+  it('varies from one conversation to the next, and every offer comes up for one conversation', () => {
+    const firsts = seeds.map((seed) => continuationOpeners(seed)[0] ?? '');
+    expect(new Set(firsts).size).toBeGreaterThanOrEqual(8);
+    const all = continuationOpeners('one');
+    expect(new Set(all.map((l) => l.split(/(?<=[.!])\s/)[0])).size).toBe(8);
+    expect(
+      new Set(
+        all.map((l) =>
+          l
+            .split(/(?<=[.!])\s/)
+            .slice(1)
+            .join(' '),
+        ),
+      ).size,
+    ).toBe(4);
   });
 });
 

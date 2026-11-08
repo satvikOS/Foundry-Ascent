@@ -17,7 +17,7 @@ import {
   type MockGenerateContext,
 } from '@foundry/ai';
 import { StartCallResponse, TurnStreamEvent, type MemoryCandidate, type TurnView } from '@foundry/contracts';
-import { lastQuestionOf } from '@foundry/ai';
+import { lastQuestionOf, offersHelp } from '@foundry/ai';
 import { memoryRepo, notebooksRepo, p, sessionsRepo } from '@foundry/db';
 import { makeContext } from '@foundry/db/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -235,10 +235,13 @@ describe('a second call minutes after the first', () => {
     expect(preview.lastConversation).toMatchObject({ sessionId: first.id, channel: 'call', title: question });
     const second = await h.core.sessions.create(maya, quietquad(), {});
     expect(second.opener).toBe(preview.opener);
-    // Nothing distilled yet, so no line the model wrote: a greeting that names nothing, never the founder's words
-    // read back by rule (production 2026-11-06), never the question quoted (LAB-R3).
+    // Nothing distilled yet, so no line the model wrote: a greeting and an offer to carry on where the first call
+    // stopped, naming no subject (lab run 42457618242: never as if nothing had just been said), never the founder's
+    // words read back by rule (production 2026-11-06), never the question quoted (LAB-R3).
     expect(second.opener ?? '').toMatch(/^[^.!?]+[.!] [^.!?]+\?$/);
-    expect(second.opener ?? '').not.toMatch(/price|seat|librar|pilot|talked about|left off/i);
+    expect(second.opener ?? '').toMatch(/left off|from there/);
+    expect(offersHelp(second.opener ?? '')).toBe(true);
+    expect(second.opener ?? '').not.toMatch(/price|seat|librar|pilot|talked about/i);
     // Starting it distils the first at once too (it is well inside the 8-minute active window).
     await h.core.distill.afterCreate(maya, second);
     expect(distillJobs()).toEqual([[first.id, true, 0]]);
@@ -918,7 +921,8 @@ describe('how a new conversation opens', () => {
     const meanwhile = await h.core.sessions.create(maya, quietquad(), {});
     await talk(maya, meanwhile.id, 'We booked the auditorium for demo day.');
     // The conversation in between was distilled: the model wrote what to open with next.
-    const line = 'Good to see you again. How did the auditorium booking for demo day go down with the team?';
+    const line =
+      'Good to see you again. Want help planning the auditorium booking for demo day with the team?';
     await h.t.db.system(async (sx) => {
       const key = { ventureId: quietquad(), personaId: h.ventures.quietquad.personaId };
       const current = await notebooksRepo.getNotebook(sx, key);
@@ -936,7 +940,7 @@ describe('how a new conversation opens', () => {
     const call = await startCall(maya, empty.id);
     // The line the model wrote from the conversation in between, its greeting kept (wave 7: someone already met).
     expect(call.intro?.text).toMatch(
-      /^Good to see you again(?:, Maya)?\. How did the auditorium booking for demo day go down with the team\?$/,
+      /^Good to see you again(?:, Maya)?\. Want help planning the auditorium booking for demo day with the team\?$/,
     );
     // The conversation keeps what the call said as its first message: the vEIR's history holds its greeting.
     const opener = (await h.core.sessions.get(maya, empty.id)).session.opener ?? '';
@@ -949,7 +953,7 @@ describe('how a new conversation opens', () => {
     await ageEverything(3);
     const last = await h.core.sessions.create(maya, quietquad(), {});
     await talk(maya, last.id, 'We met the student union about promoting the pilot.');
-    const line = 'Good to see you again. What did the student union say about promoting the pilot?';
+    const line = 'Good to see you again. Want help working out how the student union can promote the pilot?';
     await h.t.db.system(async (sx) => {
       const key = { ventureId: quietquad(), personaId: h.ventures.quietquad.personaId };
       const current = await notebooksRepo.getNotebook(sx, key);
@@ -973,7 +977,7 @@ describe('how a new conversation opens', () => {
     // The model's line as written: its greeting kept, with her name (no reply named her lately; one reply in four),
     // never swapped for "Hi Maya," nor phrased again around its subject.
     expect(call.intro?.text).toMatch(
-      /^Good to see you again, Maya\. What did the student union say about promoting the pilot\?$/,
+      /^Good to see you again, Maya\. Want help working out how the student union can promote the pilot\?$/,
     );
     // The conversation keeps what the call said as its first message.
     expect((await h.core.sessions.get(maya, next.id)).session.opener).toBe(call.intro?.text);
@@ -1007,11 +1011,11 @@ describe('how a new conversation opens', () => {
     const next = await h.core.sessions.create(maya, quietquad(), {});
     expect(next.opener).not.toBe(question);
     // No other line the model wrote (creating a conversation never calls the model: New chat has a missing line
-    // written first, `prepareOpener`): a greeting that names nothing and offers help, never the founder's question read
-    // back.
+    // written first, `prepareOpener`): a greeting that names nothing and offers help (here, to carry on the conversation
+    // that just ended), never the founder's question read back.
     expect(next.opener ?? '').toMatch(/^[^.!?]+[.!] [^.!?]+\?$/);
     expect(next.opener ?? '').not.toMatch(/per seat|librar|charge/i);
-    expect(next.opener ?? '').toMatch(/help|walk you through|hand|prep/);
+    expect(offersHelp(next.opener ?? '')).toBe(true);
   });
 
   it('picks up the most recent conversation, call or chat, though an older one was distilled after it (LAB-R6c)', async () => {
@@ -1090,7 +1094,7 @@ describe('how a new conversation opens', () => {
     // the old ones), the line drawn from the call is current again.
     await talk(maya, chat.id, 'Back to the pilot success criteria: three libraries renewing would do it.');
     const renewed =
-      'Good to see you again. Do three renewing libraries still feel like the right success criteria?';
+      'Good to see you again. Want help testing whether three renewing libraries are the right success criteria?';
     await h.t.db.system(async (sx) => {
       const key = { ventureId: quietquad(), personaId: h.ventures.quietquad.personaId };
       const current = await notebooksRepo.getNotebook(sx, key);
@@ -1145,7 +1149,7 @@ describe('how a new conversation opens', () => {
         content: {
           ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK),
           nextOpener:
-            'Last time, we left off on anchoring the pilot price to the workaround cost. Where are things now?',
+            'Last time, we left off on anchoring the pilot price to the workaround cost. Want help taking it further?',
           nextTopic: 'anchoring the pilot price to the workaround cost',
         },
         suppressed: current?.suppressed ?? [],
@@ -1157,7 +1161,7 @@ describe('how a new conversation opens', () => {
     // its prompt asks for the founder's news before its own advice), never one rebuilt from their words by rule…
     const next = await h.core.sessions.create(maya, quietquad(), {});
     expect(next.opener).toBe(
-      'Last time, we left off on anchoring the pilot price to the workaround cost. Where are things now?',
+      'Last time, we left off on anchoring the pilot price to the workaround cost. Want help taking it further?',
     );
     // …and its "Where you left off" carries what they told, in their words, before the summary.
     await talk(maya, next.id, 'Do you remember what we talked about last time?');
@@ -1196,7 +1200,7 @@ describe('how a new conversation opens', () => {
     );
     await noted(
       planned.id,
-      'Did you manage to book the advisor session and write your three questions?',
+      'Good to see you again. Want help booking the advisor session and writing your three questions?',
       'the advisor session and your three questions',
     );
     // AG-1: it opens on the advisor session, and the founder never takes it up.
@@ -1212,7 +1216,7 @@ describe('how a new conversation opens', () => {
     }
     await noted(
       ag1.id,
-      'You agreed on three questions for the advisor session. Are you ready to book it now?',
+      'You agreed on three questions for the advisor session. Want help booking it now?',
       'booking the advisor session',
     );
     // AG-2, in a chat or on a call: never the advisor session again, though the notebook holds it, drawn from AG-1.
@@ -1295,7 +1299,7 @@ describe('how a new conversation opens', () => {
         expectedVersion: current?.version ?? 0,
         content: {
           ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK),
-          nextOpener: 'Good to see you again. Is the harbour hall study room booked for the kickoff?',
+          nextOpener: 'Good to see you again. Want help booking the harbour hall study room for the kickoff?',
           nextTopic: null,
         },
         suppressed: current?.suppressed ?? [],
@@ -1361,7 +1365,7 @@ describe('how a new conversation opens', () => {
     };
     const older = await h.core.sessions.create(maya, quietquad(), {});
     await talk(maya, older.id, 'I will book the innovation pathway advisor session this week.');
-    await notebook(older.id, 'Good to see you again. Did the advisor session happen?');
+    await notebook(older.id, 'Good to see you again. Want help preparing for the advisor session?');
     // The previous call opened on the advisor session; the founder said "great" and asked about the mentor's life.
     const previous = await h.core.sessions.create(maya, quietquad(), {});
     expect(previous.opener ?? '').toMatch(/advisor session/);
@@ -1443,13 +1447,13 @@ describe('how a new conversation opens', () => {
     }
 
     // A line the distillation wrote from the notebook's open threads is what opens instead (the model's words).
-    const line = 'Good to see you again. Have you worked out who signs the cheque at the clinics?';
+    const line = 'Good to see you again. Want help working out who signs the cheque at the clinics?';
     await notebook(previous.id, line, { nextTopic: 'who signs the cheque at the clinics' });
     const after = await h.core.sessions.create(maya, quietquad(), {});
     expect(after.opener).toBe(line);
     const call = await startCall(maya, after.id);
     expect(call.intro?.text ?? '').toMatch(
-      /^Good to see you again(?:, Maya)?\. Have you worked out who signs/,
+      /^Good to see you again(?:, Maya)?\. Want help working out who signs/,
     );
     await h.core.calls.end(maya, call.call.id, { reason: 'user' });
     h.jobQueue.drain();
@@ -1849,6 +1853,199 @@ describe('how a new conversation opens', () => {
     // Idempotent: a notebook with a line is never listed again.
     const again = await h.core.distill.backfillOpeners({ requestId: 'r-openers-3' });
     expect(again.candidates).toBe(0);
+  });
+
+  it('never opens with a stored quiz no person wrote: the thread and an offer of help, in chat and on the call; a person’s own quiz is said (lab run 42457618242)', async () => {
+    await ageEverything(3);
+    const key = { ventureId: quietquad(), personaId: h.ventures.quietquad.personaId };
+    const QUIZ = 'Did you manage to book the advisor session and write your three questions?';
+    const last = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, last.id, 'I will book the regulatory advisor session and write three questions for it.');
+    await h.core.sessions.end(maya, last.id);
+    h.jobQueue.drain();
+    // Distilled before the rule that a line offers help: the notebook's line only quizzes, and its origin is unknown.
+    await h.t.db.system((sx) =>
+      sx.query(
+        'UPDATE coaching_sessions SET digest = CAST(:d AS jsonb), distill_version = 1 WHERE id = :id',
+        {
+          d: p.text(
+            JSON.stringify({
+              summary: 'Maya planned the regulatory advisor session and three questions for it.',
+              topics: ['regulatory advisor session'],
+              commitments: [],
+              openQuestions: [],
+              generatedAt: new Date().toISOString(),
+            }),
+          ),
+          id: p.uuid(last.id),
+        },
+      ),
+    );
+    const at = new Date().toISOString();
+    const saved = await h.t.db.system(async (sx) => {
+      const current = await notebooksRepo.getNotebook(sx, key);
+      return notebooksRepo.saveNotebook(sx, {
+        tenantId: h.seed.tenantId,
+        ...key,
+        expectedVersion: current?.version ?? 0,
+        content: {
+          ...notebooksRepo.EMPTY_NOTEBOOK,
+          summary: 'Maya is preparing a regulatory advisor session for the library seat sensor.',
+          commitments: [
+            {
+              id: 'c-advisor',
+              text: 'Book the regulatory advisor session and write three questions for it',
+              due: '2026-11-20',
+              status: 'open',
+              sourceSessionId: last.id,
+              createdAt: at,
+            },
+          ],
+          openQuestions: [],
+          lastAdvice: [],
+          nextOpener: QUIZ,
+          nextTopic: null,
+        },
+        suppressed: current?.suppressed ?? [],
+        editedBy: 'veir',
+      });
+    });
+    expect(saved?.content.nextOpener).toBe(QUIZ);
+    expect(saved?.content.nextOpenerSource).toBeUndefined();
+    // The chat: never the quiz, as written or by name; a greeting, then the thread with an offer of help.
+    const chat = await h.core.sessions.create(maya, quietquad(), {});
+    const opener = chat.opener ?? '';
+    expect(opener).not.toMatch(/did you manage|three questions\?/i);
+    expect(opener).toMatch(/advisor session/);
+    expect(offersHelp(opener)).toBe(true);
+    expect(opener.split(/(?<=[.!?])\s+/)[1] ?? '').toMatch(/\bhelp\b|walk you through/);
+    // The call says the same choice, its greeting kept, never "Maya, did you manage…".
+    const call = await startCall(maya, chat.id);
+    const intro = call.intro?.text ?? '';
+    expect(intro).not.toMatch(/did you manage|three questions\?/i);
+    expect(intro).toMatch(/advisor session/);
+    expect(offersHelp(intro)).toBe(true);
+    await h.core.calls.end(maya, call.call.id, { reason: 'user' });
+    h.jobQueue.drain();
+    await h.core.sessions.remove(maya, chat.id);
+    // A person's own question is theirs to open with: said as they wrote it, in chat and on the call.
+    const PERSONS = 'Did the advisor session get booked?';
+    const nb = await h.core.notebook.get(maya, quietquad());
+    await h.core.notebook.update(maya, quietquad(), {
+      expectedVersion: nb.version,
+      edit: { action: 'edit_opener', text: PERSONS },
+    });
+    const theirs = await h.core.sessions.create(maya, quietquad(), {});
+    expect(theirs.opener).toBe(PERSONS);
+    const ringing = await startCall(maya, theirs.id);
+    expect(ringing.intro?.text ?? '').toMatch(/did the advisor session get booked\?$/i);
+    await h.core.calls.end(maya, ringing.call.id, { reason: 'user' });
+    h.jobQueue.drain();
+    await h.core.sessions.remove(maya, theirs.id);
+    // Leaves no line and no person's edit behind for the tests after it (the vEIR's write clears the marks).
+    await h.t.db.system(async (sx) => {
+      const current = await notebooksRepo.getNotebook(sx, key);
+      await notebooksRepo.saveNotebook(sx, {
+        tenantId: h.seed.tenantId,
+        ...key,
+        expectedVersion: current?.version ?? 0,
+        content: { ...notebooksRepo.EMPTY_NOTEBOOK, nextOpener: null, nextTopic: null },
+        suppressed: current?.suppressed ?? [],
+        editedBy: 'veir',
+      });
+    });
+  });
+
+  it('a conversation started right after the last one, before its distillation, offers to carry it on; never an older thread (lab run 42457618242)', async () => {
+    await ageEverything(3);
+    const key = { ventureId: quietquad(), personaId: h.ventures.quietquad.personaId };
+    /** The notebook holds an older thread (LAB-R6c: never opened on while the latest conversation is not distilled). */
+    const noteOlderThread = async (): Promise<void> => {
+      await h.t.db.system(async (sx) => {
+        const current = await notebooksRepo.getNotebook(sx, key);
+        await notebooksRepo.saveNotebook(sx, {
+          tenantId: h.seed.tenantId,
+          ...key,
+          expectedVersion: current?.version ?? 0,
+          content: {
+            ...notebooksRepo.EMPTY_NOTEBOOK,
+            commitments: [
+              {
+                id: 'c-floor-plan',
+                text: 'Ask the facilities office for the reading room floor plan',
+                due: '2026-11-20',
+                status: 'open',
+                sourceSessionId: null,
+                createdAt: new Date().toISOString(),
+              },
+            ],
+            nextOpener: null,
+            nextTopic: null,
+          },
+          suppressed: current?.suppressed ?? [],
+          editedBy: 'veir',
+        });
+      });
+      await h.t.db.system((sx) =>
+        sx.query("UPDATE veir_notebooks SET updated_at = now() - interval '2 days' WHERE venture_id = :v", {
+          v: p.uuid(quietquad()),
+        }),
+      );
+    };
+    await noteOlderThread();
+    const last = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, last.id, 'Can you help me draft the pricing page for the pilot?');
+    await h.core.sessions.end(maya, last.id);
+    // Ended a minute ago; its distillation has not run yet.
+    h.jobQueue.drain();
+    await idle(last.id, 1);
+    const carriesOn = (line: string): void => {
+      expect(line, line).toMatch(/^[^.!?]+[.!] [^.!?]+\?$/);
+      expect(line, line).toMatch(/left off|from there/);
+      expect(offersHelp(line), line).toBe(true);
+      expect(line, line).not.toMatch(
+        /floor plan|facilities|pricing|pilot|What’s coming up|What can I help you prepare for/i,
+      );
+    };
+    // In chat: a greeting and an offer to pick up where that conversation stopped, naming no thread.
+    const chat = await h.core.sessions.create(maya, quietquad(), {});
+    carriesOn(chat.opener ?? '');
+    // A second conversation opened after that one, with nothing said: a greeting that names nothing (owner rule).
+    const second = await h.core.sessions.create(maya, quietquad(), {});
+    expect(second.opener ?? '').toMatch(/^[^.!?]+[.!] [^.!?]+\?$/);
+    expect(second.opener ?? '').not.toMatch(/left off|from there|floor plan|facilities|pricing|pilot/i);
+    await h.core.sessions.remove(maya, chat.id);
+    await h.core.sessions.remove(maya, second.id);
+    // On a call that starts a conversation New chat opened without a line: the same choice.
+    const silent = await h.core.sessions.create(maya, quietquad(), { openerShownAt: null });
+    expect(silent.opener).toBeNull();
+    const call = await startCall(maya, silent.id);
+    const intro = call.intro?.text ?? '';
+    carriesOn(intro.replace(/, Maya\./, '.'));
+    expect(intro).not.toMatch(/I'm /);
+    expect((await h.core.sessions.get(maya, silent.id)).session.opener).toBe(intro);
+    await h.core.calls.end(maya, call.call.id, { reason: 'user' });
+    h.jobQueue.drain();
+    await h.core.sessions.remove(maya, silent.id);
+    // Hours later, with that conversation still not distilled: a greeting that names nothing, as before.
+    await noteOlderThread();
+    await idle(last.id, 4 * 60);
+    const later = await h.core.sessions.create(maya, quietquad(), {});
+    expect(later.opener ?? '').toMatch(/^[^.!?]+[.!] [^.!?]+\?$/);
+    expect(later.opener ?? '').not.toMatch(/left off|from there|floor plan|facilities|pricing|pilot/i);
+    await h.core.sessions.remove(maya, later.id);
+    // Leaves no thread behind for the tests after it.
+    await h.t.db.system(async (sx) => {
+      const current = await notebooksRepo.getNotebook(sx, key);
+      await notebooksRepo.saveNotebook(sx, {
+        tenantId: h.seed.tenantId,
+        ...key,
+        expectedVersion: current?.version ?? 0,
+        content: notebooksRepo.EMPTY_NOTEBOOK,
+        suppressed: current?.suppressed ?? [],
+        editedBy: 'veir',
+      });
+    });
   });
 });
 

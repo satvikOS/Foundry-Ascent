@@ -1795,7 +1795,7 @@ describe('what a distillation draws from a conversation, and its deletion', () =
       );
       expect(saved?.content.nextOpenerSource).toBeUndefined();
     };
-    const UNKNOWN = 'Did the library deposit question get an answer?';
+    const UNKNOWN = 'Want help getting an answer on the library deposit question?';
     await writeOpener(UNKNOWN);
     const copied = await h.core.sessions.create(maya, quietquad(), { mode: 'diagnose' });
     expect(await openerOf(copied.id)).toEqual({ opener: UNKNOWN, source: null });

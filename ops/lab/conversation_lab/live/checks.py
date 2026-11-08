@@ -12,7 +12,10 @@
   before it sets up for the student to send or practise: ``in_hand_back``). Only the explicit reading counts, as only
   it makes the product's ``stuckOn`` strict (``stuck``: the phrase lists and the predicate grammar, whatever time,
   reason or hedge is beside it); a reading by shape alone is advisory, a request for the work is none, and a message
-  in distress is never a no-answer (``no_answer_reading``, round 8);
+  in distress is never a no-answer (``no_answer_reading``, round 8). A question inside a quotation the coach wrote
+  (``in_quotation``: straight or curly double quotes, one sentence or several, closed after its "?" with or without
+  punctuation after it) is a line for the student to say or send: never a re-ask, nor a question they were asked
+  (lab run 42457618242);
 * question_only: a reply that only asks (no statement of eight words or more, no list) where the student brought
   something to answer: a goal, a request, a report or no answer (never a hello, thanks or a goodbye);
 * judgmental_profile_note (high): a note in the notebook's founder profile after the run that judges the founder
@@ -1299,6 +1302,19 @@ def _lead_in(sentence: str) -> str | None:
     return None if colon < 0 else head[: colon + 1]
 
 
+def in_quotation(coach: str, question: str) -> bool:
+    """Whether the question of ``question`` (a sentence of ``coach``) is inside a quotation the coach wrote: a double
+    quote, straight or curly, is open at its "?" (the product's validators/social.ts ``putToFounder`` reads the
+    same). The quotation may run over several sentences ('Say something like: "Can you confirm the sequence? For
+    example, ...?".') and close after the "?" with or without punctuation or more words after it ('...in what
+    order?".', '?" and see what they say'): a line for the student to say or send, never one put to them."""
+    at = coach.find(question)
+    if at < 0:
+        return False
+    ask = question.rfind("?")
+    return _quote_open(coach[:at] + (question if ask < 0 else question[:ask]))
+
+
 def put_to_student(coach: str, question: str) -> bool:
     """Whether ``question`` (a sentence of ``coach``) is put to the student, rather than given to them to put to someone
     else (the product's validators/social.ts ``putToFounder``): inside an open quotation (a draft email), a line in
@@ -1308,8 +1324,7 @@ def put_to_student(coach: str, question: str) -> bool:
     if at < 0:
         return True
     before = coach[:at]
-    ask = question.rfind("?")
-    if _quote_open(before + (question if ask < 0 else question[:ask])) or _ROLE_SPEAKER.match(question):
+    if in_quotation(coach, question) or _ROLE_SPEAKER.match(question):
         return False
     current = question.strip()
     list_item = bool(_ANY_LIST_ITEM.match(current) or _BARE_LIST_MARKER_END.search(before))
@@ -1736,6 +1751,10 @@ def run_checks(
         said_none = stuck(student, turns[i - 1].coach if i > 0 else None)
         reasked = False
         for q in _questions(coach):
+            # A line the coach quoted for the student to say or send (lab run 42457618242: '...in what order?".')
+            # is no question to them: never a re-ask, and never one a later question could repeat.
+            if in_quotation(coach, q):
+                continue
             words, content = _words(q), _content(q)
             # A question for someone else (in a drafted email, a list of questions to send) is the student's prep.
             to_student = put_to_student(coach, q)

@@ -167,6 +167,14 @@ export interface ConversationState {
    */
   readonly answersCheckIn?: boolean;
   /**
+   * The message says explicitly they have no answer (the `said` reading, {@link noAnswerReadingOf}) or asks the vEIR to
+   * do it (the `help` move), and so did their message before it: the vEIR's last reply gave them a next step they could
+   * not use. Lab run 42457618242: after "i didnt do that", "it didn't come up" and "i dont know, can you just help me
+   * prepare", the vEIR repeated "send the advisor that email" three replies running and once argued for it. Never on a
+   * message in distress, nor after one, nor on a no-answer to a check-in on them.
+   */
+  readonly stuckAgain?: boolean;
+  /**
    * The message is in distress ({@link inDistress}): rendered as before the no-answer readings (ac41aec), with none of the
    * lines added since, so the reply and the safety path stay what they were.
    */
@@ -2133,6 +2141,16 @@ export function deriveConversationState(
     lastAsked !== null &&
     (moves.includes('unknown') || moves.includes('help')) &&
     (SUPPORT_CHECK_IN.test(lastAsked) || (!afterOpener && turns.at(-1)?.escalated === 'safety_wellbeing'));
+  // Stuck twice running: this message and the one before it each say they have no answer or ask for the work.
+  const stuck = (text: string, context: NoAnswerContext): boolean =>
+    founderMoves(text, context).includes('help') || noAnswerReadingOf(text, context) === 'said';
+  const stuckAgain =
+    !distress &&
+    !answersCheckIn &&
+    turns.length > 0 &&
+    !inDistress(lastFounder) &&
+    stuck(founderText, noAnswerContext) &&
+    stuck(lastFounder, noAnswerContextOf(turns.length >= 2 ? (turns.at(-2)?.answer ?? null) : opener));
   const prev: Thread | null = previous;
   const open = parked.filter((p) => p !== current).slice(0, MAX_PARKED);
   const said = [...turns.map((t) => t.answer ?? ''), opener].join('\n').replace(/[‘’ʼ]/g, "'").toLowerCase();
@@ -2172,6 +2190,7 @@ export function deriveConversationState(
     ...(distress ? { distress } : {}),
     ...(moves.includes('unknown') && lastAsked !== null ? { noAnswerTo: lastAsked } : {}),
     ...(answersCheckIn ? { answersCheckIn } : {}),
+    ...(stuckAgain ? { stuckAgain } : {}),
     inRoleReplies,
     duplicate,
     adviceGiven: adviceGiven.slice(-MAX_ADVICE),
@@ -2399,6 +2418,15 @@ export function renderConversationState(state: ConversationState): string {
       '  answer most likely is from how it usually goes, and the fastest way to find out; then move forward. If they did',
       '  answer, build on what they said. If they are telling you how they are rather than answering, respond to that',
       '  first and leave the question.',
+    );
+  }
+  // Lab run 42457618242: two no-answers and a request for help in a row met the same next step three replies running.
+  if (state.stuckAgain === true) {
+    lines.push(
+      '- You already gave them a next step last time; do not repeat it or argue for it again.',
+      '  Do the work now, in full, in this reply (write the draft, the script, the list or the plan they need), or help with',
+      '  what they just asked for. If they are telling you how they are rather than asking for the work, respond to that',
+      '  first and leave the work.',
     );
   }
   if (state.goal === true) {

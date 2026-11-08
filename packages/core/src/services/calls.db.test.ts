@@ -318,7 +318,7 @@ describe('starting a call', () => {
     // written, in its own greeting, never cut down and put in a frame ("Hi Maya, how did the five library-staff
     // interviews go?"). By name, in that greeting: no reply named her lately.
     expect(intro.text).toBe(
-      'Good to see you again, Maya. How many of the library-staff interviews have you done, and would any library share its occupancy counts?',
+      'Good to see you again, Maya. Want help finishing the library-staff interviews and getting a library to share its occupancy counts?',
     );
     // What the call said is the conversation's first message: the vEIR's history holds the greeting it gave.
     expect((await h.core.sessions.get(ctx.maya, sessionId)).session.opener).toBe(intro.text);

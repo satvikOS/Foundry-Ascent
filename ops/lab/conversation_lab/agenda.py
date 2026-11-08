@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from conversation_lab.live.checks import same_subject
+from conversation_lab.live.checks import put_to_student, same_subject
 
 SCENARIOS = Path(__file__).resolve().parent.parent / "scenarios" / "agenda.json"
 
@@ -72,6 +72,10 @@ OPENER_THREAD = re.compile(
     r"\b(?:advis[oe]r|device|class\w*|reimburs\w*|clinic\w*|regulat\w*|billing|pay\w*|sleeve|pitch|cofounder|budget)\b",
     re.IGNORECASE,
 )
+#: An offer to carry on the conversation that just ended (the product's continuity-prompt.ts ``continuationOpeners``,
+#: said only to the first conversation opened within three hours of one not distilled yet: lab run 42457618242). It
+#: names that conversation rather than a thread of the notebook, which it may have settled or moved on from.
+OPENER_CARRIES_ON = re.compile(r"\b(?:where we (?:just )?left off|from there)\b", re.IGNORECASE)
 _SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 _LIST_ITEM = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+\S", re.MULTILINE)
 _WORD = re.compile(r"[a-z0-9']+")
@@ -177,9 +181,12 @@ class ReplyCheck:
 def check_reply(
     reply: str, turn: Mapping[str, Any], index: int, earlier_questions: Sequence[str]
 ) -> tuple[ReplyCheck, list[str]]:
-    """One reply's checks, and the questions it asked (for the re-ask check of later replies)."""
+    """One reply's checks, and the questions it asked the founder (for the re-ask check of later replies). A question
+    in a line the vEIR wrote for the founder to say or send (inside a quotation, however many sentences it runs and
+    however it closes: '...in what order?".'; or under "Ask your advisor:") is not asked of them (the product's
+    validators/social.ts ``putToFounder``; lab run 42457618242 counted one as a re-ask after a no-answer)."""
     said = sentences(reply)
-    asked = [s for s in said if s.endswith("?")]
+    asked = [s for s in said if s.endswith("?") and put_to_student(reply or "", s)]
     statements = [s for s in said if not s.endswith("?")]
     items = len(_LIST_ITEM.findall(reply or ""))
     marks = (reply or "").count("?")
@@ -338,7 +345,10 @@ def grade_conversation(result: ConversationResult, conversation: Mapping[str, An
     result.opener_bare = (
         threads
         and result.opener != ""
-        and not (offers_help(result.opener) and OPENER_THREAD.search(result.opener))
+        and not (
+            offers_help(result.opener)
+            and (OPENER_THREAD.search(result.opener) or OPENER_CARRIES_ON.search(result.opener))
+        )
     )
     result.founder_took_up_opener = took_up(result.opener, [f for f, _ in result.turns])
     result.checks = []

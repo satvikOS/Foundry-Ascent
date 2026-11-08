@@ -538,11 +538,16 @@ describe('continuity', () => {
     // a greeting that names nothing, never the notebook's older line. (Said here, so the test never depends on the
     // conversations of the tests above.) That conversation opens on another line, so the notebook's is not the last
     // opener said.
-    await storeOpenerUnchecked(h, h.ventures.quietquad, 'Which library answered first?', {
-      unknownSource: true,
-    });
+    await storeOpenerUnchecked(
+      h,
+      h.ventures.quietquad,
+      'Want help following up with the library that answered first?',
+      {
+        unknownSource: true,
+      },
+    );
     const since = await h.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
-    expect(since.opener).toBe('Which library answered first?');
+    expect(since.opener).toBe('Want help following up with the library that answered first?');
     await run(h.core.orchestrator, since.id, {
       text: 'We booked two of the library interviews.',
       mode: 'coach',
@@ -576,9 +581,7 @@ describe('continuity', () => {
     // The short reply is retrieved together with the opener's question it answers.
     // (The turn's last embedding is what it taught, embedded to be kept by meaning.)
     expect(
-      gateway.embedded.some((text) =>
-        text.includes('How many of the library-staff interviews have you done'),
-      ),
+      gateway.embedded.some((text) => text.includes('Want help finishing the library-staff interviews')),
     ).toBe(true);
   });
 

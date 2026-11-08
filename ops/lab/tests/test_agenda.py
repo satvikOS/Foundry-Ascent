@@ -364,3 +364,43 @@ def test_an_opener_with_a_help_word_and_no_offer_is_bare() -> None:
     assert not offers_help("Welcome back. Did the advisor help you settle the device class?")
     assert not offers_help("Hi again. Did the device class question go through with the advisor?")
     assert not offers_help("I can help you prep the advisor follow-up. Did they reply yet?")
+
+
+def test_a_question_quoted_for_the_founder_to_send_is_never_a_reask() -> None:
+    """Lab run 42457618242: a question in a line the vEIR wrote for the founder to send (one sentence of several in the
+    quotation, or closed after its "?" with punctuation or words after it) was counted as a re-ask after a no-answer."""
+    unknown = {"topic": "agenda", "help": True, "unknown": True}
+    first = "When the sleeve goes into a clinic, who has to sign off, and in what order?"
+    for reply in (
+        'Send this:\n\n"When the sleeve goes into a clinic, who has to sign off? Walk me through the sequence."',
+        'Say something like: "Can you confirm the approval sequence? For example, does the clinic sign off first?".',
+        'Email the advisor: "When the sleeve goes into a clinic, who has to sign off, and in what order?". Then '
+        "we plan.",
+        "Ask the lead \u201cWhen the sleeve goes into a clinic, who has to sign off? And in what order?\u201d today.",
+    ):
+        check, asked = check_reply(reply, unknown, 3, [first])
+        assert not check.reask_after_unknown, reply
+        assert not check.reask, reply
+        assert asked == [], reply
+    # Put to the founder unquoted, it is still the re-ask.
+    again, _ = check_reply(
+        "Fair. So who has to sign off when the sleeve goes into a clinic?", unknown, 3, [first]
+    )
+    assert again.reask_after_unknown
+
+
+def test_an_offer_to_carry_on_the_conversation_just_had_is_no_bare_opener() -> None:
+    """The product's ``continuationOpeners`` (lab run 42457618242: back to back, before the last conversation is
+    distilled, the opener offers to pick it up and names no older thread): an offer of help, never a bare greeting."""
+    suite = load()
+    ag4 = next(c for c in suite["conversations"] if c["id"] == "AG-4")
+    for opener, bare in (
+        ("Good to see you again. Want me to help you pick up where we just left off?", False),
+        ("Welcome back. Shall I help you work through the next step from there?", False),
+        ("Good to have you back. Where did we leave off?", True),
+    ):
+        result = ConversationResult(id="AG-4-chat", channel="chat", opener=opener)
+        result.notebook_before = {"commitments": [{"status": "open"}], "openQuestions": []}
+        result.turns = []
+        grade_conversation(result, ag4)
+        assert result.opener_bare is bare, opener

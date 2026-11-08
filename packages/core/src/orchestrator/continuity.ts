@@ -11,6 +11,7 @@ import {
   mentions,
   namesAThread,
   notebookThreads,
+  offersHelp,
   raisedIn,
   rewriteIdentity,
   sanitizePlainText,
@@ -35,6 +36,7 @@ import { addressFounder, properNounsIn, type OpenerPeople } from './address-foun
 import {
   LEFT_OFF_CONVERSATIONS,
   LEFT_OFF_EXCHANGES,
+  continuationOpeners,
   plainOpeners,
   threadOpeners,
   type LeftOffConversationData,
@@ -412,7 +414,10 @@ const TAKE_UP_EXCHANGES = 20;
  * 4. else, for someone who has talked here before, a short, warm greeting that names no subject (`plainOpeners`),
  *    phrased for this conversation and never the way the last ones opened. Nothing the founder said is ever read by
  *    rule for what to open on (production 2026-11-06: the previous call held only "great" and "hows your perosnal life
- *    going on..", and the next call opened "Hi, want to carry on with your perosnal life?").
+ *    going on..", and the next call opened "Hi, want to carry on with your perosnal life?"). The first conversation
+ *    opened within three hours of one with this vEIR that is not distilled yet offers instead to carry that one on,
+ *    still naming no thread (`continuationOpeners`; lab run 42457618242).
+ * A line no person wrote is said only when it offers help with its thread (`offersHelp`): a stored quiz goes to step 3.
  * Every distilled line is said to the person (`addressFounder`: "maya will get" becomes "you will get"; a line still
  * in the third person is not said), with the team's names in their real case (`team`; LAB-U2). A notebook opener
  * drawn from a teammate's conversation is never said to the person as theirs ("Last time you planned…" was a
@@ -549,10 +554,15 @@ export async function chooseOpener(
   // The notebook's line or thread comes back to what the founder left aside: neither is said.
   const leftAside = reopens(next) || reopens(topic);
   // A line stored before the distillation's check (or that slipped past it): never personal, small talk or the
-  // scripted frame, and always about a thread the venture still has.
+  // scripted frame, and always about a thread the venture still has. One no person wrote (drawn from a conversation, or
+  // of unknown origin) also offers help with it, as a new line must (`offersHelp`, the check `sanitizeOpener` applies):
+  // a line stored before that rule that only quizzes ("Did you manage to book the advisor session and write your three
+  // questions?", lab run 42457618242) is never the first thing said; the notebook's thread is offered instead. A
+  // person's own line is said as they wrote it (it returned above).
   const sound =
     stored !== null &&
     !isPersonalOpener(stored) &&
+    (source === null || offersHelp(stored)) &&
     namesAThread(
       stored,
       openThreads(notebook?.content ?? null, latest?.digest ?? null, heard?.lines ?? []),
@@ -630,20 +640,45 @@ export async function chooseOpener(
   // No line the model wrote for this conversation: a greeting that names nothing, never a greeting or an invitation
   // one of the person's last conversations opened with (when every line reuses one, only the latest's is avoided).
   // Each conversation they open since without a word takes the next line of the same order, so two in a row never
-  // greet alike.
-  const plain = plainOpeners(`${latest.sessionId}:${args.principalId}`, latest.withThisVeir)
-    .map((line) => validatedOpener(line, guards))
-    .filter((line): line is string => line !== null);
+  // greet alike. The first one opened right after a conversation with this vEIR that is not distilled yet offers to
+  // carry that conversation on (`continuationOpeners`; lab run 42457618242: a chat started a minute after the last one
+  // heard an invitation that named nothing, as if nothing had just been said), still naming no thread; one opened
+  // after that, with nothing said, greets without a subject.
   const recent = (last?.conversations ?? []).map((c) => c.opener ?? null);
-  const unsaid = plain.filter((line) => recent.every((previous) => !reusesWording(line, previous)));
-  const pool =
-    unsaid.length > 0 ? unsaid : plain.filter((line) => !reusesWording(line, latest.opener ?? null));
+  const seed = `${latest.sessionId}:${args.principalId}`;
+  const backToBack =
+    latest.withThisVeir &&
+    !latestDistilled &&
+    since.opened === 0 &&
+    Date.now() - Date.parse(latest.lastActivityAt) <= BACK_TO_BACK_MS;
+  const unsaidOf = (lines: readonly string[]): { lines: string[]; pool: string[] } => {
+    const valid = lines
+      .map((line) => validatedOpener(line, guards))
+      .filter((line): line is string => line !== null);
+    const unsaid = valid.filter((line) => recent.every((previous) => !reusesWording(line, previous)));
+    return {
+      lines: valid,
+      pool: unsaid.length > 0 ? unsaid : valid.filter((line) => !reusesWording(line, latest.opener ?? null)),
+    };
+  };
+  if (backToBack) {
+    const carryOn = unsaidOf(continuationOpeners(seed)).pool[0];
+    if (carryOn !== undefined)
+      return found({ text: carryOn, sourceSessionId: latest.sessionId, byPerson: false }, missing);
+  }
+  const { lines: plain, pool } = unsaidOf(plainOpeners(seed, latest.withThisVeir));
   const fresh = pool.length > 0 ? pool[since.opened % pool.length] : plain[0];
   return found(
     fresh === undefined ? null : { text: fresh, sourceSessionId: latest.sessionId, byPerson: false },
     missing,
   );
 }
+
+/**
+ * How long after the person's last conversation with this vEIR a new one is "right after" it ({@link chooseOpener}
+ * offers to carry it on while it is not distilled yet).
+ */
+const BACK_TO_BACK_MS = 3 * 60 * 60 * 1000;
 
 /**
  * The best safe line while the model's is missing ({@link MissingOpener}) and the notebook holds the person's latest
