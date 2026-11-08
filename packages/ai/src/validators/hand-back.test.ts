@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   founderMoves,
+  inDistress,
   noAnswerContextOf,
   noAnswerReadingOf,
   saysOnlyNoAnswer,
@@ -670,5 +671,169 @@ describe('a no-answer read as the union, a re-ask left out only at the end (revi
         expect(g.trace.reasksDropped).toBe(0);
       }
     });
+  });
+});
+
+/*
+ * Review of the 2026-11-07 fix, round 7. Fresh casual no-answers were missed (40/60 and 54/60) because rules vetoed a
+ * no-answer with a negation in it ("cant tell you" read as a question, "Honestly? No idea." vetoed by its "?", "only"
+ * and a tagged "i think" taken for substance, "meant to … but" read as a repair) and because negation-free not-done
+ * wordings had no reading ("we ran outta time", "i put it off", "he brushed it off"). Distress lines the narrow cues
+ * missed were read as no-answers. And with the line/paragraph restriction gone, unquoted drafted and role-play lines
+ * after a "." lead-in the set-up reading did not know lost their question.
+ */
+describe('fresh casual no-answers heard, distress kept out, drafted lines kept (review of the 2026-11-07 fix, round 7)', () => {
+  const PROD =
+    'No worries, that is common at this stage. Is monitoring time reimbursable under existing CPT codes?';
+  const FRESH = [
+    'cant tell you',
+    'Honestly? No idea.',
+    'nah we only talked about the pilot',
+    'he only talked about the tech',
+    'i meant to text him but i got busy',
+    'i was gonna but life happened',
+    'hes ignoring me i think',
+    'we ran outta time',
+    'ran outta time',
+    'it slipped through',
+    'my bad, totally slipped',
+    'i was too busy',
+    'skipped it',
+    'uhh i kinda skipped that part',
+    'i put it off',
+    'i kept putting it off',
+    'i put it on the back burner',
+    'i chickened out',
+    'zip, nada',
+    'kinda fuzzy on that',
+    'he brushed it off',
+    'your guess is as good as mine',
+    'im in the dark on that',
+    'he gave me a non answer',
+    'the email is still sitting in my drafts',
+    'i keep meaning to ask',
+    'oops forgot',
+    'the call got cut short',
+    'we kept missing each other',
+    'life got in the way',
+    'i have no clue what he said',
+    'still pending',
+    'crickets',
+  ];
+
+  it.each(FRESH)(
+    'reads %j as a no-answer: the hedged line, and the trailing CPT re-ask goes in withoutRepeats and the gate',
+    (said) => {
+      expect(noAnswerReadingOf(said, noAnswerContextOf(R2))).not.toBeNull();
+      expect(stuckOn(said, R2)).toBe(true);
+      const kept = 'No worries, that is common at this stage.';
+      const out = withoutRepeats(PROD, [R2, R1, OPENER].join('\n\n'), {
+        strictQuestions: stuckOn(said, R2),
+        asked: askedBefore(R2, [R1, OPENER]),
+      });
+      expect(out.text).toBe(kept);
+      for (const chunks of chunkings(PROD)) {
+        const g = gate({ previousReply: R2, earlierReplies: [R1, OPENER], founderText: said });
+        expect(streamed(g, chunks).trim()).toBe(kept);
+      }
+    },
+  );
+
+  it('reads "cant tell you" as no question, and a bare "no" beside a clause read by shape as shape', () => {
+    expect(founderMoves('cant tell you')).not.toContain('question');
+    expect(founderMoves('can you tell me the class')).toContain('question');
+    expect(noAnswerReadingOf('no, clinics wont pay monthly', noAnswerContextOf(R2))).toBe('shape');
+    expect(noAnswerReadingOf('nah', noAnswerContextOf(R2))).toBe('said');
+  });
+
+  // The casual twins of distress the narrow cues missed (round 7): main's reply (ac41aec), never a no-answer.
+  const DISTRESSED = [
+    'not sure i can keep going tbh',
+    'i dont know how to keep going',
+    'i dont know what to do with my life',
+    'i dont know why i bother',
+    'i cant think straight',
+    'i dont know, everything is falling apart',
+    'honestly not sure its worth it',
+    'im not in a good place',
+    'i dont see the point',
+    'i dont think i can do this',
+    'i dont think im cut out for this',
+    'i dont feel anything',
+    'i dont have it in me',
+    'im not coping well',
+    'i havent been ok',
+    'nothing is working',
+    'i havent left the house in days',
+    'idk man im just tired of all this',
+    'not sure im ok',
+    'i just cant',
+    'idk i just feel empty',
+  ];
+
+  it.each(DISTRESSED)('keeps %j in distress: never stuck, never a no-answer', (said) => {
+    expect(inDistress(said)).toBe(true);
+    for (const previous of [R1, R2]) {
+      expect(stuckOn(said, previous)).toBe(false);
+      expect(founderMoves(said, noAnswerContextOf(previous))).not.toContain('unknown');
+      expect(noAnswerReadingOf(said, noAnswerContextOf(previous))).toBeNull();
+    }
+  });
+
+  it('still reads a no-answer that is about the asked thing, not their own state', () => {
+    for (const said of ['i didnt bother asking', 'i couldnt bring myself to ask him']) {
+      expect(inDistress(said)).toBe(false);
+      expect(stuckOn(said, R2)).toBe(true);
+    }
+  });
+
+  const SET_UP: readonly (readonly [string, string])[] = [
+    ['a named role', `That's fine. I'll be Sarah, the practice manager. ${CPT}`],
+    [
+      'a role after "let\'s practise"',
+      `No problem. Let's practise. I'm Sarah from the clinic. So is the monitoring time reimbursable under existing CPT codes?`,
+    ],
+    ['a pictured role', `Sure. Picture me as the clinic director. ${CPT}`],
+    ['"here goes"', `Okay, quick practice. Here goes. ${CPT}`],
+    ['copy and paste', `No worries. Copy and paste this to him. ${CPT}`],
+    ['an opener', `No worries. Here is your opener for tomorrow. ${CPT}`],
+    ['fire this off', `No worries. Fire this off to him tonight. ${CPT}`],
+    ['try this one', `Okay. Try this one. ${CPT}`],
+    ['send this, then the note', `That is normal. Send this tonight.\n\nQuick one on the insole. ${CPT}`],
+    ['something to adapt', `Here is something you could adapt.\n\nQuick one on the insole. ${CPT}`],
+    ['a heading', `**For your advisor**\n\nWhich device class would you put the insole in? ${CPT}`],
+    ['a call line', `No worries. When you get him on the phone tomorrow, keep it short. ${CPT}`],
+  ];
+
+  describe.each(['i dont know', 'nah didnt ask him', 'he only talked about the tech'])(
+    'after %j',
+    (founderText) => {
+      it.each(SET_UP)('keeps %s whole, in withoutRepeats and the gate (streamed and whole)', (_, reply) => {
+        for (const [previous, earlier] of [
+          [R1, [OPENER]],
+          [R2, [R1, OPENER]],
+        ] as const) {
+          const out = withoutRepeats(reply, [previous, ...earlier].join('\n\n'), {
+            strictQuestions: stuckOn(founderText, previous),
+            asked: askedBefore(previous, earlier),
+          });
+          expect(out.text).toBe(reply);
+          for (const chunks of chunkings(reply)) {
+            const g = gate({ previousReply: previous, earlierReplies: [...earlier], founderText });
+            expect(streamed(g, chunks)).toBe(reply);
+          }
+        }
+      });
+    },
+  );
+
+  it('still leaves out the coach’s own question after a list or a lead-in that announced its own content', () => {
+    const reply =
+      'No problem. Here is the usual path: most insoles sit in a low class. So what did your advisor actually say about the class?';
+    const out = withoutRepeats(reply, [R1, OPENER].join('\n\n'), {
+      strictQuestions: true,
+      asked: askedBefore(R1, [OPENER]),
+    });
+    expect(out.text).toBe('No problem. Here is the usual path: most insoles sit in a low class.');
   });
 });

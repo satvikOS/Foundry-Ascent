@@ -480,14 +480,25 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     question that is not a yes/no one ("what did the advisor tell you?") a bare "no", "nope" or "nah" is a no-answer
     too; to "Is it Class II?" or "Want me to draft it?" it is the answer. The broad reading (`shape`) is any such short
     clause with a negation or a doubt (`NEGATION`, "an n't" however typed) or an intention that did not come off ("my
-    cofounder was supposed to ask but didnt", "we were supposed to meet but he cancelled": such a "but" is no
-    contrast). It hears a casual wording no grammar lists, and may misread an answer said as a negation ("insurance
+    cofounder was supposed to ask but didnt", "we were supposed to meet but he cancelled", "i meant to text him but i
+    got busy", "i was gonna but life happened": such a "but" is no contrast), a word that says it was not done without
+    a negation (`NOT_DONE_MARKER`: "forgot", "skipped", "swamped", "pending", "crickets", "vague", "short on time") or
+    only something else covered ("he only talked about the tech"); never a clause about the founder's own state
+    (`SELF_STATE`: how they feel, cope, sleep or keep going). Review, round 7: rules vetoed fresh casual no-answers
+    ("cant tell you" read as a question, "Honestly? No idea." vetoed by its "?", "only" and a tagged "i think" taken
+    for an answer), and the grammar also hears "we ran outta time", "i was too busy", "skipped it", "i put it off",
+    "back burner", "i chickened out", "he brushed it off", "kinda fuzzy on that", "im in the dark on that", "your guess
+    is as good as mine", "a non answer", "zip, nada", "it slipped through", "still in my drafts"; a bare "no" beside a
+    clause read only by its shape ("no, clinics wont pay monthly") is read by shape too. It hears a casual wording no grammar lists, and may misread an answer said as a negation ("insurance
     doesnt cover it", "we dont have a predicate device"); a misread costs only the hedged line below and at most a
     trailing unquoted question of the coach's own (`noAnswerReadingOf`). The prompt line on any no-answer is hedged:
     "Their last message reads like they could not answer your question ("…"). If so: … do not ask it again in any
     words; say what the answer most likely is …, and the fastest way to find out; then move forward. If they did
-    answer, build on what they said." A message in distress (`inDistress`: an "anymore" clause, "i dont know what im
-    doing", "i cant do this", "i dont feel safe", "im not ok", or what the stress cue, the wellbeing cue, the risk rules
+    answer, build on what they said. If they are telling you how they are rather than answering, respond to that first
+    and leave the question." A message in distress (`inDistress`: an "anymore" clause, "i dont know what im
+    doing", "i cant do this", "i dont feel safe", "im not ok", the founder's own state said casually, `DISTRESS_STATE`,
+    review round 7: "not sure i can keep going tbh", "im not in a good place", "i dont see the point", "i dont think im
+    cut out for this", "i dont feel anything", "i havent been ok", "nothing is working", or what the stress cue, the wellbeing cue, the risk rules
     or the ideation prefilter flag) is never a no-answer nor stuck on a question: it keeps the reply and the safety
     path it had before (ac41aec). The message must also carry no question, no answer (a
     figure, content reported, "probably", "because", a class named, a contrast, a day or a time), no worry of its own
@@ -537,7 +548,12 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     the statement before it sets up (`setUp`): one that mentions asking, a question, messaging, texting, emailing,
     telling or saying it to them, a script or a line, the call, practising or playing a role ("The fastest way to know
     is one question to your advisor.", "Send him one line.", "I'll be the advisor.") or announces what follows ("Try
-    this.", "Here's what I'd want to know.", "One thing would unblock this."). The prep cues ("Here is a draft",
+    this.", "Here's what I'd want to know.", "One thing would unblock this."), points at the line (an opener, copy and
+    paste, "fire this off", "here goes", "try this one", "something you could adapt", "when you get him on the
+    phone"), takes a role with any name ("I'll be Sarah, the practice manager.", "Picture me as the clinic director."),
+    or is a heading on its own line ("**For your advisor**"); a short statement right after such a set-up goes with it
+    ("Let's practise. I'm Sarah from the clinic.", "Send this tonight." then "Quick one on the insole."). Review, round
+    7: these unquoted drafted and role-play lines lost their question once the line/paragraph restriction was gone. The prep cues ("Here is a draft",
     "something like", "ask him", "questions to send", "you could write") are an extra exemption. A question followed
     by anything but another question is never left out, and the sentence gate holds such a question until the next
     unit shows what follows, so a draft, a list or a quotation can never lose a question from its middle. A question

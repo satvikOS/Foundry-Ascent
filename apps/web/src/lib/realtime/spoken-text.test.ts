@@ -6,6 +6,7 @@ import {
   speakableSentences,
   speakableText,
   splitSentences,
+  withoutQuoteMarks,
 } from './spoken-text';
 
 describe('spoken text', () => {
@@ -46,5 +47,22 @@ describe('spoken text', () => {
     const sentence = 'This sentence has exactly ten words in it for counting.';
     expect(openingText(Array(12).fill(sentence).join(' '))).toBe(Array(4).fill(sentence).join(' '));
     expect(openingText(`${'word '.repeat(90)}end.`)).toBe(`${'word '.repeat(90)}end.`);
+  });
+});
+
+describe('withoutQuoteMarks: a voice in the browser is handed a drafted line without its quote marks', () => {
+  it.each([
+    [
+      'Send him one line. "Is monitoring time reimbursable under existing CPT codes?"',
+      'Send him one line. Is monitoring time reimbursable under existing CPT codes?',
+    ],
+    [
+      'You could open with “Which class do you think we are?” and let him talk.',
+      'You could open with Which class do you think we are? and let him talk.',
+    ],
+    ['The insole is 5" long.', 'The insole is 5 inches long.'],
+    ["It's class II, and they don't bill it.", "It's class II, and they don't bill it."],
+  ])('%j', (text, said) => {
+    expect(withoutQuoteMarks(text)).toBe(said);
   });
 });

@@ -252,11 +252,11 @@ def _normalized(text: str) -> str:
 #: each found new casual wordings); any short negated clause was too much (round 5: "insurance doesnt cover it").
 NO_ANSWER_MAX_WORDS = 14
 _NA_LEAD = (
-    r"(?:^|\bbut )(?:(?:no|nope|nah|naw|honestly|um+|uh+|ugh|hm+|well|sorry|so|oh|yeah|yea|actually|tbh|lol|ok|"
-    r"okay|man|and|also|plus)[,.!]* )*"
+    r"(?:^|\bbut )(?:(?:no|nope|nah|naw|honestly|um+|uh+|ugh|hm+|well|sorry|so|oh|oops|whoops|ah|argh|meh|eh|yeah|"
+    r"yea|actually|tbh|lol|ok|okay|man|and|also|plus)[,.!]* )*"
 )
 _NA_ADVERBS = (
-    r"(?:(?:really|rly|realy|honestly|just|actually|still|totally|even|ever|yet|kinda|kind of|sort of|completely|"
+    r"(?:(?:really|rly|realy|honestly|just|actually|still|totally|even|ever|yet|kinda|kind of|sort of|sorta|completely|"
     r"already|quite|truly|exactly|properly|personally|tbh),? )*"
 )
 _NA_SELF = r"(?:(?:i|we|i've|we've|i'm|we're) )?"
@@ -349,7 +349,8 @@ _NO_ANSWER_PREDICATE = re.compile(
             r"gone quiet|been quiet|is quiet|quiet|went silent|gone silent|been silent|silent|mia|awol|been away|"
             r"is away|away|been busy|is busy|busy|swamped|slammed|dropped off|disappeared|vanished|went dark|gone dark|"
             r"cancel+ed|bailed|flaked|no-?showed|left (?:me|us|it) on read|on (?:vacation|holiday|leave|pto)|"
-            r"out of (?:the )?office|ooo|out sick|off sick|travel+ing)\b",
+            r"out of (?:the )?office|ooo|out sick|off sick|travel+ing|ignoring (?:me|us|my|our|it)|ignored (?:me|us|my|"
+            r"our|it))\b",
             # The meeting moved, or the person said nothing of substance.
             _NA_LEAD
             + "(?:we|i|they|he|she|"
@@ -371,12 +372,13 @@ _NO_ANSWER_PREDICATE = re.compile(
             + _NA_OTHER
             + r") (?:was|were|is|been|got) (?:(?:kind of|kinda|sort of|pretty|really|super|very|totally|so) )*"
             r"(?:vague|evasive|noncommittal|non-committal|cagey|unclear|wishy-washy|rushed|distracted|in a rush)\b",
-            r"\b(?:ran|run|running) out of time\b",
+            r"\b(?:ran|run|running) (?:out of|outta) time\b",
             # Not yet, said without a negation.
             r"\b(?:left (?:me|us|it) on read|got nothin'?g?|got (?:distracted|sidetracked|side-tracked|busy|swamped|"
             r"slammed)|(?:it's|its|that's|thats|it is|that is) (?:still )?on (?:my|the|our) (?:list|to-?do(?: list)?|"
             r"radar)|(?:still )?working on (?:it|that)|still (?:figuring|working|looking|sorting) (?:it |that )?(?:out|"
-            r"on it|into it)|tbd|to be determined|ask me (?:later|again|another time)|(?:i'll|i will|i'd|i need to|"
+            r"on it|into it)|tbd|to be (?:determined|decided|confirmed)|ask me (?:later|again|another time)|(?:i'll|ill|"
+            r"i will|i'd|i need to|"
             r"i have to|i gotta|gotta|let me|i should|need to|have to) (?:have to |need to )?(?:check|find out|"
             r"double-?check|ask(?: (?:him|her|them|around|the advisor))?|look (?:into it|it up|into that)|get back to "
             r"you(?: on (?:it|that))?)(?: (?:on (?:it|that)|first|tbh|honestly))?$|dropped the ball|fell through the "
@@ -399,15 +401,82 @@ _NO_ANSWER_PREDICATE = re.compile(
             + _NA_EVENT
             + r" (?:(?:got|was|has been|been|is|keeps getting|kept getting|just) )+(?:cancel+ed|postponed|pushed|"
             r"moved|rescheduled|delayed|called off|dropped|bumped)\b",
-            r"\b(?:idk|dunno|unsure|not (?:really |totally |entirely |quite |too |that )?sure|no idea|zero idea|"
+            r"\b(?:idk|dunno|idunno|idonno|donno|unsure|not (?:really |totally |entirely |quite |too |that )?sure|"
+            r"no idea|zero idea|"
             r"no clue|zero clue|not a clue|beats me|who knows|no (?:word|reply|replies|response|news|update|luck)"
             r"(?: (?:yet|back|so far))?|nothing (?:yet|so far|back|from (?:him|her|them))|still waiting|(?:waiting|wait) "
             r"(?:on|for) (?:him|her|them|a reply|an answer|a response|his|her|their|word|news)|waiting to hear)\b",
             _NA_LEAD
             + _NA_SELF
             + _NA_ADVERBS
-            + r"(?:forgot|forget|spaced|blanked|zoned out|lost track|ran out of time|had no time)\b|\b(?:it|that) "
+            + r"(?:forgot|forget|spaced|blanked|zoned out|lost track|ran (?:out of|outta) time|had no time)\b|\b(?:it|that) "
             r"(?:totally |completely )?slipped my mind\b",
+            # Not done, said without a negation (round 7): "i was too busy", "skipped it", "i put it off", "back
+            # burner", "i chickened out", "he brushed it off", "kinda fuzzy on that", "im in the dark on that", "your
+            # guess is as good as mine", "a non answer", "zip, nada", "it slipped through", "still in my drafts".
+            _NA_LEAD
+            + _NA_SELF
+            + r"(?:was |were |am |are |been |have been |got )?"
+            + _NA_ADVERBS
+            + r"(?:way |so )?too (?:busy|swamped|slammed)\b",
+            r"^"
+            + _NA_LEAD
+            + _NA_SELF
+            + _NA_ADVERBS
+            + r"skipped(?: (?:it|that|this|over (?:it|that))(?: (?:part|bit|one|step))?)?(?: (?:tbh|honestly|sorry|lol|"
+            r"lmao|oops|man|for now|again|entirely|completely))*$",
+            r"\b(?:put|putting|puts) (?:it|that|this|them) off\b|\bback[- ]?burner\b|\bchicken(?:ed)? out\b|"
+            r"\b(?:lost|lose) (?:my|our) nerve\b",
+            r"\b(?:brushed|brushes|brush|waved|shrugged|laughed) (?:it |me |that |the question |them )?off\b",
+            r"\b(?:fuzzy|hazy|foggy) (?:on|about)\b|\bin the dark\b|\bguess is as good as mine\b|\bnon-? ?answers?\b",
+            r"^"
+            + _NA_LEAD
+            + r"(?:zip|nada|zilch)(?:[,.!]* (?:zip|nada|zilch))*(?: (?:lol|tbh|honestly|sorry|man))*$",
+            r"^"
+            + _NA_LEAD
+            + r"(?:(?:it|that|this) )?"
+            + _NA_ADVERBS
+            + r"slipped(?: through(?: the cracks)?| away)?(?: (?:tbh|honestly|sorry|lol|my bad|on me))*$",
+            r"\b(?:still )?(?:sitting |stuck )?in (?:my|the) drafts?(?: folder)?\b",
+            r"^"
+            + _NA_LEAD
+            + r"(?:i've |we've |i was |we were |i'm |we're |i have |we have )?(?:been )?"
+            + _NA_ADVERBS
+            + r"(?:heads[- ]down|swamped|slammed|buried|flat out|tied up|snowed under)(?: (?:on|with|in) .*)?$",
+            r"\b(?:keep|kept|been|was|were) meaning to\b|\bprocrastinat\w*|\b(?:kept|keep|been) missing each other\b|"
+            r"\bmissed each other\b|\bphone tag\b|\b(?:had|have|got) (?:no|zero|little|barely any) time\b|\bsearch me\b",
+            r"^"
+            + _NA_LEAD
+            + r"(?:work|life|things|stuff|it all|everything) (?:just )?(?:got|has been|was|been) "
+            r"(?:so |really |super |too )?(?:crazy|busy|hectic|mental|in the way|away from me)\b|\blife happened\b",
+            r"^"
+            + _NA_LEAD
+            + r"(?:we|he|she|they|i) (?:(?:mostly|just|only|kinda|kind of) )?(?:talked|chatted|spoke) "
+            r"about (?:other|different) (?:stuff|things|topics)\b|\btalked about something else\b",
+            r"^" + _NA_LEAD + _NA_EVENT + r" (?:(?:got|was|just) )+(?:cut short|cut off|interrupted)\b",
+            r"\b(?:total|complete|totally|completely) blank\b|\bmind (?:is|went|was|'s) (?:totally |completely |a )?"
+            r"blank\b|\bwent blank\b",
+            r"\b(?:gave|got|had|giving) (?:me |us )?(?:a |an )?(?:(?:really|pretty|kinda|super|very) )?(?:vague|"
+            r"wishy-washy|fuzzy|unclear|non-?committal|half) ?(?:answer|reply|response)\b",
+            r"^"
+            + _NA_LEAD
+            + r"(?:it|that|he|she|they|the answer|his answer)(?:'s| is| was| were| stayed| seemed) "
+            r"(?:(?:kinda|kind of|pretty|really|super|very|still|all|a bit|totally) )*(?:unclear|vague|fuzzy|murky|"
+            r"up in the air)\b",
+            r"^"
+            + _NA_LEAD
+            + _NA_SELF
+            + _NA_ADVERBS
+            + r"(?:missed|skipped|blew off|bailed on|cancel+ed|had to cancel|couldn't make)(?: (?:the |our |my |that )?"
+            r"(?:meeting|call|session|appointment|chat|catch-?up|follow-?up|intro|demo)\b| it$|$)",
+            r"^"
+            + _NA_LEAD
+            + r"(?:i|we) (?:was|were|got|have been|'ve been) (?:(?:really|super|so|kinda|out|off) )*"
+            r"(?:sick|ill|unwell)\b",
+            r"^"
+            + _NA_LEAD
+            + r"(?:just )?(?:crickets|radio silence|(?:total |complete )?silence|(?:he's |hes |she's |"
+            r"shes |they're |theyre )?(?:mia|awol))(?: (?:so far|lol|tbh|honestly|from him|from her|from them))*$",
             _NA_LEAD
             + r"(?:(?:that's|that is|it's|it is|its) )?not something (?:i|we)(?:'ve| have)? "
             + _NA_ADVERBS
@@ -442,17 +511,57 @@ _NOT_YET_REPORTED = re.compile(
     r"have not|hadn't|didn't|did not|never|won't|wouldn't|wasn't|weren't|couldn't|isn't|nothing|no (?:reply|word|"
     r"response|answer|luck)|cancel+ed|bailed|flaked|postponed|rescheduled|pushed it|called it off|ghosted|"
     r"went quiet|went silent|got (?:sick|busy|cancel+ed|pushed|postponed|moved|bumped)|was busy|forgot|"
-    r"no-?showed)\b)|\b(?:forgot|forget|can't remember|cannot remember|don't remember|don't recall|can't recall) "
-    r"(?:exactly )?what (?:he|she|they|the [\w'-]+|my [\w'-]+) (?:said|told me|thinks|thought|says)\b|"
-    r"\b(?:it's|its|it is) (?:still )?on (?:my|the|our) (?:list|to-?do(?: list)?|radar)\b"
+    r"no-?showed)\b)|\b(?:forgot|forget|can't remember|cannot remember|don't remember|don't recall|can't recall|"
+    r"no (?:idea|clue)|not sure|unsure|don't know|dunno|idk) (?:exactly )?what (?:he|she|they|we|the [\w'-]+|"
+    r"my [\w'-]+) (?:said|told me|thinks|thought|says|said about)\b|\b(?:it's|its|it is) (?:still )?(?:on (?:my|the|"
+    r"our) (?:list|to-?do(?: list)?|radar)|pending|up in the air|unclear|tbd|undecided|a blur|(?:all )?(?:fuzzy|hazy|"
+    r"foggy))\b"
 )
 #: "supposed to ask but…": the intention did not come off, so the "but" states no answer (the product's
 #: ``NOT_YET_REPORTED``, there a lookbehind Python cannot take).
-_UNDONE_BUT = re.compile(r"(\b(?:supposed|meant|meaning|planning|going|gonna) to\b[^,.;]*?)\bbut\b")
-#: An intention that did not come off (the product's ``UNDONE_INTENTION``).
-_UNDONE_INTENTION = re.compile(
-    r"\b(?:was|were|am|are|i'm|we're|is) (?:supposed|meant|meaning|planning|going|gonna) to\b[^,.;]*\bbut\b"
+_UNDONE_BUT = re.compile(
+    r"(\b(?:(?:supposed|meant|meaning|planning|going|gonna) to|(?:i|we|he|she|they) (?:(?:really|totally|fully|kinda|"
+    r"kind of|honestly|always) )?(?:meant|planned|wanted|intended|(?:was|were) (?:gonna|going)))\b[^,.;]*?)\bbut\b"
 )
+#: An intention that did not come off (the product's ``UNDONE_INTENTION``): "i meant to text him but", "i was gonna but".
+_UNDONE_INTENTION = re.compile(
+    r"\b(?:(?:was|were|am|are|i'm|we're|is) (?:supposed|meant|meaning|planning|going|gonna) to|(?:i|we|he|she|they|"
+    r"my [\w'-]+|our [\w'-]+) (?:(?:really|totally|fully|kinda|kind of|honestly|always) )?(?:meant|planned|wanted|"
+    r"intended|(?:was|were) (?:gonna|going|planning|meaning|supposed))(?: to)?)\b[^,.;]*\bbut\b"
+)
+#: A word that says it was not done or not known without a negation (the product's ``NOT_DONE_MARKER``): a doubt
+#: marker of the shape reading.
+_NOT_DONE_MARKER = re.compile(
+    r"\b(?:forg[eo]t(?:ten)?|forgetting|skipped|missed|busy|swamped|slammed|snowed under|heads[- ]down|procrastinat\w*|"
+    r"postponed|rescheduled|cancel+ed|ghost(?:ed|ing)|silence|silent|crickets|awol|mia|dodg(?:ed|ing)|ducked|"
+    r"ignor(?:ed|ing) (?:me|us|my|our|it)|pending|unanswered|undecided|tbd|blank(?:ed)?|blur|fuzzy|hazy|foggy|vague|"
+    r"unclear|murky|sidetracked|distracted|(?:caught|tied) up|pulled (?:in|into|away)|put (?:it|that|this) off|"
+    r"(?:out of|outta|short on|no) time|meaning to|chicken(?:ed)? out|slipped|bailed|flaked|travel+ing|"
+    r"out of (?:town|office)|not around|unreachable|later|eventually|to be (?:decided|determined|confirmed|seen)|"
+    r"(?:was|were|been|is|are) (?:out|away)(?! of\b))\b"
+)
+_ONLY_COVERED_VERB = (
+    r"(?:talked|discussed|covered|went over|got (?:to|into)|asked about|mentioned|spoke about|focused on|touched on|"
+    r"chatted about|cared about)\b"
+)
+#: Only something else was covered ("he only talked about the tech": the product's ``ONLY_COVERED``).
+_ONLY_COVERED = re.compile(
+    r"\b(?:i|we|he|she|they|" + _NA_OTHER + r") (?:(?:really|kinda|kind of|mostly|basically) )?(?:only|just) "
+    r"(?:really )?" + _ONLY_COVERED_VERB
+)
+#: The student's own state as a clause's subject (the product's ``SELF_STATE``): never a no-answer by its shape.
+_SELF_STATE = re.compile(
+    r"\b(?:feel|feeling|felt|cope|coping|keep going|go on|carry on|in a (?:good|bad|dark|great) (?:place|headspace|"
+    r"spot)|energy|sleep|slept|sleeping|eat|eating|think straight|focus on anything|myself|out of bed|(?:left|leave) "
+    r"the house|in me|the point|my life|why i bother|worth it|cut out for|falling apart|nothing(?:'s| is) working|"
+    r"motivat\w*|(?:been|be) (?:ok|okay|alright|all right))\b"
+)
+#: A question of interjections alone before more of the message ("Honestly? No idea."): it asks nothing.
+_INTERJECTION_QUESTION = re.compile(
+    r"(^|[.!?]\s)(honestly|tbh|seriously|truthfully|frankly|idk|dunno|um+|uh+|hm+|well|lol|lmao|ngl)\?+(?=\s+\S)"
+)
+#: A hedge tagged on at the end ("hes ignoring me i think"): no answer of its own.
+_TAG_HEDGE = re.compile(r",?\s*\b(?:i think|i guess|i believe|i reckon|i suppose)[.!…]*$")
 #: A negation or a doubt, however typed (the product's ``NEGATION``): the broad reading of the union, recall first.
 _NEGATION = re.compile(
     r"n't\b|\b(?:h[ae]?v|h[ae]s|had|di?d|does|do|w[ae]s|w[eu]re|c[ou]{0,2}ld|w[ou]{0,2}ld|sh[ou]{0,2}ld|is|are|ca|wo)"
@@ -472,7 +581,38 @@ _DISTRESS = re.compile(
     r"lonely|hopeless|empty|numb|worthless|useless|trapped)\b|\bhopeless\b|\b(?:stressed|overwhelmed|exhausted|"
     r"burn(?:ed|t)? ?out|burning out|anxious|panick\w*|freaking out|drained|struggling|losing (?:sleep|hope|"
     r"motivation|it))\b|\b(?:end (?:it|it all|everything|my life)|(?:hurt|harm|kill)\w* (?:myself|me)|self[- ]harm|"
-    r"suicid\w*|give up on (?:everything|life|myself)|no point)\b"
+    r"suicid\w*|give up on (?:everything|life|myself)|no point)\b|"
+    # The student's own state and discouragement, said casually (the product's ``DISTRESS_STATE``, round 7).
+    r"\b(?:not (?:sure|certain)|(?:don't|do not) know|idk|doubt|wonder(?:ing)?)(?: if| whether| that)? (?:i|we) "
+    r"(?:can|could|will|'ll) (?:keep going|go on|carry on|keep (?:doing|this|it) up|keep at it|do (?:this|it)|handle|"
+    r"cope|make it)\b|\b(?:can't|cannot|can not|couldn't) (?:keep going|go on|carry on|think straight|"
+    r"focus on anything|get out of bed)\b|\b(?:don't|do not) know how (?:to|i can|i'll|i will|much longer) "
+    r"(?:keep going|go on|carry on|cope|keep (?:doing|this|it) up|do this|handle)\b|\bnot in a (?:good|great|healthy|ok|"
+    r"okay) (?:place|headspace|head space|way|spot)\b|\bin a (?:bad|dark) (?:place|headspace|spot)\b|"
+    r"\b(?:don't|do not|can't|cannot) see the point\b|\bwhat(?:'s| is) even the point\b|\bwhy (?:i|we) (?:even )?"
+    r"bother\b|\bcut out for\b|\b(?:have|got) it in me\b|\bwhat to do with my life\b|\bfalling apart\b|"
+    r"\b(?:don't|do not|can't|cannot) feel (?:anything|like myself|myself|like me)\b|\b(?:don't|do not|haven't|"
+    r"have not) (?:have|got) (?:the |any )?(?:energy|strength|will|motivation)\b|\bnot coping\b|\b(?:can't|cannot) "
+    r"cope\b|\b(?:haven't|have not|hasn't|has not) been (?:ok|okay|well|good|great|myself|alright|all right|sleeping|"
+    r"eating)\b|\b(?:not|isn't|is not|never) (?:even |really )?worth it\b|\bworth it any ?more\b|\b(?:not sure|"
+    r"unsure|(?:don't|do not) know|idk|wonder(?:ing)?)(?: if| whether)? (?:it's|its|it is|this is|any of (?:this|it) "
+    r"is|it's all|i'm|im) (?:even |really |all )?worth (?:it|this)\b|\bwhy (?:i'm|i am|we're|we are) (?:even |still )?"
+    r"doing (?:this|it|any of (?:this|it))\b|\b(?:don't|do not) think (?:i|we) can(?: (?:do (?:this|it)|keep "
+    r"(?:going|doing (?:this|it))|go on|handle (?:it|this)|cope|make it))?$|\bnothing(?:'s| is) working\b|"
+    r"\b(?:haven't|have not|hasn't) left (?:the|my) (?:house|room|bed|flat|apartment)\b|\b(?:didn't|couldn't|can't) "
+    r"get out of bed\b|\b(?:i'm|i am)(?: (?:just|really|honestly|still|so|actually|kinda|kind of))* not (?:doing )?"
+    r"(?:ok|okay|great|good|well|alright|all right|fine)\b|\bnot sure (?:if |whether )?(?:i'm|i am) (?:ok|okay|"
+    r"alright|all right|fine|good)\b|^(?:(?:honestly|tbh|um+|so|yeah|ugh)[,.]? )*not doing (?:so |too |very |that )?"
+    r"(?:well|good|great|ok|okay|fine)\b|^(?:(?:honestly|tbh|ugh|um+|man|sorry)[,.]? )*(?:i )?(?:just |really |"
+    r"honestly )*(?:can't|cannot)(?: even)?(?: (?:rn|right now|today|any ?more|tbh|honestly|man))*$|\b(?:so |just |"
+    r"really )?(?:tired|sick) of (?:all )?(?:this|it|everything)\b|\bwhat'?s wrong with me\b|\b(?:can't|cannot|"
+    r"couldn't) bring myself to do anything\b|\b(?:don't|do not|haven't|have not) (?:have|got) (?:anyone|anybody|"
+    r"no one|nobody) (?:to talk to|to turn to|i can talk to)\b|\b(?:no one|nobody) to talk to\b|\b(?:don't|do not) "
+    r"(?:really |even )?(?:want to|wanna) (?:do (?:this|it|any of (?:this|it))|be here|get up|go on|keep going)\b|"
+    r"\b(?:i|we) (?:(?:just|really|honestly|kinda|kind of|so) )*(?:feel|felt|feeling) (?:(?:so|really|completely|"
+    r"totally|kind of|kinda|a bit|pretty|just) )*(?:alone|lonely|hopeless|empty|numb|worthless|useless|trapped|"
+    r"broken)\b|\b(?:i|we) give up\b|\b(?:don't|do not) (?:really |even )?care (?:any ?more|at this point|about any of "
+    r"(?:it|this))\b|\bno one believes in (?:me|this|us|it)\b"
 )
 #: The answer put off ("idk, ask me next week"): no answer of its own beside a no-answer.
 _LATER_ANSWER = re.compile(
@@ -489,7 +629,7 @@ _ANSWER_SUBSTANCE = re.compile(
             r"\b(?:it's|its|it is)\b(?! (?:not|never)\b)",
             r"\b(?:probably|likely|maybe|perhaps|because|cause|cuz|apparently|i think|i guess|i bet|i believe)\b",
             r"\bclass (?:i{1,3}|one|two|three)\b",
-            r"\b(?:but|only|instead|rather|except)\b",
+            r"\b(?:but|instead|rather|except)\b|\bonly\b(?! (?:really )?" + _ONLY_COVERED_VERB + ")",
             r"\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b|\b(?:tomorrow|tonight|today|next (?:week|month)|"
             r"this (?:week|month|afternoon|evening|morning))\b",
         )
@@ -525,7 +665,9 @@ _OWN_SUBJECT = re.compile(
 
 
 def _carries_answer(text: str) -> bool:
-    plain = _UNDONE_BUT.sub(r"\1 ", _NOT_YET_REPORTED.sub(" ", _NEGATED_REPORT.sub(" ", text)))
+    plain = _UNDONE_BUT.sub(
+        r"\1 ", _NOT_YET_REPORTED.sub(" ", _NEGATED_REPORT.sub(" ", _TAG_HEDGE.sub("", text)))
+    )
     return bool(_ANSWER_SUBSTANCE.search(plain))
 
 
@@ -553,7 +695,14 @@ def _shaped(clause: str, yes_no: bool) -> str | None:
         return "said" if not yes_no and _SAYS_NO.search(clause) else None
     if _NO_ANSWER_PREDICATE.search(clause):
         return "said"
-    return "shape" if _NEGATION.search(clause) or _UNDONE_INTENTION.search(clause) else None
+    marked = (
+        _NEGATION.search(clause)
+        or _NOT_DONE_MARKER.search(clause)
+        or _UNDONE_INTENTION.search(clause)
+        or _ONLY_COVERED.search(clause)
+    )
+    # The student's own state ("im not in a good place") is no answer to give: never one by its shape.
+    return "shape" if marked and not _SELF_STATE.search(clause) else None
 
 
 def _no_answer_flags(text: str, after_question: bool, yes_no: bool = False) -> list[str | None]:
@@ -570,7 +719,17 @@ def _no_answer_flags(text: str, after_question: bool, yes_no: bool = False) -> l
         or any(_NOT_FOLLOWING.search(c) for c in clauses)
     ):
         return said
-    shaped = [s or _shaped(c, yes_no) for s, c in zip(said, clauses, strict=True)]
+    undone = bool(_UNDONE_INTENTION.search(text))
+    shaped = [
+        s or _shaped(c, yes_no) or ("shape" if undone and _UNDONE_INTENTION.search(c + " but") else None)
+        for s, c in zip(said, clauses, strict=True)
+    ]
+    if "shape" in shaped:
+        # A bare "no" beside a clause read only by its shape ("no, clinics wont pay monthly") is as sure as that clause.
+        shaped = [
+            "shape" if f == "said" and s is None and _ONLY_INTERJECTIONS.match(c) else f
+            for f, s, c in zip(shaped, said, clauses, strict=True)
+        ]
     rest = " ".join(c for c, f in zip(clauses, shaped, strict=True) if f is None)
     content = {w for w in _words(rest) if len(w) >= 3 and w not in _STOP}
     return shaped if len(content) < 2 else said
@@ -589,7 +748,7 @@ def no_answer_reading(student: str, previous: str | None = None) -> str | None:
             return None
         after_question = bool(questions)
         yes_no = bool(questions) and _is_yes_no(questions[-1])
-    text = _normalized(student)
+    text = _INTERJECTION_QUESTION.sub(r"\1\2,", _normalized(student))
     if _DISTRESS.search(text):
         return None
     if HANDS_BACK.search(text):
@@ -971,6 +1130,26 @@ _SETS_UP = re.compile(
         )
     )
 )
+#: A statement that points at the line after it (the product's ``POINTS_AT``): "Here is your opener for tomorrow.",
+#: "Copy and paste this to him.", "Fire this off to him tonight.", "Okay. Try this one.", "Here goes."
+_POINTS_AT = re.compile(
+    r"\b(?:opener|one-liner|one liner|icebreaker|wording|template)\b|\b(?:copy|paste)\b|\bfire (?:this|it|that|one|"
+    r"these) off\b|\bfire off\b|\bdrop (?:him|her|them) a\b|\bhere goes\b|\b(?:try|use|go with|lead with|start with|"
+    r"open with) (?:this|that|these)\b|\b(?:this|that) one\s*[.!…]*[\"'”’)\]*_]*\s*$|\b(?:below|as follows|"
+    r"something like)\b|\bhere(?:'s| is| are) (?:your|my|a|an|one|two|something|some)\b[^:]*$|\b(?:adapt|tweak|borrow|"
+    r"reuse)\b|\bon the phone\b|\bget (?:him|her|them) on\b|\bwhen you (?:call|ring|see|meet|talk to|speak to|"
+    r"speak with|get hold of) (?:him|her|them)\b",
+    re.IGNORECASE,
+)
+#: A role taken for a practice round, with any name after it (the product's ``TAKES_ROLE``, read as written).
+_TAKES_ROLE = re.compile(
+    r"\b(?:[Ii]'ll be|[Ii] will be|[Ii]'ll play|[Ii]'ll take|[Pp]icture me as|[Ii]magine me as|[Tt]reat me as|"
+    r"[Tt]hink of me as)\s+(?:[A-Z]|(?:the|your|a|an|one of|dr|mr|ms|mrs|prof)\b)|\b(?:[Ii]'m|[Ii] am|"
+    r"[Ii]magine (?:I'm|I am)|[Pp]retend (?:I'm|I am))\s+(?:[A-Z][a-z]|(?:the|your|dr|mr|ms|mrs|prof)\b)|"
+    r"\b[Ii]magine I (?:run|own|manage|work at|am)\b|\b[Yy]ou're pitching (?:to )?me\b"
+)
+#: Most words of a statement that goes on with the set-up before it (the product's ``GOES_ON_MAX_WORDS``).
+_GOES_ON_MAX_WORDS = 8
 #: A note to someone else: a salutation, or a line that opens on a titled name (the product's ``SALUTATION``,
 #: ``TITLED_NAME``).
 _SALUTATION = re.compile(
@@ -1014,8 +1193,42 @@ def _hand_back_candidate(coach: str, at: int, sentence: str) -> bool:
         return False
     if statement is not None and (_SALUTATION.search(statement) or _TITLED_NAME.match(statement)):
         return False
-    lowered = (statement or "").lower()
-    return not (statement is not None and (_SETS_UP.search(lowered) or _ANNOUNCES.search(lowered)))
+    return not (statement is not None and _set_up(before, sentence, statement))
+
+
+def _sets_up_line(statement: str) -> bool:
+    """Whether ``statement`` sets up the line after it (the product's ``setsUpLine``)."""
+    written = statement.translate(_APOSTROPHES)
+    lowered = written.lower()
+    return bool(
+        _SETS_UP.search(lowered)
+        or _ANNOUNCES.search(lowered)
+        or _POINTS_AT.search(lowered)
+        or _TAKES_ROLE.search(written)
+    )
+
+
+def _heading_above(before: str, sentence: str, statement: str) -> bool:
+    """Whether ``statement`` is a heading on its own line right above the question (the product's ``headingAbove``)."""
+    if _ANY_LIST_ITEM.match(statement):
+        return False
+    at = before.rfind(statement)
+    if at < 0 or before[before.rfind("\n", 0, at) + 1 : at].strip():
+        return False
+    if not re.match(r"[ \t]*\n", (before + sentence)[at + len(statement) :]):
+        return False
+    return bool(re.match(r"(?:\*\*|__|#)", statement)) or not re.search(r"[.!?…:;,][\"'”’)\]*_]*$", statement)
+
+
+def _set_up(before: str, sentence: str, statement: str) -> bool:
+    """Whether the last statement before the question sets it up (the product's ``setUp``): it sets up a line, is a
+    heading over it, or is a short one going on with a set-up right before it ("Let's practise. I'm Sarah.")."""
+    if _sets_up_line(statement) or _heading_above(before, sentence, statement):
+        return True
+    if len(statement.split()) > _GOES_ON_MAX_WORDS:
+        return False
+    prior = _last_statement(before[: before.rfind(statement)])
+    return prior is not None and _sets_up_line(prior)
 
 
 def in_hand_back(coach: str, question: str) -> bool:

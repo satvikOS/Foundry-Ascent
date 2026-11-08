@@ -345,7 +345,11 @@ describe('conversation craft in the system prompt', () => {
     // it"); a reading by shape alone keeps the notes' agenda; a line written for the founder to say or send, or said in
     // character, goes in double quotes, on a call too; a question asked again by subject is left out only from the
     // trailing run of unquoted questions put to the founder, wherever its paragraph starts, never the line a sentence
-    // before it sets up; a message in distress keeps the reply and the safety path it had.
+    // before it sets up; a message in distress keeps the reply and the safety path it had. Its seventh review (same
+    // release): fresh casual no-answers are no longer vetoed by a leading "cant", an interjection's "?", "only" or a
+    // tagged "i think", negation-free not-done wordings are heard, the founder's own state is distress (and the hedged
+    // line says to answer how they are first), and an unquoted line pointed at, a named role or a heading keeps its
+    // question.
     expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.6');
   });
 });

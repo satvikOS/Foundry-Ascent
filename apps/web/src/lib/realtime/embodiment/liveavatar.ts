@@ -28,6 +28,7 @@ import {
 } from './face-media';
 import { LiteControl, type LiteSocket } from './lite-socket';
 import { LiteSpeaker, type LiteReport } from './lite-speaker';
+import { withoutQuoteMarks } from '../spoken-text';
 
 export type { FaceAudioTap, FaceMediaElement, FaceTapMode } from './face-media';
 
@@ -812,7 +813,8 @@ export class LiveAvatarFace implements AvatarProvider {
             return;
           }
           published = true;
-          this.command('avatar.speak_text', { text: unit.text }).catch(() => {
+          // A drafted line's quote marks are never said (the coach quotes such lines; the caption keeps them).
+          this.command('avatar.speak_text', { text: withoutQuoteMarks(unit.text) }).catch(() => {
             end('failed');
           });
           const poll = (waited: number) => {

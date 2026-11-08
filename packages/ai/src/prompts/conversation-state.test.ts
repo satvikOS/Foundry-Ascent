@@ -596,6 +596,10 @@ describe('a founder with no answer, and a goal ahead of them (production, 2026-1
       'If so: acknowledge it in a few plain words, without judgement; do not ask it again in any',
     );
     expect(block).toContain('If they did\n  answer, build on what they said.');
+    // Round 7: a founder telling how they are, read as a no-answer, is answered as a person first.
+    expect(block).toContain(
+      'If they are telling you how they are rather than answering, respond to that\n  first and leave the question.',
+    );
   });
 
   it.each([

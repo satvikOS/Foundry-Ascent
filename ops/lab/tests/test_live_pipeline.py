@@ -1750,3 +1750,82 @@ def test_a_line_set_up_quoted_or_mid_reply_is_no_reask(coach: str) -> None:
         T("1.2", "i dont know", coach),
     ]
     assert "reasked_after_unknown" not in run_checks(call).codes(), coach
+
+
+# Review of the 2026-11-07 fix, round 7: fresh casual no-answers that rules vetoed or no grammar heard, the student's
+# own state kept out as distress, and unquoted lines pointed at, named roles and headings kept whole (the product's
+# ``noAnswerFlags``, ``inDistress`` and validators/social.ts ``setUp``).
+_ROUND7_NO_ANSWERS = [
+    "cant tell you",
+    "Honestly? No idea.",
+    "nah we only talked about the pilot",
+    "he only talked about the tech",
+    "i meant to text him but i got busy",
+    "i was gonna but life happened",
+    "hes ignoring me i think",
+    "we ran outta time",
+    "i was too busy",
+    "uhh i kinda skipped that part",
+    "i kept putting it off",
+    "i chickened out",
+    "zip, nada",
+    "kinda fuzzy on that",
+    "he brushed it off",
+    "your guess is as good as mine",
+    "im in the dark on that",
+    "he gave me a non answer",
+    "the email is still sitting in my drafts",
+    "crickets",
+]
+_ROUND7_DISTRESS = [
+    "not sure i can keep going tbh",
+    "i dont know how to keep going",
+    "im not in a good place",
+    "i dont see the point",
+    "i dont think im cut out for this",
+    "i dont feel anything",
+    "i havent been ok",
+    "nothing is working",
+]
+
+
+@pytest.mark.parametrize("student", _ROUND7_NO_ANSWERS)
+def test_a_fresh_casual_no_answer_is_heard(student: str) -> None:
+    assert no_answer(student, "So who sits in those layers?")
+    call = [
+        T("1.1", "getting product to market", _FIRST),
+        T("1.2", "there are a few layers of sign-off to get through", "So who sits in those layers?"),
+        T("1.3", student, "No worries, that is common at this stage. Is monitoring time reimbursable?"),
+    ]
+    assert "reasked_after_unknown" in run_checks(call).codes()
+
+
+@pytest.mark.parametrize("student", _ROUND7_DISTRESS)
+def test_the_students_own_state_is_never_a_no_answer(student: str) -> None:
+    assert no_answer_reading(student, _R1) is None
+    assert no_answer_reading(student, "So who sits in those layers?") is None
+
+
+def test_a_bare_no_beside_a_shape_is_read_by_shape() -> None:
+    assert no_answer_reading("no, clinics wont pay monthly", "So who sits in those layers?") == "shape"
+
+
+@pytest.mark.parametrize(
+    "coach",
+    [
+        "That's fine. I'll be Sarah, the practice manager. Is monitoring time reimbursable?",
+        "No problem. Let's practise. I'm Sarah from the clinic. So is the monitoring time reimbursable?",
+        "Sure. Picture me as the clinic director. Is monitoring time reimbursable?",
+        "No worries. Copy and paste this to him. Is monitoring time reimbursable?",
+        "No worries. Here is your opener for tomorrow. Is monitoring time reimbursable?",
+        "Okay. Try this one. Is monitoring time reimbursable?",
+        "That is normal. Send this tonight.\n\nQuick one on the insole. Is monitoring time reimbursable?",
+        "**For your advisor**\n\nWhich device class would you put the insole in? Is monitoring time reimbursable?",
+    ],
+)
+def test_a_line_pointed_at_a_named_role_or_a_heading_is_no_reask(coach: str) -> None:
+    call = [
+        T("1.1", "getting product to market", _FIRST),
+        T("1.2", "i dont know", coach),
+    ]
+    assert "reasked_after_unknown" not in run_checks(call).codes(), coach

@@ -11,6 +11,7 @@ import {
   startCall,
 } from './call-api';
 import type { CallAudioContext, CallEngineDeps } from './call-engine';
+import { withoutQuoteMarks } from './spoken-text';
 
 /** The engine's dependencies in a real browser: the calls API, Web Audio, WebSocket and the clock. */
 export function browserCallDeps(
@@ -45,7 +46,7 @@ export function browserCallDeps(
         new AudioWorkletNode(context as unknown as BaseAudioContext, name, options),
       createSocket: (url) => new WebSocket(url),
       synthesis,
-      createUtterance: (text) => new SpeechSynthesisUtterance(text),
+      createUtterance: (text) => new SpeechSynthesisUtterance(withoutQuoteMarks(text)),
       watchDevices:
         typeof mediaDevices?.addEventListener === 'function'
           ? (listener: () => void) => {

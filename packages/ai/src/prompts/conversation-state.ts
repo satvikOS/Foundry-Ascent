@@ -248,7 +248,7 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
   ],
   [
     'repair',
-    /(?:\b(?:that's not what i (?:meant|said|asked|was asking)|that isn't what i (?:meant|said|asked)|you misunderstood|you misread|you got (?:that|it|me) wrong|i didn't (?:mean|say|ask) that|you (?:were|are) wrong|(?:that's|that is|that was) (?:not right|wrong|incorrect|not true|not correct)|you made a mistake|you said (?:something )?wrong|correction:)\b|^(?:no|nope|not quite|not exactly|sorry|wait)[,.!]?\s+(?:i|what i)\s+(?:meant|mean|was asking|asked|said)\b|^i meant\b)/,
+    /(?:\b(?:that's not what i (?:meant|said|asked|was asking)|that isn't what i (?:meant|said|asked)|you misunderstood|you misread|you got (?:that|it|me) wrong|i didn't (?:mean|say|ask) that|you (?:were|are) wrong|(?:that's|that is|that was) (?:not right|wrong|incorrect|not true|not correct)|you made a mistake|you said (?:something )?wrong|correction:)\b|^(?:no|nope|not quite|not exactly|sorry|wait)[,.!]?\s+(?:i|what i)\s+(?:meant|mean|was asking|asked|said)\b|^i meant\b(?![^.;!?]*\bbut\b))/,
   ],
   [
     // "I'm not sure what you mean" asks for the question again, never an answer to it in its place.
@@ -461,9 +461,9 @@ function saysNoAnswer(clause: string): boolean {
 export const NO_ANSWER_MAX_WORDS = 14;
 
 /** Words before a no-answer that keep it one ("ugh no", "nah", "honestly", "tbh"), and "but" before one. */
-const NA_LEAD = String.raw`(?:^|\bbut )(?:(?:no|nope|nah|naw|honestly|um+|uh+|ugh|hm+|well|sorry|so|oh|yeah|yea|actually|tbh|lol|ok|okay|man|and|also|plus)[,.!]* )*`;
+const NA_LEAD = String.raw`(?:^|\bbut )(?:(?:no|nope|nah|naw|honestly|um+|uh+|ugh|hm+|well|sorry|so|oh|oops|whoops|ah|argh|meh|eh|yeah|yea|actually|tbh|lol|ok|okay|man|and|also|plus)[,.!]* )*`;
 /** Words around the verb that keep it a no-answer ("i honestly dont rly know", "never really got to it"). */
-const NA_ADVERBS = String.raw`(?:(?:really|rly|realy|honestly|just|actually|still|totally|even|ever|yet|kinda|kind of|sort of|completely|already|quite|truly|exactly|properly|personally|tbh),? )*`;
+const NA_ADVERBS = String.raw`(?:(?:really|rly|realy|honestly|just|actually|still|totally|even|ever|yet|kinda|kind of|sort of|sorta|completely|already|quite|truly|exactly|properly|personally|tbh),? )*`;
 /** The founder as the subject, or none ("didnt get to it", "never asked"). */
 const NA_SELF = String.raw`(?:(?:i|we|i've|we've|i'm|we're) )?`;
 /** A negation of something done, however typed (`normalize` puts the apostrophes back; "hvnt", "cldnt", "ddnt"). */
@@ -512,7 +512,7 @@ const NO_ANSWER_PREDICATE = new RegExp(
     String.raw`${NA_LEAD}${NA_OTHER} ${NA_ADVERBS}(?:${NA_NOT_DONE}|${NA_NOT_NOW}|won't|wouldn't|would not|will not) ${NA_ADVERBS}(?:been |even |yet )?${NA_RESPONSE}`,
     String.raw`${NA_LEAD}(?:nobody|no one|noone|no-one|none of them|neither of them)(?: (?:at|from|in) (?:the |my |our )?[\w'-]+)? (?:(?:has|have|had|ever|really|actually|yet|even) )*(?:${NA_RESPONSE}|${NA_DONE_VERB})`,
     // Someone else is unavailable: "the advisor ghosted me", "he went quiet", "hes been quiet".
-    String.raw`${NA_LEAD}(?:${NA_OTHER}|he's|she's|hes|shes|they've|theyve|they're|theyre) (?:(?:has|have|had|just|kind of|kinda|totally|completely|been|kept|keeps|was|were|is|are|too|so|super|really|still) )*(?:ghosted|ghosting|went quiet|gone quiet|been quiet|is quiet|quiet|went silent|gone silent|been silent|silent|mia|awol|been away|is away|away|been busy|is busy|busy|swamped|slammed|dropped off|disappeared|vanished|went dark|gone dark|cancel+ed|bailed|flaked|no-?showed|left (?:me|us|it) on read|on (?:vacation|holiday|leave|pto)|out of (?:the )?office|ooo|out sick|off sick|travel+ing)\b`,
+    String.raw`${NA_LEAD}(?:${NA_OTHER}|he's|she's|hes|shes|they've|theyve|they're|theyre) (?:(?:has|have|had|just|kind of|kinda|totally|completely|been|kept|keeps|was|were|is|are|too|so|super|really|still) )*(?:ghosted|ghosting|went quiet|gone quiet|been quiet|is quiet|quiet|went silent|gone silent|been silent|silent|mia|awol|been away|is away|away|been busy|is busy|busy|swamped|slammed|dropped off|disappeared|vanished|went dark|gone dark|cancel+ed|bailed|flaked|no-?showed|left (?:me|us|it) on read|on (?:vacation|holiday|leave|pto)|out of (?:the )?office|ooo|out sick|off sick|travel+ing|ignoring (?:me|us|my|our|it)|ignored (?:me|us|my|our|it))\b`,
     // Not yet, said without a negation: "he left me on read", "i got distracted", "its still on my list", "tbd", "ill
     // have to check", "ask me later", "i dropped the ball", "i keep forgetting to ask", "i aint got a clue".
     // The meeting moved, or the person said nothing of substance: "we rescheduled", "the meeting fell through", "he
@@ -520,17 +520,44 @@ const NO_ANSWER_PREDICATE = new RegExp(
     String.raw`${NA_LEAD}(?:we|i|they|he|she|${NA_OTHER}) (?:(?:had|have|has|just|kinda|kind of|already) (?:to )?)*(?:rescheduled?|postponed?|pushed (?:it|the (?:meeting|call)) back|called it off)\b`,
     String.raw`${NA_LEAD}${NA_EVENT} (?:(?:kind of|kinda|just|totally) )?(?:fell through|fell apart|got scrapped|was scrapped|didn't pan out|never happened)\b`,
     String.raw`${NA_LEAD}(?:${NA_OTHER}|he's|she's|hes|shes) (?:(?:kind of|kinda|sort of|totally|pretty|really|super|just|was|were|is|been) )*(?:dodged|ducked|sidestepped|side-stepped|avoided|skirted|deflected)(?: (?:it|that|the question|the topic|them|both))?\b|${NA_LEAD}(?:${NA_OTHER}) (?:was|were|is|been|got) (?:(?:kind of|kinda|sort of|pretty|really|super|very|totally|so) )*(?:vague|evasive|noncommittal|non-committal|cagey|unclear|wishy-washy|rushed|distracted|in a rush)\b`,
-    String.raw`\b(?:ran|run|running) out of time\b`,
-    String.raw`\b(?:left (?:me|us|it) on read|got nothin'?g?|got (?:distracted|sidetracked|side-tracked|busy|swamped|slammed)|(?:it's|its|that's|thats|it is|that is) (?:still )?on (?:my|the|our) (?:list|to-?do(?: list)?|radar)|(?:still )?working on (?:it|that)|still (?:figuring|working|looking|sorting) (?:it |that )?(?:out|on it|into it)|tbd|to be determined|ask me (?:later|again|another time)|(?:i'll|i will|i'd|i need to|i have to|i gotta|gotta|let me|i should|need to|have to) (?:have to |need to )?(?:check|find out|double-?check|ask(?: (?:him|her|them|around|the advisor))?|look (?:into it|it up|into that)|get back to you(?: on (?:it|that))?)(?: (?:on (?:it|that)|first|tbh|honestly))?$|dropped the ball|fell through the cracks|slipped through the cracks|(?:keep|kept) forgetting|ain't got (?:a |any |the )?(?:clue|idea)|haven't (?:the|a) (?:faintest|foggiest|slightest)|not the (?:faintest|foggiest|slightest)|(?:i'm|i am|im) (?:so |totally |completely |just |a bit )?(?:clueless|drawing a blank|blanking))\b`,
+    String.raw`\b(?:ran|run|running) (?:out of|outta) time\b`,
+    String.raw`\b(?:left (?:me|us|it) on read|got nothin'?g?|got (?:distracted|sidetracked|side-tracked|busy|swamped|slammed)|(?:it's|its|that's|thats|it is|that is) (?:still )?on (?:my|the|our) (?:list|to-?do(?: list)?|radar)|(?:still )?working on (?:it|that)|still (?:figuring|working|looking|sorting) (?:it |that )?(?:out|on it|into it)|tbd|to be (?:determined|decided|confirmed)|ask me (?:later|again|another time)|(?:i'll|ill|i will|i'd|i need to|i have to|i gotta|gotta|let me|i should|need to|have to) (?:have to |need to )?(?:check|find out|double-?check|ask(?: (?:him|her|them|around|the advisor))?|look (?:into it|it up|into that)|get back to you(?: on (?:it|that))?)(?: (?:on (?:it|that)|first|tbh|honestly))?$|dropped the ball|fell through the cracks|slipped through the cracks|(?:keep|kept) forgetting|ain't got (?:a |any |the )?(?:clue|idea)|haven't (?:the|a) (?:faintest|foggiest|slightest)|not the (?:faintest|foggiest|slightest)|(?:i'm|i am|im) (?:so |totally |completely |just |a bit )?(?:clueless|drawing a blank|blanking))\b`,
+    // Not done, said without a negation (review of the 2026-11-07 fix, round 7): "i was too busy", "skipped it", "i put it
+    // off", "i kept putting it off", "back burner", "i chickened out", "he brushed it off", "kinda fuzzy on that", "im in
+    // the dark on that", "your guess is as good as mine", "he gave me a non answer", "zip, nada", "it slipped through",
+    // "my bad, totally slipped", "the email is still sitting in my drafts", "been heads down on the build".
+    String.raw`^${NA_LEAD}${NA_SELF}(?:was |were |am |are |been |have been |got )?${NA_ADVERBS}(?:way |so )?too (?:busy|swamped|slammed)\b`,
+    String.raw`^${NA_LEAD}${NA_SELF}${NA_ADVERBS}skipped(?: (?:it|that|this|over (?:it|that))(?: (?:part|bit|one|step))?)?(?: (?:tbh|honestly|sorry|lol|lmao|oops|man|for now|again|entirely|completely))*$`,
+    String.raw`\b(?:put|putting|puts) (?:it|that|this|them) off\b|\bback[- ]?burner\b|\bchicken(?:ed)? out\b|\b(?:lost|lose) (?:my|our) nerve\b`,
+    String.raw`\b(?:brushed|brushes|brush|waved|shrugged|laughed) (?:it |me |that |the question |them )?off\b`,
+    String.raw`\b(?:fuzzy|hazy|foggy) (?:on|about)\b|\bin the dark\b|\bguess is as good as mine\b|\bnon-? ?answers?\b`,
+    String.raw`^${NA_LEAD}(?:zip|nada|zilch)(?:[,.!]* (?:zip|nada|zilch))*(?: (?:lol|tbh|honestly|sorry|man))*$`,
+    String.raw`^${NA_LEAD}(?:(?:it|that|this) )?${NA_ADVERBS}slipped(?: through(?: the cracks)?| away)?(?: (?:tbh|honestly|sorry|lol|my bad|on me))*$`,
+    String.raw`\b(?:still )?(?:sitting |stuck )?in (?:my|the) drafts?(?: folder)?\b`,
+    // "i keep meaning to ask", "i procrastinated on it", "we kept missing each other", "had zero time", "life got in the
+    // way", "we talked about other stuff", "the call got cut short", "search me".
+    String.raw`\b(?:keep|kept|been|was|were) meaning to\b|\bprocrastinat\w*|\b(?:kept|keep|been) missing each other\b|\bmissed each other\b|\bphone tag\b|\b(?:had|have|got) (?:no|zero|little|barely any) time\b|\bsearch me\b`,
+    String.raw`^${NA_LEAD}(?:work|life|things|stuff|it all|everything) (?:just )?(?:got|has been|was|been) (?:so |really |super |too )?(?:crazy|busy|hectic|mental|in the way|away from me)\b|\blife happened\b`,
+    String.raw`^${NA_LEAD}(?:we|he|she|they|i) (?:(?:mostly|just|only|kinda|kind of) )?(?:talked|chatted|spoke) about (?:other|different) (?:stuff|things|topics)\b|\btalked about something else\b`,
+    String.raw`^${NA_LEAD}${NA_EVENT} (?:(?:got|was|just) )+(?:cut short|cut off|interrupted)\b`,
+    // "total blank", "my mind went blank", "he gave a vague answer", "it was unclear", "i missed the meeting", "i was sick
+    // that day", "crickets", "radio silence", "hes awol".
+    String.raw`\b(?:total|complete|totally|completely) blank\b|\bmind (?:is|went|was|'s) (?:totally |completely |a )?blank\b|\bwent blank\b`,
+    String.raw`\b(?:gave|got|had|giving) (?:me |us )?(?:a |an )?(?:(?:really|pretty|kinda|super|very) )?(?:vague|wishy-washy|fuzzy|unclear|non-?committal|half) ?(?:answer|reply|response)\b`,
+    String.raw`^${NA_LEAD}(?:it|that|he|she|they|the answer|his answer)(?:'s| is| was| were| stayed| seemed) (?:(?:kinda|kind of|pretty|really|super|very|still|all|a bit|totally) )*(?:unclear|vague|fuzzy|murky|up in the air)\b`,
+    String.raw`^${NA_LEAD}${NA_SELF}${NA_ADVERBS}(?:missed|skipped|blew off|bailed on|cancel+ed|had to cancel|couldn't make)(?: (?:the |our |my |that )?(?:meeting|call|session|appointment|chat|catch-?up|follow-?up|intro|demo)\b| it$|$)`,
+    String.raw`^${NA_LEAD}(?:i|we) (?:was|were|got|have been|'ve been) (?:(?:really|super|so|kinda|out|off) )*(?:sick|ill|unwell)\b`,
+    String.raw`^${NA_LEAD}(?:just )?(?:crickets|radio silence|(?:total |complete )?silence|(?:he's |hes |she's |shes |they're |theyre )?(?:mia|awol))(?: (?:so far|lol|tbh|honestly|from him|from her|from them))*$`,
+    String.raw`^${NA_LEAD}(?:i've |we've |i was |we were |i'm |we're |i have |we have )?(?:been )?${NA_ADVERBS}(?:heads[- ]down|swamped|slammed|buried|flat out|tied up|snowed under)(?: (?:on|with|in) .*)?$`,
     // Someone said they would come back to it, and has not: "he said hed get back to me", "she said shed get back to me but hasnt".
     String.raw`\b(?:said|says|promised)(?: that)? (?:he|she|they|he'd|she'd|they'd|hed|shed|theyd)(?:'d| would| will|'ll| was going to| were going to| was gonna| were gonna)? (?:get back|reply|respond|email|call|text|write|send|follow up|look into it|check|find out|let (?:me|us) know)\b`,
     // The meeting did not happen or was called off.
     String.raw`${NA_LEAD}${NA_EVENT} ${NA_ADVERBS}(?:${NA_NOT_DONE}) ${NA_ADVERBS}(?:happen|happened|take place|taken place|took place|go ahead|gone ahead|went ahead|work out|worked out|come together|get scheduled|got scheduled|get booked|got booked)\b`,
     String.raw`${NA_LEAD}${NA_EVENT} (?:(?:got|was|has been|been|is|keeps getting|kept getting|just) )+(?:cancel+ed|postponed|pushed|moved|rescheduled|delayed|called off|dropped|bumped)\b`,
     // A bare doubt, or nothing heard yet: "idk", "not sure", "zero idea", "no word from him yet", "still waiting on him".
-    String.raw`\b(?:idk|dunno|unsure|not (?:really |totally |entirely |quite |too |that )?sure|no idea|zero idea|no clue|zero clue|not a clue|beats me|who knows|no (?:word|reply|replies|response|news|update|luck)(?: (?:yet|back|so far))?|nothing (?:yet|so far|back|from (?:him|her|them))|still waiting|(?:waiting|wait) (?:on|for) (?:him|her|them|a reply|an answer|a response|his|her|their|word|news)|waiting to hear)\b`,
+    String.raw`\b(?:idk|dunno|idunno|idonno|donno|unsure|not (?:really |totally |entirely |quite |too |that )?sure|no idea|zero idea|no clue|zero clue|not a clue|beats me|who knows|no (?:word|reply|replies|response|news|update|luck)(?: (?:yet|back|so far))?|nothing (?:yet|so far|back|from (?:him|her|them))|still waiting|(?:waiting|wait) (?:on|for) (?:him|her|them|a reply|an answer|a response|his|her|their|word|news)|waiting to hear)\b`,
     // They forgot: "totally forgot tbh", "i blanked on it", "it slipped my mind".
-    String.raw`${NA_LEAD}${NA_SELF}${NA_ADVERBS}(?:forgot|forget|spaced|blanked|zoned out|lost track|ran out of time|had no time)\b|\b(?:it|that) (?:totally |completely )?slipped my mind\b`,
+    String.raw`${NA_LEAD}${NA_SELF}${NA_ADVERBS}(?:forgot|forget|spaced|blanked|zoned out|lost track|ran (?:out of|outta) time|had no time)\b|\b(?:it|that) (?:totally |completely )?slipped my mind\b`,
     // "not something we got to", "thats not something i looked at".
     String.raw`${NA_LEAD}(?:(?:that's|that is|it's|it is|its) )?not something (?:i|we)(?:'ve| have)? ${NA_ADVERBS}(?:${NA_DONE_VERB}|thought about|looked (?:at|into))`,
   ].join('|'),
@@ -547,11 +574,30 @@ const NEGATION =
   /n't\b|\b(?:h[ae]?v|h[ae]s|had|di?d|does|do|w[ae]s|w[eu]re|c[ou]{0,2}ld|w[ou]{0,2}ld|sh[ou]{0,2}ld|is|are|ca|wo)nt\b|\b(?:not|never|nothing|nobody|no one|none|neither|nope|nah|no|idk|dunno|unsure|uncertain|clueless|waiting)\b/;
 
 /**
+ * A word that says it was not done or not known, without a negation ("forgot", "skipped", "swamped", "pending",
+ * "unanswered", "crickets", "vague", "a blur", "short on time", "pulled into other stuff"): a doubt marker of the shape
+ * reading like a negation ({@link noAnswerShape}; review of the 2026-11-07 fix, round 7: fresh casual wordings without a
+ * negation were missed one phrase at a time). What it alone reads is hedged and keeps the notes' agenda.
+ */
+const NOT_DONE_MARKER =
+  /\b(?:forg[eo]t(?:ten)?|forgetting|skipped|missed|busy|swamped|slammed|snowed under|heads[- ]down|procrastinat\w*|postponed|rescheduled|cancel+ed|ghost(?:ed|ing)|silence|silent|crickets|awol|mia|dodg(?:ed|ing)|ducked|ignor(?:ed|ing) (?:me|us|my|our|it)|pending|unanswered|undecided|tbd|blank(?:ed)?|blur|fuzzy|hazy|foggy|vague|unclear|murky|sidetracked|distracted|(?:caught|tied) up|pulled (?:in|into|away)|put (?:it|that|this) off|(?:out of|outta|short on|no) time|meaning to|chicken(?:ed)? out|slipped|bailed|flaked|travel+ing|out of (?:town|office)|not around|unreachable|later|eventually|to be (?:decided|determined|confirmed|seen)|(?:was|were|been|is|are) (?:out|away)(?! of\b))\b/;
+
+/** What was covered instead of the answer ("we only talked about the pilot", "he only talked about the tech"). */
+const ONLY_COVERED_VERB = String.raw`(?:talked|discussed|covered|went over|got (?:to|into)|asked about|mentioned|spoke about|focused on|touched on|chatted about|cared about)\b`;
+/**
+ * A clause that says only something else was covered: "he only talked about the tech" (no negation in it, so the shape
+ * reading hears it here; review of the 2026-11-07 fix, round 7).
+ */
+const ONLY_COVERED = new RegExp(
+  String.raw`\b(?:i|we|he|she|they|${NA_OTHER}) (?:(?:really|kinda|kind of|mostly|basically) )?(?:only|just) (?:really )?${ONLY_COVERED_VERB}`,
+);
+
+/**
  * An intention that did not come off ("my cofounder was supposed to ask but didnt", "we were supposed to meet but he
  * cancelled", "i meant to email him but"): no answer, whatever follows the "but".
  */
 const UNDONE_INTENTION =
-  /\b(?:was|were|am|are|i'm|we're|is) (?:supposed|meant|meaning|planning|going|gonna) to\b[^,.;]*\bbut\b/;
+  /\b(?:(?:was|were|am|are|i'm|we're|is) (?:supposed|meant|meaning|planning|going|gonna) to|(?:i|we|he|she|they|my [\w'-]+|our [\w'-]+) (?:(?:really|totally|fully|kinda|kind of|honestly|always) )?(?:meant|planned|wanted|intended|(?:was|were) (?:gonna|going|planning|meaning|supposed))(?: to)?)\b[^,.;]*\bbut\b/;
 
 /** A clause of interjections alone ("no", "nope", "um no", "nah not really"). */
 const ONLY_INTERJECTIONS =
@@ -572,11 +618,11 @@ const NOT_YET_REPORTED = new RegExp(
     String.raw`\b(?:said|says|promised)(?: that)? (?:he|she|they|he'd|she'd|they'd|hed|shed|theyd)(?:'d| would| will|'ll| was going to| were going to| was gonna| were gonna)? (?:get back|reply|respond|email|call|text|write|send|follow up|look into it|check|find out|let (?:me|us) know)\b`,
     String.raw`\bbut(?= (?:(?:he|she|they|nobody|no one|(?:the|my|our) [\w'-]+) )?(?:still |really |actually |just |kind of |kinda )?(?:hasn't|has not|haven't|have not|hadn't|didn't|did not|never|won't|wouldn't|wasn't|weren't|couldn't|isn't|nothing|no (?:reply|word|response|answer|luck)|cancel+ed|bailed|flaked|postponed|rescheduled|pushed it|called it off|ghosted|went quiet|went silent|got (?:sick|busy|cancel+ed|pushed|postponed|moved|bumped)|was busy|forgot|no-?showed)\b)`,
     // "i forget what he said": what was said is not reported.
-    String.raw`\b(?:forgot|forget|can't remember|cannot remember|don't remember|don't recall|can't recall) (?:exactly )?what (?:he|she|they|the [\w'-]+|my [\w'-]+) (?:said|told me|thinks|thought|says)\b`,
+    String.raw`\b(?:forgot|forget|can't remember|cannot remember|don't remember|don't recall|can't recall|no (?:idea|clue)|not sure|unsure|don't know|dunno|idk) (?:exactly )?what (?:he|she|they|we|the [\w'-]+|my [\w'-]+) (?:said|told me|thinks|thought|says|said about)\b`,
     // "its still on my list": not done yet, no "it's" of an answer.
-    String.raw`\b(?:it's|its|it is) (?:still )?on (?:my|the|our) (?:list|to-?do(?: list)?|radar)\b`,
+    String.raw`\b(?:it's|its|it is) (?:still )?(?:on (?:my|the|our) (?:list|to-?do(?: list)?|radar)|pending|up in the air|unclear|tbd|undecided|a blur|(?:all )?(?:fuzzy|hazy|foggy))\b`,
     // "supposed to ask but…": the intention did not come off, so the contrast states no answer ({@link UNDONE_INTENTION}).
-    String.raw`(?<=\b(?:supposed|meant|meaning|planning|going|gonna) to\b[^,.;]*)\bbut\b`,
+    String.raw`(?<=\b(?:(?:supposed|meant|meaning|planning|going|gonna) to|(?:i|we|he|she|they) (?:(?:really|totally|fully|kinda|kind of|honestly|always) )?(?:meant|planned|wanted|intended|(?:was|were) (?:gonna|going)))\b[^,.;]*)\bbut\b`,
   ].join('|'),
   'g',
 );
@@ -594,15 +640,33 @@ const ANSWER_SUBSTANCE = new RegExp(
     String.raw`\b(?:it's|its|it is)\b(?! (?:not|never)\b)`,
     String.raw`\b(?:probably|likely|maybe|perhaps|because|cause|cuz|apparently|i think|i guess|i bet|i believe)\b`,
     String.raw`\bclass (?:i{1,3}|one|two|three)\b`,
-    String.raw`\b(?:but|only|instead|rather|except)\b`,
+    // "he only talked about the tech" says what was covered instead of the answer: no alternative of its own.
+    String.raw`\b(?:but|instead|rather|except)\b|\bonly\b(?! (?:really )?${ONLY_COVERED_VERB})`,
     String.raw`\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b|\b(?:tomorrow|tonight|today|next (?:week|month)|this (?:week|month|afternoon|evening|morning))\b`,
   ].join('|'),
   'u',
 );
 
+/** A hedge tagged on at the end ("hes ignoring me i think"): no answer of its own. */
+const TAG_HEDGE = /,?\s*\b(?:i think|i guess|i believe|i reckon|i suppose)[.!…]*$/;
+
 /** Whether `text` (normalised) carries an answer of its own ({@link ANSWER_SUBSTANCE}). */
 function carriesAnswer(text: string): boolean {
-  return ANSWER_SUBSTANCE.test(text.replace(NEGATED_REPORT, ' ').replace(NOT_YET_REPORTED, ' '));
+  return ANSWER_SUBSTANCE.test(
+    text.replace(TAG_HEDGE, '').replace(NEGATED_REPORT, ' ').replace(NOT_YET_REPORTED, ' '),
+  );
+}
+
+/**
+ * A question of interjections alone before more of the message ("Honestly? No idea.", "tbh? havent asked"): it asks
+ * nothing, so it never vetoes a no-answer (review of the 2026-11-07 fix, round 7).
+ */
+const INTERJECTION_QUESTION =
+  /(^|[.!?]\s)(honestly|tbh|seriously|truthfully|frankly|idk|dunno|um+|uh+|hm+|well|lol|lmao|ngl)\?+(?=\s+\S)/g;
+
+/** `t` (normalised) with its questions of interjections alone said as statements ({@link INTERJECTION_QUESTION}). */
+function withoutInterjectionQuestions(t: string): string {
+  return t.includes('?') ? t.replace(INTERJECTION_QUESTION, '$1$2,') : t;
 }
 
 /**
@@ -686,7 +750,15 @@ function noAnswerShape(clause: string, context: NoAnswerContext): NoAnswerReadin
   if (wordCount(clause) > NO_ANSWER_MAX_WORDS) return null;
   if (ONLY_INTERJECTIONS.test(clause)) return context.yesNo !== true && SAYS_NO.test(clause) ? 'said' : null;
   if (NO_ANSWER_PREDICATE.test(clause)) return 'said';
-  return NEGATION.test(clause) || UNDONE_INTENTION.test(clause) ? 'shape' : null;
+  const marked =
+    NEGATION.test(clause) ||
+    NOT_DONE_MARKER.test(clause) ||
+    UNDONE_INTENTION.test(clause) ||
+    ONLY_COVERED.test(clause);
+  if (!marked) return null;
+  // The founder's own state ("im not in a good place", "i dont feel anything", "i havent been ok") is no answer to
+  // give: never read as one by its shape (review of the 2026-11-07 fix, round 7; {@link SELF_STATE}).
+  return SELF_STATE.test(clause) ? null : 'shape';
 }
 
 /**
@@ -701,14 +773,28 @@ function noAnswerShape(clause: string, context: NoAnswerContext): NoAnswerReadin
  * the reply it always had. `moves`: the message's moves read without context.
  */
 function noAnswerFlags(
-  t: string,
+  text: string,
   context: NoAnswerContext,
   moves?: readonly FounderMove[],
 ): (NoAnswerReading | null)[] {
+  const t = withoutInterjectionQuestions(text);
   const clauses = clausesOf(t);
   const said = clauses.map((clause): NoAnswerReading | null => (saysNoAnswer(clause) ? 'said' : null));
   if (context.afterQuestion !== true || !shapeAllowsNoAnswer(t, moves ?? founderMoves(t))) return said;
-  const shaped = clauses.map((clause, i) => said[i] ?? noAnswerShape(clause, context));
+  // "i meant to text him but i got busy": the clause of the intention that did not come off is part of the no-answer.
+  const undone = UNDONE_INTENTION.test(t);
+  const read = clauses.map(
+    (clause, i) =>
+      said[i] ??
+      noAnswerShape(clause, context) ??
+      (undone && UNDONE_INTENTION.test(`${clause} but`) ? 'shape' : null),
+  );
+  // A bare "no" beside a clause read only by its shape ("no, clinics wont pay monthly") is as sure as that clause.
+  const shaped = read.includes('shape')
+    ? read.map((flag, i) =>
+        flag === 'said' && said[i] === null && ONLY_INTERJECTIONS.test(clauses[i] ?? '') ? 'shape' : flag,
+      )
+    : read;
   // By its shape, the no-answer is the whole message: a clause beside it that says something ("department heads mostly,
   // not the clinicians") makes the negation part of an answer.
   const rest = clauses.filter((_, i) => shaped[i] === null).join(' ');
@@ -726,7 +812,7 @@ function noAnswerClauses(t: string, context: NoAnswerContext, moves?: readonly F
  * own ("Not sure. Does it matter who pays?": that question is what to answer).
  */
 function hasNoAnswer(text: string, context: NoAnswerContext = {}, moves?: readonly FounderMove[]): boolean {
-  if (text.includes('?')) return false;
+  if (withoutInterjectionQuestions(text).includes('?')) return false;
   return noAnswerClauses(text, context, moves).some(Boolean);
 }
 
@@ -739,11 +825,50 @@ function hasNoAnswer(text: string, context: NoAnswerContext = {}, moves?: readon
 const DISTRESS =
   /\bany ?more\b|\bany longer\b|\b(?:i|we) (?:really |honestly |just |actually |even )*(?:don't|do not|dont) (?:really |even )?know what (?:i'm|i am|im|we're|we are) doing\b|\b(?:i|we) (?:really |honestly |just |simply |literally )*(?:can't|cannot|can not|cant) (?:do (?:it|this|that|any of (?:it|this))|handle|take|cope|keep (?:going|doing|up)|go on|deal|breathe|function|face)\b|\b(?:don't|do not) feel (?:safe|ok|okay|right|good|well)\b|\bnot (?:feeling )?safe\b|\bnothing matters\b|\bwhat's the point\b|\b(?:haven't|hasn't|have not|has not|not|barely|hardly) (?:eaten|slept|been eating|been sleeping)\b|\b(?:i'm|i am) not (?:doing )?(?:ok|okay|great|good|well|alright|all right|fine)\b|\b(?:no one|nobody) (?:is )?(?:helping|cares|listens|gets it)\b|\bnever wanted (?:any of )?(?:this|it)\b|\b(?:i|we) (?:feel|felt) (?:so |really |completely |totally )?(?:alone|lonely|hopeless|empty|numb|worthless|useless|trapped)\b|\bhopeless\b/;
 
-/** Whether the founder's message is in distress ({@link DISTRESS}): it keeps main's reply and the safety path. */
+/**
+ * The founder's own state and discouragement, said casually (review of the 2026-11-07 fix, round 7: these were read as
+ * no-answers and steered toward a business answer): "not sure i can keep going tbh", "i dont know how to keep going",
+ * "im not in a good place", "i dont see the point", "i dont think im cut out for this", "i dont feel anything", "i dont
+ * have it in me", "im not coping", "i havent been ok", "i dont know why i bother", "what to do with my life",
+ * "everything is falling apart", "not sure its worth it", "nothing is working", "i give up".
+ */
+const DISTRESS_STATE = new RegExp(
+  [
+    String.raw`\b(?:not (?:sure|certain)|(?:don't|do not) know|idk|doubt|wonder(?:ing)?)(?: if| whether| that)? (?:i|we) (?:can|could|will|'ll) (?:keep going|go on|carry on|keep (?:doing|this|it) up|keep at it|do (?:this|it)|handle|cope|make it)\b`,
+    String.raw`\b(?:can't|cannot|can not|couldn't) (?:keep going|go on|carry on|think straight|focus on anything|get out of bed)\b`,
+    String.raw`\b(?:don't|do not) know how (?:to|i can|i'll|i will|much longer) (?:keep going|go on|carry on|cope|keep (?:doing|this|it) up|do this|handle)\b`,
+    String.raw`\bnot in a (?:good|great|healthy|ok|okay|great) (?:place|headspace|head space|way|spot)\b|\bin a (?:bad|dark) (?:place|headspace|spot)\b`,
+    String.raw`\b(?:don't|do not|can't|cannot) see the point\b|\bwhat(?:'s| is) even the point\b|\bwhy (?:i|we) (?:even )?bother\b`,
+    String.raw`\bcut out for\b|\b(?:have|got) it in me\b|\bwhat to do with my life\b|\bfalling apart\b`,
+    String.raw`\b(?:don't|do not|can't|cannot) feel (?:anything|like myself|myself|like me)\b`,
+    String.raw`\b(?:don't|do not|haven't|have not) (?:have|got) (?:the |any )?(?:energy|strength|will|motivation)\b`,
+    String.raw`\bnot coping\b|\b(?:can't|cannot) cope\b|\b(?:haven't|have not|hasn't|has not) been (?:ok|okay|well|good|great|myself|alright|all right|sleeping|eating)\b`,
+    String.raw`\b(?:not|isn't|is not|never) (?:even |really )?worth it\b|\bworth it any ?more\b|\b(?:not sure|unsure|(?:don't|do not) know|idk|wonder(?:ing)?)(?: if| whether)? (?:it's|its|it is|this is|any of (?:this|it) is|it's all|i'm|im) (?:even |really |all )?worth (?:it|this)\b`,
+    String.raw`\bwhy (?:i'm|i am|we're|we are) (?:even |still )?doing (?:this|it|any of (?:this|it))\b`,
+    String.raw`\b(?:don't|do not) think (?:i|we) can(?: (?:do (?:this|it)|keep (?:going|doing (?:this|it))|go on|handle (?:it|this)|cope|make it))?$`,
+    String.raw`\bnothing(?:'s| is) working\b|\b(?:haven't|have not|hasn't) left (?:the|my) (?:house|room|bed|flat|apartment)\b|\b(?:didn't|couldn't|can't) get out of bed\b`,
+    String.raw`\b(?:i'm|i am)(?: (?:just|really|honestly|still|so|actually|kinda|kind of))* not (?:doing )?(?:ok|okay|great|good|well|alright|all right|fine)\b|\bnot sure (?:if |whether )?(?:i'm|i am) (?:ok|okay|alright|all right|fine|good)\b|^(?:(?:honestly|tbh|um+|so|yeah|ugh)[,.]? )*not doing (?:so |too |very |that )?(?:well|good|great|ok|okay|fine)\b`,
+    String.raw`^(?:(?:honestly|tbh|ugh|um+|man|sorry)[,.]? )*(?:i )?(?:just |really |honestly )*(?:can't|cannot)(?: even)?(?: (?:rn|right now|today|any ?more|tbh|honestly|man))*$`,
+    String.raw`\b(?:so |just |really )?(?:tired|sick) of (?:all )?(?:this|it|everything)\b|\bwhat'?s wrong with me\b|\b(?:can't|cannot|couldn't) bring myself to do anything\b`,
+    String.raw`\b(?:don't|do not|haven't|have not) (?:have|got) (?:anyone|anybody|no one|nobody) (?:to talk to|to turn to|i can talk to)\b|\b(?:no one|nobody) to talk to\b`,
+    String.raw`\b(?:don't|do not) (?:really |even )?(?:want to|wanna) (?:do (?:this|it|any of (?:this|it))|be here|get up|go on|keep going)\b`,
+    String.raw`\b(?:i|we) (?:(?:just|really|honestly|kinda|kind of|so) )*(?:feel|felt|feeling) (?:(?:so|really|completely|totally|kind of|kinda|a bit|pretty|just) )*(?:alone|lonely|hopeless|empty|numb|worthless|useless|trapped|broken)\b`,
+    String.raw`\b(?:i|we) give up\b|\b(?:don't|do not) (?:really |even )?care (?:any ?more|at this point|about any of (?:it|this))\b|\bno one believes in (?:me|this|us|it)\b`,
+  ].join('|'),
+);
+
+/**
+ * The founder's own state as the subject of a clause (how they feel, cope, sleep, eat, keep going, whether they are ok):
+ * never a no-answer by its shape, whatever negation it carries, since it is no answer to the question asked.
+ */
+const SELF_STATE =
+  /\b(?:feel|feeling|felt|cope|coping|keep going|go on|carry on|in a (?:good|bad|dark|great) (?:place|headspace|spot)|energy|sleep|slept|sleeping|eat|eating|think straight|focus on anything|myself|out of bed|(?:left|leave) the house|in me|the point|my life|why i bother|worth it|cut out for|falling apart|nothing(?:'s| is) working|motivat\w*|(?:been|be) (?:ok|okay|alright|all right))\b/;
+
+/** Whether the founder's message is in distress ({@link DISTRESS}, {@link DISTRESS_STATE}): it keeps main's reply and the safety path. */
 export function inDistress(text: string): boolean {
   const t = normalize(text);
   if (t === '') return false;
-  if (DISTRESS.test(t) || WELLBEING_CUE.test(t) || STRESS_CUE.test(t)) return true;
+  if (DISTRESS.test(t) || DISTRESS_STATE.test(t) || WELLBEING_CUE.test(t) || STRESS_CUE.test(t)) return true;
   const risk = classifyRisk(text);
   return risk.crisis || risk.categories.includes('safety_wellbeing') || ideationPrefilter(text).hit;
 }
@@ -811,7 +936,7 @@ export function noAnswerReadingOf(text: string, context: NoAnswerContext = {}): 
  * ("Not yet. Can we work on my pitch deck instead" brings the pitch deck). '' when it says nothing else.
  */
 export function besidesNoAnswer(text: string, context: NoAnswerContext = {}): string {
-  const t = normalize(text);
+  const t = withoutInterjectionQuestions(normalize(text));
   if (t.includes('?')) return t;
   const flags = noAnswerClauses(t, context);
   if (!flags.some(Boolean)) return t;
@@ -1073,6 +1198,9 @@ const SHORT_REPLY =
 const QUESTION_START =
   /^(?:what|how|why|when|where|who|which|should|could|would|can|do|does|did|is|are|will|any)\b/;
 
+/** A statement that opens on a negated auxiliary ("can't tell you", "couldn't say"): no question without a "?". */
+const NEGATED_START = /^(?:can't|cannot|couldn't|could not)\b/;
+
 function wordCount(text: string): number {
   return text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 }
@@ -1091,7 +1219,10 @@ export function founderMoves(text: string, context: NoAnswerContext = {}): Found
   if (GOAL.test(t) && !t.endsWith('?')) moves.push('goal');
   const words = wordCount(t);
   if (words <= 5 && SHORT_REPLY.test(t) && !moves.includes('thanks')) moves.push('short_reply');
-  if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2)) moves.push('question');
+  // "cant tell you" says it, never asks it (review of the 2026-11-07 fix, round 7); a message in distress is read as main
+  // read it (ac41aec).
+  if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2 && !(NEGATED_START.test(t) && !distressed())))
+    moves.push('question');
   // After a question of the vEIR's, a no-answer is read by its shape too, however it is worded (`noAnswerClauses`).
   if (
     context.afterQuestion === true &&
@@ -2025,7 +2156,8 @@ export function renderConversationState(state: ConversationState): string {
       `- Their last message reads like they could not answer your question${asked === null ? '' : ` (${quoted(asked)})`}.`,
       '  If so: acknowledge it in a few plain words, without judgement; do not ask it again in any words; say what the',
       '  answer most likely is from how it usually goes, and the fastest way to find out; then move forward. If they did',
-      '  answer, build on what they said.',
+      '  answer, build on what they said. If they are telling you how they are rather than answering, respond to that',
+      '  first and leave the question.',
     );
   }
   if (state.goal === true) {

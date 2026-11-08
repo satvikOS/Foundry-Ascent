@@ -296,6 +296,15 @@ export function speechText(plain: string): string {
     .replace(/\s*&\s*/g, ' and ')
     .replace(/\s*(?:->|→)\s*/g, ' to ')
     .replace(/[~≈]\s*(?=[$€£\d])/g, 'about ');
+  // An inch mark after a number ("5\" long"), never the close of a quotation opened before it: said as inches, so the
+  // voice's quote marks coming off (`withoutQuoteMarks`) never take it.
+  text = text.replace(
+    /(\d+(?:\.\d+)?)"(?=[\s.,;:!?)]|$)/g,
+    (whole, n: string, offset: number, all: string) =>
+      (all.slice(0, offset).match(/"/g) ?? []).length % 2 === 0
+        ? `${n} ${n === '1' ? 'inch' : 'inches'}`
+        : whole,
+  );
   // Dates and times.
   text = text.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (whole, y: string, m: string, d: string) => {
     const month = MONTHS[Number(m) - 1];

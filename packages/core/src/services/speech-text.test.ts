@@ -156,6 +156,12 @@ describe('withoutQuoteMarks: a drafted line is said without its quote marks', ()
     expect(withoutQuoteMarks(text)).toBe(said);
   });
 
+  it('says an inch mark as inches, never taking it for a quote mark (round 7)', () => {
+    expect(withoutQuoteMarks(speechText('The insole is 5" long.'))).toBe('The insole is five inches long.');
+    expect(withoutQuoteMarks(speechText('A 1" strip.'))).toBe('A one inch strip.');
+    expect(withoutQuoteMarks(speechText('Ask him "Is it 5"?" first.'))).not.toContain('"');
+  });
+
   it('leaves text without double quotes exactly as it was', () => {
     const text = 'Most insoles land in Class II.  Clinics bill it monthly.';
     expect(withoutQuoteMarks(text)).toBe(text);

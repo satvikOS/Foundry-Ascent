@@ -95,3 +95,27 @@ export function openingText(answer: string, maxWords = 40): string {
   }
   return opening.join(' ');
 }
+
+/**
+ * The words a voice in the browser is handed without double quotation marks (the server's `withoutQuoteMarks`, core
+ * speech-text.ts): the coach puts every line written for the founder to say or send, and every line in character, in
+ * double quotes, on a call too, and a voice must never say them. Applied only where a voice is handed text (the full
+ * face's `avatar.speak_text`, the development speech synthesis), so the caption keeps them. An inch mark after a
+ * number ("5\" long") is said as inches. Apostrophes stay.
+ */
+export function withoutQuoteMarks(text: string): string {
+  if (!/["“”„‟«»]/u.test(text)) return text;
+  return text
+    .replace(/(\d+(?:\.\d+)?)"(?=[\s.,;:!?)]|$)/g, (whole, n: string, offset: number, all: string) =>
+      (all.slice(0, offset).match(/"/g) ?? []).length % 2 === 0
+        ? `${n} ${n === '1' ? 'inch' : 'inches'}`
+        : whole,
+    )
+    .replace(/\s*["“”„‟«»]\s*/gu, (mark, offset: number, all: string) => {
+      const after = all.slice(offset + mark.length);
+      // A mark between two words keeps one space; at the start or end of the text, or before punctuation, none.
+      if (offset === 0 || after === '' || /^[.,;:!?…)\]]/u.test(after)) return '';
+      return /\s/u.test(mark) ? ' ' : '';
+    })
+    .replace(/\s{2,}/g, ' ');
+}

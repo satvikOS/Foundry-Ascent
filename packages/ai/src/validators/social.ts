@@ -526,7 +526,7 @@ function handBackBase(before: string, sentence: string): boolean {
  */
 export function handBackCandidate(before: string, sentence: string): boolean {
   if (!handBackBase(before, sentence) || /["“”]/.test(sentence)) return false;
-  return !speaksToSomeoneElse(before, sentence) && !setUp(before);
+  return !speaksToSomeoneElse(before, sentence) && !setUp(before, sentence);
 }
 
 /**
@@ -537,7 +537,7 @@ export function handBackCandidate(before: string, sentence: string): boolean {
  * coach's own prose when what follows does not lean on it ({@link withoutRepeats}).
  */
 export function proseHandBackCandidate(before: string, sentence: string): boolean {
-  return handBackBase(before, sentence) && goesOnFromProse(before, sentence) && !setUp(before);
+  return handBackBase(before, sentence) && goesOnFromProse(before, sentence) && !setUp(before, sentence);
 }
 
 /**
@@ -566,6 +566,26 @@ const SETS_UP = new RegExp(
     String.raw`\bhere(?:'s| is| are) (?:what|the (?:one |main |key |real )?(?:thing|question|bit))\b|\bwhat (?:i'd|i would|you'd|you would|we'd) (?:want|like|need) to (?:know|find out|pin down)\b|\bone thing\b`,
   ].join('|'),
 );
+/**
+ * A statement that points at the line after it (review of the 2026-11-07 fix, round 7: "Here is your opener for
+ * tomorrow.", "Copy and paste this to him.", "Fire this off to him tonight.", "Okay. Try this one.", "Here goes."): the
+ * question after it is that line.
+ */
+const POINTS_AT = new RegExp(
+  [
+    String.raw`\b(?:opener|one-liner|one liner|icebreaker|wording|template)\b|\b(?:copy|paste)\b|\bfire (?:this|it|that|one|these) off\b|\bfire off\b`,
+    String.raw`\bdrop (?:him|her|them) a\b|\bhere goes\b|\b(?:try|use|go with|lead with|start with|open with) (?:this|that|these)\b|\b(?:this|that) one\s*[.!…]*["'”’)\]*_]*\s*$`,
+    String.raw`\b(?:below|as follows|something like)\b|\bhere(?:'s| is| are) (?:your|my|a|an|one|two|something|some)\b[^:]*$|\b(?:adapt|tweak|borrow|reuse)\b`,
+    String.raw`\bon the phone\b|\bget (?:him|her|them) on\b|\bwhen you (?:call|ring|see|meet|talk to|speak to|speak with|get hold of) (?:him|her|them)\b`,
+  ].join('|'),
+);
+/**
+ * A role taken for a practice round, with any name after it ("I'll be Sarah, the practice manager.", "I'm Sarah from
+ * the clinic.", "Picture me as the clinic director.", "Imagine I run the clinic.", "You're pitching me."): the question
+ * after it is the line in character. Read on the statement as written, since a capital marks a name.
+ */
+const TAKES_ROLE =
+  /\b(?:[Ii]'ll be|[Ii] will be|[Ii]'ll play|[Ii]'ll take|[Pp]icture me as|[Ii]magine me as|[Tt]reat me as|[Tt]hink of me as)\s+(?:\p{Lu}|(?:the|your|a|an|one of|dr|mr|ms|mrs|prof)\b)|\b(?:[Ii]'m|[Ii] am|[Ii]magine (?:I'm|I am)|[Pp]retend (?:I'm|I am))\s+(?:\p{Lu}\p{Ll}|(?:the|your|dr|mr|ms|mrs|prof)\b)|\b[Ii]magine I (?:run|own|manage|work at|am)\b|\b[Yy]ou're pitching (?:to )?me\b/u;
 /** A salutation that opens a note ("Hi Dr Lee,", "Hello Sam", "Dear Dr Lee"): the line is a draft. */
 const SALUTATION = /(?:^|[.!?]["'”’)\]*_]*\s+)(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b/i;
 /** A line that opens on a titled name ("Dr Lee, would you…"): it speaks to that person, not the founder. */
@@ -595,16 +615,42 @@ function speaksToSomeoneElse(before: string, sentence: string): boolean {
   return statement !== null && (SALUTATION.test(statement) || TITLED_NAME.test(statement));
 }
 
+/** Whether `statement` sets up the line after it ({@link SETS_UP}, {@link ANNOUNCES}, {@link POINTS_AT}, {@link TAKES_ROLE}). */
+function setsUpLine(statement: string): boolean {
+  const written = statement.replace(/[‘’ʼ]/g, "'");
+  const t = written.toLowerCase();
+  return SETS_UP.test(t) || ANNOUNCES.test(t) || POINTS_AT.test(t) || TAKES_ROLE.test(written);
+}
+
+/** Most words of a statement that goes on with the set-up before it ("I'm Sarah from the clinic.", "Quick one on the insole."). */
+const GOES_ON_MAX_WORDS = 8;
+
+/**
+ * Whether `statement`, the last one before the question `sentence`, is a heading on a line of its own ("**For your
+ * advisor**", "Questions for the clinic"): bold, a markdown heading, or no closing punctuation, never a list item, with
+ * the line ending right after it (in `before` or at the start of `sentence`, however the reply was cut into units).
+ */
+function headingAbove(before: string, sentence: string, statement: string): boolean {
+  if (isListItem(statement)) return false;
+  const at = before.lastIndexOf(statement);
+  if (at < 0 || before.slice(before.lastIndexOf('\n', at - 1) + 1, at).trim() !== '') return false;
+  if (!/^[ \t]*\n/.test((before + sentence).slice(at + statement.length))) return false;
+  return /^(?:\*\*|__|#)/.test(statement) || !/[.!?…:;,]["'”’)\]*_]*$/.test(statement);
+}
+
 /**
  * Whether the last statement before a question ({@link lastStatementOf}, past any questions between them) sets it up as
- * a line for the founder to send, say or practise ({@link SETS_UP}) or announces it ({@link ANNOUNCES}): the question is
- * the line being set up, and the run of questions after it goes with it.
+ * a line for the founder to send, say or practise ({@link setsUpLine}), or is a heading over it ({@link headingAbove}),
+ * or is a short one going on with a set-up right before it ("Let's practise. I'm Sarah.", "Send this tonight.\n\nQuick
+ * one on the insole."): the question is the line being set up, and the run of questions after it goes with it.
  */
-function setUp(before: string): boolean {
+function setUp(before: string, sentence: string): boolean {
   const statement = lastStatementOf(before);
   if (statement === null) return false;
-  const t = statement.replace(/[‘’ʼ]/g, "'").toLowerCase();
-  return SETS_UP.test(t) || ANNOUNCES.test(t);
+  if (setsUpLine(statement) || headingAbove(before, sentence, statement)) return true;
+  if (statement.split(/\s+/).length > GOES_ON_MAX_WORDS) return false;
+  const prior = lastStatementOf(before.slice(0, before.lastIndexOf(statement)));
+  return prior !== null && setsUpLine(prior);
 }
 
 /**
