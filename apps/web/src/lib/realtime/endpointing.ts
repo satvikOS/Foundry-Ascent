@@ -2,11 +2,17 @@
  * Decides when the founder has finished speaking in hands-free mode: the transcript is stable (Transcribe
  * finalised the segment, every word of the partial is marked stable, or the partial stopped changing) and
  * the microphone has been quiet long enough for what was heard (adaptive endpointing, docs/runbooks/latency.md
- * "End of speech"): a finished sentence, a question ("?", or an inverted auxiliary: "can we …", "how do I …") or a
- * closed short answer ("yes.", "no") goes after about 300 ms of quiet, a line that reads as finished without either
- * (or an unpunctuated "yeah", "okay") after 500 ms, and one left open (a filler such as "um", a conjunction, "I mean",
- * a trailing comma, a fragment) only after 950 ms, so a slower speaker is not cut off mid-thought. Pure apart from the
- * injected clock, so it is unit tested with a fake one.
+ * "End of speech"): a finished sentence, a question ("?") or a closed short answer ("yes.", "no") goes after about
+ * 600 ms of quiet, a line that reads as finished without punctuation (an unpunctuated "can we …", "yeah", "okay")
+ * after 1.5 s (Transcribe's punctuated final result comes 0.5–0.9 s after the voice stops, so a line still
+ * unpunctuated this long after is one Transcribe does not think is over either), and one left open (a filler such as "um", a conjunction, "I mean", a trailing comma, a fragment) only
+ * after 2 s, so a speaker who stops to think is not cut off mid-thought. A founder who goes on after a line was sent
+ * gets more of it for the rest of the call ({@link Endpointer.slowDown}). Pure apart from the injected clock, so it is
+ * unit tested with a fake one.
+ *
+ * The waits were 300, 500 and 950 ms until production calls on 2026-11-08 cut a founder off mid-sentence again and
+ * again ("So my next", "What are the unit economic", "Could you explain me the value proposition can"): on an iPad
+ * the call is half duplex, so each half was answered in full before they could say the rest.
  */
 import type { EndpointReason } from '@foundry/contracts';
 
@@ -51,10 +57,15 @@ export const DEFAULT_SILENCE_MS = 600;
 export const DEFAULT_ENDPOINTER: EndpointerOptions = {
   mode: 'adaptive',
   silenceMs: DEFAULT_SILENCE_MS,
-  completeMs: 300,
-  openMs: 500,
-  incompleteMs: 950,
+  completeMs: 600,
+  openMs: 1_500,
+  incompleteMs: 2_000,
 };
+
+/** Each time the founder shows a wait was too short, the waits grow by this much ({@link Endpointer.slowDown})… */
+export const SLOW_DOWN_STEP = 1.5;
+/** …up to this many times the defaults (a finished sentence 1.2 s, an open line 3 s, a fragment 4 s). */
+export const SLOW_DOWN_MAX = 2;
 
 /**
  * In adaptive mode, how long a partial Transcribe has not marked stable must have stopped changing (at most the
@@ -409,7 +420,9 @@ export function classifyUtterance(text: string): { reason: EndpointReason; class
       : { reason: 'sentence_end', class: 'complete' };
   }
   if (tokens.length <= 2) return { reason: 'fragment', class: 'incomplete' };
-  if (questionShape(tokens)) return { reason: 'question', class: 'complete' };
+  // Unpunctuated, a question's opening ("what are the unit …", "could you explain the …") says nothing about whether
+  // it is over: it waits like any open line, until Transcribe's question mark.
+  if (questionShape(tokens)) return { reason: 'question', class: 'open' };
   return { reason: 'open', class: 'open' };
 }
 
@@ -505,6 +518,10 @@ export class Endpointer {
   private readonly latest = new Map<string, Latest>();
   /** The last take, while it can still be given back. */
   private lastTake: Take | null = null;
+  /** The text of the latest take and the results it used, whether or not it can still be given back. */
+  private previousTake: { readonly text: string; readonly results: ReadonlySet<string> } | null = null;
+  /** How many times the defaults each wait is now ({@link slowDown}). */
+  private patience = 1;
   private generation = 0;
   private lastVoiceAt = Number.NEGATIVE_INFINITY;
   /** When the transcriber last said anything (a result, changed or not, used or not). */
@@ -588,12 +605,16 @@ export class Endpointer {
     const o = this.options;
     if (o.mode === 'fixed') return { reason: 'fixed', class: 'open', waitMs: o.silenceMs };
     if (Number.isFinite(this.lastVoiceAt) && this.lastResultAt < this.lastVoiceAt - CATCH_UP_MS) {
-      return { reason: 'catching_up', class: 'open', waitMs: Math.max(o.openMs, o.silenceMs) };
+      return {
+        reason: 'catching_up',
+        class: 'open',
+        waitMs: Math.round(Math.max(o.openMs, o.silenceMs) * this.patience),
+      };
     }
     const heard = classifyUtterance(text);
     const waitMs =
       heard.class === 'complete' ? o.completeMs : heard.class === 'open' ? o.openMs : o.incompleteMs;
-    return { ...heard, waitMs };
+    return { ...heard, waitMs: Math.round(waitMs * this.patience) };
   }
 
   /** The founder has finished: a stable transcript and the quiet what they said needs; null while not. */
@@ -616,6 +637,32 @@ export class Endpointer {
     return this.decide() !== null;
   }
 
+  /**
+   * The founder showed a wait was too short (they went on after a line was sent): every adaptive wait grows by
+   * {@link SLOW_DOWN_STEP}, up to {@link SLOW_DOWN_MAX} times the defaults, for as long as this endpointer lives (the
+   * call). Returns the new factor.
+   */
+  slowDown(): number {
+    this.patience = Math.min(SLOW_DOWN_MAX, this.patience * SLOW_DOWN_STEP);
+    return this.patience;
+  }
+
+  /**
+   * The line of the latest take when what is heard now goes on from it, null when not: Transcribe added the words
+   * now heard first to a result that take used (it heard one utterance), or they open with a lower-case letter after
+   * a take that did not end a sentence ("… the value proposition can" then "canvass for this.": Transcribe writes a
+   * new sentence with a capital, and "I" is always one).
+   */
+  continues(): string | null {
+    const previous = this.previousTake;
+    const first = this.segments.entries().next().value;
+    if (previous === null || first === undefined) return null;
+    const [id, segment] = first;
+    if (id.includes('#') && previous.results.has(resultOf(id))) return previous.text;
+    const ended = /[.?!]["')\]]*$/.test(previous.text);
+    return !ended && /^[\p{Ll}]/u.test(segment.text) ? previous.text : null;
+  }
+
   /** Which take is the latest: {@link untake} gives back only that one. */
   takeGeneration(): number {
     return this.generation;
@@ -633,6 +680,7 @@ export class Endpointer {
       this.consumed.set(base, previous === undefined ? segment.text : `${previous} ${segment.text}`);
     }
     this.lastTake = { generation: this.generation, segments: [...this.segments], before };
+    this.previousTake = text === '' ? null : { text, results: new Set(before.keys()) };
     this.segments.clear();
     if (this.consumed.size > 64) {
       // Old segments never update again; keep the map small on long calls.
@@ -653,6 +701,8 @@ export class Endpointer {
     const take = this.lastTake;
     if (take?.generation !== generation || generation !== this.generation) return false;
     this.lastTake = null;
+    // The line is heard again whole: what follows it no longer goes on from a line already sent.
+    this.previousTake = null;
     for (const [base, used] of take.before) {
       if (used === undefined) this.consumed.delete(base);
       else this.consumed.set(base, used);
@@ -673,6 +723,7 @@ export class Endpointer {
   discard(): void {
     this.take();
     this.lastTake = null;
+    this.previousTake = null;
   }
 
   /**

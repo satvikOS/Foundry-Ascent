@@ -249,4 +249,69 @@ export const ENDPOINT_FIXTURES: readonly EndpointFixture[] = [
     finishedAt: 1700,
     line: 'Our churn is eight percent',
   },
+  // The three below follow how production calls cut a founder off on 2026-11-08 (an iPad, half duplex): a pause
+  // inside a question that had no question mark yet, inside a greeting, and after "so my".
+  {
+    name: 'question_opening_pause',
+    about:
+      'a 1.1 s pause inside a question whose opening already reads as one ("What are the unit … economics")',
+    voice: [
+      [0, 1300],
+      [2400, 3700],
+    ],
+    events: [
+      partial(300, 'p1', 'What'),
+      partial(650, 'p1', 'What are the', 1),
+      partial(1000, 'p1', 'What are the unit', 2),
+      partial(1450, 'p1', 'What are the unit', 4),
+      partial(2700, 'p1', 'What are the unit economics', 4),
+      partial(3100, 'p1', 'What are the unit economics for', 5),
+      partial(3500, 'p1', 'What are the unit economics for this', 6),
+      partial(3900, 'p1', 'What are the unit economics for this?', 7),
+      final(4400, 'p1', 'What are the unit economics for this?'),
+    ],
+    finishedAt: 3700,
+    line: 'What are the unit economics for this',
+  },
+  {
+    name: 'greeting_then_question',
+    about: 'a greeting, then a 1 s pause after the first word of the question ("Hi, Thomas. How … are you?")',
+    voice: [
+      [0, 1500],
+      [2500, 3300],
+    ],
+    events: [
+      partial(300, 'h1', 'Hi'),
+      partial(700, 'h1', 'Hi, Thomas.', 1),
+      partial(1100, 'h1', 'Hi, Thomas. How', 2),
+      partial(1650, 'h1', 'Hi, Thomas. How', 3),
+      partial(2800, 'h1', 'Hi, Thomas. How are', 3),
+      partial(3150, 'h1', 'Hi, Thomas. How are you', 4),
+      partial(3500, 'h1', 'Hi, Thomas. How are you?', 5),
+      final(4000, 'h1', 'Hi, Thomas. How are you?'),
+    ],
+    finishedAt: 3300,
+    line: 'Hi Thomas How are you',
+  },
+  {
+    name: 'thinking_after_so_my',
+    about: 'a founder who stops to think for 1.6 s after "Yeah, so my"',
+    voice: [
+      [0, 900],
+      [2500, 4200],
+    ],
+    events: [
+      partial(300, 't1', 'Yeah,'),
+      partial(700, 't1', 'Yeah, so', 1),
+      partial(1050, 't1', 'Yeah, so my', 2),
+      partial(1200, 't1', 'Yeah, so my', 3),
+      partial(2800, 't1', 'Yeah, so my question', 3),
+      partial(3300, 't1', 'Yeah, so my question is about', 4),
+      partial(3800, 't1', 'Yeah, so my question is about pricing', 6),
+      partial(4400, 't1', 'Yeah, so my question is about pricing.', 7),
+      final(4900, 't1', 'Yeah, so my question is about pricing.'),
+    ],
+    finishedAt: 4200,
+    line: 'Yeah so my question is about pricing',
+  },
 ];

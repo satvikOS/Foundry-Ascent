@@ -579,6 +579,61 @@ pnpm --filter @foundry/api latency --profile production --set dbRoundTripMs=65 -
   (`reservedMs`, `firstAudioMs`), `turn.stream_finished` `audioUnits` / `audioFailed` / `audioWithdrawn`, and the client's
   `submitToPlayback`. Not measured here: CloudFront's and Lambda's delivery of the frames, the real vendor from AWS.
 
+### End of speech: longer waits, a founder who needs them, a cut-off line sent again (2026-11-08)
+
+Why: production calls on 2026-11-08 (an iPad, so half duplex: the microphone is closed while the vEIR speaks) cut a
+founder off mid-sentence again and again: "So my next", "Uh, so", "What are the unit economic", "Could you explain me
+the value proposition can", "Hi, Thomas. How" were each sent 0.3–1 s into a pause and answered in full, and the rest
+("for this.", "canvass for this.", "are you?") was then answered on its own, wrongly. The take-back below never saw
+them: the founder's pause outlasted the moment the reply's first unit arrived.
+
+What changed (`endpointing.ts`, `call-engine.ts`):
+
+- The waits are **600 ms** after a finished sentence, a question with its question mark or a closed short answer,
+  **1.5 s** after a line that reads as finished without punctuation (Transcribe's punctuated final comes 0.5–0.9 s
+  after the voice stops, so a line still unpunctuated after 1.5 s is one Transcribe does not think is over either),
+  and **2 s** after one left open ("um", "so", "my", "and", a trailing comma, a fragment). They were 300, 500 and
+  950 ms.
+- An unpunctuated question's opening ("what are the unit …", "could you explain the …") is an open line, no longer a
+  finished question: its opening says nothing about its end.
+- A founder who goes on after a line was sent (a take-back, or the rest said after the reply) gets half as long again
+  for the rest of the call, up to twice the defaults (`Endpointer.slowDown`).
+- The rest of a line said after its reply is sent with the line before it, so the vEIR answers the whole line: when
+  Transcribe added the new words to the result the line came from (it heard one utterance), or they open in lower case
+  after a line that did not end a sentence. Only the call's latest turn, when it was ordinary (never a crisis line
+  again) and no other line is waiting; never after a typed line. Counted as `rejoined` in the client's timing counts.
+
+Measured on the same replay, with three fixtures added that follow the 2026-11-08 cut-offs (a 1.1 s pause inside a
+question, a 1 s pause after "Hi, Thomas. How", 1.6 s after "Yeah, so my"); "fixed" is the 600 ms silence:
+
+| Fixture (13)                               | fixed ms        | fixed: answered half | after ms            | after: why                 |
+| ------------------------------------------ | --------------- | -------------------- | ------------------- | -------------------------- |
+| fast question (question mark on a partial) | 600             | no                   | 600                 | question                   |
+| fast statement (full stop only on final)   | 600             | no                   | 700                 | sentence end               |
+| short answer ("Yes")                       | 600             | no                   | 600                 | short answer               |
+| open line, unpunctuated                    | 600             | no                   | 800                 | sentence end (final)       |
+| slow speaker, 0.9 s pause mid-clause       | 700             | **yes**              | 700                 | sentence end               |
+| slow speaker, 1.2 s pause after a sentence | 600             | **yes**              | 900                 | taken back once, then sent |
+| self-correction, "fifty, I mean" 0.7 s     | 600             | no                   | 600                 | sentence end               |
+| trailing "um", 0.8 s                       | 700             | **yes**              | 600                 | sentence end               |
+| trailing "and", 0.65 s                     | 600             | no                   | 600                 | sentence end               |
+| transcript lagging the voice               | 600             | no                   | 700                 | sentence end               |
+| 1.1 s pause inside a question              | 600             | **yes**              | 600                 | question                   |
+| 1 s pause after "Hi, Thomas. How"          | 600             | **yes**              | 600                 | question                   |
+| 1.6 s pause after "Yeah, so my"            | 600             | **yes**              | 600                 | sentence end               |
+| **p50 / p90 / max**                        | 600 / 700 / 700 | 6 of 13              | **600 / 800 / 900** | 0 of 13                    |
+
+| First unit after the request | fixed: answered in half | 2026-11-06 waits (300/500/950) | now     |
+| ---------------------------- | ----------------------- | ------------------------------ | ------- |
+| 2.5 s                        | 6 of 13                 | 0 of 13                        | 0 of 13 |
+| 1.2 s                        | 6 of 13                 | 1 of 13                        | 1 of 13 |
+| 0.7 s                        | 6 of 13                 | **4 of 13**                    | 1 of 13 |
+
+The price: a finished line goes about 300 ms later than with the 2026-11-06 waits (p50 600 ms, as the fixed silence),
+and an open line up to a second later. The fixtures' pauses are 0.65–1.6 s; production's were likely longer (the founder
+went on only after the reply's first unit had arrived), which only the longer waits, the slow-down and the line sent
+again cover. Read how often each happens from the client's timing counts (`endpoint.*`, `resumed`, `rejoined`).
+
 ### End of speech: adaptive endpointing (2026-11-06)
 
 What changed (latency plan C; `apps/web/src/lib/realtime/endpointing.ts`, `call-engine.ts`): a hands-free turn no

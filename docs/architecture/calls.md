@@ -35,7 +35,7 @@ now measurable stage by stage: [latency runbook](../runbooks/latency.md)):
 
 | Stage                                              | Budget          |
 | -------------------------------------------------- | --------------- |
-| End of speech → turn sent (stable partial + quiet) | 300–950 ms      |
+| End of speech → turn sent (stable partial + quiet) | 600–2,000 ms    |
 | Browser → CloudFront → warm Lambda                 | 50–100 ms       |
 | Authorization, risk classification, retrieval      | 100–300 ms      |
 | Model time to first token                          | 500–1,100 ms    |
@@ -388,16 +388,20 @@ mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /wo
 - **End of turn (hands-free, adaptive endpointing).** A segment Transcribe finalised, a partial whose words are
   all marked stable, or a partial that stopped changing (for 250 ms at most); plus the quiet what was heard needs,
   counted from the last voiced frame of the energy VAD (adaptive noise floor, two-frame onset; no WASM, so no
-  `wasm-unsafe-eval`): **300 ms** after a finished sentence (Transcribe's full stop), a question (its question
-  mark, or the shape of one: an auxiliary before its subject, "can we", "how do I", "what's the"; a question word
-  alone opens statements as often, "when we launched last year") or a short answer that closes a turn ("yes",
-  "no", "thank you", or any short answer with its full stop); **500 ms** after a line that reads as finished
-  without either, or an unpunctuated "yeah", "okay", "probably"; **950 ms** after one left open: a trailing filler
+  `wasm-unsafe-eval`): **600 ms** after a finished sentence (Transcribe's full stop), a question (its question
+  mark) or a short answer that closes a turn ("yes", "no", "thank you", or any short answer with its full stop);
+  **1.5 s** after a line that reads as finished without punctuation, the unpunctuated opening of a question ("can
+  we", "how do I", "what are the …": it says nothing about the question's end), or an unpunctuated "yeah",
+  "okay", "probably"; **2 s** after one left open: a trailing filler
   ("um", "uh"), a conjunction, article, subject pronoun, copula or "to"/"of" ("and", "so", "because", "the",
   "is"), a self-correction ("I mean", "sorry"), a trailing comma or ellipsis, or a fragment of one or two words
   (its last word decides first: Transcribe's final result puts a full stop even after a dangling "and"). While
-  the transcript lags the voice (its last result came more than 200 ms before the last voiced frame), the old
-  600 ms applies. Tuning `endpointing: 'fixed'` switches back to one 600 ms silence. Updates of a segment already
+  the transcript lags the voice (its last result came more than 200 ms before the last voiced frame), 1.5 s
+  applies. A founder who goes on after a line was sent gets half as long again for the rest of the call, up to
+  twice these; the rest of a line said after its reply is sent with the line before it (Transcribe added it to the
+  same result, or it opens in lower case after a line that did not end a sentence), so the vEIR answers the whole
+  line (docs/runbooks/latency.md, 2026-11-08). They were 300, 500 and 950 ms until production calls on 2026-11-08
+  cut a founder off mid-sentence again and again. Tuning `endpointing: 'fixed'` switches back to one 600 ms silence. Updates of a segment already
   sent only count for the words after the sent ones as revised (Transcribe revises a sent tail as the founder goes
   on: past the shared words, the shortest run closest in spelling to the sent tail is its revision, so "the
   pilots" → "the pilot for small clinics" adds "for small clinics" and "cannot" → "can not" adds nothing); a

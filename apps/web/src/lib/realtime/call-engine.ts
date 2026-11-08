@@ -173,9 +173,11 @@ export interface CallTuning {
 export const DEFAULT_TUNING: CallTuning = {
   endpointing: 'adaptive',
   silenceMs: 600,
-  endpointCompleteMs: 300,
-  endpointOpenMs: 500,
-  endpointIncompleteMs: 950,
+  // The endpointer's defaults (endpointing.ts DEFAULT_ENDPOINTER): 300, 500 and 950 ms until 2026-11-08 cut a founder
+  // off mid-sentence again and again.
+  endpointCompleteMs: 600,
+  endpointOpenMs: 1_500,
+  endpointIncompleteMs: 2_000,
   resumeWindowMs: 3_000,
   heartbeatMs: 15_000,
   reconnectWindowMs: 30_000,
@@ -233,11 +235,20 @@ interface ActiveTurn {
   readonly endpointing: TurnEndpointing | null;
   /** The endpointer's take that is this line, whole (null: typed, or joined with another line). */
   readonly take: number | null;
+  /** A line sent again ahead of the take's words, as the start of this one (null: none). */
+  readonly before: string | null;
   /**
    * What the server's classification said (its `classifying` status): `ordinary`, or `sensitive` (a crisis or a
    * high-risk message, never taken back: its support line and escalation are under way). Null until it arrives.
    */
   risk: 'ordinary' | 'sensitive' | null;
+}
+
+/** How a hands-free line's end was found, its endpointer take, and what was sent again ahead of it. */
+interface PendingEndpoint {
+  readonly endpointing: TurnEndpointing;
+  readonly take: number;
+  readonly before: string | null;
 }
 
 /** Two parts of what the founder said, in order. */
@@ -301,8 +312,15 @@ export class CallEngine {
    */
   private takenBack = 0;
   /** How the end of the line waiting in `pendingLines` was found, and its endpointer take (sent with it). */
-  private pendingEndpoint: { readonly endpointing: TurnEndpointing; readonly take: number } | null = null;
+  private pendingEndpoint: PendingEndpoint | null = null;
+  /**
+   * The start of a line taken back that was itself sent again with what the founder said before it
+   * (`ActiveTurn.before`): the endpointer only gives back the take's own words, so this goes ahead of them.
+   */
+  private carried: string | null = null;
   private turn: ActiveTurn | null = null;
+  /** The text of the latest turn sent on this call and the turn (a line the founder goes on from is sent again). */
+  private lastLine: { readonly text: string; readonly turn: ActiveTurn } | null = null;
   /** The crisis turn whose fixed support line is being said (never cut off). */
   private crisisTurnId: string | null = null;
   /**
@@ -1160,8 +1178,22 @@ export class CallEngine {
   private endOfSpeech(decision: EndpointDecision): void {
     const resumed = this.takenBack;
     this.takenBack = 0;
-    const line = this.endpointer.take();
-    if (line === '') return;
+    const carried = this.carried;
+    this.carried = null;
+    const going = carried === null ? this.endpointer.continues() : null;
+    const heard = this.endpointer.take();
+    if (heard === '') return;
+    let before = carried;
+    if (going !== null) {
+      before = this.goesOnFrom(going);
+      if (before !== null) {
+        // The founder was cut off and has said the rest after its reply: the vEIR answers the whole line, and
+        // waits longer for this founder from now on.
+        this.endpointer.slowDown();
+        this.timing.count('rejoined');
+      }
+    }
+    const line = before === null ? heard : joinLine(before, heard);
     const clamp = (ms: number) => Math.min(60_000, Math.max(0, Math.round(ms)));
     const endpointing: TurnEndpointing = {
       decisionMs: decision.quietMs === null ? null : clamp(decision.quietMs),
@@ -1172,7 +1204,18 @@ export class CallEngine {
     if (decision.quietMs !== null) this.timing.record('endpointDecision', decision.quietMs);
     this.timing.count(`endpoint.${decision.reason}`);
     this.setCaptions({ founder: line, founderLive: false });
-    this.utterance(line, { endpointing, take: this.endpointer.takeGeneration() });
+    this.utterance(line, { endpointing, take: this.endpointer.takeGeneration(), before });
+  }
+
+  /**
+   * The text of the turn sent last when the founder's new words go on from `going`, the endpointer's line before
+   * (Endpointer.continues): that line was this call's latest turn, on its own or as its end, and was ordinary (a
+   * crisis line's support and escalation are never asked for again). Null when it was not.
+   */
+  private goesOnFrom(going: string): string | null {
+    const last = this.lastLine;
+    if (last === null || this.pendingLines.length > 0 || last.turn.risk !== 'ordinary') return null;
+    return last.text === going || last.text.endsWith(` ${going}`) ? last.text : null;
   }
 
   /**
@@ -1180,9 +1223,10 @@ export class CallEngine {
    * finished: the founder had already said it, so it is returned for the caller to send ('' when there is none).
    */
   private discardHeard(): string {
-    const said = this.takenBack > 0 ? this.endpointer.text() : '';
+    const said = this.takenBack > 0 ? joinLine(this.carried ?? '', this.endpointer.text()) : '';
     this.endpointer.discard();
     this.takenBack = 0;
+    this.carried = null;
     return said;
   }
 
@@ -1230,7 +1274,10 @@ export class CallEngine {
         .catch(() => undefined);
     }
     if (turn.take !== null) this.endpointer.untake(turn.take);
+    this.carried = turn.before;
     this.takenBack = (turn.endpointing?.resumed ?? 0) + 1;
+    // The wait that sent it was too short for this founder: from now on on this call they get more.
+    this.endpointer.slowDown();
     this.timing.count('resumed');
     this.turn = null;
     this.set({ activity: 'listening', captions: { ...this.snapshot.captions, veir: null } });
@@ -1347,10 +1394,7 @@ export class CallEngine {
    * is not a reply: a line typed or said while it is still on its way or being said stops it and is sent at once
    * (the lab: every call's first line waited 11–14 s for the greeting to play out).
    */
-  private utterance(
-    text: string,
-    endpointing: { readonly endpointing: TurnEndpointing; readonly take: number } | null = null,
-  ): void {
+  private utterance(text: string, endpointing: PendingEndpoint | null = null): void {
     if (text === '') return;
     if (this.greeting()) this.bargeIn();
     this.pendingLines.push(text);
@@ -1389,9 +1433,11 @@ export class CallEngine {
       firstAudioAt: null,
       endpointing: this.pendingEndpoint?.endpointing ?? null,
       take,
+      before: take === null ? null : (this.pendingEndpoint?.before ?? null),
       risk: null,
     };
     this.pendingEndpoint = null;
+    this.lastLine = { text, turn };
     if (turn.estimatedVoiceEndAt !== null)
       this.timing.record('endpointing', turn.submittedAt - turn.estimatedVoiceEndAt);
     this.lastVoicedAt = null;
@@ -1765,6 +1811,8 @@ export class CallEngine {
     this.endpointer = new Endpointer(this.deps.clock.now, endpointerOptions(this.tuning));
     this.takenBack = 0;
     this.pendingEndpoint = null;
+    this.carried = null;
+    this.lastLine = null;
     this.vad.reset();
   }
 
@@ -1793,6 +1841,7 @@ export class CallEngine {
     this.pendingLines.length = 0;
     this.pendingEndpoint = null;
     this.takenBack = 0;
+    this.carried = null;
     this.closeStt();
     this.capture?.stop();
     this.capture = null;

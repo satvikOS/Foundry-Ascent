@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   BARGE_SUSTAIN_MS,
   Endpointer,
+  SLOW_DOWN_MAX,
+  SLOW_DOWN_STEP,
   VoiceRun,
   backchannelOnly,
   classifyUtterance,
@@ -149,21 +151,24 @@ describe('classifyUtterance', () => {
       class: 'complete',
     });
     expect(classifyUtterance('How do I price the pilot?')).toEqual({ reason: 'question', class: 'complete' });
-    // A question without its question mark yet (a partial).
-    expect(classifyUtterance('so how do I price the pilot')).toEqual({
-      reason: 'question',
-      class: 'complete',
-    });
     for (const answer of ['Yes', 'No.', 'Yeah.', 'yeah sure.', 'Thank you', 'Of course', 'I think so.']) {
       expect(classifyUtterance(answer).class, answer).toBe('complete');
     }
+  });
+
+  it('waits like an open line on a question that has no question mark yet: its opening says nothing of its end', () => {
+    // Production 2026-11-08: "What are the unit economic" and "Could you explain me the value proposition can" were
+    // sent 300 ms into a pause, as finished questions, and answered in half.
     for (const question of [
+      'so how do I price the pilot',
       'can we raise this year',
       'is it worth it',
       'what should we charge',
       "what's the plan",
+      'What are the unit economic',
+      'Could you explain me the value proposition can',
     ]) {
-      expect(classifyUtterance(question), question).toEqual({ reason: 'question', class: 'complete' });
+      expect(classifyUtterance(question), question).toEqual({ reason: 'question', class: 'open' });
     }
   });
 
@@ -222,11 +227,14 @@ describe('classifyUtterance', () => {
 });
 
 describe('Endpointer (adaptive)', () => {
-  it('waits about 300 ms after a finished line, 500 ms after an open one and 950 ms after an unfinished one', () => {
+  it('waits 600 ms after a finished line, 1.5 s after an open one and 2 s after an unfinished one', () => {
     const cases: [string, number][] = [
-      ['How do I price the pilot?', 300],
-      ['The clinics pay monthly today', 500],
-      ['I think the price is too high, um', 950],
+      ['How do I price the pilot?', 600],
+      ['The clinics pay monthly today', 1_500],
+      ['What are the unit economic', 1_500],
+      ['Hi, Thomas. How', 1_500],
+      ['I think the price is too high, um', 2_000],
+      ['Yeah, so my', 2_000],
     ];
     for (const [text, wait] of cases) {
       const time = clock();
@@ -245,12 +253,12 @@ describe('Endpointer (adaptive)', () => {
     const ep = new Endpointer(time.now);
     ep.onVoice();
     ep.onResult({ resultId: 'a', text: 'How do I price', partial: true, stable: false });
-    time.advance(200);
+    time.advance(400);
     ep.onResult({ resultId: 'a', text: 'How do I price it?', partial: true, stable: false });
     time.advance(200);
-    expect(ep.decide(), 'changed 200 ms ago').toBeNull();
+    expect(ep.decide(), 'quiet long enough, but changed 200 ms ago').toBeNull();
     time.advance(50);
-    expect(ep.decide()).toMatchObject({ reason: 'question', quietMs: 450 });
+    expect(ep.decide()).toMatchObject({ reason: 'question', quietMs: 650 });
   });
 
   it('keeps the fixed silence while the transcript is behind the voice', () => {
@@ -259,10 +267,10 @@ describe('Endpointer (adaptive)', () => {
     ep.onResult({ resultId: 'a', text: 'Our churn is eight percent', partial: true, stable: true });
     time.advance(600);
     ep.onVoice(); // words the transcript has not shown yet
-    time.advance(500);
+    time.advance(1_400);
     expect(ep.decide()).toBeNull();
     time.advance(100);
-    expect(ep.decide()).toMatchObject({ reason: 'catching_up', waitMs: 600 });
+    expect(ep.decide()).toMatchObject({ reason: 'catching_up', waitMs: 1_500 });
   });
 
   it('starts over when the founder speaks again within the wait', () => {
@@ -270,15 +278,94 @@ describe('Endpointer (adaptive)', () => {
     const ep = new Endpointer(time.now);
     ep.onVoice();
     ep.onResult({ resultId: 'a', text: 'So the main thing is', partial: true, stable: true });
-    time.advance(900);
+    time.advance(1_900);
     expect(ep.decide()).toBeNull();
     ep.onVoice();
     ep.onResult({ resultId: 'a', text: 'So the main thing is budget.', partial: false, stable: true });
-    time.advance(299);
+    time.advance(599);
     expect(ep.decide()).toBeNull();
     time.advance(1);
     expect(ep.decide()).toMatchObject({ reason: 'sentence_end' });
     expect(ep.take()).toBe('So the main thing is budget.');
+  });
+
+  it('waits half as long again each time it is told the founder was cut off, up to twice the defaults', () => {
+    const time = clock();
+    const ep = new Endpointer(time.now);
+    expect(ep.slowDown()).toBe(SLOW_DOWN_STEP);
+    expect(ep.slowDown()).toBe(SLOW_DOWN_MAX);
+    expect(ep.slowDown()).toBe(SLOW_DOWN_MAX);
+    for (const [text, wait] of [
+      ['How do I price the pilot?', 1_200],
+      ['The clinics pay monthly today', 3_000],
+      ['Yeah, so my', 4_000],
+    ] as const) {
+      ep.onVoice();
+      ep.onResult({ resultId: text, text, partial: true, stable: true });
+      time.advance(wait - 1);
+      expect(ep.decide(), text).toBeNull();
+      time.advance(1);
+      expect(ep.decide(), text).toMatchObject({ waitMs: wait });
+      ep.take();
+    }
+    // The fixed silence (the switch back) is not adaptive and never grows.
+    const fixed = new Endpointer(time.now, { mode: 'fixed' });
+    fixed.slowDown();
+    fixed.onVoice();
+    fixed.onResult({ resultId: 'f', text: 'Hello there.', partial: false, stable: true });
+    time.advance(600);
+    expect(fixed.decide()).toMatchObject({ waitMs: 600 });
+  });
+
+  it('tells when what is heard goes on from the line just taken', () => {
+    const time = clock();
+    const ep = new Endpointer(time.now);
+    expect(ep.continues()).toBeNull();
+    ep.onResult({
+      resultId: 'a',
+      text: 'Could you explain the value proposition',
+      partial: true,
+      stable: true,
+    });
+    expect(ep.continues(), 'nothing taken yet').toBeNull();
+    expect(ep.take()).toBe('Could you explain the value proposition');
+    // Transcribe adds the rest to the same result: one utterance.
+    ep.onResult({
+      resultId: 'a',
+      text: 'Could you explain the value proposition canvas?',
+      partial: false,
+      stable: true,
+    });
+    expect(ep.text()).toBe('canvas?');
+    expect(ep.continues()).toBe('Could you explain the value proposition');
+    expect(ep.take()).toBe('canvas?');
+
+    // A new result opening in lower case after a line that did not end a sentence.
+    ep.onResult({ resultId: 'b', text: 'What are the unit economic', partial: true, stable: true });
+    ep.take();
+    ep.onResult({ resultId: 'c', text: 'for this.', partial: false, stable: true });
+    expect(ep.continues()).toBe('What are the unit economic');
+    ep.take();
+
+    // Not after a finished sentence, nor when the new line opens with a capital ("I" always has one).
+    ep.onResult({ resultId: 'd', text: 'We talked to twelve clinics.', partial: false, stable: true });
+    ep.take();
+    ep.onResult({ resultId: 'e', text: 'and three said yes.', partial: false, stable: true });
+    expect(ep.continues()).toBeNull();
+    ep.take();
+    ep.onResult({ resultId: 'f', text: 'So my next', partial: true, stable: true });
+    ep.take();
+    ep.onResult({ resultId: 'g', text: 'I mean the pricing.', partial: false, stable: true });
+    expect(ep.continues()).toBeNull();
+
+    // A line given back is heard whole again: nothing goes on from it.
+    const other = new Endpointer(time.now);
+    other.onResult({ resultId: 'a', text: 'So my next', partial: true, stable: true });
+    other.take();
+    other.untake(other.takeGeneration());
+    other.onResult({ resultId: 'b', text: 'question is pricing', partial: true, stable: true });
+    expect(other.continues()).toBeNull();
+    expect(other.text()).toBe('So my next question is pricing');
   });
 });
 
