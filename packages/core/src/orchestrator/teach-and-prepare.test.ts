@@ -196,7 +196,7 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
     'a founder with no answer (turn %i, %j): never asked again, taught how it usually goes instead',
     (n, said) => {
       const message = turnMessage(n, said);
-      expect(message).toContain('Never ask it again, in any words.');
+      expect(message).toContain('do not ask it again in any words');
       expect(message).toContain('- You already asked:');
       // The notebook's agenda is left out of that turn: it would offer up the very question they could not answer, in
       // other words (the open question on billing, the commitment's "ask how it went"; review of the 2026-11-07 fix).
@@ -227,7 +227,7 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
     "the call's third turn after %j: never asked again, in the prompt and in the reply (review, round 3)",
     (said) => {
       const message = turnMessage(2, said);
-      expect(message).toContain('Never ask it again, in any words.');
+      expect(message).toContain('do not ask it again in any words');
       expect(message).not.toContain('<open_questions>');
       expect(message).not.toContain('billable under existing codes');
       const [r1, r2] = REPLIES as [string, string];
@@ -239,7 +239,7 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
       );
       expect(reply.removed).toEqual(['Is monitoring time reimbursable under existing CPT codes?']);
       // On the second turn too, right after the first question.
-      expect(turnMessage(1, said)).toContain('Never ask it again, in any words.');
+      expect(turnMessage(1, said)).toContain('do not ask it again in any words');
     },
   );
 
@@ -324,7 +324,7 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
       const [r1, r2] = REPLIES as [string, string];
       expect(stuckOn(said, r2)).toBe(true);
       const message = turnMessage(2, said);
-      expect(message).toContain('Never ask it again, in any words.');
+      expect(message).toContain('do not ask it again in any words');
       expect(message).not.toContain('<open_questions>');
       expect(message).not.toContain('billable under existing codes');
       const reply = withoutRepeats(
@@ -341,7 +341,7 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
     (said) => {
       const [, r2] = REPLIES as [string, string];
       expect(stuckOn(said, r2)).toBe(false);
-      expect(turnMessage(2, said)).not.toContain('Never ask it again, in any words.');
+      expect(turnMessage(2, said)).not.toContain('do not ask it again in any words');
     },
   );
 
@@ -427,7 +427,7 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
       const [r1, r2] = REPLIES as [string, string];
       expect(stuckOn(said, r2)).toBe(true);
       const message = turnMessage(2, said);
-      expect(message).toContain('Never ask it again, in any words.');
+      expect(message).toContain('do not ask it again in any words');
       expect(message).not.toContain('<open_questions>');
       expect(message).not.toContain('billable under existing codes');
       const reply = withoutRepeats(
@@ -439,26 +439,53 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
     },
   );
 
+  // Review of the 2026-11-07 fix, round 6: the no-answer reading is the union of the grammar and the shape (recall
+  // first), so an answer said as a negation may be read by its shape. A misread is acceptable only in effect: the prompt
+  // line is hedged ("if they did answer, build on what they said"), the notes keep their agenda, and at most a trailing
+  // unquoted question of the coach's own goes; a question mid-reply or quoted is always asked.
   it.each(ROUND5_REAL_ANSWERS)(
-    'after %j, an answer said as a negation: never read as "they do not know", on the second turn or the third',
+    'after %j, an answer said as a negation: a misread only in effect, on the second turn or the third',
     (said) => {
       const [r1, r2] = REPLIES as [string, string];
-      expect(stuckOn(said, r1)).toBe(false);
-      expect(stuckOn(said, r2)).toBe(false);
       for (const n of [1, 2]) {
         const message = turnMessage(n, said);
-        expect(message).not.toContain('They do not know, have not done it or have no answer yet');
-        expect(message).not.toContain('has no answer yet: answer it yourself');
+        if (message.includes('could not answer your question')) {
+          expect(message).toContain('If they did\n  answer, build on what they said.');
+        }
       }
-      // A genuine follow-up right after it is asked.
-      const followUp = withoutRepeats(
-        'That changes the model a lot. Would the clinics pay cash for it then?',
-        [r1, OPENER].join('\n\n'),
-        { strictQuestions: stuckOn(said, r1), asked: askedBefore(r1, [OPENER]) },
-      );
-      expect(followUp.dropped).toBe(0);
+      for (const [previous, earlier] of [
+        [r1, [OPENER]],
+        [r2, [r1, OPENER]],
+      ] as const) {
+        const options = { strictQuestions: stuckOn(said, previous), asked: askedBefore(previous, earlier) };
+        const history = [previous, ...earlier].join('\n\n');
+        // Mid-reply and quoted, the follow-up is always asked.
+        for (const reply of [
+          'That changes the model a lot. Would the clinics pay cash for it then? It decides who you pitch first.',
+          'That changes the model a lot. Ask him: "Would the clinics pay cash for it then?"',
+        ]) {
+          expect(withoutRepeats(reply, history, options).text).toBe(reply);
+        }
+        // At the very end, only the follow-up itself may go.
+        const trailing = withoutRepeats(
+          'That changes the model a lot. Would the clinics pay cash for it then?',
+          history,
+          options,
+        );
+        expect(trailing.removed.every((r) => r === 'Would the clinics pay cash for it then?')).toBe(true);
+      }
     },
   );
+
+  it('a no-answer read only by its shape keeps the notes, the question it left open marked as raised (round 6)', () => {
+    const said = 'no progress on that';
+    const [, r2] = REPLIES as [string, string];
+    expect(stuckOn(said, r2)).toBe(true);
+    const message = turnMessage(2, said);
+    expect(message).toContain('could not answer your question');
+    expect(message).toContain('<open_questions>');
+    expect(message).toContain('[already raised');
+  });
 
   it('marks the threads a reply raised by their subject, and never asks how a raised commitment went', () => {
     // "how clinics would pay" raised the open question on billing, which shares no word with it.

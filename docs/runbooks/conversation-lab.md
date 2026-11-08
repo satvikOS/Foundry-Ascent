@@ -44,7 +44,9 @@ scenario: `question_only` (a reply that only asks where the student brought some
 (high) and `judgmental_profile_note` (high, from the notebook after the run); `repeated_question` also reads a longer,
 reworded question as the product does (`reasksQuestion`: words naming one subject count as one; after a student with
 no answer, one shared subject is a re-ask unless the question offers the coach's own work; a question from before the
-previous reply comes back whole or as two of its terms). No answer is read as the product reads it, with contractions
+previous reply comes back whole or as two of its terms; `reasked_after_unknown` counts only a question in the reply's
+trailing hand-back, unquoted and never the line the sentence before it sets up: `in_hand_back`). No answer is read as
+the product reads it (`no_answer_reading`: the union of its grammar and its shape, never in distress), with contractions
 typed without apostrophes put back, clause by clause and never in a message that asks something of its own; a request
 for the work itself ("Can you help me?") counts as stuck, as the product's `stuckOn` reads it, and no answer to a
 check-in on the student never does; a lead-in that only restates the answer is no substance. These mirror the product's

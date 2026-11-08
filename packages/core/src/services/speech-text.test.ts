@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { watchedAudio } from './speech-audio.js';
-import { integerWords, numberWords, speechText } from './speech-text.js';
+import { integerWords, numberWords, speechText, withoutQuoteMarks } from './speech-text.js';
 import { speakableText } from './spoken-text.js';
 
 describe('speechText: the words a vendor voice is handed, as they are said', () => {
@@ -134,5 +134,30 @@ describe('watchedAudio', () => {
     await reader.cancel();
     expect(cancelled).toBe(true);
     expect(failures).toBe(0);
+  });
+});
+
+describe('withoutQuoteMarks: a drafted line is said without its quote marks', () => {
+  // Review of the 2026-11-07 fix, round 6: the coach quotes every line written for the founder to say or send, and every
+  // line in character, on a call too (prompts/craft.ts); the voice is handed the words without the marks.
+  it.each([
+    [
+      'Send him one line. "Is monitoring time reimbursable under existing CPT codes?"',
+      'Send him one line. Is monitoring time reimbursable under existing CPT codes?',
+    ],
+    [
+      'You could open with “Which class do you think we are?” and let him talk.',
+      'You could open with Which class do you think we are? and let him talk.',
+    ],
+    ['"Hi Sam," I would start.', 'Hi Sam, I would start.'],
+    ['I’ll play the advisor. «What class are you?»', 'I’ll play the advisor. What class are you?'],
+    ["It's class II, and they don't bill it.", "It's class II, and they don't bill it."],
+  ])('%j', (text, said) => {
+    expect(withoutQuoteMarks(text)).toBe(said);
+  });
+
+  it('leaves text without double quotes exactly as it was', () => {
+    const text = 'Most insoles land in Class II.  Clinics bill it monthly.';
+    expect(withoutQuoteMarks(text)).toBe(text);
   });
 });

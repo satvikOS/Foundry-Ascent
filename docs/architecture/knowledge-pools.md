@@ -453,7 +453,7 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   shown) opens the conversation without one. A hello
   right after the opener is answered with a hello, never the recall again (`<conversation_state>` reads the
   founder's first message as the reply to the replayed opener).
-- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-07.5`). The call that
+- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-07.6`). The call that
   prompted it: a returning founder named a goal and got "walk me through where you are…", a vague answer got a
   question, a short answer got the first question again in other words, and a founder with no answer was asked again.
   Prompt rules saying "follow the founder" had lost to context that was mostly one topic, so each turn now carries:
@@ -467,25 +467,37 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     are put back before any cue reads the message, the subject is optional and the verb takes its particles; read
     clause by clause: never asked again in any words; acknowledged without judgement, then what the answer most likely
     is, the fastest way to find out and the next step). Phrase lists did not converge (each review round found new
-    casual wordings), so after a question of the vEIR's a no-answer is also read by its shape (`noAnswerClauses`): a
-    clause of at most 14 words that says who did not do what (`NO_ANSWER_PREDICATE`): the founder did not know, ask,
+    casual wordings), so after a question of the vEIR's a no-answer is also read by its shape (`noAnswerFlags`), as
+    the union of two readings, recall first (review, round 6: five rounds alternated between a grammar that missed
+    casual wordings and a shape that misread answers). The precise reading (`said`) is a clause of at most 14 words
+    that says who did not do what (`NO_ANSWER_PREDICATE`): the founder did not know, ask,
     talk to, reach, follow up, look into, get to, hear or have the time or the meeting ("i didnt talk to the advisor",
     "werent able to meet", "i honestly dont remember"); they lack the information ("i dont have the class info"); someone
     else did not reply or say, or is unavailable ("he hasnt gotten back to me", "nobody got back to me", "the advisor
     ghosted me", "he said hed get back to me"); the meeting did not happen or was cancelled; a bare doubt ("idk", "not
-    sure", "zero idea", "no word from him yet", "still waiting on him"); they forgot. To a question that is not a yes/no
-    one ("what did the advisor tell you?") a bare "no", "nope" or "nah" is a no-answer too; to "Is it Class II?" or
-    "Want me to draft it?" it is the answer. A negated clause about a thing ("insurance doesnt cover it", "theres no
-    code for it", "none of the clinics bill for it"), what they do not have that is no information ("we dont have a
-    predicate device"), an opinion ("i dont think anyone pays") or a contrast ("nah the insurer pays not the clinic") is
-    an answer: any short negation was too much (review, round 5). The message must also carry no question, no answer (a
+    sure", "zero idea", "no word from him yet", "still waiting on him"); they forgot or dropped the ball; it is still on
+    their list, the meeting was rescheduled or fell through, the person dodged it, was vague or left them on read. To a
+    question that is not a yes/no one ("what did the advisor tell you?") a bare "no", "nope" or "nah" is a no-answer
+    too; to "Is it Class II?" or "Want me to draft it?" it is the answer. The broad reading (`shape`) is any such short
+    clause with a negation or a doubt (`NEGATION`, "an n't" however typed) or an intention that did not come off ("my
+    cofounder was supposed to ask but didnt", "we were supposed to meet but he cancelled": such a "but" is no
+    contrast). It hears a casual wording no grammar lists, and may misread an answer said as a negation ("insurance
+    doesnt cover it", "we dont have a predicate device"); a misread costs only the hedged line below and at most a
+    trailing unquoted question of the coach's own (`noAnswerReadingOf`). The prompt line on any no-answer is hedged:
+    "Their last message reads like they could not answer your question ("…"). If so: … do not ask it again in any
+    words; say what the answer most likely is …, and the fastest way to find out; then move forward. If they did
+    answer, build on what they said." A message in distress (`inDistress`: an "anymore" clause, "i dont know what im
+    doing", "i cant do this", "i dont feel safe", "im not ok", or what the stress cue, the wellbeing cue, the risk rules
+    or the ideation prefilter flag) is never a no-answer nor stuck on a question: it keeps the reply and the safety
+    path it had before (ac41aec). The message must also carry no question, no answer (a
     figure, content reported, "probably", "because", a class named, a contrast, a day or a time), no worry of its own
     ("I don't know if clinics will pay for it") and none of their own moves (help, clarify, a change of topic, a goal,
     news, a social turn, their wellbeing), and nothing else said beside it: "he said its not class III", "no, its class
     II", "not yet but we have a call friday" and "i didnt get that" are not no-answers. An answer put off ("idk, ask me
-    next week") is one, in the prompt and in `stuckOn` alike. A message that is only a no-answer leaves the notes' agenda
-    out of that turn, open threads and questions included (`leavesAgendaOut`): the question they could not answer is
-    in the conversation, and the notes would only offer it up again in other words. A no-answer with a subject of its
+    next week") is one, in the prompt and in `stuckOn` alike. A message that is only a no-answer by the precise reading
+    leaves the notes' agenda out of that turn, open threads and questions included (`leavesAgendaOut`): the question
+    they could not answer is in the conversation, and the notes would only offer it up again in other words. One read
+    by its shape alone keeps the notes, the question it left open marked as already raised. A no-answer with a subject of its
     own after it ("Not yet, but can we work on the pitch deck", with or without a question mark, as a voice transcript
     has none) moves on: the reply follows them there, the notes leave their agenda out (`bringsOwnSubject` reads what
     the message brings besides the no-answer), and the old question is neither asked nor answered unasked. "I'm not
@@ -513,20 +525,27 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     the founder are read so (`putToFounder`): a question in a quoted draft, a list item under a lead-in ending in ":",
     or a question after "Ask your advisor:" or "questions to send:" is prep for someone else, a re-ask only when it
     comes back whole (three shared words), so a drafted email after "i dont know" keeps its body and its closing quote.
-    A question asked again only by subject (the strict or settled reading: `reaskOf` `subject`) is left out only from
-    the reply's trailing hand-back (`handBackStart`): the run of questions that ends it, each put to the founder, none
-    in a quotation, a blockquote or a list, under a lead-in ending in ":", and each going on from the coach's own prose
-    on the same line (`goesOnFromProse`): a question that opens a line or a paragraph may be a draft, a list or what a
-    heading announced; a line with a salutation ("Hi Dr Lee,") or opening on a titled name ("Dr Lee, would you…") is a
-    note to someone else; a question right after a sentence that announces what follows ("Try this.", "One way to put
-    it.", "These are the two things to pin down") is what it announced. The prep cues ("Here is a draft", "something
-    like", "ask him", "questions to send", "you could write") are an extra exemption, not what the rule rests on. A
-    question followed by anything but another question is never left out, and the sentence gate holds such a question
-    until the next unit shows what follows, so a draft, a list or a quotation can never lose a question from its
-    middle. A question that comes back whole is left out from the trailing hand-back too, or from the coach's own prose
-    under the same rule when the sentence after it does not lean on it ("Those two answers shape the plan."), never from
-    a draft, a quotation, a list or a blockquote (review, round 5: a note to the advisor, which naturally restates the
-    question, lost it from its middle). A question asked before the previous reply (`askedBefore`: the founder has
+    The model marks the lines it drafts: conversation craft puts any line written for the founder to say, send or ask
+    someone else, and any line said in character in a role-play, in double quotes, on a call too (the voice is handed
+    the words without the marks: core `withoutQuoteMarks`, at synthesis only, so the caption and the signed unit keep
+    them). A question asked again only by subject (the strict or settled reading: `reaskOf` `subject`) is left out
+    only from the reply's trailing hand-back (`handBackStart`, `handBackCandidate`): the run of questions that ends it,
+    each put to the founder, none with a quotation mark, in a blockquote or a list, under a lead-in ending in ":" or
+    after a prep cue, wherever its line or paragraph starts (review, round 6: a re-ask in its own paragraph was never
+    left out); never one on a line with a salutation ("Hi Dr Lee,") or opening on a titled name, or after a statement
+    that does ("Hi Dr Lee, quick question on the insole." then the question in its own paragraph); and never the line
+    the statement before it sets up (`setUp`): one that mentions asking, a question, messaging, texting, emailing,
+    telling or saying it to them, a script or a line, the call, practising or playing a role ("The fastest way to know
+    is one question to your advisor.", "Send him one line.", "I'll be the advisor.") or announces what follows ("Try
+    this.", "Here's what I'd want to know.", "One thing would unblock this."). The prep cues ("Here is a draft",
+    "something like", "ask him", "questions to send", "you could write") are an extra exemption. A question followed
+    by anything but another question is never left out, and the sentence gate holds such a question until the next
+    unit shows what follows, so a draft, a list or a quotation can never lose a question from its middle. A question
+    that comes back whole is left out from the trailing hand-back too, or from the coach's own prose going on on the
+    same line (`proseHandBackCandidate`, `goesOnFromProse`, the line it set up excepted) when the sentence after it
+    does not lean on it ("Those two answers shape the plan.", "Knowing that decides…"), never from a draft, a
+    quotation, a list or a blockquote (review, round 5: a note to the advisor, which naturally restates the question,
+    lost it from its middle). The gate and `withoutRepeats` leave out exactly the same. A question asked before the previous reply (`askedBefore`: the founder has
     had their turn) comes back whole, or as two of its terms (said together, or two subjects) with little else, so a
     vague or short answer is never met with the first question again, while a new follow-up on the same subject ("Would
     that customer pay more for the version with alerts?") is kept. Notes threads already raised in the conversation

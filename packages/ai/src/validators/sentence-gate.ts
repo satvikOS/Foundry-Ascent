@@ -33,6 +33,7 @@ import {
   askedBefore,
   handBackCandidate,
   leansOnPrevious,
+  proseHandBackCandidate,
   putToFounder,
   reaskOf,
   repeatsPrevious,
@@ -741,19 +742,27 @@ export class SentenceGate {
         if (this.#leaks([stable.slice(from)])) return this.#block('cross_venture', units);
       }
       let rawUnit = this.#raw.slice(this.#cursor, end);
-      // A question asked again (by any reading) goes only from the reply's trailing hand-back: it is held until the next
-      // unit shows whether anything but another question follows it (`#onlyQuestionsAfter`).
-      // One that comes back whole also goes from the coach's own prose, once the next unit shows it does not lean on it.
+      // A question asked again (by any reading) goes from the reply's trailing hand-back (`handBackCandidate`): it is
+      // held until the next unit shows whether anything but another such question follows it (`#onlyQuestionsAfter`).
+      // One that comes back whole also goes as it did before (`proseHandBackCandidate`): from that scope's trailing run,
+      // or from the coach's own prose once the next unit shows it does not lean on it. As in `withoutRepeats`.
       let trailing = false;
       const candidate = this.#reaskCandidate(rawUnit, this.#raw.slice(0, this.#cursor));
       if (candidate !== null) {
-        const after = this.#onlyQuestionsAfter(end, stable);
-        if (after === null) break;
-        trailing = after;
-        if (!after && candidate === 'whole') {
-          const next = this.#nextUnit(end, stable);
-          if (next === null) break;
-          trailing = !leansOnPrevious(next.trim());
+        if (candidate.handBack) {
+          const after = this.#onlyQuestionsAfter(end, stable, handBackCandidate);
+          if (after === null) break;
+          trailing = after;
+        }
+        if (!trailing && candidate.prose) {
+          const after = this.#onlyQuestionsAfter(end, stable, proseHandBackCandidate);
+          if (after === null) break;
+          trailing = after;
+          if (!after) {
+            const next = this.#nextUnit(end, stable);
+            if (next === null) break;
+            trailing = !leansOnPrevious(next.trim());
+          }
         }
       }
       if (this.#options.greeted === true && this.#opening) {
@@ -939,9 +948,9 @@ export class SentenceGate {
 
   /**
    * Whether a unit says an earlier reply again (`repeat`), asks one of its questions again (`reask`), or neither. A
-   * question asked again, whole or only by the strict or settled reading (`reaskOf`), is a re-ask only in the reply's
-   * trailing hand-back (`trailing`: only questions follow it, and it is put to the founder and goes on from the coach's
-   * own prose: `handBackCandidate`), as in `withoutRepeats`. A safety line, and on a flagged turn a referral, is never a
+   * question asked again, whole or only by the strict or settled reading (`reaskOf`), is a re-ask only where it may be
+   * left out (`trailing`, worked out for a `#reaskCandidate`: the reply's trailing hand-back, or for one that comes back
+   * whole the coach's own prose), as in `withoutRepeats`. A safety line, and on a flagged turn a referral, is never a
    * repeat (`isProtectedLine`).
    */
   #repeatOf(unit: string, before: string, trailing = false): 'repeat' | 'reask' | null {
@@ -949,27 +958,30 @@ export class SentenceGate {
     if (isProtectedLine(unit, this.#keepReferrals)) return null;
     if (repeatsPrevious(unit, this.#previousGrams, { signOffs: !this.#signOffWelcome })) return 'repeat';
     // A question for someone else (in a quoted draft, a list of questions to send) is the founder's prep, never a
-    // re-ask of them (`putToFounder`, `handBackCandidate`).
-    const reask = reaskOf(unit.trim(), this.#previousQuestions, {
-      strict: this.#stuck,
-      toFounder: putToFounder(before, unit),
-    });
-    return reask !== null && trailing && handBackCandidate(before, unit) ? 'reask' : null;
+    // re-ask of them (`putToFounder`, `handBackCandidate`): `trailing` is set only for a re-ask candidate.
+    return trailing && this.#reaskCandidate(unit, before) !== null ? 'reask' : null;
   }
 
   /**
-   * How the unit (what the reply says after `before`) asks an earlier question again (`reaskOf`), when it is a
-   * candidate for the trailing hand-back (`handBackCandidate`), or null: such a unit is left out only if it ends the
-   * reply, or, coming back whole, if what follows does not lean on it.
+   * How the unit (what the reply says after `before`) asks an earlier question again (`reaskOf`), when it may be left
+   * out, or null: `handBack`, by any reading, as a candidate for the trailing hand-back (`handBackCandidate`), left out
+   * only if only such questions follow it; `prose`, coming back whole, as a candidate in the coach's own prose
+   * (`proseHandBackCandidate`), left out if only such questions follow it or what follows does not lean on it.
    */
-  #reaskCandidate(unit: string, before: string): ReaskReading | null {
+  #reaskCandidate(
+    unit: string,
+    before: string,
+  ): { readonly handBack: boolean; readonly prose: boolean } | null {
     if (this.#previousGrams === null || this.#previousQuestions.length === 0) return null;
     if (!/\?["'”’)\]*_]*\s*$/u.test(unit) || isProtectedLine(unit, this.#keepReferrals)) return null;
-    const reask = reaskOf(unit.trim(), this.#previousQuestions, {
+    const reask: ReaskReading | null = reaskOf(unit.trim(), this.#previousQuestions, {
       strict: this.#stuck,
       toFounder: putToFounder(before, unit),
     });
-    return reask !== null && handBackCandidate(before, unit) ? reask : null;
+    if (reask === null) return null;
+    const handBack = handBackCandidate(before, unit);
+    const prose = reask === 'whole' && proseHandBackCandidate(before, unit);
+    return handBack || prose ? { handBack, prose } : null;
   }
 
   /**
@@ -998,7 +1010,11 @@ export class SentenceGate {
    * followed by more than questions is never in the trailing hand-back: left out, it could take a hole out of a draft,
    * a list or a quotation.
    */
-  #onlyQuestionsAfter(end: number, stable: string): boolean | null {
+  #onlyQuestionsAfter(
+    end: number,
+    stable: string,
+    candidate: (before: string, sentence: string) => boolean,
+  ): boolean | null {
     let from = end;
     for (;;) {
       let next = findUnitEnd(this.#raw, from, this.#maxUnitChars);
@@ -1008,7 +1024,7 @@ export class SentenceGate {
       }
       if (!this.#ended && stable.length < next) return null;
       const unit = this.#raw.slice(from, next);
-      if (unit.trim() !== '' && !handBackCandidate(this.#raw.slice(0, from), unit)) return false;
+      if (unit.trim() !== '' && !candidate(this.#raw.slice(0, from), unit)) return false;
       if (next >= this.#raw.length) return this.#ended ? true : null;
       if (next <= from) return null;
       from = next;

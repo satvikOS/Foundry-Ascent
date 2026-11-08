@@ -402,3 +402,22 @@ export function speechText(plain: string): string {
     .replace(/,\s*,/g, ',')
     .trim();
 }
+
+/**
+ * The words a voice is handed without double quotation marks (straight, curly, low and guillemets): the coach puts every
+ * line written for the founder to say or send, and every line in character, in double quotes, on a call too
+ * (prompts/craft.ts), and a voice must never say them or pause oddly on them. Applied only at synthesis
+ * (`synthesizeWith`), so the caption, the stored reply and the unit's signature keep them. Apostrophes stay.
+ */
+export function withoutQuoteMarks(text: string): string {
+  if (!/["“”„‟«»]/u.test(text)) return text;
+  return text
+    .replace(/\s*["“”„‟«»]\s*/gu, (mark, offset: number, all: string) => {
+      const before = all.slice(0, offset);
+      const after = all.slice(offset + mark.length);
+      // A mark between two words keeps one space; at the start or end of the text, or before punctuation, none.
+      if (before === '' || after === '' || /^[.,;:!?…)\]]/u.test(after)) return '';
+      return /\s/u.test(mark) ? ' ' : '';
+    })
+    .replace(/\s{2,}/g, ' ');
+}

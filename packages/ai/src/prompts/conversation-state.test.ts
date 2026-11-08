@@ -461,9 +461,9 @@ describe('a founder with no answer, and a goal ahead of them (production, 2026-1
     expect(state.moves).toContain('unknown');
     expect(state.openQuestion).toBe(true);
     const block = renderConversationState(state);
-    expect(block).toContain('says they do not know, have not done it or have no answer yet');
-    expect(block).toContain('Never ask it again, in any words.');
-    expect(block).toContain('then say what the answer most likely is or how it');
+    expect(block).toContain('may be saying they do not know, have not done it or have no answer yet');
+    expect(block).toContain('do not ask it again in any words');
+    expect(block).toContain('and the fastest way to find out; then move forward.');
   });
 
   it.each([
@@ -516,7 +516,7 @@ describe('a founder with no answer, and a goal ahead of them (production, 2026-1
     expect(stuckOn(text)).toBe(true);
     const state = deriveConversationState(history, text);
     expect(state.onlyNoAnswer).toBe(true);
-    expect(renderConversationState(state)).toContain('Never ask it again, in any words.');
+    expect(renderConversationState(state)).toContain('do not ask it again in any words');
   });
 
   it('asks the question again more plainly when they did not follow it, never answers it for them', () => {
@@ -550,7 +550,7 @@ describe('a founder with no answer, and a goal ahead of them (production, 2026-1
       expect(state.onlyNoAnswer, text).toBe(false);
       const block = renderConversationState(state);
       expect(block).toContain('no answer to your check-in on them');
-      expect(block).not.toContain('Never ask it again');
+      expect(block).not.toContain('do not ask it again in any words');
       expect(block).not.toContain('answer it yourself');
       expect(stuckOn(text, checkIn[0]?.answer)).toBe(false);
     }
@@ -585,11 +585,17 @@ describe('a founder with no answer, and a goal ahead of them (production, 2026-1
     }
   });
 
-  it('names the question with no answer, so the reply answers it rather than asking it again', () => {
+  it('names the question with no answer, hedged, so the reply answers it rather than asking it again', () => {
     const block = renderConversationState(deriveConversationState(history, "I didn't do that."));
+    // Review of the 2026-11-07 fix, round 6: the reading may misread an answer said as a negation, so the line says
+    // "if so" and lets the model, which reads the whole message, settle it.
     expect(block).toContain(
-      '- Your question "What did the advisor tell you?" has no answer yet: answer it yourself from how it usually goes.',
+      '- Their last message reads like they could not answer your question ("What did the advisor tell you?").',
     );
+    expect(block).toContain(
+      'If so: acknowledge it in a few plain words, without judgement; do not ask it again in any',
+    );
+    expect(block).toContain('If they did\n  answer, build on what they said.');
   });
 
   it.each([

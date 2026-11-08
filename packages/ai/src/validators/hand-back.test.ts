@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { founderMoves, noAnswerContextOf, saysOnlyNoAnswer } from '../prompts/conversation-state.js';
+import {
+  founderMoves,
+  noAnswerContextOf,
+  noAnswerReadingOf,
+  saysOnlyNoAnswer,
+} from '../prompts/conversation-state.js';
+import { leavesAgendaOut } from '../prompts/messages.js';
 import { SentenceGate, type GateUnit, type SentenceGateOptions } from './sentence-gate.js';
 import { askedBefore, handBackCandidate, handBackStart, reaskOf, stuckOn, withoutRepeats } from './social.js';
 
@@ -258,29 +264,50 @@ describe('a no-answer says who did not do what, never any negation (review of th
     'no clinic ive talked to pays out of pocket',
   ];
 
-  it.each(ANSWERS)('reads %j as an answer, after either question', (said) => {
-    expect(stuckOn(said, R1)).toBe(false);
-    expect(stuckOn(said, R2)).toBe(false);
-    expect(founderMoves(said, noAnswerContextOf(R1))).not.toContain('unknown');
+  // Review of the 2026-11-07 fix, round 6: the reading is the union of the grammar and the shape (recall first), so an
+  // answer said as a negation may be read by its shape. It is never read by the grammar, and a misread costs only the
+  // hedged line in the prompt and a trailing unquoted question of the coach's own: never a question mid-reply, quoted
+  // or set up as a line to send.
+  it.each(ANSWERS)('never reads %j as a no-answer by the grammar, after either question', (said) => {
+    for (const previous of [R1, R2]) {
+      expect(noAnswerReadingOf(said, noAnswerContextOf(previous))).not.toBe('said');
+    }
   });
 
   it.each(ANSWERS)(
-    'after %j, genuine follow-ups are asked, in withoutRepeats and the gate (streamed and whole)',
+    'after %j, a follow-up mid-reply, quoted or set up is asked, in withoutRepeats and the gate (streamed and whole)',
     (said) => {
       for (const question of [
         'Would the clinics pay cash for it then?',
         'Did the advisor name a predicate device?',
         'Which clinics have you talked to about paying?',
       ]) {
-        const reply = `That changes the model a lot. ${question}`;
-        const out = withoutRepeats(reply, [R1, OPENER].join('\n\n'), {
+        for (const reply of [
+          `That changes the model a lot. ${question} It decides who you pitch first.`,
+          `That changes the model a lot. Ask him: "${question}"`,
+          `That changes the model a lot. Send him one line. "${question}"`,
+          `That changes the model a lot. One question to your advisor. ${question}`,
+        ]) {
+          const out = withoutRepeats(reply, [R1, OPENER].join('\n\n'), {
+            strictQuestions: stuckOn(said, R1),
+            asked: askedBefore(R1, [OPENER]),
+          });
+          expect(out.text, reply).toBe(reply);
+          for (const chunks of chunkings(reply)) {
+            const g = gate({ previousReply: R1, earlierReplies: [OPENER], founderText: said });
+            expect(streamed(g, chunks), reply).toBe(reply);
+          }
+        }
+        // At the very end, as the coach's own hand-back, it may go: only that question, and the gate agrees.
+        const trailing = `That changes the model a lot. ${question}`;
+        const out = withoutRepeats(trailing, [R1, OPENER].join('\n\n'), {
           strictQuestions: stuckOn(said, R1),
           asked: askedBefore(R1, [OPENER]),
         });
-        expect(out.dropped, question).toBe(0);
-        for (const chunks of chunkings(reply)) {
+        expect([trailing, 'That changes the model a lot.']).toContain(out.text);
+        for (const chunks of chunkings(trailing)) {
           const g = gate({ previousReply: R1, earlierReplies: [OPENER], founderText: said });
-          expect(streamed(g, chunks), question).toBe(reply);
+          expect(streamed(g, chunks).trim(), trailing).toBe(out.text);
         }
       }
     },
@@ -477,5 +504,171 @@ describe('a re-ask goes only where it continues the coach’s own prose (review 
         expect(streamed(g, chunks).trim()).toBe(kept);
       }
     }
+  });
+});
+
+/*
+ * Review of the 2026-11-07 fix, round 6. Five rounds alternated between a grammar of no-answers that missed casual
+ * wordings and a shape that misread answers, and question deletion kept garbling lines the vEIR wrote for the founder to
+ * send. Now a no-answer is read as the union of both (recall first) and the prompt line on it is hedged, so the model
+ * settles a misread; a line for the founder to say or send is put in double quotes by the model; and a question asked
+ * again by subject goes only from the trailing run of unquoted questions put to the founder, wherever its paragraph
+ * starts, never the line the sentence before it sets up.
+ */
+describe('a no-answer read as the union, a re-ask left out only at the end (review of the 2026-11-07 fix, round 6)', () => {
+  const CASUAL = [
+    'nah never got around to it',
+    'i honestly couldnt tell ya',
+    'havent had a sec',
+    'theres been no word',
+    'we havent connected yet',
+    'i was gonna ask but forgot',
+    'my cofounder was supposed to ask but didnt',
+    'we were supposed to meet but he cancelled',
+    'the meeting fell through',
+    'we rescheduled',
+    'he dodged it',
+    'he was vague',
+    'not off the top of my head',
+    'i forget what he said',
+    'hes been ghosting me',
+    'he left me on read',
+    'i got distracted',
+    'its still on my list',
+    'i aint got a clue',
+    'i completely dropped the ball on that',
+    'no progress on that',
+    'nothing concrete',
+    'im clueless on that',
+    "i'll have to check",
+  ];
+
+  it.each(CASUAL)(
+    'reads %j as a no-answer: the CPT question at the end goes, in its own paragraph too, in withoutRepeats and the gate',
+    (said) => {
+      expect(stuckOn(said, R2)).toBe(true);
+      expect(noAnswerReadingOf(said, noAnswerContextOf(R2))).not.toBeNull();
+      for (const [reply, kept] of [
+        [`That is common at this stage. ${CPT}`, 'That is common at this stage.'],
+        [
+          `That is common at this stage.\n\nMost clinics bill the monitoring time under remote monitoring codes.\n\n${CPT}`,
+          'That is common at this stage.\n\nMost clinics bill the monitoring time under remote monitoring codes.',
+        ],
+      ] as const) {
+        const out = withoutRepeats(reply, [R2, R1, OPENER].join('\n\n'), {
+          strictQuestions: stuckOn(said, R2),
+          asked: askedBefore(R2, [R1, OPENER]),
+        });
+        expect(out.text, reply).toBe(kept);
+        for (const chunks of chunkings(reply)) {
+          const g = gate({ previousReply: R2, earlierReplies: [R1, OPENER], founderText: said });
+          expect(streamed(g, chunks).trim(), reply).toBe(kept);
+        }
+      }
+    },
+  );
+
+  it('takes the notes’ agenda out only on a reading of high precision; one by shape alone keeps it', () => {
+    expect(noAnswerReadingOf('i didnt ask him that', noAnswerContextOf(R1))).toBe('said');
+    expect(noAnswerReadingOf('the advisor ghosted me lol', noAnswerContextOf(R1))).toBe('said');
+    expect(noAnswerReadingOf('no progress on that', noAnswerContextOf(R1))).toBe('shape');
+    expect(noAnswerReadingOf('insurance doesnt cover it', noAnswerContextOf(R1))).toBe('shape');
+    expect(leavesAgendaOut('i didnt ask him that', null, R1)).toBe(true);
+    expect(leavesAgendaOut('no progress on that', null, R1)).toBe(false);
+    // With nothing asked, the shape is no reading at all.
+    expect(noAnswerReadingOf('no progress on that')).toBeNull();
+  });
+
+  const DISTRESS = [
+    'i cant do it anymore',
+    'i dont know anymore',
+    'idk anymore honestly',
+    'i dont know what im doing',
+    'i cant do this',
+    'i cant cope',
+    'i dont feel safe',
+    'im not doing great tbh',
+    'nothing matters',
+    'i havent eaten in two days',
+    'no one is helping me',
+    'i havent slept in days',
+    'im so stressed i didnt get to it',
+  ];
+
+  it.each(DISTRESS)('keeps %j out of the no-answer readings: never stuck, never "unknown"', (said) => {
+    for (const previous of [R1, R2]) {
+      expect(stuckOn(said, previous)).toBe(false);
+      expect(founderMoves(said, noAnswerContextOf(previous))).not.toContain('unknown');
+      expect(noAnswerReadingOf(said, noAnswerContextOf(previous))).toBeNull();
+    }
+  });
+
+  it('reads "i dont know what im doing" as a request for help, as main did, and "i dont know anymore" as none', () => {
+    expect(founderMoves('i dont know what im doing', noAnswerContextOf(R1))).toContain('help');
+    expect(founderMoves('i dont know anymore', noAnswerContextOf(R1))).not.toContain('help');
+  });
+
+  const KEPT: readonly (readonly [string, string])[] = [
+    [
+      'a question set up as one to the advisor',
+      'That is really common, so no stress. Most pressure insoles land in class one or two. The fastest way to know is one question to your advisor. Which device class would you put this insole in?',
+    ],
+    [
+      'a line set up as a text',
+      'No worries. Most insoles like yours are class two. Next step, send him one line. Which class would you put the insole in?',
+    ],
+    [
+      'a role-play line',
+      "Let's practise the call so you are ready. I'll be the advisor. So, what device class do you think you are in?",
+    ],
+    [
+      'a role-play line from a named character',
+      "Let's rehearse. I'm Dr Lee now. What did you want to ask me about the device class?",
+    ],
+    [
+      'two questions set up as a text',
+      'Okay. Most insoles are class two. My suggestion is one text to him tonight. Which device class would you put a pressure insole in? And how would clinics pay?',
+    ],
+    [
+      'a note to him, the question in its own paragraph',
+      'Fair enough.\n\nHi Dr Lee, quick question on the insole.\n\nWhich device class would you put it in?',
+    ],
+    [
+      'a quoted line to send, ending the reply',
+      `That is common. The quickest way to know is to ask. "${CPT}"`,
+    ],
+    ['a quoted role-play line', `Okay, I'll play the advisor. "${CPT}"`],
+    [
+      'an announcement before the question',
+      "That is normal at this stage. Here's what I'd want to know. What did your advisor say about the device class?",
+    ],
+    [
+      'a question mid-reply, by subject',
+      `That is common at this stage. ${CPT} Clinics usually bill it under remote monitoring codes.`,
+    ],
+    [
+      'a note told to him',
+      'Keep the note short and tell him what you need. Which device class does he think this is, and how would clinics pay for it?',
+    ],
+  ];
+
+  describe.each([
+    'i dont know',
+    'he hasnt gotten back to me',
+    'no progress on that',
+    'insurance doesnt cover it',
+  ])('after %j', (founderText) => {
+    it.each(KEPT)('keeps %s whole, in withoutRepeats and the gate (streamed and whole)', (_, reply) => {
+      const out = withoutRepeats(reply, [R1, OPENER].join('\n\n'), {
+        strictQuestions: stuckOn(founderText, R1),
+        asked: askedBefore(R1, [OPENER]),
+      });
+      expect(out.text).toBe(reply);
+      for (const chunks of chunkings(reply)) {
+        const g = gate({ previousReply: R1, earlierReplies: [OPENER], founderText });
+        expect(streamed(g, chunks)).toBe(reply);
+        expect(g.trace.reasksDropped).toBe(0);
+      }
+    });
   });
 });

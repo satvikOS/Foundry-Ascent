@@ -7,6 +7,7 @@ import {
   deriveConversationState,
   founderMoves,
   noAnswerContextOf,
+  noAnswerReadingOf,
   renderConversationState,
   reportsCommitmentDone,
   saysOnlyNoAnswer,
@@ -145,7 +146,8 @@ export function bringsOwnSubject(
 /**
  * Whether the notes leave their agenda out of this turn, once the conversation is under way (`ownSubject`): the message
  * brings a subject of the founder's own ({@link bringsOwnSubject}), or only says they have no answer ("I didn't do
- * that", "no idea"; after `previousReply` asked something, by its shape too: "he hasnt gotten back to me"). Production,
+ * that", "no idea", "he hasnt gotten back to me": the lexicon or the predicate grammar; a reading by its shape alone keeps
+ * the agenda, see `noAnswerReadingOf`). Production,
  * 2026-11-07: on exactly the turn the founder said they could not answer, the notes still offered the open question on
  * billing and the commitment's "ask how it went", and the reply asked it again in other words; the conversation itself
  * holds what was asked.
@@ -155,8 +157,12 @@ export function leavesAgendaOut(
   continuity: PromptContinuity | null | undefined,
   previousReply?: string | null,
 ): boolean {
+  const context = noAnswerContextOf(previousReply);
+  // Only a reading of high precision (the lexicon or the predicate grammar) takes the agenda out: one by its shape alone
+  // may be an answer said as a negation ("insurance doesnt cover it"), so the notes stay, the question it left open
+  // marked as raised (`raisedIn`: the reply that asked it is in what was said).
   return (
-    saysOnlyNoAnswer(founderText, noAnswerContextOf(previousReply)) ||
+    (saysOnlyNoAnswer(founderText, context) && noAnswerReadingOf(founderText, context) === 'said') ||
     bringsOwnSubject(founderText, continuity)
   );
 }

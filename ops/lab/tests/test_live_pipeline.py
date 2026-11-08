@@ -19,6 +19,7 @@ from conversation_lab.live.checks import (
     Turn,
     judgmental_notes,
     no_answer,
+    no_answer_reading,
     put_to_student,
     reply_hole,
     run_checks,
@@ -1659,9 +1660,11 @@ def test_a_no_answer_says_who_did_not_do_what(student: str) -> None:
 
 
 @pytest.mark.parametrize("student", _ROUND5_REAL_ANSWERS)
-def test_an_answer_said_as_a_negation_is_no_no_answer(student: str) -> None:
-    assert not no_answer(student, "So who sits in those layers?")
-    assert not no_answer(student, _R1)
+def test_an_answer_said_as_a_negation_is_never_a_no_answer_by_the_grammar(student: str) -> None:
+    # Round 6: the reading is the union of the grammar and the shape (recall first); an answer said as a negation may be
+    # read by its shape, which the product hedges in the prompt, but never by the grammar.
+    assert no_answer_reading(student, "So who sits in those layers?") != "said"
+    assert no_answer_reading(student, _R1) != "said"
 
 
 def test_a_bare_no_answers_a_yes_no_question_and_is_a_no_answer_to_a_wh_question() -> None:
@@ -1671,3 +1674,79 @@ def test_a_bare_no_answers_a_yes_no_question_and_is_a_no_answer_to_a_wh_question
         assert no_answer(student, _R1)
         assert not no_answer(student, "That is the usual path. Is it Class II?")
         assert not no_answer(student, "Quick one: did he name a predicate device?")
+
+
+# Review of the 2026-11-07 fix, round 6: a no-answer is read as the union of the grammar and the shape (recall first),
+# never in distress, and a question asked again by subject is the coach's own re-ask only in the reply's trailing
+# hand-back (the product's prompts/conversation-state.ts ``noAnswerReadingOf`` and validators/social.ts
+# ``handBackStart``).
+_ROUND6_NO_ANSWERS = [
+    "nah never got around to it",
+    "havent had a sec",
+    "my cofounder was supposed to ask but didnt",
+    "we were supposed to meet but he cancelled",
+    "the meeting fell through",
+    "we rescheduled",
+    "he dodged it",
+    "he left me on read",
+    "i got distracted",
+    "its still on my list",
+    "i aint got a clue",
+    "i completely dropped the ball on that",
+    "no progress on that",
+    "nothing concrete",
+]
+_ROUND6_DISTRESS = [
+    "i cant do it anymore",
+    "i dont know anymore",
+    "i dont know what im doing",
+    "i dont feel safe",
+    "im not doing great tbh",
+    "nothing matters",
+    "no one is helping me",
+]
+
+
+@pytest.mark.parametrize("student", _ROUND6_NO_ANSWERS)
+def test_a_no_answer_is_read_as_the_union(student: str) -> None:
+    assert no_answer(student, "So who sits in those layers?")
+    call = [
+        T("1.1", "getting product to market", _FIRST),
+        T("1.2", "there are a few layers of sign-off to get through", "So who sits in those layers?"),
+        T(
+            "1.3",
+            student,
+            "Okay.\n\nMost clinics bill it as remote monitoring.\n\nIs monitoring time reimbursable?",
+        ),
+    ]
+    assert "reasked_after_unknown" in run_checks(call).codes()
+
+
+def test_the_shape_alone_is_a_hedged_reading() -> None:
+    assert no_answer_reading("i didnt ask him that", _R1) == "said"
+    assert no_answer_reading("no progress on that", _R1) == "shape"
+    assert no_answer_reading("no progress on that") is None
+
+
+@pytest.mark.parametrize("student", _ROUND6_DISTRESS)
+def test_a_message_in_distress_is_never_a_no_answer(student: str) -> None:
+    assert no_answer_reading(student, _R1) is None
+    assert no_answer_reading(student, "So who sits in those layers?") is None
+
+
+@pytest.mark.parametrize(
+    "coach",
+    [
+        "That is common. The fastest way to know is one question to your advisor. Is monitoring time reimbursable?",
+        "Okay. Let's practise. I'll be the advisor. So, is monitoring time reimbursable under the codes?",
+        'That is common. Send him this. "Is monitoring time reimbursable under existing CPT codes?"',
+        "That is common. Is monitoring time reimbursable under existing CPT codes? Clinics usually bill it monthly.",
+        "Fair enough.\n\nHi Dr Lee, quick question on the insole.\n\nIs monitoring time reimbursable?",
+    ],
+)
+def test_a_line_set_up_quoted_or_mid_reply_is_no_reask(coach: str) -> None:
+    call = [
+        T("1.1", "getting product to market", _FIRST),
+        T("1.2", "i dont know", coach),
+    ]
+    assert "reasked_after_unknown" not in run_checks(call).codes(), coach

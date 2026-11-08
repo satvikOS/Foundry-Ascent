@@ -8,7 +8,9 @@
   later in other words);
 * reasked_after_unknown (high): after the student says they do not know, did not do it, have no answer yet or hands
   the work back ("you tell me"), the coach asks again on the subject of a question it asked before (two shared content
-  words said together, or 40% of them: the product's strict reading);
+  words said together, or 40% of them: the product's strict reading), in the reply's trailing hand-back (unquoted,
+  never a line the sentence before it sets up for the student to send or practise: ``in_hand_back``). The no-answer
+  is read as the product reads it, the union of its grammar and its shape, never in distress (``no_answer_reading``);
 * question_only: a reply that only asks (no statement of eight words or more, no list) where the student brought
   something to answer: a goal, a request, a report or no answer (never a hello, thanks or a goodbye);
 * judgmental_profile_note (high): a note in the notebook's founder profile after the run that judges the founder
@@ -166,6 +168,10 @@ NO_ANSWER_CLAUSE = re.compile(
             r"not (?:really |totally |entirely |quite )?sure|i (?:wouldn't|would not) know|beats me)(?: (?!(?:what|how) "
             r"(?:you (?:mean|meant)|you're asking|you are asking|that means)\b)(?:what|how|where|which)\b.*| (?:anything|"
             r"much) about (?:that|it|this))?(?: (?:honestly|really|tbh|to be honest|yet|at all))*$",
+            r"(?:i'm|i am) (?:so |totally |completely |just |a bit |kind of |kinda )?(?:clueless|drawing a blank|"
+            r"blanking|blank)(?: (?:on|about|with) (?:that|it|this|those|them))?(?: (?:honestly|tbh|sorry|man))*$",
+            r"(?:i )?(?:completely |totally |kind of |kinda )?(?:dropped the ball|(?:keep|kept) forgetting)\b.*$",
+            r"(?:i )?ain't got (?:a |any |the )?(?:clue|idea)\b.*$",
         )
     )
 )
@@ -216,6 +222,7 @@ _BARE_CONTRACTIONS = {
     "arent": "aren't",
     "cant": "can't",
     "wont": "won't",
+    "aint": "ain't",
     "im": "i'm",
     "ive": "i've",
     "thats": "that's",
@@ -337,10 +344,45 @@ _NO_ANSWER_PREDICATE = re.compile(
             _NA_LEAD
             + "(?:"
             + _NA_OTHER
-            + r"|he's|she's|hes|shes|they've|theyve) (?:(?:has|have|had|just|kind of|kinda|totally|completely|been|"
-            r"kept|keeps) )*(?:ghosted|went quiet|gone quiet|been quiet|is quiet|quiet|went silent|gone silent|"
-            r"been silent|silent|mia|awol|been away|is away|away|been busy|is busy|busy|swamped|dropped off|"
-            r"disappeared|vanished|went dark|gone dark)\b",
+            + r"|he's|she's|hes|shes|they've|theyve|they're|theyre) (?:(?:has|have|had|just|kind of|kinda|totally|"
+            r"completely|been|kept|keeps|was|were|is|are|too|so|super|really|still) )*(?:ghosted|ghosting|went quiet|"
+            r"gone quiet|been quiet|is quiet|quiet|went silent|gone silent|been silent|silent|mia|awol|been away|"
+            r"is away|away|been busy|is busy|busy|swamped|slammed|dropped off|disappeared|vanished|went dark|gone dark|"
+            r"cancel+ed|bailed|flaked|no-?showed|left (?:me|us|it) on read|on (?:vacation|holiday|leave|pto)|"
+            r"out of (?:the )?office|ooo|out sick|off sick|travel+ing)\b",
+            # The meeting moved, or the person said nothing of substance.
+            _NA_LEAD
+            + "(?:we|i|they|he|she|"
+            + _NA_OTHER
+            + r") (?:(?:had|have|has|just|kinda|kind of|already) (?:to )?)*(?:rescheduled?|postponed?|pushed "
+            r"(?:it|the (?:meeting|call)) back|called it off)\b",
+            _NA_LEAD
+            + _NA_EVENT
+            + r" (?:(?:kind of|kinda|just|totally) )?(?:fell through|fell apart|got scrapped|was scrapped|"
+            r"didn't pan out|never happened)\b",
+            _NA_LEAD
+            + "(?:"
+            + _NA_OTHER
+            + r"|he's|she's|hes|shes) (?:(?:kind of|kinda|sort of|totally|pretty|really|super|just|was|were|is|been) )*"
+            r"(?:dodged|ducked|sidestepped|side-stepped|avoided|skirted|deflected)(?: (?:it|that|the question|"
+            r"the topic|them|both))?\b|"
+            + _NA_LEAD
+            + "(?:"
+            + _NA_OTHER
+            + r") (?:was|were|is|been|got) (?:(?:kind of|kinda|sort of|pretty|really|super|very|totally|so) )*"
+            r"(?:vague|evasive|noncommittal|non-committal|cagey|unclear|wishy-washy|rushed|distracted|in a rush)\b",
+            r"\b(?:ran|run|running) out of time\b",
+            # Not yet, said without a negation.
+            r"\b(?:left (?:me|us|it) on read|got nothin'?g?|got (?:distracted|sidetracked|side-tracked|busy|swamped|"
+            r"slammed)|(?:it's|its|that's|thats|it is|that is) (?:still )?on (?:my|the|our) (?:list|to-?do(?: list)?|"
+            r"radar)|(?:still )?working on (?:it|that)|still (?:figuring|working|looking|sorting) (?:it |that )?(?:out|"
+            r"on it|into it)|tbd|to be determined|ask me (?:later|again|another time)|(?:i'll|i will|i'd|i need to|"
+            r"i have to|i gotta|gotta|let me|i should|need to|have to) (?:have to |need to )?(?:check|find out|"
+            r"double-?check|ask(?: (?:him|her|them|around|the advisor))?|look (?:into it|it up|into that)|get back to "
+            r"you(?: on (?:it|that))?)(?: (?:on (?:it|that)|first|tbh|honestly))?$|dropped the ball|fell through the "
+            r"cracks|slipped through the cracks|(?:keep|kept) forgetting|ain't got (?:a |any |the )?(?:clue|idea)|"
+            r"haven't (?:the|a) (?:faintest|foggiest|slightest)|not the (?:faintest|foggiest|slightest)|(?:i'm|i am|im) "
+            r"(?:so |totally |completely |just |a bit )?(?:clueless|drawing a blank|blanking))\b",
             r"\b(?:said|says|promised)(?: that)? (?:he|she|they|he'd|she'd|they'd|hed|shed|theyd)(?:'d| would| will|"
             r"'ll| was going to| were going to| was gonna| were gonna)? (?:get back|reply|respond|email|call|text|write|"
             r"send|follow up|look into it|check|find out|let (?:me|us) know)\b",
@@ -396,8 +438,41 @@ _NOT_YET_REPORTED = re.compile(
     r"\b(?:said|says|promised)(?: that)? (?:he|she|they|he'd|she'd|they'd|hed|shed|theyd)(?:'d| would| will|'ll|"
     r" was going to| were going to| was gonna| were gonna)? (?:get back|reply|respond|email|call|text|write|send|"
     r"follow up|look into it|check|find out|let (?:me|us) know)\b|\bbut(?= (?:(?:he|she|they|nobody|no one|"
-    r"(?:the|my|our) [\w'-]+) )?(?:still |really |actually )?(?:hasn't|has not|haven't|have not|hadn't|didn't|"
-    r"did not|never|won't|wouldn't|wasn't|weren't|couldn't|isn't|nothing|no (?:reply|word|response|answer|luck))\b)"
+    r"(?:the|my|our) [\w'-]+) )?(?:still |really |actually |just |kind of |kinda )?(?:hasn't|has not|haven't|"
+    r"have not|hadn't|didn't|did not|never|won't|wouldn't|wasn't|weren't|couldn't|isn't|nothing|no (?:reply|word|"
+    r"response|answer|luck)|cancel+ed|bailed|flaked|postponed|rescheduled|pushed it|called it off|ghosted|"
+    r"went quiet|went silent|got (?:sick|busy|cancel+ed|pushed|postponed|moved|bumped)|was busy|forgot|"
+    r"no-?showed)\b)|\b(?:forgot|forget|can't remember|cannot remember|don't remember|don't recall|can't recall) "
+    r"(?:exactly )?what (?:he|she|they|the [\w'-]+|my [\w'-]+) (?:said|told me|thinks|thought|says)\b|"
+    r"\b(?:it's|its|it is) (?:still )?on (?:my|the|our) (?:list|to-?do(?: list)?|radar)\b"
+)
+#: "supposed to ask but…": the intention did not come off, so the "but" states no answer (the product's
+#: ``NOT_YET_REPORTED``, there a lookbehind Python cannot take).
+_UNDONE_BUT = re.compile(r"(\b(?:supposed|meant|meaning|planning|going|gonna) to\b[^,.;]*?)\bbut\b")
+#: An intention that did not come off (the product's ``UNDONE_INTENTION``).
+_UNDONE_INTENTION = re.compile(
+    r"\b(?:was|were|am|are|i'm|we're|is) (?:supposed|meant|meaning|planning|going|gonna) to\b[^,.;]*\bbut\b"
+)
+#: A negation or a doubt, however typed (the product's ``NEGATION``): the broad reading of the union, recall first.
+_NEGATION = re.compile(
+    r"n't\b|\b(?:h[ae]?v|h[ae]s|had|di?d|does|do|w[ae]s|w[eu]re|c[ou]{0,2}ld|w[ou]{0,2}ld|sh[ou]{0,2}ld|is|are|ca|wo)"
+    r"nt\b|\b(?:not|never|nothing|nobody|no one|none|neither|nope|nah|no|idk|dunno|unsure|uncertain|clueless|waiting)\b"
+)
+#: A message in distress (the product's ``inDistress``, without its risk rules and ideation prefilter): never read as a
+#: no-answer or as stuck on a question.
+_DISTRESS = re.compile(
+    r"\bany ?more\b|\bany longer\b|\b(?:i|we) (?:really |honestly |just |actually |even )*(?:don't|do not|dont) "
+    r"(?:really |even )?know what (?:i'm|i am|im|we're|we are) doing\b|\b(?:i|we) (?:really |honestly |just |simply "
+    r"|literally )*(?:can't|cannot|can not|cant) (?:do (?:it|this|that|any of (?:it|this))|handle|take|cope|keep "
+    r"(?:going|doing|up)|go on|deal|breathe|function|face)\b|\b(?:don't|do not) feel (?:safe|ok|okay|right|good|"
+    r"well)\b|\bnot (?:feeling )?safe\b|\bnothing matters\b|\bwhat's the point\b|\b(?:haven't|hasn't|have not|"
+    r"has not|not|barely|hardly) (?:eaten|slept|been eating|been sleeping)\b|\b(?:i'm|i am) not (?:doing )?(?:ok|"
+    r"okay|great|good|well|alright|all right|fine)\b|\b(?:no one|nobody) (?:is )?(?:helping|cares|listens|gets it)\b|"
+    r"\bnever wanted (?:any of )?(?:this|it)\b|\b(?:i|we) (?:feel|felt) (?:so |really |completely |totally )?(?:alone|"
+    r"lonely|hopeless|empty|numb|worthless|useless|trapped)\b|\bhopeless\b|\b(?:stressed|overwhelmed|exhausted|"
+    r"burn(?:ed|t)? ?out|burning out|anxious|panick\w*|freaking out|drained|struggling|losing (?:sleep|hope|"
+    r"motivation|it))\b|\b(?:end (?:it|it all|everything|my life)|(?:hurt|harm|kill)\w* (?:myself|me)|self[- ]harm|"
+    r"suicid\w*|give up on (?:everything|life|myself)|no point)\b"
 )
 #: The answer put off ("idk, ask me next week"): no answer of its own beside a no-answer.
 _LATER_ANSWER = re.compile(
@@ -450,7 +525,8 @@ _OWN_SUBJECT = re.compile(
 
 
 def _carries_answer(text: str) -> bool:
-    return bool(_ANSWER_SUBSTANCE.search(_NOT_YET_REPORTED.sub(" ", _NEGATED_REPORT.sub(" ", text))))
+    plain = _UNDONE_BUT.sub(r"\1 ", _NOT_YET_REPORTED.sub(" ", _NEGATED_REPORT.sub(" ", text)))
+    return bool(_ANSWER_SUBSTANCE.search(plain))
 
 
 def _clauses(text: str) -> list[str]:
@@ -467,21 +543,24 @@ def _is_yes_no(question: str) -> bool:
     return bool(_YES_NO_QUESTION.search(asked))
 
 
-def _shaped(clause: str, yes_no: bool) -> bool:
-    """A clause shaped like a no-answer (the product's ``noAnswerShape``): short, and says who did not do what; or, to a
-    question that is not a yes/no one, a bare "no"."""
+def _shaped(clause: str, yes_no: bool) -> str | None:
+    """How a clause reads as a no-answer by its shape (the product's ``noAnswerShape``, the union of two readings):
+    ``said`` when it is short and says who did not do what, or, to a question that is not a yes/no one, is a bare "no";
+    ``shape`` when it is only short with a negation or a doubt, or an intention that did not come off."""
     if len(clause.split()) > NO_ANSWER_MAX_WORDS:
-        return False
+        return None
     if _ONLY_INTERJECTIONS.match(clause):
-        return not yes_no and bool(_SAYS_NO.search(clause))
-    return bool(_NO_ANSWER_PREDICATE.search(clause))
+        return "said" if not yes_no and _SAYS_NO.search(clause) else None
+    if _NO_ANSWER_PREDICATE.search(clause):
+        return "said"
+    return "shape" if _NEGATION.search(clause) or _UNDONE_INTENTION.search(clause) else None
 
 
-def _no_answer_flags(text: str, after_question: bool, yes_no: bool = False) -> list[bool]:
-    """Which clauses of ``text`` (normalised) say there is no answer: by the phrase lists, and after a question by the
-    shape of the whole message too (the product's ``noAnswerClauses``)."""
+def _no_answer_flags(text: str, after_question: bool, yes_no: bool = False) -> list[str | None]:
+    """How each clause of ``text`` (normalised) reads as a no-answer: by the phrase lists (``said``), and after a
+    question by the shape of the whole message too (the product's ``noAnswerFlags``)."""
     clauses = _clauses(text)
-    said = [bool(NO_ANSWER_CLAUSE.match(c)) for c in clauses]
+    said: list[str | None] = ["said" if NO_ANSWER_CLAUSE.match(c) else None for c in clauses]
     if (
         not after_question
         or _carries_answer(text)
@@ -492,34 +571,43 @@ def _no_answer_flags(text: str, after_question: bool, yes_no: bool = False) -> l
     ):
         return said
     shaped = [s or _shaped(c, yes_no) for s, c in zip(said, clauses, strict=True)]
-    rest = " ".join(c for c, f in zip(clauses, shaped, strict=True) if not f)
+    rest = " ".join(c for c, f in zip(clauses, shaped, strict=True) if f is None)
     content = {w for w in _words(rest) if len(w) >= 3 and w not in _STOP}
     return shaped if len(content) < 2 else said
 
 
-def no_answer(student: str, previous: str | None = None) -> bool:
-    """The student has no answer yet or hands the work back (the product's ``stuckOn``): a no-answer clause in a message
-    that asks nothing of its own (a question in it is what to answer, as the product reads it) and carries no answer
-    besides it, or a request for the work itself. After ``previous`` asked something, a no-answer is read by its shape
-    too ("he hasnt gotten back to me"). Never after ``previous`` (the coach's reply before it) ended on a check-in on the
-    student."""
+def no_answer_reading(student: str, previous: str | None = None) -> str | None:
+    """How the student's message reads as having no answer (the product's ``noAnswerReadingOf`` and ``stuckOn``):
+    ``said`` by the phrase lists or the predicate grammar, or a request for the work itself; ``shape`` by its shape
+    alone (the prompt hedges it); None when it carries an answer besides, asks something of its own, or is in distress.
+    After ``previous`` asked something, a no-answer is read by its shape too ("he hasnt gotten back to me"). Never after
+    ``previous`` (the coach's reply before it) ended on a check-in on the student."""
     after_question = yes_no = False
     if previous:
         questions = _question_clauses(previous.translate(_APOSTROPHES))
         if questions and SUPPORT_CHECK_IN.search(questions[-1]):
-            return False
+            return None
         after_question = bool(questions)
         yes_no = bool(questions) and _is_yes_no(questions[-1])
     text = _normalized(student)
+    if _DISTRESS.search(text):
+        return None
     if HANDS_BACK.search(text):
-        return True
+        return "said"
     if "?" in text:
-        return False
+        return None
     flags = _no_answer_flags(text, after_question, yes_no)
     if not any(flags):
-        return False
-    rest = " ".join(c for c, f in zip(_clauses(text), flags, strict=True) if not f)
-    return not _carries_answer(_LATER_ANSWER.sub(" ", rest))
+        return None
+    rest = " ".join(c for c, f in zip(_clauses(text), flags, strict=True) if f is None)
+    if _carries_answer(_LATER_ANSWER.sub(" ", rest)):
+        return None
+    return "said" if "said" in flags else "shape"
+
+
+def no_answer(student: str, previous: str | None = None) -> bool:
+    """The student has no answer yet or hands the work back, by any reading (``no_answer_reading``)."""
+    return no_answer_reading(student, previous) is not None
 
 
 #: A message that is only social: a hello, thanks or a goodbye (a reply to it may be a question alone).
@@ -843,6 +931,105 @@ def put_to_student(coach: str, question: str) -> bool:
     return True
 
 
+#: Words that prepare something for the student to say or send (the product's validators/social.ts ``PREP_CUE``).
+_PREP_CUE = re.compile(
+    r"\b(?:here(?:'s| is| are) (?:a |an |the |my |your |some |two |three )?(?:(?:quick|short|rough|first) )?(?:draft|"
+    r"template|script|version|email|message|note|text|questions?)\b|draft\b[^.?!\n]{0,40}:|something like|ask (?:him|"
+    r"her|them|whoever|each of them)\b|questions? (?:to (?:send|ask|bring|raise|put)|you (?:could|can|might) (?:send|"
+    r"ask|bring|raise|put)|worth (?:asking|sending|raising)|for (?:him|her|them|your|the|dr)\b)|you (?:could|can|might) "
+    r"(?:write|say|send|ask|open with|lead with|text|email)|(?:send|email|text|message|write to) (?:him|her|them)\b)",
+    re.IGNORECASE,
+)
+#: A sentence that announces the question after it (the product's ``ANNOUNCES``).
+_ANNOUNCES = re.compile(
+    r"\b(?:this|these|the following|below|(?:these|those|similar) lines|like so|as follows|(?:put|say|word|phrase|"
+    r"frame|ask|open|start|send) it(?: like this)?)\s*[.!…]*[\"'”’)\]*_]*\s*$|\b(?:two|three|four|few|"
+    r"couple of|following|key|main|these|those) (?:things|questions|points|items|asks)\b",
+    re.IGNORECASE,
+)
+#: A sentence that sets up the question after it as a line to send, say or practise (the product's ``SETS_UP``).
+_SETS_UP = re.compile(
+    "|".join(
+        (
+            r"\bask(?:s|ed|ing)?\b|\bquestions?\b|\bthe ask\b",
+            r"\b(?:message|messages|messaging|text|texts|texting|email|emails|emailing|e-mail|dm|ping|write|writing|"
+            r"send|sending)\b",
+            r"\b(?:tell|telling) (?:him|her|them|your|the|whoever)\b|\b(?:say|saying) (?:it|this|that|something|to "
+            r"(?:him|her|them))\b|\byou (?:could|can|might|would) say\b",
+            r"\b(?:word|phrase|frame|put) it\b|\bwording\b|\bput it to\b",
+            r"\b(?:a|the|this|that|one|two|short|quick|first|opening) (?:script|line|lines|draft|note)\b",
+            r"\b(?:call|ring|phone) (?:him|her|them|your)\b|\b(?:on|for|open|start) the call\b|\b(?:open|opening|lead|"
+            r"start) with\b",
+            r"\b(?:practi[cs]ing|practi[cs]ed)\b|\b(?:let's|let us|we can|we could|to|and|quick|a) practi[cs]e\b|"
+            r"\bpracti[cs]e (?:run|round|call|pitch|it|this|that|asking|once|first|out loud)\b|\brehears\w*|"
+            r"\brole-?play\w*|\bplay(?:ing)? (?:the|a|an|your|him|her)\b|\bpretend\w*|\bin character\b|"
+            r"\bact(?:ing)? as\b",
+            r"\b(?:i'll|i will|let me|i can|i'd) (?:be|play) (?:the|your|a|an|dr|mr|ms|mrs|prof|him|her)\b|\bi'm (?:the|"
+            r"your|dr|mr|ms|mrs|prof)\b|\bi am (?:the|your)\b",
+            r"\bhere(?:'s| is| are) (?:what|the (?:one |main |key |real )?(?:thing|question|bit))\b|\bwhat (?:i'd|"
+            r"i would|you'd|you would|we'd) (?:want|like|need) to (?:know|find out|pin down)\b|\bone thing\b",
+        )
+    )
+)
+#: A note to someone else: a salutation, or a line that opens on a titled name (the product's ``SALUTATION``,
+#: ``TITLED_NAME``).
+_SALUTATION = re.compile(
+    r"(?:^|[.!?][\"'”’)\]*_]*\s+)(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b", re.IGNORECASE
+)
+_TITLED_NAME = re.compile(r"^[\s*_>\"“]*(?:Dr|Mr|Mrs|Ms|Mx|Prof|Professor)\.? [A-Z]")
+_COACH_SENTENCE = re.compile(r"[^.!?\n]*(?:[.!?]+[\"'”’)\]*_]*|\n|$)")
+
+
+def _sentences_at(text: str) -> list[tuple[int, str]]:
+    """The sentences of ``text`` with where each starts (a line break ends one too)."""
+    return [(m.start(), m.group(0)) for m in _COACH_SENTENCE.finditer(text) if m.group(0).strip()]
+
+
+def _last_statement(before: str) -> str | None:
+    for _, sentence in reversed(_sentences_at(before)):
+        s = sentence.strip()
+        if s and not re.search(r"\?[\"'”’)\]*_]*$", s) and re.search(r"\w", s):
+            return s
+    return None
+
+
+def _hand_back_candidate(coach: str, at: int, sentence: str) -> bool:
+    """Whether the question ``sentence`` (at ``at`` in ``coach``) may be part of the reply's trailing hand-back (the
+    product's ``handBackCandidate``): put to the student, not a list item or blockquote, not under or after a lead-in
+    ending in ":", no prep cue before it, no quotation mark in it, to no one else, and not the line the statement
+    before it sets up ("one question to your advisor.", "I'll be the advisor.")."""
+    before = coach[:at]
+    current = sentence.strip()
+    if not re.search(r"\?[\"'”’)\]*_]*$", current) or not put_to_student(coach, current):
+        return False
+    if _ANY_LIST_ITEM.match(current) or _BARE_LIST_MARKER_END.search(before):
+        return False
+    line = before[before.rfind("\n") + 1 :] + current
+    if re.match(r"\s*>", line) or _lead_in(current) is not None or re.search(r":[*_\s]*$", before):
+        return False
+    if _PREP_CUE.search(before + current) or re.search('["“”]', current):
+        return False
+    statement = _last_statement(before)
+    if _SALUTATION.search(line) or _TITLED_NAME.match(line):
+        return False
+    if statement is not None and (_SALUTATION.search(statement) or _TITLED_NAME.match(statement)):
+        return False
+    lowered = (statement or "").lower()
+    return not (statement is not None and (_SETS_UP.search(lowered) or _ANNOUNCES.search(lowered)))
+
+
+def in_hand_back(coach: str, question: str) -> bool:
+    """Whether ``question`` is in the reply's trailing hand-back (the product's ``handBackStart``): it and every
+    sentence after it are questions that may be part of it. Only there is a question asked again by subject the
+    coach's own re-ask; anywhere else it may be a line the student was given to send."""
+    sentences = _sentences_at(coach)
+    start = coach.find(question.strip())
+    if start < 0:
+        return False
+    trailing = [(at, s) for at, s in sentences if at + len(s.rstrip()) > start]
+    return bool(trailing) and all(_hand_back_candidate(coach, at, s) for at, s in trailing)
+
+
 def _question_clauses(text: str) -> list[str]:
     """Every '?'-terminated clause, however short, except tag questions ("..., right?")."""
     clauses = [c.strip() for c in re.findall(r"[^.!?\n]*\?", text)]
@@ -1109,6 +1296,7 @@ def run_checks(
                 stuck
                 and to_student
                 and not reasked
+                and in_hand_back(coach, q)
                 and any(
                     at != t.at and same_subject(q, " ".join(earlier), strict=True) for at, earlier, _ in asked
                 )

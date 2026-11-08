@@ -97,6 +97,11 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '- Teach and prepare: a goal or a step ahead of them gets how it usually works (the usual path, what the terms mean,',
     '  what good looks like) and the prep itself (questions to ask, a script, a checklist). How such things generally',
     '  work (device classes, reimbursement codes, approval committees) is yours to teach, hedged.',
+    // Review of the 2026-11-07 fix, round 6: a question written for the founder to send ("one question to your
+    // advisor. Which class…?") read like the coach asking again; quoted, it is marked as theirs to send, in text and
+    // on a call alike (the voice never says the quote marks: core speech-text.ts `withoutQuoteMarks`).
+    '- A line you write for them to say, send or ask someone else, and a line you say in character, goes in double',
+    '  quotes, on a call too.',
     '- Never repeat yourself: no advice, paragraph or question already said in this conversation, the last one or',
     '  your greeting; a new message gets a new reply. Never re-ask what they answered or did not take up.',
     // Live pilot 42124259353: 32 replies stated figures nobody gave and 11 proposed made-up ones ("say $2 a month", "if

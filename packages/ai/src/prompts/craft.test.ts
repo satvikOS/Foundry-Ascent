@@ -190,6 +190,17 @@ describe('conversation craft in the system prompt', () => {
     expect(section(prompt, 'Mode')).toContain('a social turn (a\ngreeting, thanks, wrapping up');
   });
 
+  it('puts a line drafted for them, or said in character, in double quotes, typed and on a call', () => {
+    // Review of the 2026-11-07 fix, round 6: "one question to your advisor. Which class…?" read as the coach asking
+    // again; quoted, the line is marked as theirs to send (the voice never says the marks: core `withoutQuoteMarks`).
+    for (const channel of ['text', 'voice'] as const) {
+      const rules = conversationCraftRules(channel);
+      expect(rules).toContain(
+        '- A line you write for them to say, send or ask someone else, and a line you say in character, goes in double\n  quotes, on a call too.',
+      );
+    }
+  });
+
   it('adds the spoken register on calls only', () => {
     const voice = buildSystemPrompt({ ...INPUT, channel: 'voice' });
     expect(section(voice, 'Conversation craft')).toContain('On a call, talk the way people speak');
@@ -289,9 +300,11 @@ describe('conversation craft in the system prompt', () => {
     // 2026-11-07.1 adds ~130 for teaching and preparing, and for a founder with no answer (production, 2026-11-07: a
     // goal got questions back, and "I didn't do that" got the first question again in other words). The prefix stays
     // cached on every turn after the first (docs/runbooks/latency.md).
-    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1250);
-    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1310);
-    expect(tokens(craft)).toBeLessThanOrEqual(1260);
+    // 2026-11-07.6 adds ~38: a line written for the founder to say or send, or said in character, goes in double quotes
+    // (review of the 2026-11-07 fix, round 6: a question drafted for the advisor read as the coach asking again).
+    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1290);
+    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1350);
+    expect(tokens(craft)).toBeLessThanOrEqual(1300);
   });
 
   it('is part of the versioned policy', () => {
@@ -327,7 +340,13 @@ describe('conversation craft in the system prompt', () => {
     // list or a quotation never loses a question. Its fifth review (same release): the shape says who did not do what
     // ("insurance doesnt cover it" is an answer), a bare "nope" to a wh-question is a no-answer, and a re-ask, whole or
     // by subject, goes only where it continues the coach's own prose on the same line.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.5');
+    // 2026-11-07.6: its sixth review: a no-answer is read as the union of the predicate grammar and the shape (recall
+    // first), and the prompt line on it is hedged ("reads like they could not answer… if they did answer, build on
+    // it"); a reading by shape alone keeps the notes' agenda; a line written for the founder to say or send, or said in
+    // character, goes in double quotes, on a call too; a question asked again by subject is left out only from the
+    // trailing run of unquoted questions put to the founder, wherever its paragraph starts, never the line a sentence
+    // before it sets up; a message in distress keeps the reply and the safety path it had.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.6');
   });
 });
 

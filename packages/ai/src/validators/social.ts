@@ -3,6 +3,7 @@ import {
   contentWords,
   founderMoves,
   hasNoAnswerOnly,
+  inDistress,
   lastQuestionOf,
   noAnswerContextOf,
   socialTurnOf,
@@ -343,8 +344,8 @@ export interface ReaskOptions {
  * How a question asks again one of `asked` ({@link reaskOf}): `whole`, it comes back whole (three shared terms or more,
  * most of its own or with a pair said together); `subject`, only by the strict or settled reading (one subject or two
  * terms back, see {@link ReaskOptions}), left out only as the reply's trailing hand-back ({@link handBackStart}). A
- * `whole` one goes from the trailing hand-back too, or from the coach's own prose when it is a hand-back candidate
- * ({@link handBackCandidate}) and what follows does not lean on it ({@link leansOnPrevious}); never from a draft, a
+ * `whole` one goes from the trailing hand-back too, or from the coach's own prose when it is a candidate there
+ * ({@link proseHandBackCandidate}) and what follows does not lean on it ({@link leansOnPrevious}); never from a draft, a
  * quotation, a list or a blockquote (review of the 2026-11-07 fix, round 5: a question that came back whole was cut out
  * of the middle of a note to the advisor, which naturally restates it).
  */
@@ -490,22 +491,19 @@ export function putToFounder(before: string, sentence: string): boolean {
  * it is never read as a hand-back to the founder ({@link handBackCandidate}).
  */
 const PREP_CUE =
-  /\b(?:here(?:'s| is| are) (?:a |an |the |my |your |some |two |three )?(?:(?:quick|short|rough|first) )?(?:draft|template|script|version|email|message|note|text|questions?)\b|draft\b[^.?!\n]{0,40}:|something like|ask (?:him|her|them|whoever|each of them)\b|questions? (?:to (?:send|ask|bring|raise|put)|you (?:could|can|might) (?:send|ask|bring|raise|put)|worth (?:asking|sending|raising)|for (?:him|her|them|your|the)\b)|you (?:could|can|might) (?:write|say|send|ask|open with|lead with|text|email)|(?:send|email|text|message|write to) (?:him|her|them)\b)/i;
+  /\b(?:here(?:'s| is| are) (?:a |an |the |my |your |some |two |three )?(?:(?:quick|short|rough|first) )?(?:draft|template|script|version|email|message|note|text|questions?)\b|draft\b[^.?!\n]{0,40}:|something like|ask (?:him|her|them|whoever|each of them)\b|questions? (?:to (?:send|ask|bring|raise|put)|you (?:could|can|might) (?:send|ask|bring|raise|put)|worth (?:asking|sending|raising)|for (?:him|her|them|your|the|dr)\b)|you (?:could|can|might) (?:write|say|send|ask|open with|lead with|text|email)|(?:send|email|text|message|write to) (?:him|her|them)\b)/i;
 
 /** A question sentence ("…?", with closing quotes or emphasis after it). */
 const QUESTION_SENTENCE = /\?["'”’)\]*_]*\s*$/;
 
 /**
- * Whether the question `sentence` (what the reply says after `before`) may be part of the reply's trailing hand-back:
- * put to the founder ({@link putToFounder}: not in a quotation, not a line in character, not under "Ask your advisor:"),
- * and besides not a list item, not a blockquote line ("> …"), not under or after a lead-in ending in ":", and with no
- * prep cue before it or in it ({@link PREP_CUE}: "Here is a draft:", "something like", "ask him", "questions to send",
- * "you could write"). Review of the 2026-11-07 fix: deleting a question anywhere in the reply garbled drafts the vEIR
- * wrote for the founder to send (unquoted paragraphs, blockquotes, lists); only a question at the very end, put to the
- * founder and going on from the coach's own prose on the same line ({@link goesOnFromProse}), is ever left out as a
- * re-ask. The prep cues are an extra exemption; the structure is what makes a hole impossible.
+ * The checks a question passes to be part of the reply's trailing hand-back, in either scope ({@link handBackCandidate},
+ * {@link proseHandBackCandidate}): put to the founder ({@link putToFounder}: not in a quotation, not a line in character,
+ * not under "Ask your advisor:"), not a list item, not a blockquote line ("> …"), not under or after a lead-in ending in
+ * ":", and with no prep cue before it or in it ({@link PREP_CUE}: "Here is a draft:", "something like", "ask him",
+ * "questions to send", "you could write").
  */
-export function handBackCandidate(before: string, sentence: string): boolean {
+function handBackBase(before: string, sentence: string): boolean {
   if (!QUESTION_SENTENCE.test(sentence)) return false;
   if (!putToFounder(before, sentence)) return false;
   if (isListItem(sentence) || BARE_LIST_MARKER_END.test(before)) return false;
@@ -513,8 +511,33 @@ export function handBackCandidate(before: string, sentence: string): boolean {
   if (/^\s*>/.test(line) || /(?:^|\n)\s*>/.test(sentence)) return false;
   if (leadInOf(sentence) !== null) return false;
   if (/:[*_\s]*$/.test(before)) return false;
-  if (PREP_CUE.test(before + sentence)) return false;
-  return goesOnFromProse(before, sentence);
+  return !PREP_CUE.test(before + sentence);
+}
+
+/**
+ * Whether the question `sentence` (what the reply says after `before`) may be part of the reply's trailing hand-back,
+ * the only place a question asked again by subject is left out ({@link handBackStart}): it passes the shared checks
+ * ({@link handBackBase}), carries no quotation mark (the craft rules put every line written for the founder to say,
+ * send or ask someone else, and every line in character, in double quotes), speaks to no one else (no salutation or
+ * titled name on its line or in the sentence before it: {@link speaksToSomeoneElse}), and is not the line the sentence
+ * before it sets up ({@link setUp}: "one question to your advisor.", "I'll be the advisor."). Whether it opens a line
+ * or a paragraph does not matter (review of the 2026-11-07 fix, round 6: a re-ask in its own paragraph was never left
+ * out). The structure and the quotes are what make a hole impossible; the prep cues are an extra exemption.
+ */
+export function handBackCandidate(before: string, sentence: string): boolean {
+  if (!handBackBase(before, sentence) || /["“”]/.test(sentence)) return false;
+  return !speaksToSomeoneElse(before, sentence) && !setUp(before);
+}
+
+/**
+ * Whether the question `sentence` may be part of the reply's trailing hand-back as a question asked again whole reads
+ * it (fef45e4): the shared checks ({@link handBackBase}), going on from the coach's own prose on the same line
+ * ({@link goesOnFromProse}), and never the line the sentence before it sets up ({@link setUp}: "Keep the note short and
+ * tell him what you need." then the question for him). A whole re-ask goes from the trailing run of these, or from the
+ * coach's own prose when what follows does not lean on it ({@link withoutRepeats}).
+ */
+export function proseHandBackCandidate(before: string, sentence: string): boolean {
+  return handBackBase(before, sentence) && goesOnFromProse(before, sentence) && !setUp(before);
 }
 
 /**
@@ -523,19 +546,73 @@ export function handBackCandidate(before: string, sentence: string): boolean {
  */
 const ANNOUNCES =
   /\b(?:this|these|the following|below|(?:these|those|similar) lines|like so|as follows|(?:put|say|word|phrase|frame|ask|open|start|send) it(?: like this)?)\s*[.!…]*["'”’)\]*_]*\s*$|\b(?:two|three|four|few|couple of|following|key|main|these|those) (?:things|questions|points|items|asks)\b/i;
+/**
+ * A sentence that sets up the question after it as a line for the founder to send, say or practise (review of the
+ * 2026-11-07 fix, round 6: "The fastest way to know is one question to your advisor.", "Next step, send him one line.",
+ * "I'll be the advisor.", "Put it to him plainly."): it mentions asking, a question, messaging, texting, emailing,
+ * writing, telling or saying it to them, a script or a line, the call, practising or playing a role.
+ */
+const SETS_UP = new RegExp(
+  [
+    String.raw`\bask(?:s|ed|ing)?\b|\bquestions?\b|\bthe ask\b`,
+    String.raw`\b(?:message|messages|messaging|text|texts|texting|email|emails|emailing|e-mail|dm|ping|write|writing|send|sending)\b`,
+    String.raw`\b(?:tell|telling) (?:him|her|them|your|the|whoever)\b|\b(?:say|saying) (?:it|this|that|something|to (?:him|her|them))\b|\byou (?:could|can|might|would) say\b`,
+    String.raw`\b(?:word|phrase|frame|put) it\b|\bwording\b|\bput it to\b`,
+    String.raw`\b(?:a|the|this|that|one|two|short|quick|first|opening) (?:script|line|lines|draft|note)\b`,
+    String.raw`\b(?:call|ring|phone) (?:him|her|them|your)\b|\b(?:on|for|open|start) the call\b|\b(?:open|opening|lead|start) with\b`,
+    String.raw`\b(?:practi[cs]ing|practi[cs]ed)\b|\b(?:let's|let us|we can|we could|to|and|quick|a) practi[cs]e\b|\bpracti[cs]e (?:run|round|call|pitch|it|this|that|asking|once|first|out loud)\b|\brehears\w*|\brole-?play\w*|\bplay(?:ing)? (?:the|a|an|your|him|her)\b|\bpretend\w*|\bin character\b|\bact(?:ing)? as\b`,
+    String.raw`\b(?:i'll|i will|let me|i can|i'd) (?:be|play) (?:the|your|a|an|dr|mr|ms|mrs|prof|him|her)\b|\bi'm (?:the|your|dr|mr|ms|mrs|prof)\b|\bi am (?:the|your)\b`,
+    // "Here's what I'd want to know.", "One thing would unblock this.": the question after it is what it announces.
+    String.raw`\bhere(?:'s| is| are) (?:what|the (?:one |main |key |real )?(?:thing|question|bit))\b|\bwhat (?:i'd|i would|you'd|you would|we'd) (?:want|like|need) to (?:know|find out|pin down)\b|\bone thing\b`,
+  ].join('|'),
+);
 /** A salutation that opens a note ("Hi Dr Lee,", "Hello Sam", "Dear Dr Lee"): the line is a draft. */
 const SALUTATION = /(?:^|[.!?]["'”’)\]*_]*\s+)(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b/i;
 /** A line that opens on a titled name ("Dr Lee, would you…"): it speaks to that person, not the founder. */
 const TITLED_NAME = /^[\s*_>"“]*(?:Dr|Mr|Mrs|Ms|Mx|Prof|Professor)\.? \p{Lu}/u;
 
+/** The last sentence of `before` that is not a question (and has a letter or digit), or null. */
+function lastStatementOf(before: string): string | null {
+  const spans = sentenceSpans(before);
+  for (let i = spans.length - 1; i >= 0; i -= 1) {
+    const span = spans[i];
+    if (span === undefined) break;
+    const s = before.slice(span.start, span.end).trim();
+    if (s !== '' && !QUESTION_SENTENCE.test(s) && /[\p{L}\p{N}]/u.test(s)) return s;
+  }
+  return null;
+}
+
+/**
+ * Whether the question `sentence` speaks to someone else: its line, or the sentence itself, opens with a salutation or
+ * a titled name, or the last statement before it does ("Hi Dr Lee, quick question on the insole." then the question in
+ * its own paragraph). Left out, the note would lose its question.
+ */
+function speaksToSomeoneElse(before: string, sentence: string): boolean {
+  const line = before.slice(before.lastIndexOf('\n') + 1) + sentence.replace(/^\s*\n/, '');
+  if (SALUTATION.test(line) || TITLED_NAME.test(line)) return true;
+  const statement = lastStatementOf(before);
+  return statement !== null && (SALUTATION.test(statement) || TITLED_NAME.test(statement));
+}
+
+/**
+ * Whether the last statement before a question ({@link lastStatementOf}, past any questions between them) sets it up as
+ * a line for the founder to send, say or practise ({@link SETS_UP}) or announces it ({@link ANNOUNCES}): the question is
+ * the line being set up, and the run of questions after it goes with it.
+ */
+function setUp(before: string): boolean {
+  const statement = lastStatementOf(before);
+  if (statement === null) return false;
+  const t = statement.replace(/[‘’ʼ]/g, "'").toLowerCase();
+  return SETS_UP.test(t) || ANNOUNCES.test(t);
+}
+
 /**
  * Whether the question `sentence` goes on from the coach's own prose on the same line, or is the whole reply so far
- * (review of the 2026-11-07 fix, round 5: drafts and lists of questions introduced in words no cue list held, "Try
- * this.", "**Questions for Dr Lee**", "Dr Lee, would you…", lost their questions). By the structure of the reply, not a
- * list of cues: a question that opens a line or a paragraph may be a draft, a list or what a heading announced; a line
- * with a salutation or one that opens on a titled name is a note to someone else; and a question right after a sentence
- * that announces what follows ({@link ANNOUNCES}) is what it announced. Left out, any of these would leave the reply
- * ending on an announcement, a heading or half a note.
+ * (fef45e4, the scope a whole re-ask keeps: {@link proseHandBackCandidate}). By the structure of the reply, not a list
+ * of cues: a question that opens a line or a paragraph may be a draft, a list or what a heading announced; a line with a
+ * salutation or one that opens on a titled name is a note to someone else; and a question right after a sentence that
+ * announces what follows ({@link ANNOUNCES}) is what it announced.
  */
 function goesOnFromProse(before: string, sentence: string): boolean {
   if (before.trim() === '') return true;
@@ -551,12 +628,8 @@ function goesOnFromProse(before: string, sentence: string): boolean {
   return prose !== null && !ANNOUNCES.test(prose);
 }
 
-/**
- * Where the reply's trailing hand-back starts: the run of question sentences at its very end, each one a
- * {@link handBackCandidate} ("That is normal. Most insoles sit in a low class. So what did your advisor say?"), or
- * `text.length` when it ends on anything else. A question followed by anything but another question is never in it.
- */
-export function handBackStart(text: string): number {
+/** Where the run of `candidate` questions that ends `text` starts, or `text.length` when it ends on anything else. */
+function trailingRunStart(text: string, candidate: (before: string, sentence: string) => boolean): number {
   const spans = sentenceSpans(text);
   let start = text.length;
   for (let i = spans.length - 1; i >= 0; i -= 1) {
@@ -564,10 +637,24 @@ export function handBackStart(text: string): number {
     if (span === undefined) break;
     const sentence = text.slice(span.start, span.end);
     if (sentence.trim() === '') continue;
-    if (!handBackCandidate(text.slice(0, span.start), sentence)) break;
+    if (!candidate(text.slice(0, span.start), sentence)) break;
     start = span.start;
   }
   return start;
+}
+
+/**
+ * Where the reply's trailing hand-back starts: the run of question sentences at its very end, each one a
+ * {@link handBackCandidate} ("That is normal. Most insoles sit in a low class. So what did your advisor say?"), or
+ * `text.length` when it ends on anything else. A question followed by anything but another question is never in it.
+ */
+export function handBackStart(text: string): number {
+  return trailingRunStart(text, handBackCandidate);
+}
+
+/** Where the trailing run of {@link proseHandBackCandidate} questions starts (a whole re-ask's scope, fef45e4). */
+export function proseHandBackStart(text: string): number {
+  return trailingRunStart(text, proseHandBackCandidate);
 }
 
 /**
@@ -577,12 +664,15 @@ export function handBackStart(text: string): number {
  * worded ("he hasnt gotten back to me", "i wasnt able to": prompts/conversation-state.ts `hasNoAnswerOnly`); a message
  * that carries an answer of its own besides ("not yet, we have a call friday") is none. Never after `previousReply`
  * checked on the founder themselves (prompts/conversation-state.ts `SUPPORT_CHECK_IN`): asking after them again is care,
- * not a re-ask.
+ * not a re-ask; never a message in distress (prompts/conversation-state.ts `inDistress`).
  */
 export function stuckOn(founderText: string | undefined, previousReply?: string | null): boolean {
   if (founderText === undefined || founderText.trim() === '') return false;
   const asked = typeof previousReply === 'string' ? lastQuestionOf(previousReply) : null;
   if (asked !== null && SUPPORT_CHECK_IN.test(asked)) return false;
+  // A message in distress ("i cant do it anymore", "i dont know what im doing") keeps the reply it had before the
+  // no-answer readings (ac41aec): no question of the vEIR's is read strictly after it.
+  if (inDistress(founderText)) return false;
   const context = noAnswerContextOf(previousReply);
   return founderMoves(founderText, context).includes('help') || hasNoAnswerOnly(founderText, context);
 }
@@ -666,7 +756,7 @@ export function isProtectedLine(sentence: string, keepReferrals = false): boolea
  * price."): the question before it cannot go without leaving it pointing at nothing.
  */
 const LEANS_BACK =
-  /^[\s*_"“]*(?:that|those|these|this|it|its|it's|either|both|the answers?|if so|if not|if yes|if no|once you know|whichever|depending)\b/i;
+  /^[\s*_"“]*(?:that|those|these|this|it|its|it's|either|both|the answers?|if so|if not|if yes|if no|once you know|whichever|depending|knowing (?:that|this|it|those|these|the answers?)|with (?:that|this|those|these) (?:answers?|info|information|in hand)|(?:his|her|their|your) answers?|whatever (?:he|she|they|it|the)|once you (?:have|get|hear)|armed with)\b/i;
 
 /** Whether `sentence` (what follows a question) leans on it ({@link LEANS_BACK}). */
 export function leansOnPrevious(sentence: string): boolean {
@@ -731,6 +821,7 @@ export function withoutRepeats(
   // comes back whole goes from there, or from the coach's own prose when what follows does not lean on it. Left out from
   // anywhere else it could take a hole out of a draft, a list or a quotation.
   const handBack = handBackStart(text);
+  const proseHandBack = proseHandBackStart(text);
   const repeated: { start: number; end: number }[] = [];
   const removed: string[] = [];
   let lastKept: { start: number; end: number } | null = null;
@@ -744,8 +835,9 @@ export function withoutRepeats(
       repeatsPrevious(sentence, said, { signOffs: options.signOffs !== false }) ||
       (reask !== null && s.start >= handBack) ||
       (reask === 'whole' &&
-        handBackCandidate(text.slice(0, s.start), sentence) &&
-        !leansOnPrevious(nextSentence(text, spans, s)));
+        (s.start >= proseHandBack ||
+          (proseHandBackCandidate(text.slice(0, s.start), sentence) &&
+            !leansOnPrevious(nextSentence(text, spans, s)))));
     if (!repeat || isProtectedLine(sentence, options.keepReferrals === true)) {
       lastKept = s;
       continue;

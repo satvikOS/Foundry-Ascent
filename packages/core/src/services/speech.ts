@@ -44,7 +44,7 @@ import { faceTextDigests } from './face-text.js';
 import { voiceCostUsd } from './media-vendors.js';
 import { isCrisisMessage, speakableRunSpan, speakableText } from './spoken-text.js';
 import { observedAudio, watchedAudio } from './speech-audio.js';
-import { speechText } from './speech-text.js';
+import { speechText, withoutQuoteMarks } from './speech-text.js';
 import { DEFAULT_SPEECH_VOICE, speechCostUsd, speechEngines } from './voices.js';
 
 /**
@@ -447,7 +447,8 @@ export function createSpeechService(
       if (voice.kind === 'clone' && plan.verified === null)
         throw new SpeechSynthesisError('the cloned voice speaks only verified units');
       const made = await voice.provider.synthesize({
-        text: plan.text,
+        // A drafted line's quote marks are never said (prompts/craft.ts puts such lines in double quotes).
+        text: withoutQuoteMarks(plan.text),
         unit: plan.verified,
         voiceRef: voice.ref,
         format: forFace || pcm ? 'pcm_24000' : 'mp3',
@@ -467,7 +468,7 @@ export function createSpeechService(
     const synthesizer = kit.deps.speech;
     if (synthesizer === undefined) throw speechUnavailable();
     const speech = await synthesizer.synthesize({
-      text: plan.text,
+      text: withoutQuoteMarks(plan.text),
       voiceId: voice.voiceId,
       engines: speechEngines(voice.voiceId),
       requestId: ctx.requestId,
