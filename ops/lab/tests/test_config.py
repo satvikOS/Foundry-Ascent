@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -64,6 +65,33 @@ def test_lab_models_are_priced_and_shared_with_infra() -> None:
     # infra/cdk/src/lib/lab-models.ts reads the same file to grant exactly these models.
     source = (config.REPO / "infra" / "cdk" / "src" / "lib" / "lab-models.ts").read_text(encoding="utf-8")
     assert "join(REPO_ROOT, 'ops', 'lab', 'models.json')" in source
+
+
+def test_a_luna_coach_is_never_judged_by_an_openai_model() -> None:
+    lab = config.lab_models()
+    luna = "us.openai.gpt-6-luna"
+    assert luna in lab.live_coach
+    assert lab.prices["openai.gpt-6-luna"] == config.Price(0.1375, 0.55)
+    assert config.model_family(luna) == config.model_family("openai.gpt-6-luna") == "openai"
+    # The A/B arm is Luna alone, behind no other model; production's background route stays.
+    app = config.coach_app_models(luna, lab)
+    assert (app.primary, app.fallback, app.background) == (luna, luna, config.app_models().background)
+    policy, coach, judges = config.live_judges(luna, config.JUDGE_AUTO, lab)
+    assert (policy, coach) == (config.JUDGE_AB, luna)
+    assert judges == ("us.meta.llama4-maverick-17b-instruct-v1:0",)
+    # Even with an OpenAI judge listed, a Luna coach never gets it (nor may it be named).
+    candidates = (*lab.live_judge, "global.openai.gpt-6-luna")
+    assert "global.openai.gpt-6-luna" not in config.judges_for(luna, candidates)
+    with_openai = dataclasses.replace(lab, live_judge=candidates)
+    with pytest.raises(ValueError, match="coach's own family"):
+        config.live_judges(luna, "global.openai.gpt-6-luna", with_openai)
+
+
+def test_the_live_workflow_offers_every_coach_of_models_json() -> None:
+    text = (config.REPO / ".github" / "workflows" / "ops-live-evals.yml").read_text(encoding="utf-8")
+    block = text[text.index("coach_model:") : text.index("judge_model:", text.index("coach_model:"))]
+    listed = [line.strip()[2:] for line in block.splitlines() if line.strip().startswith("- ")]
+    assert listed == [config.DEFAULT_COACH, *config.lab_models().live_coach]
 
 
 def test_lab_models_refuse_an_unpriced_model(tmp_path: Path) -> None:

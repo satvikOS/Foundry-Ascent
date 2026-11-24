@@ -19,14 +19,16 @@ SPEECH_VOICES = REPO / "packages" / "core" / "speech-voices.json"
 SUITES: tuple[str, ...] = ("recall", "voice", "matrix", "ui")
 #: Suites run on their own, never as part of ``all``: ``agenda`` (a regression: one dominant past-dated notebook
 #: commitment; conversation_lab/agenda.py), ``safety`` (the model-based safety screen on the app's models over the
-#: E-crisis corpus; conversation_lab/safety.py) and ``face`` (the HeyGen LiveAvatar FULL stock face against the
-#: vendor's free sandbox, with the vendor key; conversation_lab/face.py).
-EXTRA_SUITES: tuple[str, ...] = ("agenda", "safety", "face", "live")
+#: E-crisis corpus; conversation_lab/safety.py), ``face`` (the HeyGen LiveAvatar FULL stock face against the
+#: vendor's free sandbox, with the vendor key; conversation_lab/face.py) and ``models`` (the candidate reasoning,
+#: embedding and rerank models, before the app uses any; conversation_lab/models_bench.py).
+EXTRA_SUITES: tuple[str, ...] = ("agenda", "safety", "face", "models", "live")
 
 #: Share of a suite's budget the app itself may spend (its own metering, hard-capped by the app's daily cap); the
 #: rest is for the lab's own calls (judge, simulator, the founder's synthesized voice). The UI suite makes none, nor
 #: does the safety suite, whose every call is a screen call on the app's models (lab-safety-screen.ts), nor the face
-#: suite (its vendor is the free sandbox; the app meters its calls, and the face at the vendor's list price).
+#: suite (its vendor is the free sandbox; the app meters its calls, and the face at the vendor's list price), nor the
+#: models suite (its every call is the script's own, lab-models.ts).
 APP_SHARE: dict[str, float] = {
     "recall": 0.85,
     "voice": 0.85,
@@ -35,6 +37,7 @@ APP_SHARE: dict[str, float] = {
     "agenda": 0.85,
     "safety": 1.0,
     "face": 1.0,
+    "models": 1.0,
     # The live suite: the coach's turns are about three quarters of the estimate (conversation_lab/live/plan.py); the
     # simulator and the judge (lab) the rest.
     "live": 0.75,
@@ -49,11 +52,15 @@ SUITE_WEIGHT: dict[str, int] = {
     "agenda": 1,
     "safety": 1,
     "face": 1,
+    "models": 1,
     "live": 3,
 }
 
 #: Largest budget the workflow accepts for one run, in USD (the app's daily cap allows at most 100).
 MAX_BUDGET_USD = 50.0
+#: Most a models run may be given, whatever was approved: it compares candidates, at an expected USD 0.25
+#: (apps/api lab-models.ts refuses more as well).
+MODELS_MAX_BUDGET_USD = 2.0
 
 
 @dataclass(frozen=True)
@@ -286,8 +293,9 @@ def floor_cents(value: float) -> float:
 def split_budget(total_usd: float, suites: Sequence[str]) -> dict[str, float]:
     """Each suite's hard cap, in proportion to its weight, rounded down to the cent (the sum never exceeds the
     total)."""
-    if not 0 < total_usd <= MAX_BUDGET_USD:
-        raise ValueError(f"budget must be more than 0 and at most {MAX_BUDGET_USD:g} USD")
+    most = MODELS_MAX_BUDGET_USD if "models" in suites else MAX_BUDGET_USD
+    if not 0 < total_usd <= most:
+        raise ValueError(f"budget must be more than 0 and at most {most:g} USD")
     weights = sum(SUITE_WEIGHT[s] for s in suites)
     return {s: floor_cents(total_usd * SUITE_WEIGHT[s] / weights) for s in suites}
 

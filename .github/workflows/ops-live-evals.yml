@@ -33,7 +33,7 @@ name: Ops - live conversation evals
 # coach_model (an A/B of the coach, docs/runbooks/conversation-lab.md "Coach model A/B"): `default` runs the app's coach
 # on production's models (infra/cdk/config/production.json: Claude Haiku 4.5 since 2026-11-06, ADR-0022; judged on auto
 # by another family, Llama 4 Maverick then Nova Premier, never Claude); a model of ops/lab/models.json `live.coach` (Nova
-# 2 Lite, the coach before; Claude Sonnet 4.6) runs it on that
+# 2 Lite, the coach before; Claude Sonnet 4.6; GPT-6 Luna, ADR-0024, judged by no OpenAI model) runs it on that
 # Bedrock model instead, as both primary and fallback, in the lab's API process only: production's configuration is
 # never changed. An A/B is graded by ONE judge independent of every arm (judge_model ab: Llama 4 Maverick, no fallback;
 # a coach_model other than default uses it on auto), so run the default arm of an A/B with judge_model ab too, and
@@ -91,6 +91,7 @@ on:
           - default
           - us.amazon.nova-2-lite-v1:0
           - us.anthropic.claude-sonnet-4-6
+          - us.openai.gpt-6-luna
         default: default
       judge_model:
         description: Live judge - auto (another family than the coach; an A/B coach uses ab), ab (one judge for every A/B arm; run the default arm of an A/B with it)

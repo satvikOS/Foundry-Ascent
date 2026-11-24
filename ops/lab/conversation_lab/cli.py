@@ -2,7 +2,8 @@
 
   plan --suite S --budget-usd B           which suites run and each one's hard cap (JSON; standard library only)
   run  --suite S --budget-usd B --out DIR  starts the app with the real models and runs one suite (safety: no app,
-                                           the safety screen on the app's models over the E-crisis corpus; face:
+                                           the safety screen on the app's models over the E-crisis corpus; models:
+                                           no app either, the candidate models' benchmark; face:
                                            the HeyGen sandbox face, its key from LAB_HEYGEN_API_KEY to the API only;
                                            --face-mode full|lite|both picks the in-app call arm's face mode)
 
@@ -32,6 +33,7 @@ from conversation_lab.config import (
     JUDGE_AUTO,
     LIVE_APP_SHARE_CLAUDE_COACH,
     MAX_BUDGET_USD,
+    MODELS_MAX_BUDGET_USD,
     REPO,
     SUITES,
     app_models,
@@ -172,6 +174,8 @@ def browser_env(
 def cmd_run(args: argparse.Namespace) -> int:
     if args.suite == "safety":
         return cmd_run_safety(args)
+    if args.suite == "models":
+        return cmd_run_models(args)
     import boto3
     from botocore.config import Config
     from pydantic import SecretStr
@@ -437,8 +441,6 @@ def cmd_run_safety(args: argparse.Namespace) -> int:
     """Suite ``safety`` (conversation_lab/safety.py): apps/api lab-safety-screen.ts on the app's production models,
     with the run's budget as its hard cap. No app, browser, database or lab model: the script calls the app's model
     gateway itself. Its report and every row's verdict stay in the private folder; the summary keeps numbers only."""
-    from conversation_lab.budget import Ledger, SpendGuard
-    from conversation_lab.report import write
     from conversation_lab.safety import public_result, run_safety_screen, safety_env
     from conversation_lab.stack import PNPM
 
@@ -481,9 +483,66 @@ def cmd_run_safety(args: argparse.Namespace) -> int:
             summary["stopped_by"] = "budget_app"
     except Exception as exc:  # noqa: BLE001 - reported by class name only; the job fails
         error = type(exc).__name__
+    return finish_script_run(args, summary, out, started, (app_budget, lab_budget), error)
+
+
+def cmd_run_models(args: argparse.Namespace) -> int:
+    """Suite ``models`` (conversation_lab/models_bench.py): apps/api lab-models.ts on the candidates of models.json,
+    with the run's budget as its hard cap. No app, browser or database. The models' replies and each question's
+    rankings stay in the private folder; the summary keeps numbers, candidate ids and codes."""
+    from conversation_lab.models_bench import models_env, public_result, run_models_bench
+    from conversation_lab.stack import PNPM
+
+    budget = float(args.budget_usd)
+    if not 0 < budget <= MODELS_MAX_BUDGET_USD:
+        print(f"run: the models suite takes at most USD {MODELS_MAX_BUDGET_USD:g}", file=sys.stderr)
+        return 2
+    out = Path(args.out)
+    (out / "private").mkdir(parents=True, exist_ok=True)
+    (out / "public").mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    app_budget, lab_budget = budget_parts("models", budget)
+    summary: dict[str, Any] = {
+        "suite": "models",
+        "budget_usd": budget,
+        "stopped_by": None,
+        "models": {"app": {}},
+        "provider": "mock" if args.mock else "bedrock",
+    }
+    error: str | None = None
+    try:
+        report, code = run_models_bench(
+            out,
+            env=models_env(os.environ, mock=args.mock, region=os.environ.get("AWS_REGION", "us-east-1")),
+            budget_usd=app_budget,
+            pnpm=PNPM,
+        )
+        summary["result"] = public_result(report, exit_code=code)
+        if code != 0 or report is None:
+            error = "ModelsBenchScriptFailed"
+        elif summary["result"]["budget_reached"]:
+            summary["stopped_by"] = "budget_app"
+    except Exception as exc:  # noqa: BLE001 - reported by class name only; the job fails
+        error = type(exc).__name__
+    return finish_script_run(args, summary, out, started, (app_budget, lab_budget), error)
+
+
+def finish_script_run(
+    args: argparse.Namespace,
+    summary: dict[str, Any],
+    out: Path,
+    started: float,
+    budgets: tuple[float, float],
+    error: str | None,
+) -> int:
+    """Writes and prints the summary of a suite that is one script run (safety, models)."""
+    from conversation_lab.budget import Ledger, SpendGuard
+    from conversation_lab.report import write
+
+    suite = str(summary["suite"])
     spent = (summary.get("result") or {}).get("cost_usd", {}).get("total") or 0.0
-    # Every call of the suite is a screen call on the app's models, metered by the script: the app's share.
-    guard = SpendGuard(app_budget=app_budget, lab_budget=lab_budget, ledger=Ledger())
+    # Every call of the suite is the script's, metered by it: the app's share.
+    guard = SpendGuard(app_budget=budgets[0], lab_budget=budgets[1], ledger=Ledger())
     guard.attach_app(lambda: float(spent))
     spend = guard.snapshot()
     spend["app_by_purpose"] = []
@@ -492,7 +551,7 @@ def cmd_run_safety(args: argparse.Namespace) -> int:
     summary["duration_seconds"] = round(time.monotonic() - started, 1)
     summary["harness_error"] = error
     if args.baseline_run_id:
-        attach_baseline(summary, "safety", str(args.baseline_run_id), args.baseline_file)
+        attach_baseline(summary, suite, str(args.baseline_run_id), args.baseline_file)
     text = write(summary, out / "public")
     print(text)
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -501,7 +560,7 @@ def cmd_run_safety(args: argparse.Namespace) -> int:
             fh.write(text)
     if error:
         print(
-            f"run: the safety screen evaluation failed ({error}); its output is in the sealed artifact",
+            f"run: the {suite} suite's script failed ({error}); its output is in the sealed artifact",
             file=sys.stderr,
         )
         return 1

@@ -56,7 +56,8 @@ def render(summary: Mapping[str, Any]) -> str:
     out.append(f"| Duration | {summary.get('duration_seconds', 0):.0f} s |")
     models = summary.get("models") or {}
     app = models.get("app") or {}
-    out.append(f"| App models | {app.get('primary')} / {app.get('fallback')} / {app.get('embeddings')} |")
+    if app:
+        out.append(f"| App models | {app.get('primary')} / {app.get('fallback')} / {app.get('embeddings')} |")
     if models.get("probes"):
         probes = ", ".join(f"{k}: {v}" for k, v in models["probes"].items())
         out.append(
@@ -724,6 +725,10 @@ def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
         return _agenda_tables(result)
     if suite == "safety":
         return _safety_tables(result)
+    if suite == "models":
+        from conversation_lab.models_bench import tables
+
+        return tables(result)
     if suite == "face":
         return _face_tables(result.get("face") or {})
     scenarios: Sequence[Mapping[str, Any]] = result.get("scenarios") or []
