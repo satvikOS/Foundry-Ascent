@@ -82,9 +82,10 @@ export type AttemptOutcome =
 
 /**
  * `initial` = first call; `repair` = re-ask after invalid output; `profile_retry` = Nova inference-profile retry;
- * `cache_retry` = Nova retry without prompt-cache checkpoints after Bedrock refused a request that carried them.
+ * `cache_retry` = Nova retry without prompt-cache checkpoints after Bedrock refused a request that carried them;
+ * `field_retry` = an OpenAI model's retry without the optional request field Bedrock refused (`issues` names it).
  */
-export type AttemptKind = 'initial' | 'repair' | 'profile_retry' | 'cache_retry';
+export type AttemptKind = 'initial' | 'repair' | 'profile_retry' | 'cache_retry' | 'field_retry';
 
 /** One network call to a model as reported by a provider (before pricing is applied). */
 export interface RawModelAttempt {
@@ -101,7 +102,7 @@ export interface RawModelAttempt {
   /**
    * Structured output: why it failed validation (`path: code`, e.g. `digest.topics: invalid_type`) on an
    * `invalid_output` attempt, or the schema-guided repairs it needed (`code:path`, e.g. `missing_null:challenge`)
-   * on an `ok` one. Field names, indices and codes only, never values: logged so the lab can see the real failure
+   * on an `ok` one; the request fields left out on a `field_retry` (`dropped:temperature`). Field names, indices and codes only, never values: logged so the lab can see the real failure
    * modes (LAB-M6, LAB-R7).
    */
   issues?: readonly string[];

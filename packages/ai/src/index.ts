@@ -40,6 +40,7 @@ export {
   type UnavailableReason,
 } from './gateway/errors.js';
 export {
+  DEFAULT_COACH_TEMPERATURE,
   DEFAULT_FALLBACK_TIMEOUT_MS,
   DEFAULT_MAX_OUTPUT_TOKENS,
   DEFAULT_MODEL_IDS,
@@ -76,15 +77,30 @@ export {
   type LunaReasoningEffort,
 } from './gateway/luna.js';
 export {
+  CONVERSE_REASONING_EFFORTS,
   NovaProvider,
   SUBMIT_TOOL_NAME,
   inferenceProfilePrefix,
   isClaudeModelId,
+  isOpenAiModelId,
   usesCachePoints,
+  type ConverseReasoningEffort,
   type NovaProviderOptions,
 } from './gateway/nova.js';
 export { TitanEmbedder, TITAN_MAX_INPUT_CHARS, type TitanEmbedderOptions } from './gateway/titan.js';
 export {
+  EMBEDDING_BATCH,
+  EMBEDDING_SIZES,
+  embeddingBody,
+  embeddingFamily,
+  parseEmbeddings,
+  parseRerank,
+  rerankBody,
+  type EmbeddingFamily,
+  type EmbeddingInput,
+} from './gateway/retrieval-models.js';
+export {
+  awsErrorName,
   createBedrockRuntimeTransport,
   type BedrockRuntimeTransport,
   type ConverseFn,

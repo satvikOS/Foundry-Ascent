@@ -26,6 +26,8 @@ export interface ProviderRequest<T> {
   requestId: string;
   /** Where the prompt's unchanging prefix ends (providers without prompt caching ignore it). */
   promptCache?: PromptCacheHint;
+  /** Sampling temperature, for a model that takes one (default: the provider's own). */
+  temperature?: number;
 }
 
 export interface ProviderResult<T> {
@@ -44,6 +46,8 @@ export interface ProviderStreamRequest {
   requestId: string;
   /** Where the prompt's unchanging prefix ends (providers without prompt caching ignore it). */
   promptCache?: PromptCacheHint;
+  /** Sampling temperature, for a model that takes one (default: the provider's own). */
+  temperature?: number;
   /** Called with every text chunk, in order (awaited). */
   onText: TextChunkHandler;
 }

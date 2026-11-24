@@ -157,7 +157,13 @@ instance.
   models whose cache rates are priced (Nova, Claude Haiku 4.5: `usesCachePoints`), a `cachePoint` after the system
   prompt's unchanging prefix and after the conversation's last two earlier founder messages (the request's
   `promptCache` hint); Claude caches only a prefix of at least 4,096 tokens, Nova 1,024. These are the only places
-  the adapter tells model families apart. If a _bare_
+  the adapter tells model families apart. GPT-6 Luna runs here too, behind its profiles (`us.openai.gpt-6-luna`,
+  `global.openai.gpt-6-luna`; the bare id is Mantle's): `additionalModelRequestFields.reasoning.effort` (default `none`,
+  `MODEL_REASONING_EFFORT`), a temperature only at effort `none`, the forced tool, no `cachePoint` (its caching is
+  implicit). A field Bedrock refuses is dropped for one retry (`field_retry`, effort `none` → `low` → left out; tool
+  choice → `auto`) and not sent again by that instance once the retry answered. Its reasoning never reaches `onText`.
+  The conversation (`turn`, `test_bench`) samples at temperature 0 (`MODEL_COACH_TEMPERATURE`) on the models that take
+  one; every other purpose at 0.2. If a _bare_
   foundation-model id is rejected with a `ValidationException` about on-demand throughput / inference
   profiles, the call is retried once with the geographic profile (`us.amazon.nova-2-lite-v1:0`) and that
   choice is cached for the gateway's lifetime; profile ids are never rewritten. Primary and fallback get
@@ -167,7 +173,9 @@ instance.
   Each switch is logged as `ai.model.fallback` with the reason.
 - **Embeddings — `amazon.titan-embed-text-v2:0`** via `InvokeModel`
   (`{"inputText", "dimensions": 1024, "normalize": true}`), one text per call with bounded concurrency
-  (default 4), results in input order, 15 s per call.
+  (default 4), results in input order, 15 s per call. `gateway/retrieval-models.ts` writes and reads the requests of the
+  other embedding models and rerankers Bedrock offers (Cohere Embed 4, Nova Multimodal Embeddings, Cohere Rerank 3.5,
+  Amazon Rerank 1.0); only the lab's models benchmark calls them (docs/runbooks/conversation-lab.md).
 
 Zod → JSON Schema uses `z.toJSONSchema` and is post-processed for strict mode (`toStrictJsonSchema`):
 every object gets `additionalProperties: false` and all properties `required`; optional properties
@@ -183,7 +191,7 @@ tuples are rejected because strict mode cannot express them. Our contracts use `
 (`on` by default: Converse requests to an Amazon Nova model carry Bedrock cache checkpoints where a request's
 `promptCache` hint says its unchanging prefix ends; `off` sends none; the mock ignores it). `BedrockGatewayConfig`
 additionally accepts `primaryTimeoutMs`, `fallbackTimeoutMs`, `pricing` overrides, `logger`, `credentials`,
-`embeddingConcurrency`, `lunaReasoningEffort`, `promptCache` and test seams (`transports`, `providers`).
+`embeddingConcurrency`, `lunaReasoningEffort`, `reasoningEffort`, `coachTemperature`, `promptCache` and test seams (`transports`, `providers`).
 
 Prompt caching (docs/runbooks/latency.md §3): a request's `promptCache: { systemChars, historyMessages }` names the
 characters at the start of `system` that are the same on every turn of the conversation and the leading messages

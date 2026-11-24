@@ -12,7 +12,7 @@ import { ModelGatewayError, ModelUnavailableError, isModelGatewayError } from '.
 import { toStrictJsonSchema } from './json-schema.js';
 import { LunaProvider, type LunaReasoningEffort } from './luna.js';
 import { MockModelGateway, type MockModelGatewayOptions } from './mock.js';
-import { NovaProvider } from './nova.js';
+import { CONVERSE_REASONING_EFFORTS, NovaProvider, type ConverseReasoningEffort } from './nova.js';
 import type { ProviderStreamResult, StructuredProvider } from './provider.js';
 import type { AwsCredentialProvider, AwsCredentials, FetchFn } from './sigv4-fetch.js';
 import { TitanEmbedder } from './titan.js';
@@ -42,6 +42,13 @@ export const DEFAULT_MAX_OUTPUT_TOKENS = 4_096;
 /** Default bound on a streamed plain-text answer. */
 export const DEFAULT_STREAM_MAX_OUTPUT_TOKENS = 1_500;
 
+/**
+ * Sampling temperature of the conversation itself (a turn, a studio test conversation), for models that take one: the
+ * founder path decides a turn's content in code and the model explains it, so the same turn should read the same twice.
+ */
+export const DEFAULT_COACH_TEMPERATURE = 0;
+const COACHING_PURPOSES: ReadonlySet<GatewayPurpose> = new Set(['turn', 'test_bench']);
+
 export const DEFAULT_MODEL_IDS = {
   primary: 'openai.gpt-6-luna',
   fallback: 'amazon.nova-2-lite-v1:0',
@@ -69,6 +76,16 @@ export interface BedrockGatewayConfig {
   credentials?: AwsCredentials | AwsCredentialProvider;
   embeddingConcurrency?: number;
   lunaReasoningEffort?: LunaReasoningEffort;
+  /**
+   * OpenAI models on Converse (`us.`/`global.` profiles; `MODEL_REASONING_EFFORT`): how much they reason before
+   * answering. Default `none`.
+   */
+  reasoningEffort?: ConverseReasoningEffort;
+  /**
+   * Sampling temperature of the conversation (purposes `turn` and `test_bench`; `MODEL_COACH_TEMPERATURE`) for models
+   * that take one. Default 0. Every other purpose keeps the adapter's own (0.2).
+   */
+  coachTemperature?: number;
   /**
    * Bedrock prompt caching (`MODEL_PROMPT_CACHE`): Converse requests to a model with priced cache rates (Amazon Nova,
    * Claude Haiku 4.5: nova.ts `usesCachePoints`) carry cache checkpoints where the request's `promptCache` hint says
@@ -156,6 +173,7 @@ class BedrockModelGateway implements ModelGateway {
   readonly #logger: ModelLogger;
   readonly #primaryTimeoutMs: number;
   readonly #fallbackTimeoutMs: number;
+  readonly #coachTemperature: number;
   /** Opens the Bedrock runtime connection without a billed call (null when the transports are injected). */
   readonly #prewarm: (() => Promise<void>) | null;
 
@@ -164,6 +182,7 @@ class BedrockModelGateway implements ModelGateway {
     this.#logger = config.logger ?? noopLogger;
     this.#primaryTimeoutMs = config.primaryTimeoutMs ?? DEFAULT_PRIMARY_TIMEOUT_MS;
     this.#fallbackTimeoutMs = config.fallbackTimeoutMs ?? DEFAULT_FALLBACK_TIMEOUT_MS;
+    this.#coachTemperature = config.coachTemperature ?? DEFAULT_COACH_TEMPERATURE;
     const credentials = config.credentials ? { credentials: config.credentials } : {};
 
     const usesConverse =
@@ -215,6 +234,7 @@ class BedrockModelGateway implements ModelGateway {
             ...(converse ? { converse } : {}),
             ...(converseStream ? { converseStream } : {}),
             promptCache: config.promptCache !== false,
+            ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
           });
     this.#route = {
       primary: config.providers?.primary ?? reasoningProvider(config.primaryModelId),
@@ -268,6 +288,11 @@ class BedrockModelGateway implements ModelGateway {
       : this.#route;
   }
 
+  /** The request's own sampling temperature: the conversation's, or none (the adapter's default). */
+  #sampling(purpose: GatewayPurpose): { temperature?: number } {
+    return COACHING_PURPOSES.has(purpose) ? { temperature: this.#coachTemperature } : {};
+  }
+
   #logAttempts(attempts: readonly ModelAttempt[], requestId: string, purpose: string): void {
     for (const a of attempts) {
       const fields = {
@@ -316,6 +341,7 @@ class BedrockModelGateway implements ModelGateway {
           deadline,
           requestId: request.requestId,
           ...(request.promptCache ? { promptCache: request.promptCache } : {}),
+          ...this.#sampling(request.purpose),
         });
         raw.push(...result.rawAttempts);
         return result;
@@ -403,6 +429,7 @@ class BedrockModelGateway implements ModelGateway {
           deadline,
           requestId: request.requestId,
           ...(request.promptCache ? { promptCache: request.promptCache } : {}),
+          ...this.#sampling(request.purpose),
           onText: deliver,
         });
         raw.push(...result.rawAttempts);
@@ -510,8 +537,8 @@ class BedrockModelGateway implements ModelGateway {
 /**
  * Creates the model gateway. Primary and fallback each get the adapter their model id calls for
  * ({@link reasoningAdapterFor}): `openai.*` → Luna on Mantle (strict JSON schema, one repair retry),
- * anything else → Converse with a submit tool (Claude Haiku 4.5 and Nova 2 Lite, also through `us.`/`global.`
- * inference profiles). With `background`, the purposes it names use its own primary and fallback. The fallback runs
+ * anything else → Converse with a submit tool (Claude Haiku 4.5, Nova 2 Lite and GPT-6 Luna, also through
+ * `us.`/`global.` inference profiles; Luna only through them). With `background`, the purposes it names use its own primary and fallback. The fallback runs
  * when the primary is unavailable (timeout, throttling, 5xx, access), refuses or returns invalid output; for streamed
  * text only while no text was delivered.
  * Titan V2 embeddings. `provider: 'mock'` returns the deterministic {@link MockModelGateway}.
@@ -533,6 +560,12 @@ const EnvSchema = z.object({
     .default('us-east-1'),
   /** Bedrock prompt caching (cache checkpoints after each turn's unchanging prefix, for models with cache rates). */
   MODEL_PROMPT_CACHE: z.enum(['on', 'off']).default('on'),
+  /** Reasoning effort of OpenAI models on Converse; empty or unset is the adapter's default (`none`). */
+  MODEL_REASONING_EFFORT: z.union([z.literal(''), z.enum(CONVERSE_REASONING_EFFORTS)]).optional(),
+  /** Sampling temperature of the conversation, for models that take one; empty or unset is the default (0). */
+  MODEL_COACH_TEMPERATURE: z
+    .union([z.literal(''), z.string().regex(/^(?:0(?:\.\d{1,3})?|1(?:\.0{1,3})?)$/)])
+    .optional(),
   /** The background purposes' own models (all three, or none): see {@link BackgroundModels}. */
   // Empty is unset (the deployed functions always receive the three; empty when there is no background route).
   MODEL_BACKGROUND_PRIMARY_ID: z.string().optional(),
@@ -579,7 +612,8 @@ function backgroundFromEnv(e: z.infer<typeof EnvSchema>): BackgroundModels | nul
 /**
  * Reads gateway configuration from the runtime contract's environment variables
  * (`MODEL_PROVIDER`, `MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`, `MODEL_EMBEDDINGS_ID`, `BEDROCK_REGION`), the
- * optional `MODEL_PROMPT_CACHE` (`on` by default, `off` sends no cache checkpoints; the mock ignores it), and the
+ * optional `MODEL_PROMPT_CACHE` (`on` by default, `off` sends no cache checkpoints; the mock ignores it),
+ * `MODEL_REASONING_EFFORT` and `MODEL_COACH_TEMPERATURE` (empty is the default), and the
  * optional background route (`MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID`,
  * `MODEL_BACKGROUND_PURPOSES`: all three or none).
  * `MODEL_PROVIDER` defaults to `mock` outside production and is mandatory in production.
@@ -606,6 +640,8 @@ export function modelGatewayConfigFromEnv(
     ...(background === null ? {} : { background }),
     embeddingsModelId: e.MODEL_EMBEDDINGS_ID,
     promptCache: e.MODEL_PROMPT_CACHE === 'on',
+    ...(e.MODEL_REASONING_EFFORT ? { reasoningEffort: e.MODEL_REASONING_EFFORT } : {}),
+    ...(e.MODEL_COACH_TEMPERATURE ? { coachTemperature: Number(e.MODEL_COACH_TEMPERATURE) } : {}),
     ...(extras.logger ? { logger: extras.logger } : {}),
     ...(extras.pricing ? { pricing: extras.pricing } : {}),
   };

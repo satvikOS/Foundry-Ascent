@@ -46,8 +46,13 @@ export interface NovaProviderOptions {
   converse?: ConverseFn;
   /** ConverseStream transport; defaults to the same client. Inject a fake in tests. */
   converseStream?: ConverseStreamFn;
-  /** Default 0.2. */
+  /** Sampling temperature of requests that name none of their own. Default 0.2. */
   temperature?: number;
+  /**
+   * OpenAI models only ({@link isOpenAiModelId}): how much they reason before answering. Default `none`, the fastest
+   * and the only effort at which they take a sampling temperature. Other models ignore it.
+   */
+  reasoningEffort?: ConverseReasoningEffort;
   /** Repair re-asks after invalid tool input. Default 1. */
   maxRepairAttempts?: number;
   /**
@@ -58,17 +63,88 @@ export interface NovaProviderOptions {
   promptCache?: boolean;
 }
 
+/** OpenAI reasoning efforts on Bedrock (GPT-6 Luna's model card, checked 2026-11-24; the model's own default: medium). */
+export const CONVERSE_REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type ConverseReasoningEffort = (typeof CONVERSE_REASONING_EFFORTS)[number];
+
 const GEO_PREFIX = /^(?:us|eu|apac|jp|au|ca|us-gov|global)\./;
 const PROFILE_REQUIRED = /on-demand throughput|inference profile/i;
 
 /**
  * Anthropic Claude ids on Bedrock (`anthropic.…`, also behind `us.`/`global.` inference profiles). Current Claude
- * models reject sampling parameters, so Converse requests for any Claude id send none. This, {@link forcesTool} and
- * {@link usesCachePoints} are the only places that tell model families apart: nothing outside this adapter knows which
- * family the coach is.
+ * models reject sampling parameters, so Converse requests for any Claude id send none. This, {@link isOpenAiModelId},
+ * {@link forcesTool} and {@link usesCachePoints} are the only places that tell model families apart: nothing outside
+ * this adapter knows which family the coach is.
  */
 export function isClaudeModelId(modelId: string): boolean {
   return /^(?:[a-z-]+\.)?anthropic\./.test(modelId);
+}
+
+/**
+ * OpenAI ids on Bedrock. On Converse they are always behind an inference profile (`us.openai.gpt-6-luna`,
+ * `global.openai.gpt-6-luna`: the model card offers no in-region call); the bare id is Bedrock Mantle's (router.ts).
+ *
+ * What their Converse requests carry (GPT-6 Luna's model card, checked 2026-11-24, and what other Converse clients
+ * report): `additionalModelRequestFields.reasoning.effort` (the flat `reasoning_effort` is refused); a temperature only
+ * at effort `none` (OpenAI takes sampling parameters at no other effort); a forced tool; no cache checkpoints (Bedrock
+ * caches a repeated prefix of 1,024 tokens or more on its own, and reports what it read and wrote). A field Bedrock
+ * refuses is dropped for one retry and not sent again ({@link withoutRefusedField}).
+ */
+export function isOpenAiModelId(modelId: string): boolean {
+  return /^(?:[a-z-]+\.)?openai\./.test(modelId);
+}
+
+/** The optional fields of an OpenAI model's requests, as far as Bedrock takes them. */
+export interface OpenAiRequestFields {
+  readonly temperature: boolean;
+  /** null: not sent (the model then reasons at its own default). */
+  readonly effort: ConverseReasoningEffort | null;
+  /** Force the one tool of a structured call (else tool choice `auto`, and a reply written as text is read). */
+  readonly forcedTool: boolean;
+}
+
+/** Whether a request of an OpenAI model at these fields sends its temperature (only at effort `none`). */
+function sendsTemperature(fields: OpenAiRequestFields): boolean {
+  return fields.temperature && fields.effort === 'none';
+}
+
+/**
+ * The fields to retry with after Bedrock refused a request (`message`: its ValidationException, read here and never
+ * logged), or null when it names none of them (a malformed or too long request: never retried). Each step sends less
+ * than the one before, so the retries end. An effort the model does not take falls back to `low` before it is left out
+ * (left out, the model reasons at its default, the slowest choice).
+ */
+export function withoutRefusedField(
+  fields: OpenAiRequestFields,
+  message: string,
+): OpenAiRequestFields | null {
+  if (sendsTemperature(fields) && /temperature|top_?p\b|sampling/i.test(message)) {
+    return { ...fields, temperature: false };
+  }
+  if (fields.forcedTool && /tool[_ ]?choice/i.test(message)) return { ...fields, forcedTool: false };
+  if (fields.effort !== null && /reasoning|effort|unsupported value/i.test(message)) {
+    return { ...fields, effort: fields.effort === 'none' ? 'low' : null };
+  }
+  if (
+    (sendsTemperature(fields) || fields.effort !== null) &&
+    /(?:unknown|unsupported|unrecognized|unexpected) (?:parameter|field|argument|key)|additional_?model_?request_?fields|extraneous key/i.test(
+      message,
+    )
+  ) {
+    return { ...fields, temperature: false, effort: null };
+  }
+  return null;
+}
+
+/** What changed between two sets of fields, for the attempt's log line (`dropped:temperature`, `effort:low`). */
+function droppedFields(before: OpenAiRequestFields, after: OpenAiRequestFields): string[] {
+  return [
+    ...(before.temperature !== after.temperature ? ['dropped:temperature'] : []),
+    ...(before.effort !== after.effort
+      ? [after.effort === null ? 'dropped:reasoning_effort' : `reasoning_effort:${after.effort}`]
+      : []),
+    ...(before.forcedTool !== after.forcedTool ? ['dropped:tool_choice'] : []),
+  ];
 }
 
 /**
@@ -103,6 +179,8 @@ export function forcesTool(modelId: string): boolean {
  *   cached), at most 4 checkpoints, a 5-minute TTL; writes are billed at 1.25 times the input rate and reads at a
  *   tenth of it. Bedrock reads `tools`, then `system`, then `messages`, so the system checkpoint also covers a
  *   structured call's tool.
+ *
+ * GPT-6 Luna's Converse requests take none (its model card: `cachePoint` is not supported, caching is implicit).
  *
  * Other Claude models take checkpoints too, but their cache rates are not in the pricing table yet: not until they are.
  */
@@ -252,9 +330,9 @@ function isProfileRequiredError(error: unknown): boolean {
 }
 
 /**
- * Bedrock Converse reasoning models: Amazon Nova 2 Lite and Anthropic Claude (Claude Haiku 4.5 is the production
- * coach). Structured output is obtained through a single tool (`submit_response`) whose input schema is the response
- * schema, forced for Nova and Claude Haiku 4.5, and requested (tool choice `auto`) for the newer Claude models that
+ * Bedrock Converse reasoning models: Amazon Nova 2 Lite, Anthropic Claude (Claude Haiku 4.5 is the production coach)
+ * and OpenAI GPT-6 Luna ({@link isOpenAiModelId}). Structured output is obtained through a single tool
+ * (`submit_response`) whose input schema is the response schema, forced for Nova, Claude Haiku 4.5 and Luna, and requested (tool choice `auto`) for the newer Claude models that
  * reject a forced tool ({@link forcesTool}; a reply written as text is still read, and repaired). Plain text streams
  * through ConverseStream. If the base model id requires an inference profile, the provider retries once
  * with the geographic profile id and remembers that choice for the lifetime of the instance.
@@ -268,6 +346,8 @@ export class NovaProvider implements StructuredProvider {
   readonly #temperature: number;
   readonly #maxRepairAttempts: number;
   readonly #promptCache: boolean;
+  /** The optional request fields of an OpenAI model, without those Bedrock refused; null for every other model. */
+  #openAi: OpenAiRequestFields | null;
   /** Bedrock refused a request with cache checkpoints: this instance sends none from then on. */
   #cacheRefused = false;
   #useProfile = false;
@@ -288,6 +368,9 @@ export class NovaProvider implements StructuredProvider {
     this.#temperature = options.temperature ?? 0.2;
     this.#maxRepairAttempts = Math.max(0, options.maxRepairAttempts ?? 1);
     this.#promptCache = options.promptCache === true && usesCachePoints(options.modelId);
+    this.#openAi = isOpenAiModelId(options.modelId)
+      ? { temperature: true, effort: options.reasoningEffort ?? 'none', forcedTool: true }
+      : null;
   }
 
   /** The id currently used for calls (the inference profile after a profile retry). */
@@ -295,8 +378,31 @@ export class NovaProvider implements StructuredProvider {
     return this.#useProfile && this.#profileId ? this.#profileId : this.modelId;
   }
 
-  #inferenceConfig(modelId: string, maxTokens: number): InferenceConfiguration {
-    return isClaudeModelId(modelId) ? { maxTokens } : { maxTokens, temperature: this.#temperature };
+  /** The request fields an OpenAI model's requests carry now; null for every other model. */
+  get openAiFields(): OpenAiRequestFields | null {
+    return this.#openAi;
+  }
+
+  /** What tells one model family's request from another's, besides its prompt. */
+  #modelConfig(
+    modelId: string,
+    maxTokens: number,
+    temperature: number | undefined,
+    openAi: OpenAiRequestFields | null,
+  ): {
+    inferenceConfig: InferenceConfiguration;
+    additionalModelRequestFields?: { reasoning: { effort: ConverseReasoningEffort } };
+  } {
+    const sampling = { maxTokens, temperature: temperature ?? this.#temperature };
+    if (openAi !== null) {
+      return {
+        inferenceConfig: sendsTemperature(openAi) ? sampling : { maxTokens },
+        ...(openAi.effort === null
+          ? {}
+          : { additionalModelRequestFields: { reasoning: { effort: openAi.effort } } }),
+      };
+    }
+    return { inferenceConfig: isClaudeModelId(modelId) ? { maxTokens } : sampling };
   }
 
   /**
@@ -314,8 +420,25 @@ export class NovaProvider implements StructuredProvider {
     return { system: blocks, messages: converse, cachePoints: cachePointsIn(blocks, converse) };
   }
 
-  #toolChoice(modelId: string): ToolChoice {
-    return forcesTool(modelId) ? { tool: { name: SUBMIT_TOOL_NAME } } : { auto: {} };
+  #toolChoice(modelId: string, openAi: OpenAiRequestFields | null): ToolChoice {
+    const forced = forcesTool(modelId) && openAi?.forcedTool !== false;
+    return forced ? { tool: { name: SUBMIT_TOOL_NAME } } : { auto: {} };
+  }
+
+  /**
+   * The fields to retry a refused request of an OpenAI model with, or null. Not for a repair, whose messages were
+   * built from the first answer.
+   */
+  #fieldRetry(
+    error: unknown,
+    openAi: OpenAiRequestFields | null,
+    kind: RawModelAttempt['kind'],
+  ): OpenAiRequestFields | null {
+    if (openAi === null || kind === 'repair') return null;
+    if (!(error instanceof Error) || error.name !== 'ValidationException' || isProfileRequiredError(error)) {
+      return null;
+    }
+    return withoutRefusedField(openAi, error.message);
   }
 
   /**
@@ -356,6 +479,8 @@ export class NovaProvider implements StructuredProvider {
     const rawAttempts: RawModelAttempt[] = [];
     let prompt = this.#prompt(request.system, request.messages, request.promptCache);
     let kind: RawModelAttempt['kind'] = 'initial';
+    let openAi = this.#openAi;
+    let dropped: string[] = [];
 
     for (;;) {
       const modelId = this.effectiveModelId;
@@ -382,10 +507,12 @@ export class NovaProvider implements StructuredProvider {
               outcome,
               opened,
               cancelledBeforeSend,
-              reasoning: false,
+              // An OpenAI model's reasoning is billed as output and reaches the stream as a summary at most.
+              reasoning: openAi !== null && openAi.effort !== 'none',
             }),
           ...(prompt.cachePoints > 0 ? { cachePoints: prompt.cachePoints } : {}),
           errorName,
+          ...(dropped.length > 0 ? { issues: dropped } : {}),
         });
       };
       try {
@@ -394,7 +521,7 @@ export class NovaProvider implements StructuredProvider {
             modelId,
             system: prompt.system,
             messages: prompt.messages,
-            inferenceConfig: this.#inferenceConfig(modelId, request.maxOutputTokens),
+            ...this.#modelConfig(modelId, request.maxOutputTokens, request.temperature, openAi),
           },
           deadline.signal,
         );
@@ -434,6 +561,13 @@ export class NovaProvider implements StructuredProvider {
           kind = 'cache_retry';
           continue;
         }
+        const fewer = text === '' && openAi !== null ? this.#fieldRetry(error, openAi, kind) : null;
+        if (fewer !== null && openAi !== null) {
+          dropped = [...dropped, ...droppedFields(openAi, fewer)];
+          openAi = fewer;
+          kind = 'field_retry';
+          continue;
+        }
         mapped.rawAttempts = rawAttempts;
         mapped.textDelivered = text !== '';
         throw mapped;
@@ -453,6 +587,8 @@ export class NovaProvider implements StructuredProvider {
         throw refusal;
       }
       record('ok', null);
+      // Bedrock took the request without them: for every later call on this instance.
+      if (dropped.length > 0) this.#openAi = openAi;
       return { text, modelId, stopReason: streamStopReason(stopReason), rawAttempts };
     }
   }
@@ -472,6 +608,8 @@ export class NovaProvider implements StructuredProvider {
     let repairs = 0;
     let kind: RawModelAttempt['kind'] = 'initial';
     let maxTokens = request.maxOutputTokens;
+    let openAi = this.#openAi;
+    let dropped: string[] = [];
 
     for (;;) {
       const modelId = this.effectiveModelId;
@@ -483,7 +621,7 @@ export class NovaProvider implements StructuredProvider {
             modelId,
             system: prompt.system,
             messages,
-            inferenceConfig: this.#inferenceConfig(modelId, maxTokens),
+            ...this.#modelConfig(modelId, maxTokens, request.temperature, openAi),
             toolConfig: {
               tools: [
                 {
@@ -494,7 +632,7 @@ export class NovaProvider implements StructuredProvider {
                   },
                 },
               ],
-              toolChoice: this.#toolChoice(modelId),
+              toolChoice: this.#toolChoice(modelId, openAi),
             },
           },
           deadline.signal,
@@ -510,6 +648,7 @@ export class NovaProvider implements StructuredProvider {
           usage: { inputTokens: 0, outputTokens: 0 },
           ...(prompt.cachePoints > 0 ? { cachePoints: prompt.cachePoints } : {}),
           errorName: mapped.errorName,
+          ...(dropped.length > 0 ? { issues: dropped } : {}),
         });
         if (this.#profileRetry(error, kind)) {
           this.#useProfile = true; // cached for every later call on this instance
@@ -524,12 +663,22 @@ export class NovaProvider implements StructuredProvider {
           kind = 'cache_retry';
           continue;
         }
+        const fewer = this.#fieldRetry(error, openAi, kind);
+        if (fewer !== null && openAi !== null) {
+          dropped = [...dropped, ...droppedFields(openAi, fewer)];
+          openAi = fewer;
+          kind = 'field_retry';
+          continue;
+        }
         return fail(mapped);
       }
+      // Bedrock took the request without them: for every later call on this instance.
+      if (dropped.length > 0) this.#openAi = openAi;
 
       const latencyMs = Math.round(performance.now() - started);
       const usage = converseUsage(output.usage);
-      const record = (outcome: RawModelAttempt['outcome'], issues: readonly string[] = []): void => {
+      const record = (outcome: RawModelAttempt['outcome'], found: readonly string[] = []): void => {
+        const issues = kind === 'field_retry' ? [...dropped, ...found] : found;
         rawAttempts.push({
           provider: 'nova',
           modelId,

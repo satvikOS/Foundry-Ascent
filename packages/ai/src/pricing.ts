@@ -69,11 +69,31 @@ const HAIKU_4_5_CACHE = { read: 0.1, write: 1.25 } as const;
  * gateway sends Haiku 4.5 cache checkpoints (nova.ts `usesCachePoints`); other Claude rows have no cache rates yet, so
  * they get none.
  *
+ * GPT-6 Luna (its Bedrock model card, checked 2026-11-24), USD per million tokens for prompts up to 272,000 tokens
+ * (turn prompts stay far below; a longer one is billed at twice the input rates and 1.5 times the output rate):
+ *
+ * | Tokens      | Global (`global.`) | US profile (`us.`) and Mantle in region |
+ * | ----------- | ------------------ | ---------------------------------------- |
+ * | Input       | 0.10               | 0.11                                     |
+ * | Output      | 0.50               | 0.55                                     |
+ * | Cache write | 0.125              | 0.1375                                   |
+ * | Cache read  | 0.01               | 0.011                                    |
+ *
+ * Embedding candidates of the models benchmark (docs/runbooks/conversation-lab.md): Titan V2 $0.02, Cohere Embed 4
+ * $0.12 and Nova Multimodal Embeddings $0.135 (text) per million input tokens.
+ *
  * Bedrock serves Opus 4.6, Sonnet 4.6 and Haiku 4.5 through Converse with the ARN-versioned ids; later models use the
  * short `anthropic.claude-…` ids.
  */
 export const DEFAULT_MODEL_PRICES: PricingTable = {
-  'openai.gpt-6-luna': { inputPerMillionUsd: 0.1, outputPerMillionUsd: 0.5, premium: 0.1 },
+  // Global rates; `us.` and the bare id (Mantle, in region) are 10 % more.
+  'openai.gpt-6-luna': {
+    inputPerMillionUsd: 0.1,
+    outputPerMillionUsd: 0.5,
+    cacheReadPerMillionUsd: 0.01,
+    cacheWritePerMillionUsd: 0.125,
+    regionalPremium: 0.1,
+  },
   // Global rates; the `us.` profile production uses is listed 10 % higher ($0.33 / $2.75, cache reads $0.0825).
   'amazon.nova-2-lite-v1:0': {
     inputPerMillionUsd: 0.3,
@@ -83,6 +103,8 @@ export const DEFAULT_MODEL_PRICES: PricingTable = {
     regionalPremium: 0.1,
   },
   'amazon.titan-embed-text-v2:0': { inputPerMillionUsd: 0.02, outputPerMillionUsd: 0 },
+  'cohere.embed-v4:0': { inputPerMillionUsd: 0.12, outputPerMillionUsd: 0 },
+  'amazon.nova-2-multimodal-embeddings-v1:0': { inputPerMillionUsd: 0.135, outputPerMillionUsd: 0 },
   'anthropic.claude-opus-4-6-v1': claude(5, 25),
   'anthropic.claude-sonnet-4-6': claude(3, 15),
   'anthropic.claude-haiku-4-5-20251001-v1:0': claude(1, 5, HAIKU_4_5_CACHE),
