@@ -96,13 +96,14 @@ test.describe('program lead', () => {
     await assign(OTHER_VEIR);
     await expect(row).toContainText(OTHER_VEIR);
     await expect(row).toContainText('Ruth Abernathy-Song');
+    // The filter chips count who coaches what (new ventures another spec makes are Thomas's too).
+    await expect(page.getByRole('button', { name: new RegExp(`^${CORIN_PERSONA}\\s*[4-9]$`) })).toBeVisible();
+    await expect(page.getByRole('button', { name: new RegExp(`^${OTHER_VEIR}\\s*1$`) })).toBeVisible();
 
     // Back to the seeded assignment: Corin's persona, presented as the mentor Thomas (ADR-0021: the e2e database has
     // production's owner releases).
     await assign(SEEDED_VEIR);
     await expect(row).toContainText(CORIN);
-    // The filter chips count who coaches what: QuietQuad, SoleSignal, Seam Again, BenchTally and EmberLoop.
-    await expect(page.getByRole('button', { name: new RegExp(`^${CORIN_PERSONA}\\s*5$`) })).toBeVisible();
   });
 
   test('opens a venture’s Team without being a member: its name, only pages it can open, Invite', async ({
