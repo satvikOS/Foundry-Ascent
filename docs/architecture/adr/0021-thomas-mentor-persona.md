@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (amends ADR-0020's naming and identity lines for a persona presented as a mentor; ADR-0005's
   layers and ADR-0020's honesty line stand)
-- **Date:** 2026-11-05
+- **Date:** 2026-11-05 (amended 2026-11-24: founders meet Thomas everywhere)
 - **Deciders:** Platform owner (platform admin). The owner approved the release on **2026-11-05**: the display name is
   **Thomas**, a stock-avatar mentor persona.
 - **Basis:** owner feedback round 2 (2026-11-05: "rename the persona Corin → Thomas", first person, "never 'I'm Thomas's
@@ -83,6 +83,50 @@ Chosen option: **1**.
   doctrine it is on screen; the release's disclosure and the About panel do.
 - Neutral: other personas (Ruth's vEIR, studio-created vEIRs) stay twins; a mentor presentation is set only by an owner
   release.
+
+## Amendment of 2026-11-24: founders meet Thomas everywhere
+
+**Why.** Only the persona built from Corin's profile became Thomas. On 2026-11-24 a tester signed in as the founder of
+BenchTally, which Ruth's vEIR coached: the chat said "Ruth's vEIR … a digital twin" while the call showed Thomas's face
+and voice. The decision of 2026-11-05 stands for every founder, so the ventures move too.
+
+**The release.** `thomas-everywhere-2026-11-24` (`packages/db/src/seed/coach-releases.ts`, named in
+`homeTenant.ownerReleases` and applied once by the deploy's seed, after the persona and story releases). Every **active**
+venture of the home tenant whose active assignment is to another **seeded** persona (Ruth's vEIR) or the Foundry Guide is
+reassigned to Thomas, the way a program lead reassigns it (`PersonasService.assignVenture`): the old assignment ends, the
+new one carries Thomas's own EIR and his release's modes, and `assignment.created` is audited with the previous
+assignment (plus `via: owner_release` and the release's key).
+
+- **Left alone:** personas made in the studio and their ventures, paused, graduated and archived ventures, suspended or
+  expired assignments, other tenants. Without an assignable mentor (presented as one, active, an approved release) or the
+  deploy owner, nothing happens and nothing is recorded, so a later deploy applies it.
+- **Once per database:** recorded as `program.coach_release_applied`. A later reassignment in the product, and a venture
+  given to Ruth's vEIR later, are never undone by a redeploy.
+- **The notebook carries over** when Thomas has none for the venture: every line with its ids, dates and source
+  conversations (deleting a conversation still erases what was drawn from it, in both notebooks; a summary of unknown
+  origin is tied to the old coach's conversations), what a person wrote word for word and still marked as theirs, and the
+  lines they removed still suppressed. AI-written lines say "the coach" where they named the twin. The opener comes along
+  when a person wrote it or it is drawn from its founder's latest conversation, without a greeting that claims an earlier
+  meeting; a stale one is left out. The old row is kept as it is. Audited (`notebook.carried_over`). A conversation not
+  distilled yet when the release is applied is distilled into the old coach's notebook; Thomas still gets its digest and
+  last exchanges as another coach's ("Where you left off").
+- **Conversations already open** stay on the assignment they started with, as after any reassignment: the next message is
+  refused (`assignment_inactive`, `assignment_changed`: start a new session), a live call ends at its next heartbeat,
+  crisis support still answers, and they stay readable under the name they were held with (a transcript is a record).
+- **Who can see the work** changes exactly as that reassignment changes it, never more. The venture's reviewer is the EIR
+  its persona is built from (docs/architecture/knowledge-pools.md §2), so Corin (a fictional EIR) reads what Ruth read for
+  BenchTally and EmberLoop, Ruth no longer does, and a venture of the Foundry Guide, which had no reviewer unless a
+  program lead chose one, is now Corin's to review. Escalations already routed to a person stay theirs.
+- **New ventures** (`program.createVenture`) start with the tenant's mentor persona and its EIR as reviewer when one can
+  be assigned, else with the Foundry Guide and no reviewer, as before.
+
+**Rollback.** Reassign a venture in Program, or ship a later coach release. Nothing was deleted: Ruth's persona, release,
+library, notebooks and conversations are all there.
+
+**Confirmation.** `packages/db/src/seed/coach-releases.db.test.ts` and `coach-releases.test.ts` (applied once, scope,
+audit, carry-over, deletion, EIR visibility, other tenants, a fresh database),
+`packages/core/src/services/thomas-everywhere.db.test.ts` (open conversations and calls, every text the server writes for
+the founder, the same assignment as a program lead's, new ventures), `infra/cdk/test/config.test.ts`.
 
 ## Rollback
 

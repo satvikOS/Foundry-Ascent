@@ -358,7 +358,7 @@ AI-origin items can never be confirmed without `approved_by` or `auto_kept_at` (
   moved from Corin to Ruth, SoleSignal from Ruth to Corin): the original Foundry Guide assignment is ended
   and the vEIR one created once, only while that original assignment is still the active one. Every venture × vEIR pair
   gets a notebook; QuietQuad's carries a past conversation with its digest. Foundry Guide stays the
-  program's neutral guide for new ventures.
+  program's neutral guide, for new ventures of a tenant without a mentor persona.
 - Owner releases (`./owner-releases.ts`, ADR-0021; once migration 0028 is applied): persona releases the platform
   owner approved outside the studio, applied once each when `SeedConfig.ownerReleases` names them (production:
   `infra/cdk/config/production.json` `homeTenant.ownerReleases` → `SEED_OWNER_RELEASES`). `thomas-2026-11-05`: Corin's
@@ -378,6 +378,14 @@ AI-origin items can never be confirmed without `approved_by` or `auto_kept_at` (
   SoleSignal membership is revoked; SoleSignal keeps every row, so restoring the membership undoes it. Applied only
   while the new venture's deterministic id is absent, with demo data and the deploy owner; audited
   (`venture.story_release_applied`); `SeedResult.storyReleases` says what each did.
+- Coach releases (`./coach-releases.ts`, ADR-0021 amendment; same list, applied last): which persona coaches the home
+  tenant's ventures, changed once. `thomas-everywhere-2026-11-24`: active ventures whose active assignment is to another
+  seeded persona (Ruth's vEIR) or the Foundry Guide are reassigned to Thomas as the product reassigns them
+  (`assignmentsRepo.createAssignment`, audited `assignment.created`), and their notebook is copied to Thomas's when he
+  has none (`carryOverNotebook`, audited `notebook.carried_over`; the old row is kept). Applied once per database
+  (`program.coach_release_applied` in the audit trail), with the deploy owner and an assignable mentor
+  (`personasRepo.findMentorPersona`); `SeedResult.coachReleases` says what each did, and `SeedResult.ventures` then
+  names the assignments it gave.
 - Embeddings are backfilled by the migrate handler: `knowledgeRepo.listChunksMissingEmbeddings` →
   embed → `setChunkEmbeddings` (same for memory).
 - Access-code utilities (runtime-contract format): `generateAccessCode()`, `accessCodePrefix(code)`,

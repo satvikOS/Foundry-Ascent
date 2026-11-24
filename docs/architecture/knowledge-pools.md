@@ -9,8 +9,9 @@ notebooks and the distillation job that writes them come next (§8).
 
 - **vEIR**: an AI coach built from one EIR's approved doctrine and style, with that EIR's consent
   (`personas.kind = 'eir_persona'`). It speaks in the first person and in the EIR's style, but it is not the
-  EIR, is never "live", and never claims the EIR's endorsement. Foundry Guide (`neutral_guide`) stays the
-  program's neutral coach for ventures without a vEIR.
+  EIR, is never "live", and never claims the EIR's endorsement. One of them may be presented as a mentor
+  under its own name (Thomas, ADR-0021): the coach of every seeded and new venture in production. Foundry
+  Guide (`neutral_guide`) stays the program's neutral coach for ventures without a vEIR.
 - **Common pool**: what a vEIR brings to every venture it coaches — its approved release (doctrine and
   style), its knowledge library and its published lessons.
 - **Specific pool**: what a vEIR knows about one venture and its founders — venture memory and documents,
@@ -40,6 +41,16 @@ program lead re-assigned is left alone (`migrate-0004.db.test.ts`).
 Where production's story release is applied (`packages/db/src/seed/story-releases.ts`), Amara's venture is Seam
 Again, also coached by Corin's vEIR (presented as Thomas), and SoleSignal has no founder.
 
+Production's coach release (`thomas-everywhere-2026-11-24`, `packages/db/src/seed/coach-releases.ts`, ADR-0021
+amendment) then moved every active venture of Ruth's vEIR and the Foundry Guide to Thomas, once, through the
+reassignment above; a reassignment made in the product afterwards stands. **The notebook carries over** to
+Thomas's when he had none for the venture: lines keep their ids, dates and source conversations (so deleting a
+conversation erases them in both notebooks), a person's lines stay theirs, AI lines no longer name the twin, and
+only an opener that is still where the founder left off comes along. A reassignment made in the product carries
+nothing: the new coach's notebook starts empty, and it knows the earlier conversations as another coach's.
+**New ventures** (`POST /program/ventures`) start with the tenant's mentor persona and its EIR as reviewer when
+one can be assigned, else with the Foundry Guide and no reviewer.
+
 **The coaching vEIR's EIR is the venture's reviewer (decision).** Each vEIR assignment carries the EIR the
 vEIR is built from, so the human who reviews a venture is always the EIR whose doctrine coaches it. The
 re-pointing therefore moved two reviewers from the first seed:
@@ -49,10 +60,21 @@ re-pointing therefore moved two reviewers from the first seed:
 | BenchTally | Corin                 | Ruth         | Ruth now reads BenchTally's shared memory, notebook, digests and sampled turns; Corin no longer does |
 | SoleSignal | Ruth                  | Corin        | Corin now reads the same for SoleSignal; Ruth no longer does                                         |
 
-QuietQuad (Corin) and EmberLoop (Ruth) keep their reviewer. BenchTally's pending EIR proposal ("Department-level
+QuietQuad (Corin) and EmberLoop (Ruth) keep their reviewer.
+
+The same rule decides who sees what after the coach release, no more and no less than a program lead's
+reassignment would give (`app.is_assigned_eir` reads the active assignment only):
+
+| Venture (production)              | Reviewer before          | Reviewer now | What moved                                                                                        |
+| --------------------------------- | ------------------------ | ------------ | ------------------------------------------------------------------------------------------------- |
+| BenchTally, EmberLoop             | Ruth                     | Corin        | Corin reads the shared memory, notebooks, digests and sampled turns; Ruth no longer does          |
+| Ventures of the Foundry Guide     | none, or the lead's pick | Corin        | Corin reads the same; an EIR a program lead had picked no longer does                             |
+| New ventures (while Thomas leads) | –                        | Corin        | Corin reads the same from the start; before, a new venture had no reviewer until a lead chose one |
+
+A program lead changes a venture's reviewer by reassigning it. BenchTally's pending EIR proposal ("Department-level
 purchasing could shorten sales cycles") was made by Corin while he reviewed it; it stays for the founders to
 keep or dismiss and is shown as "Added by an EIR". The evals fake API (`evals/tests/fake_api.py`) mirrors
-this mapping.
+the seed's mapping (no owner releases).
 
 `GET /ventures/:id/veir` returns the identity the UI shows (`VeirIdentity`: name, short name "Corin",
 tagline, disclosure, embodiment with consent flags).
