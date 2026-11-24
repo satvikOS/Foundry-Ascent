@@ -27,7 +27,7 @@ import { hasAnyRole, requireRole } from '../authz/roles.js';
 import { type RequestContext } from '../context.js';
 import { fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
-import { audit, requireId, type Kit } from '../internal/kit.js';
+import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { assertDistinctiveVentureName, ventureNameConflict } from '../internal/venture-names.js';
 import { toResourceView } from '../internal/views.js';
 import { dueAtFor } from './escalation-packet.js';
@@ -50,7 +50,11 @@ export interface ProgramService {
   portfolio(ctx: RequestContext): Promise<PortfolioSummary>;
   /** Venture metadata for the program console (program lead). */
   listVentures(ctx: RequestContext): Promise<ProgramVentureRowValue[]>;
-  /** Enrols a venture and assigns the tenant's active neutral Foundry Guide (program lead). */
+  /**
+   * Enrols a venture and assigns the tenant's mentor persona ({@link personasRepo.findMentorPersona}: Thomas, ADR-0021),
+   * with the EIR it is built from as the venture's reviewer, as every EIR persona is assigned; without one, the tenant's
+   * active neutral Foundry Guide and no reviewer (program lead).
+   */
   createVenture(
     ctx: RequestContext,
     input: z.input<typeof CreateVentureRequest>,
@@ -90,6 +94,28 @@ export interface ProgramService {
   ): Promise<EscalationQueueItemValue>;
 }
 
+/** Who coaches a new venture: the tenant's mentor, else its neutral guide (null: the tenant has neither). */
+async function newVentureCoach(
+  scope: RequestScope,
+  tenantId: string,
+): Promise<Pick<
+  assignmentsRepo.CreateAssignmentInput,
+  'personaId' | 'eirProfileId' | 'allowedModes'
+> | null> {
+  const mentor = await personasRepo.findMentorPersona(scope.tx, { tenantId });
+  if (mentor !== null) {
+    return {
+      personaId: mentor.id,
+      eirProfileId: mentor.eirProfileId,
+      allowedModes: mentor.allowedModes,
+    };
+  }
+  const guide = (await personasRepo.listPersonaViews(scope.tx, tenantId)).find(
+    (p) => p.kind === 'neutral_guide' && p.status === 'active' && p.activeRelease !== null,
+  );
+  return guide === undefined ? null : { personaId: guide.id };
+}
+
 export function createProgramService(kit: Kit, directory: DirectoryCache): ProgramService {
   const timeZone = kit.config.escalations.businessTimeZone;
 
@@ -124,16 +150,13 @@ export function createProgramService(kit: Kit, directory: DirectoryCache): Progr
           .catch((err: unknown) => {
             throw ventureNameConflict(err);
           });
-        const personas = await personasRepo.listPersonaViews(scope.tx, ctx.tenantId);
-        const guide = personas.find(
-          (p) => p.kind === 'neutral_guide' && p.status === 'active' && p.activeRelease !== null,
-        );
+        const coach = await newVentureCoach(scope, ctx.tenantId);
         let assignmentId: string | null = null;
-        if (guide) {
+        if (coach !== null) {
           const assignment = await assignmentsRepo.createAssignment(scope.tx, {
             tenantId: ctx.tenantId,
             ventureId: venture.id,
-            personaId: guide.id,
+            ...coach,
             createdBy: ctx.principalId,
           });
           assignmentId = assignment.id;
@@ -144,7 +167,12 @@ export function createProgramService(kit: Kit, directory: DirectoryCache): Progr
           ventureId: venture.id,
           objectType: 'venture',
           objectId: venture.id,
-          metadata: { assignmentId, personaId: guide?.id ?? null, stage: venture.stage },
+          metadata: {
+            assignmentId,
+            personaId: coach?.personaId ?? null,
+            eirProfileId: coach?.eirProfileId ?? null,
+            stage: venture.stage,
+          },
         });
         directory.invalidate(ctx.tenantId);
         const row = (await venturesRepo.listProgramVentures(scope.tx, ctx.tenantId)).find(

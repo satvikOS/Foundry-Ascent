@@ -136,6 +136,7 @@ export async function handleSchemaEvent(
     // Owner-approved releases (ADR-0021): key and outcome only ("thomas-2026-11-05:applied").
     ownerReleases: seed.ownerReleases.map((r) => `${r.key}:${r.outcome}`).join(','),
     storyReleases: seed.storyReleases.map((r) => `${r.key}:${r.outcome}`).join(','),
+    coachReleases: seed.coachReleases.map((r) => `${r.key}:${r.outcome}:${String(r.ventures)}`).join(','),
   });
 
   let backfill: BackfillReport | null = null;

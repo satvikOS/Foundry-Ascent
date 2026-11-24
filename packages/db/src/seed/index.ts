@@ -1,4 +1,12 @@
 export * from './access-code.js';
+export {
+  COACH_RELEASES,
+  THOMAS_EVERYWHERE_RELEASE,
+  coachAssignmentId,
+  type CoachRelease,
+  type CoachReleaseOutcome,
+  type CoachReleaseResult,
+} from './coach-releases.js';
 export * from './doctrine.js';
 export { SEED_NAMESPACE, seedId, uuidV5, ventureCanary } from './ids.js';
 export {

@@ -30,6 +30,7 @@ import { type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
 import { appendAudit } from '../repositories/audit.js';
 import { approveRelease, createRelease, withdrawRelease } from '../repositories/personas.js';
+import { COACH_RELEASES } from './coach-releases.js';
 import { STORY_RELEASES } from './story-releases.js';
 
 export interface OwnerRelease {
@@ -183,16 +184,17 @@ export const THOMAS_RELEASE: OwnerRelease = {
 export const OWNER_RELEASES: readonly OwnerRelease[] = [THOMAS_RELEASE];
 
 /**
- * Parses `SEED_OWNER_RELEASES` (comma-separated keys of persona releases and of demo-story releases,
- * ./story-releases.ts); an unknown key is a deploy error, never ignored.
+ * Parses `SEED_OWNER_RELEASES` (comma-separated keys of persona releases, of demo-story releases, ./story-releases.ts,
+ * and of coach releases, ./coach-releases.ts); an unknown key is a deploy error, never ignored.
  */
 export function parseOwnerReleases(raw: string | undefined): readonly string[] {
   const keys = (raw ?? '')
     .split(',')
     .map((k) => k.trim())
     .filter((k) => k !== '');
+  const known = [...OWNER_RELEASES, ...STORY_RELEASES, ...COACH_RELEASES];
   for (const key of keys) {
-    if (!OWNER_RELEASES.some((r) => r.key === key) && !STORY_RELEASES.some((r) => r.key === key)) {
+    if (!known.some((r) => r.key === key)) {
       throw new SqlUsageError(`SEED_OWNER_RELEASES names an unknown release: ${key.slice(0, 60)}`);
     }
   }

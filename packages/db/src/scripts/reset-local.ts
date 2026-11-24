@@ -91,6 +91,9 @@ async function main(): Promise<void> {
           : `Owner releases: SEED_OWNER_RELEASES`,
         ...result.ownerReleases.map((r) => `Owner release ${r.key}: ${r.outcome}`),
         ...result.storyReleases.map((r) => `Story release ${r.key}: ${r.outcome}`),
+        ...result.coachReleases.map(
+          (r) => `Coach release ${r.key}: ${r.outcome} (${String(r.ventures)} ventures)`,
+        ),
         `DB_DRIVER=pg`,
         `DATABASE_URL=${url}`,
         `DEV owner access code (local only, shown once): ${code}`,

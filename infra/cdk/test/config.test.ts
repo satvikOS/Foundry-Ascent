@@ -389,7 +389,7 @@ describe('config', () => {
     expect(config.distillation.sweepIntervalMinutes).toBe(15);
   });
 
-  it('reads the owner-approved releases the seed applies (none when absent; production ships Thomas and the Seam Again story)', () => {
+  it('reads the owner-approved releases the seed applies (none when absent; production ships Thomas, the Seam Again story and Thomas everywhere)', () => {
     expect(parseConfig(valid()).homeTenant.ownerReleases).toEqual([]);
     expect(
       parseConfig(withChange(['homeTenant', 'ownerReleases'], ['thomas-2026-11-05'])).homeTenant
@@ -398,6 +398,7 @@ describe('config', () => {
     expect(loadConfig().homeTenant.ownerReleases).toEqual([
       'thomas-2026-11-05',
       'amara-seam-again-2026-11-08',
+      'thomas-everywhere-2026-11-24',
     ]);
     for (const bad of ['Thomas', 'thomas 2026', '', 7, ['thomas-2026-11-05']]) {
       expect(() => parseConfig(withChange(['homeTenant', 'ownerReleases'], [bad]))).toThrow(ConfigError);

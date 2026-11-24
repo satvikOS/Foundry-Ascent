@@ -13,7 +13,7 @@
  * - Documents and knowledge chunks are stored without embeddings; the migrate handler backfills them
  *   (`knowledgeRepo.listChunksMissingEmbeddings` / `setChunkEmbeddings`).
  * - Demo ventures are coached by vEIR personas built from the synthetic EIRs (`./veir.ts`); Foundry Guide
- *   stays the program's neutral guide for new ventures.
+ *   stays the program's neutral guide, for new ventures of a tenant that has no mentor persona.
  * - Not demo data: the Ain Foundry curriculum (`./curriculum.ts`), programme notes of the `ain` home tenant only.
  * - Not demo data: the startup knowledge base (real, sourced reference material) is synced into every active
  *   tenant's common pool on every run, demo data or not (`../knowledge-pack/sync.ts`: inserted when absent, re-ingested when
@@ -34,6 +34,12 @@ import {
   PROGRAM_METHOD_SOURCE,
 } from './doctrine.js';
 import { syncKnowledgePackToTenants } from '../knowledge-pack/sync.js';
+import {
+  COACH_RELEASES,
+  coachAssignmentId,
+  seedCoachReleases,
+  type CoachReleaseResult,
+} from './coach-releases.js';
 import { AIN_CURRICULUM, CURRICULUM_TENANT_SLUG, CURRICULUM_URI_PREFIX } from './curriculum.js';
 import { seedId, ventureCanary } from './ids.js';
 import { bodyFromSections, insertRows, insertSourceWithChunks } from './insert.js';
@@ -69,8 +75,8 @@ export interface SeedConfig {
   readonly knowledgePack?: boolean;
   /**
    * Owner-approved releases to apply once (`SEED_OWNER_RELEASES`): persona releases, keys of `OWNER_RELEASES` in
-   * ./owner-releases.ts (ADR-0021), and demo-story releases, keys of `STORY_RELEASES` in ./story-releases.ts.
-   * Default none.
+   * ./owner-releases.ts (ADR-0021), demo-story releases, keys of `STORY_RELEASES` in ./story-releases.ts, and coach
+   * releases, keys of `COACH_RELEASES` in ./coach-releases.ts (applied in that order). Default none.
    */
   readonly ownerReleases?: readonly string[];
 }
@@ -111,6 +117,8 @@ export interface SeedResult {
   readonly ownerReleases: readonly OwnerReleaseResult[];
   /** What each configured demo-story release did on this run (`SeedConfig.ownerReleases`). */
   readonly storyReleases: readonly StoryReleaseResult[];
+  /** What each configured coach release did on this run (`SeedConfig.ownerReleases`). */
+  readonly coachReleases: readonly CoachReleaseResult[];
 }
 
 function dayFn(now: Date): (offsetDays: number) => string {
@@ -442,11 +450,12 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
   // The owner's releases come after the personas they change exist (the vEIRs above), on every deploy that names them.
   const releaseKeys = config.ownerReleases ?? [];
   const isStory = (key: string): boolean => STORY_RELEASES.some((r) => r.key === key);
+  const isCoach = (key: string): boolean => COACH_RELEASES.some((r) => r.key === key);
   const ownerReleases = await seedOwnerReleases(sx, {
     tenantId,
     id,
     ownerId,
-    keys: releaseKeys.filter((key) => !isStory(key)),
+    keys: releaseKeys.filter((key) => !isStory(key) && !isCoach(key)),
   });
   const storyReleases = await seedStoryReleases(sx, {
     tenantId,
@@ -457,6 +466,14 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
     day: dayFn(config.now ?? new Date()),
     keys: releaseKeys.filter(isStory),
   });
+  const coachReleases = await seedCoachReleases(sx, {
+    tenantId,
+    id,
+    guidePersonaId: personaId,
+    ownerId,
+    keys: releaseKeys.filter(isCoach),
+  });
+  ventures = await withCoach(sx, ventures, releaseKeys, id);
 
   return {
     tenantId,
@@ -470,7 +487,33 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
     veirs,
     ownerReleases,
     storyReleases,
+    coachReleases,
   };
+}
+
+/** The seeded ventures with the assignment a configured coach release gave them, while it is the active one. */
+async function withCoach(
+  sx: SystemExecutor,
+  ventures: readonly SeededVenture[],
+  keys: readonly string[],
+  id: (...parts: string[]) => string,
+): Promise<SeededVenture[]> {
+  let out = [...ventures];
+  for (const release of COACH_RELEASES.filter((r) => keys.includes(r.key))) {
+    const active = await sx.query(
+      `SELECT id, persona_id FROM assignments WHERE status = 'active' AND id = ANY (:ids)`,
+      { ids: p.uuidArray(out.map((v) => coachAssignmentId(release, v.id, id))) },
+    );
+    const personaOf = new Map(
+      active.rows.map((r) => [col.uuid.decode(r.id, 'id'), col.uuid.decode(r.persona_id, 'persona_id')]),
+    );
+    out = out.map((v) => {
+      const assignmentId = coachAssignmentId(release, v.id, id);
+      const personaId = personaOf.get(assignmentId);
+      return personaId === undefined ? v : { ...v, assignmentId, personaId, eirKey: release.eirKey };
+    });
+  }
+  return out;
 }
 
 /**

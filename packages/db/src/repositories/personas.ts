@@ -596,6 +596,45 @@ export function personaPresencePart(args: {
   };
 }
 
+/** The persona that coaches a tenant's new ventures as their mentor ({@link findMentorPersona}). */
+export interface MentorPersona {
+  readonly id: string;
+  /** The EIR it is built from, who reviews the ventures it coaches (the rule of every EIR persona's assignment). */
+  readonly eirProfileId: string | null;
+  /** The modes of its active release. */
+  readonly allowedModes: readonly CoachModeValue[];
+}
+
+/**
+ * The tenant's mentor persona (`presentation = 'mentor'`, ADR-0021) that can be assigned now: active, with an approved,
+ * unexpired release; the oldest when there are several, or the one `personaId` names. Null when there is none.
+ */
+export function findMentorPersona(
+  ex: SqlExecutor,
+  args: { tenantId: string; personaId?: string },
+): Promise<MentorPersona | null> {
+  return queryFirst(
+    ex,
+    `SELECT pe.id, pe.eir_profile_id, r.allowed_modes
+       FROM personas pe
+       JOIN LATERAL (
+         SELECT rel.allowed_modes FROM persona_releases rel
+          WHERE rel.persona_id = pe.id AND rel.status = 'approved'
+            AND (rel.expires_at IS NULL OR rel.expires_at > now())
+          ORDER BY rel.version DESC LIMIT 1) r ON true
+      WHERE pe.tenant_id = :tenantId AND pe.kind = 'eir_persona' AND pe.presentation = 'mentor'
+        AND pe.status = 'active' AND (CAST(:personaId AS uuid) IS NULL OR pe.id = :personaId)
+      ORDER BY pe.created_at, pe.id
+      LIMIT 1`,
+    { tenantId: p.uuid(args.tenantId), personaId: p.nullable.uuid(args.personaId) },
+    (r) => ({
+      id: col.uuid.decode(r.id, 'id'),
+      eirProfileId: col.uuid.nullable.decode(r.eir_profile_id, 'eir_profile_id'),
+      allowedModes: decodeModes(col.textArray.decode(r.allowed_modes, 'allowed_modes')),
+    }),
+  );
+}
+
 /** Whether a consent is in force at `now` and covers `asset`. */
 export function consentCovers(
   consent: Pick<ConsentRecord, 'assetTypes' | 'revokedAt' | 'expiresAt'> | null,
