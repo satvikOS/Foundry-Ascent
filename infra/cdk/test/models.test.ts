@@ -9,6 +9,7 @@ import {
   reasoningAccess,
   runtimeAccess,
   usesMantle,
+  usesOpenAiProfile,
 } from '../src/lib/models.js';
 import { functionPolicyStatements, resourcesOfType, synthesize } from './helpers.js';
 
@@ -140,6 +141,87 @@ describe('model selection', () => {
       background: models.background,
     });
     expect(usesMantle(luna)).toBe(true);
+  });
+});
+
+/** The switch ADR-0024 prepares: production.json with its one line changed (`models.primary`). */
+const LUNA_COACH: PlatformConfig['models'] = { ...loadConfig().models, primary: 'us.openai.gpt-6-luna' };
+
+describe('GPT-6 Luna as the coach (ADR-0024: prepared, off)', () => {
+  it('is off: production coaches on Claude Haiku 4.5, with no OpenAI model granted', () => {
+    const models = effectiveModels(loadConfig().models);
+    expect(models.primary).toBe('us.anthropic.claude-haiku-4-5-20251001-v1:0');
+    expect(JSON.stringify(reasoningAccess(models))).not.toContain('openai');
+    expect(usesOpenAiProfile(reasoningAccess(models).inferenceProfiles)).toBe(false);
+  });
+
+  it('is one line: the profile becomes primary, Nova stays behind it, Mantle stays out', () => {
+    const models = effectiveModels(LUNA_COACH);
+    expect(models).toEqual({
+      ...effectiveModels(loadConfig().models),
+      primary: 'us.openai.gpt-6-luna',
+      fallback: 'us.amazon.nova-2-lite-v1:0',
+    });
+    expect(usesMantle(models)).toBe(false);
+    expect(reasoningAccess(models)).toEqual({
+      foundationModels: ['amazon.nova-2-lite-v1:0'],
+      globalFoundationModels: ['amazon.nova-2-lite-v1:0'],
+      regionalFoundationModels: [
+        { modelId: 'openai.gpt-6-luna', regions: ['us-east-1', 'us-east-2', 'us-west-2'] },
+      ],
+      inferenceProfiles: [
+        'us.openai.gpt-6-luna',
+        'us.amazon.nova-2-lite-v1:0',
+        'global.amazon.nova-2-lite-v1:0',
+      ],
+    });
+    expect(usesOpenAiProfile(['us.openai.gpt-6-luna'])).toBe(true);
+    expect(usesOpenAiProfile(['openai.gpt-6-luna', 'us.amazon.nova-2-lite-v1:0'])).toBe(false);
+  });
+
+  it('gives every function its environment, and api and worker exactly its permissions', () => {
+    const { templates } = synthesize({}, { ...loadConfig(), models: LUNA_COACH });
+    for (const [, fn] of resourcesOfType(templates.app, 'AWS::Lambda::Function').filter(([, p]) =>
+      String(p.FunctionName).startsWith('FoundryAscent-'),
+    )) {
+      expect((fn.Environment as { Variables: Record<string, unknown> }).Variables).toMatchObject({
+        MODEL_PRIMARY_ID: 'us.openai.gpt-6-luna',
+        MODEL_FALLBACK_ID: 'us.amazon.nova-2-lite-v1:0',
+        MODEL_BACKGROUND_PRIMARY_ID: 'us.amazon.nova-2-lite-v1:0',
+        MODEL_BACKGROUND_PURPOSES: 'classification,eval,ingestion,seed',
+      });
+    }
+    const expected = [
+      profile('us.openai.gpt-6-luna'),
+      ...['us-east-1', 'us-east-2', 'us-west-2'].map((region) =>
+        regionalFoundationModel('openai.gpt-6-luna', region),
+      ),
+      join(
+        'arn:',
+        { Ref: 'AWS::Partition' },
+        ':bedrock:us-east-1:',
+        { Ref: 'AWS::AccountId' },
+        ':project/default',
+      ),
+      profile('us.amazon.nova-2-lite-v1:0'),
+      profile('global.amazon.nova-2-lite-v1:0'),
+      foundationModel('amazon.nova-2-lite-v1:0'),
+      regionlessFoundationModel('amazon.nova-2-lite-v1:0'),
+      foundationModel('amazon.titan-embed-text-v2:0'),
+    ];
+    for (const name of ['FoundryAscent-Api', 'FoundryAscent-Worker']) {
+      const statements = functionPolicyStatements(templates.app, name);
+      const runtime = statements.find((s) => s.Sid === 'BedrockRuntimeModels');
+      expect(runtime?.Resource).toEqual(expect.arrayContaining(expected));
+      expect(runtime?.Resource).toHaveLength(expected.length);
+      expect(statements.some((s) => s.Sid === 'BedrockMantleInference')).toBe(false);
+    }
+    // Embeddings only, as before.
+    expect(
+      functionPolicyStatements(templates.app, 'FoundryAscent-Migrate').find(
+        (s) => s.Sid === 'BedrockEmbeddings',
+      )?.Resource,
+    ).toEqual(foundationModel('amazon.titan-embed-text-v2:0'));
   });
 });
 

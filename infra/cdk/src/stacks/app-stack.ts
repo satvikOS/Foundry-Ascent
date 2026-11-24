@@ -66,6 +66,7 @@ import {
   embeddingsAccess,
   reasoningAccess,
   usesMantle,
+  usesOpenAiProfile,
 } from '../lib/models.js';
 import {
   acknowledge,
@@ -323,6 +324,10 @@ export class AppStack extends Stack {
       ),
       ...access.globalFoundationModels.map(regionlessFoundationModelArn),
       ...access.inferenceProfiles.map(profileArn),
+      // An OpenAI model behind a profile also needs the account's default project (lib/models.ts).
+      ...(usesOpenAiProfile(access.inferenceProfiles)
+        ? [`arn:${Aws.PARTITION}:bedrock:${config.region}:${Aws.ACCOUNT_ID}:project/default`]
+        : []),
     ];
     const reasoningResources = [
       ...runtimeResources(reasoningAccess(models, config.region)),

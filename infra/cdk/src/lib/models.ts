@@ -62,7 +62,8 @@ export function foundationModelId(modelId: string): string {
 
 /**
  * Where a geography inference profile routes a request from the platform's region, for the models whose destination
- * regions were checked on their Bedrock model cards (2026-11-06; "Geo inference details", source region us-east-1).
+ * regions were checked on their Bedrock model cards (2026-11-06, GPT-6 Luna and Cohere Embed 4 2026-11-24; "Geo
+ * inference details", source region us-east-1).
  * AWS states that a geography profile's destination list never changes (a new region comes as a new profile). A
  * model or profile not listed here keeps its foundation model granted in every region.
  */
@@ -70,6 +71,8 @@ const GEO_DESTINATIONS: Readonly<Record<string, Readonly<Record<string, readonly
   'us-east-1': {
     'us.anthropic.claude-haiku-4-5-20251001-v1:0': ['us-east-1', 'us-east-2', 'us-west-2'],
     'us.amazon.nova-2-lite-v1:0': ['us-east-1', 'us-east-2', 'us-west-2'],
+    'us.openai.gpt-6-luna': ['us-east-1', 'us-east-2', 'us-west-2'],
+    'us.cohere.embed-v4:0': ['us-east-1', 'us-east-2', 'us-west-2'],
   },
 };
 
@@ -100,6 +103,15 @@ export interface BedrockRuntimeAccess {
   }[];
   /** Inference-profile ids, granted in the invoking region. */
   readonly inferenceProfiles: readonly string[];
+}
+
+/**
+ * Whether an OpenAI model behind an inference profile is among `profiles` (`us.openai.gpt-6-luna`, through Converse).
+ * Its model card asks for bedrock:InvokeModel on the account's default project beside the profile
+ * (`arn:aws:bedrock:<region>:<account>:project/default`): the project is no model, so this grants no other one.
+ */
+export function usesOpenAiProfile(profiles: readonly string[]): boolean {
+  return profiles.some((id) => isInferenceProfile(id) && isMantleModel(foundationModelId(id)));
 }
 
 /** Global (all commercial regions) inference profiles: `global.amazon.nova-2-lite-v1:0`. */

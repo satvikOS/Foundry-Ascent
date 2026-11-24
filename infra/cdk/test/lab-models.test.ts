@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import { conversationLabAccess, LAB_MODELS, LAB_MODELS_FILE, parseLabModels } from '../src/lib/lab-models.js';
-import { effectiveModels } from '../src/lib/models.js';
+import { effectiveModels, reasoningAccess } from '../src/lib/models.js';
 
 const raw = (): Record<string, unknown> =>
   JSON.parse(readFileSync(LAB_MODELS_FILE, 'utf8')) as Record<string, unknown>;
@@ -42,34 +42,80 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
     const access = conversationLabAccess(effectiveModels(loadConfig().models), LAB_MODELS);
     expect(access.foundationModels.slice().sort()).toEqual([
       'amazon.nova-2-lite-v1:0',
+      'amazon.nova-2-multimodal-embeddings-v1:0',
       'amazon.nova-premier-v1:0',
       'amazon.nova-pro-v1:0',
       'amazon.titan-embed-text-v2:0',
       'anthropic.claude-sonnet-4-6',
+      'cohere.embed-v4:0',
       'meta.llama4-maverick-17b-instruct-v1:0',
+      // Behind its global profile (the models suite) too, so in every region and region-less.
+      'openai.gpt-6-luna',
     ]);
-    expect(access.globalFoundationModels).toEqual(['amazon.nova-2-lite-v1:0']);
+    expect(access.globalFoundationModels).toEqual(['amazon.nova-2-lite-v1:0', 'openai.gpt-6-luna']);
     // Claude Haiku 4.5 (the coach, and a judge) is reached only through its US profile: granted where it routes.
     expect(access.regionalFoundationModels).toEqual([
       {
         modelId: 'anthropic.claude-haiku-4-5-20251001-v1:0',
         regions: ['us-east-1', 'us-east-2', 'us-west-2'],
       },
+      // Rerankers: only where the models suite calls them.
+      { modelId: 'cohere.rerank-v3-5:0', regions: ['us-east-1'] },
+      { modelId: 'amazon.rerank-v1:0', regions: ['us-west-2'] },
     ]);
     expect(access.inferenceProfiles.slice().sort()).toEqual([
       'global.amazon.nova-2-lite-v1:0',
+      'global.openai.gpt-6-luna',
       'us.amazon.nova-2-lite-v1:0',
       'us.amazon.nova-premier-v1:0',
       'us.amazon.nova-pro-v1:0',
       'us.anthropic.claude-haiku-4-5-20251001-v1:0',
       'us.anthropic.claude-sonnet-4-6',
+      'us.cohere.embed-v4:0',
       'us.meta.llama4-maverick-17b-instruct-v1:0',
+      'us.openai.gpt-6-luna',
     ]);
   });
 
+  it('never gives a candidate of the models suite to the app', () => {
+    const app = effectiveModels(loadConfig().models);
+    const granted = [
+      ...reasoningAccess(app).inferenceProfiles,
+      ...reasoningAccess(app).foundationModels,
+    ].join(' ');
+    expect(granted).not.toMatch(/openai|cohere|rerank|multimodal/);
+    expect(LAB_MODELS.benchmark.reasoning).toEqual([
+      'us.openai.gpt-6-luna',
+      'global.openai.gpt-6-luna',
+      'us.amazon.nova-2-lite-v1:0',
+      'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    ]);
+    expect(LAB_MODELS.benchmark.embeddings).toContain('us.cohere.embed-v4:0');
+    const { benchmark: _benchmark, ...without } = raw();
+    expect(parseLabModels(without).benchmark).toEqual({ reasoning: [], embeddings: [], rerankers: [] });
+  });
+
+  it('refuses a benchmark candidate that is a Mantle model, malformed, repeated or outside the US', () => {
+    const benchmark = raw().benchmark as Record<string, unknown>;
+    const parse = (change: Record<string, unknown>): unknown =>
+      parseLabModels({ ...raw(), benchmark: { ...benchmark, ...change } });
+    expect(() => parse({ reasoning: [{ id: 'openai.gpt-6-luna' }] })).toThrow(/Mantle/);
+    expect(() => parse({ embeddings: [{ id: '*' }] })).toThrow(/not a Bedrock model id/);
+    expect(() => parse({ embeddings: [] })).toThrow(/1 to 6 candidates/);
+    const cohere = { id: 'cohere.rerank-v3-5:0', region: 'us-east-1' };
+    expect(() => parse({ rerankers: [cohere, cohere] })).toThrow(/repeats/);
+    expect(() => parse({ rerankers: [{ ...cohere, region: '*' }] })).toThrow(/US region/);
+  });
+
   it('grants the A/B coach candidates (live.coach) to the lab only, priced, and never to the app', () => {
-    // Nova 2 Lite (the coach before 2026-11-06) and Claude Sonnet 4.6; production's coach is Claude Haiku 4.5.
-    expect(LAB_MODELS.live.coach).toEqual(['us.amazon.nova-2-lite-v1:0', 'us.anthropic.claude-sonnet-4-6']);
+    // Nova 2 Lite (the coach before 2026-11-06), Claude Sonnet 4.6 and GPT-6 Luna (ADR-0024); production's coach is
+    // Claude Haiku 4.5.
+    expect(LAB_MODELS.live.coach).toEqual([
+      'us.amazon.nova-2-lite-v1:0',
+      'us.anthropic.claude-sonnet-4-6',
+      'us.openai.gpt-6-luna',
+    ]);
+    expect(LAB_MODELS.usdPerMillionTokens['openai.gpt-6-luna']).toEqual({ input: 0.1375, output: 0.55 });
     expect(LAB_MODELS.usdPerMillionTokens['anthropic.claude-sonnet-4-6']).toEqual({
       input: 3.3,
       output: 16.5,
@@ -106,7 +152,13 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       effectiveModels({ ...models, luna: { modelId: 'openai.gpt-6-luna', enabled: true } }),
       LAB_MODELS,
     );
-    expect(access.foundationModels).not.toContain('openai.gpt-6-luna');
+    // The bare (Mantle) id adds nothing: without the lab's own Luna profiles, no OpenAI model is granted.
+    const { benchmark: _benchmark, live: _live, ...own } = raw();
+    const appOnly = conversationLabAccess(
+      effectiveModels({ ...models, luna: { modelId: 'openai.gpt-6-luna', enabled: true } }),
+      parseLabModels(own),
+    );
+    expect(JSON.stringify(appOnly)).not.toContain('openai');
     expect(access.inferenceProfiles).toContain('us.amazon.nova-2-lite-v1:0');
   });
 });

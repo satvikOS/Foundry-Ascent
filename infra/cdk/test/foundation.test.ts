@@ -309,26 +309,41 @@ describe('FoundryAscent-Foundation', () => {
           Resource: [
             // The app's models (infra/cdk/config/production.json: the Claude Haiku 4.5 coach with Nova 2 Lite behind
             // it, Nova 2 Lite for the background purposes, Titan embeddings), the lab's simulator and judge
-            // (ops/lab/models.json), and the live evaluation's simulator, judge and A/B coaches ("live"); sorted.
+            // (ops/lab/models.json), the live evaluation's simulator, judge and A/B coaches ("live") and the models
+            // suite's candidates ("benchmark"); sorted.
             'arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0',
+            'arn:aws:bedrock:*::foundation-model/amazon.nova-2-multimodal-embeddings-v1:0',
             'arn:aws:bedrock:*::foundation-model/amazon.nova-premier-v1:0',
             'arn:aws:bedrock:*::foundation-model/amazon.nova-pro-v1:0',
             'arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0',
             'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
+            'arn:aws:bedrock:*::foundation-model/cohere.embed-v4:0',
             'arn:aws:bedrock:*::foundation-model/meta.llama4-maverick-17b-instruct-v1:0',
-            // The global. fallback profile is authorized against the region-less foundation-model ARN.
+            'arn:aws:bedrock:*::foundation-model/openai.gpt-6-luna',
+            // The global. profiles are authorized against the region-less foundation-model ARN.
             'arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0',
+            'arn:aws:bedrock:::foundation-model/openai.gpt-6-luna',
             // Claude Haiku 4.5 only through its US profile: where that profile routes from us-east-1.
             'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+            // A reranker only in the region it is called in.
+            'arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0',
             'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+            'arn:aws:bedrock:us-west-2::foundation-model/amazon.rerank-v1:0',
             'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
             profile('global.amazon.nova-2-lite-v1:0'),
+            profile('global.openai.gpt-6-luna'),
             profile('us.amazon.nova-2-lite-v1:0'),
             profile('us.amazon.nova-premier-v1:0'),
             profile('us.amazon.nova-pro-v1:0'),
             profile('us.anthropic.claude-haiku-4-5-20251001-v1:0'),
             profile('us.anthropic.claude-sonnet-4-6'),
+            profile('us.cohere.embed-v4:0'),
             profile('us.meta.llama4-maverick-17b-instruct-v1:0'),
+            profile('us.openai.gpt-6-luna'),
+            // What an OpenAI model behind a profile also needs (no model).
+            {
+              'Fn::Join': ['', ['arn:aws:bedrock:us-east-1:', { Ref: 'AWS::AccountId' }, ':project/default']],
+            },
           ],
         },
         {

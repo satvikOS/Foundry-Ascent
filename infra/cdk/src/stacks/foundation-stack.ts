@@ -30,7 +30,7 @@ import {
   STACK_PREFIX,
 } from '../lib/constants.js';
 import { loadMediaVendorSecrets, secretArnPattern } from '../lib/media-vendors.js';
-import type { BedrockRuntimeAccess } from '../lib/models.js';
+import { usesOpenAiProfile, type BedrockRuntimeAccess } from '../lib/models.js';
 import { acknowledge, wildcardResource } from '../lib/nag.js';
 
 export const GITHUB_OIDC_HOST = 'token.actions.githubusercontent.com';
@@ -367,6 +367,10 @@ export class FoundationStack extends Stack {
       ...models.inferenceProfiles.map((id) =>
         this.formatArn({ service: 'bedrock', resource: 'inference-profile', resourceName: id }),
       ),
+      // An OpenAI model behind a profile also needs the account's default project (lib/models.ts).
+      ...(usesOpenAiProfile(models.inferenceProfiles)
+        ? [this.formatArn({ service: 'bedrock', resource: 'project', resourceName: 'default' })]
+        : []),
     ];
     const inLabRegion = { StringEquals: { 'aws:RequestedRegion': this.region } };
     const labPolicy = new iam.Policy(this, 'ConversationLabPolicy', {

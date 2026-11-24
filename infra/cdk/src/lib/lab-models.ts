@@ -35,6 +35,15 @@ export interface LabModels {
      */
     readonly coach: readonly string[];
   };
+  /**
+   * The models suite's candidates (`benchmark` in models.json; ops/lab conversation_lab/models_bench.py): reasoning
+   * models, embedding models and rerankers compared before the app uses any. Empty when the file has no section.
+   */
+  readonly benchmark: {
+    readonly reasoning: readonly string[];
+    readonly embeddings: readonly string[];
+    readonly rerankers: readonly { readonly id: string; readonly region: string }[];
+  };
   /** Foundation-model id → USD per million input / output tokens (what the lab meters its own calls at). */
   readonly usdPerMillionTokens: Readonly<Record<string, { readonly input: number; readonly output: number }>>;
 }
@@ -56,6 +65,43 @@ function modelList(value: unknown, path: string): string[] {
     if (isMantleModel(id)) fail(`${path}[${String(index)}]`, 'is a Mantle model; the lab uses Converse only');
     return id;
   });
+}
+
+/** A list of candidates of the `benchmark` section: at most `max` objects, each with a unique `id` and what `read` adds. */
+function candidates<T>(
+  value: unknown,
+  path: string,
+  max: number,
+  read: (item: Record<string, unknown>, id: string, path: string) => T,
+): T[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > max)
+    fail(path, `must list 1 to ${String(max)} candidates`);
+  const ids = new Set<string>();
+  return value.map((item: unknown, index) => {
+    const at = `${path}[${String(index)}]`;
+    const record = (typeof item === 'object' && item !== null ? item : {}) as Record<string, unknown>;
+    const [id] = modelList([record.id], at);
+    if (id === undefined || ids.has(id)) fail(at, 'repeats a model id');
+    ids.add(id);
+    return read(record, id, at);
+  });
+}
+
+function parseBenchmark(raw: unknown): LabModels['benchmark'] {
+  if (raw === undefined) return { reasoning: [], embeddings: [], rerankers: [] };
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) fail('$.benchmark', 'must be an object');
+  const b = raw as Record<string, unknown>;
+  const id = (_item: Record<string, unknown>, modelId: string): string => modelId;
+  return {
+    reasoning: candidates(b.reasoning, '$.benchmark.reasoning', 6, id),
+    embeddings: candidates(b.embeddings, '$.benchmark.embeddings', 6, id),
+    rerankers: candidates(b.rerankers, '$.benchmark.rerankers', 4, (item, modelId, at) => {
+      const { region } = item;
+      if (typeof region !== 'string' || !/^us-(?:east|west)-\d$/.test(region))
+        fail(`${at}.region`, 'must be a US region');
+      return { id: modelId, region };
+    }),
+  };
 }
 
 export function parseLabModels(raw: unknown): LabModels {
@@ -96,7 +142,7 @@ export function parseLabModels(raw: unknown): LabModels {
     if (!Object.hasOwn(usdPerMillionTokens, foundationModelId(id)))
       fail('$.usdPerMillionTokens', `has no price for ${foundationModelId(id)}`);
   }
-  return { simulator, judge, live, usdPerMillionTokens };
+  return { simulator, judge, live, benchmark: parseBenchmark(root.benchmark), usdPerMillionTokens };
 }
 
 export const LAB_MODELS: LabModels = parseLabModels(
@@ -106,15 +152,24 @@ export const LAB_MODELS: LabModels = parseLabModels(
 /**
  * Every Bedrock resource the lab invokes: the app's effective reasoning and embeddings models (it runs the app
  * with the production model configuration) and the lab's simulator and judge models, the live evaluation's included,
- * and the alternative coach models a lab run may run the app's coach on (`live.coach`: an A/B, the lab only). Each
- * foundation model is granted where its profiles route (lib/models.ts `runtimeAccess`), the widest of its ways in.
+ * the alternative coach models a lab run may run the app's coach on (`live.coach`: an A/B, the lab only) and the
+ * models suite's candidates (`benchmark`). Each foundation model is granted where its profiles route (lib/models.ts
+ * `runtimeAccess`), the widest of its ways in; a reranker only in the region it is called in.
  */
 export function conversationLabAccess(
   app: EffectiveModels,
   lab: LabModels,
   region = 'us-east-1',
 ): BedrockRuntimeAccess {
-  const own = [...lab.simulator, ...lab.judge, ...lab.live.simulator, ...lab.live.judge, ...lab.live.coach];
+  const own = [
+    ...lab.simulator,
+    ...lab.judge,
+    ...lab.live.simulator,
+    ...lab.live.judge,
+    ...lab.live.coach,
+    ...lab.benchmark.reasoning,
+    ...lab.benchmark.embeddings,
+  ];
   const appAccess = reasoningAccess(app, region);
   const all = runtimeAccess(
     [...reasoningModelIds(app).filter((id) => !isMantleModel(id)), app.embeddings, ...own],
@@ -122,6 +177,10 @@ export function conversationLabAccess(
   );
   return {
     ...all,
+    regionalFoundationModels: [
+      ...all.regionalFoundationModels,
+      ...lab.benchmark.rerankers.map(({ id, region: where }) => ({ modelId: id, regions: [where] })),
+    ],
     // A bare reasoning id's `us.` retry profile (reasoningAccess) comes with it.
     inferenceProfiles: [...new Set([...all.inferenceProfiles, ...appAccess.inferenceProfiles])],
   };
