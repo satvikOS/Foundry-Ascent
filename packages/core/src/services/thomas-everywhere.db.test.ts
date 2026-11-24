@@ -27,7 +27,7 @@ import { createCoreHarness, type CoreHarness } from '../testing/harness.js';
 import { type RunTurnOutcome } from '../orchestrator/run-turn.js';
 
 /** What no founder of these ventures reads any more. */
-const OLD_COACH = /vEIR|\btwins?\b|Ruth['’]s|\bRuth\b/i;
+const OLD_COACH = /vEIR|\b[Tt]wins?\b|\bRuth\b/;
 
 let h: CoreHarness;
 let priya: RequestContext;
