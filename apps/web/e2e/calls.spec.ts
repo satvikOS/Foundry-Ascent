@@ -6,7 +6,6 @@ import {
   expectNoSeriousA11yViolations,
   expectPlainMentorName,
   expectReachable,
-  expectTwinNamed,
   FOUNDER_STATE,
   openVenture,
   OWNER_STATE,
@@ -723,7 +722,7 @@ test.describe('vEIR calls', () => {
   test('the first call of each kind shows the disclosure, once per person in this browser', async ({
     browser,
   }) => {
-    // Someone who has never called: a new teammate on EmberLoop (Ruth's vEIR, voice consented).
+    // Someone who has never called: a new teammate on EmberLoop (coached by Thomas, voice consented).
     const owner = await browser.newContext({ storageState: OWNER_STATE });
     const ventures = await owner.request.get('/api/v1/program/ventures');
     expect(ventures.status(), 'GET /program/ventures').toBe(200);
@@ -758,14 +757,13 @@ test.describe('vEIR calls', () => {
       await expect(disclosure).toContainText('A person from the program');
       await expect(disclosure).toContainText('legal, medical or financial advice');
       await expectNoSeriousA11yViolations(page, 'the call disclosure');
-      // EmberLoop's mentor is a twin (Ruth's vEIR, ADR-0020): it keeps its AI marker, never Ruth's bare name.
-      await expect(disclosure).toContainText(/Ruth(?:’s| ·) vEIR is an AI mentor, not a person/);
-      await expectTwinNamed(page, 'the first call’s disclosure (a twin)');
+      // Every seeded venture meets the mentor under his own name (ADR-0021, amended 2026-11-24).
+      await expect(disclosure).toContainText('Thomas is an AI mentor, not a person');
+      await expect(disclosure).not.toContainText(/vEIR|Ruth/);
       // From ⌘K the call starts a new conversation: the disclosure leads to its Remember or Private first.
       await disclosure.getByRole('button', { name: 'Continue' }).click();
       await expect(disclosure).toHaveCount(0);
       await expect(callScreen(page).getByRole('button', { name: 'Start call' })).toBeVisible();
-      await expectTwinNamed(page, 'the call’s start screen (a twin)');
     });
 
     await test.step('Start call stores the voice notice with the person on the server', async () => {

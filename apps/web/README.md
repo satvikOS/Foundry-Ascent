@@ -234,7 +234,7 @@ your workspace…" banner; `locked_out` / `rate_limited` / `spend_cap_reached` (
 
 The CI `e2e` job (`.github/workflows/ci.yml`) resets a pgvector Postgres with `pnpm db:reset` (with the owner
 releases production applies, `SEED_OWNER_RELEASES` from `infra/cdk/config/production.json`: QuietQuad is coached
-by the mentor Thomas, ADR-0021; EmberLoop keeps the twin Ruth's vEIR), builds the SPA and runs
+by the mentor Thomas, ADR-0021, as every venture is), builds the SPA and runs
 `pnpm --filter @foundry/web e2e`. `playwright.config.ts` starts everything itself:
 
 - the API dev server (`apps/api` `src/dev-server.ts`) on **:8787** with `DATABASE_URL`, `DB_DRIVER=pg` and

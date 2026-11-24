@@ -211,7 +211,8 @@ export function errorMessage(error: unknown): string {
     case 'persona_suspended':
       return 'Your mentor is paused by a reviewer. Past conversations and human help still work.';
     case 'assignment_inactive':
-      return 'No mentor is assigned to this venture yet. Your program lead can assign one.';
+      // A conversation whose mentor changed says so (`assignment_changed`); without a detail there is no mentor.
+      return error.detail ?? 'No mentor is assigned to this venture yet. Your program lead can assign one.';
     case 'ai_disabled':
       return 'AI is paused by an administrator. Everything else still works.';
     case 'spend_cap_reached':

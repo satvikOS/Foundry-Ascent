@@ -23,7 +23,8 @@ const CORIN = 'Corin Halvorsen';
 /** Corin's persona as the studio lists it: the mentor Thomas (production's owner release, ADR-0021). */
 const CORIN_PERSONA = 'Thomas';
 const EIR_VENTURE = 'EmberLoop';
-const SEEDED_VEIR = "Ruth's vEIR";
+const SEEDED_VEIR = CORIN_PERSONA;
+const OTHER_VEIR = "Ruth's vEIR";
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
 
 async function getItems<T>(request: APIRequestContext, path: string): Promise<T[]> {
@@ -92,17 +93,16 @@ test.describe('program lead', () => {
       await expect(dialog).toBeHidden();
     };
 
-    // Corin's persona, presented as the mentor Thomas (ADR-0021: the e2e database has production's owner release).
-    await assign(CORIN_PERSONA);
-    await expect(row).toContainText(CORIN_PERSONA);
-    await expect(row).toContainText(CORIN);
-    // The filter chips count who coaches what: QuietQuad, SoleSignal, Seam Again (production's story release) and now
-    // EmberLoop.
-    await expect(page.getByRole('button', { name: new RegExp(`^${CORIN_PERSONA}\\s*4$`) })).toBeVisible();
-
-    // Back to the seeded assignment.
-    await assign(SEEDED_VEIR);
+    await assign(OTHER_VEIR);
+    await expect(row).toContainText(OTHER_VEIR);
     await expect(row).toContainText('Ruth Abernathy-Song');
+
+    // Back to the seeded assignment: Corin's persona, presented as the mentor Thomas (ADR-0021: the e2e database has
+    // production's owner releases).
+    await assign(SEEDED_VEIR);
+    await expect(row).toContainText(CORIN);
+    // The filter chips count who coaches what: QuietQuad, SoleSignal, Seam Again, BenchTally and EmberLoop.
+    await expect(page.getByRole('button', { name: new RegExp(`^${CORIN_PERSONA}\\s*5$`) })).toBeVisible();
   });
 
   test('opens a venture’s Team without being a member: its name, only pages it can open, Invite', async ({

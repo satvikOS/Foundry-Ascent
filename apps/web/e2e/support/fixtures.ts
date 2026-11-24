@@ -505,9 +505,6 @@ export const SEEDED_EIR_FIRST_NAME = 'Corin';
  */
 export const SEEDED_MENTOR_NAME = 'Thomas';
 
-/** The twin that coaches EmberLoop (Ruth's vEIR, ADR-0020): it keeps its AI marker in its name. */
-export const SEEDED_TWIN_EIR_FIRST_NAME = 'Ruth';
-
 /** Text and accessible labels on the page that match `pattern` (visible text only), less the AI disclosure notes. */
 async function labelsMatching(page: Page, pattern: { source: string; flags: string }, skip: string) {
   return page.evaluate(
@@ -569,22 +566,4 @@ export async function expectPlainMentorName(
   expect(found, `the mentor is named plainly, never with a vEIR label or as the EIR, on ${where}`).toEqual(
     [],
   );
-}
-
-/**
- * Naming invariant for a twin (the presence policy, ADR-0020): the AI is "Ruth · vEIR" or "Ruth's vEIR"; a bare
- * "Ruth" anywhere else only ever means the person ("Ruth Abernathy-Song"). Leaves out the AI disclosure notes and
- * the welcome and About text, whose sentences name the EIR on purpose ("built with Ruth's consent").
- */
-export async function expectTwinNamed(
-  page: Page,
-  where: string,
-  firstName = SEEDED_TWIN_EIR_FIRST_NAME,
-): Promise<void> {
-  const found = await labelsMatching(
-    page,
-    { source: String.raw`\b${firstName}\b(?!['’]s vEIR)(?! · vEIR)(?! Abernathy)(?!’s consent)`, flags: '' },
-    `${DISCLOSURE_NOTE}, [data-slot="veir-welcome"], [data-slot="veir-about"]`,
-  );
-  expect(found, `the twin is never called by the EIR's bare name on ${where}`).toEqual([]);
 }
