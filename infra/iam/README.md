@@ -195,7 +195,12 @@ region-less, because its `global.` profile routes anywhere (`infra/cdk/src/lib/m
 Marketplace model: the account's one-time subscription to it is in place (the conversation lab has invoked it since
 2026-11-05), so the app roles need no `aws-marketplace` action.
 
-AWS lists GPT-6 Luna for this account but answers 401 "not available for this account",
+GPT-6 Luna behind its Bedrock runtime profiles (`us.openai.gpt-6-luna`, Converse; ADR-0024) is prepared and off: the app
+roles get its profile, its foundation model in the profile's destination regions and the account's default project
+(`project/default`, which its model card asks for) only once `models.primary` names it. The conversation-lab role may
+invoke it, and the embedding and rerank candidates of `ops/lab/models.json` `benchmark`, already.
+
+On Bedrock Mantle, AWS lists GPT-6 Luna for this account but answers 401 "not available for this account",
 so `infra/cdk/config/production.json` sets `models.luna.enabled = false` and the platform
 roles get no `bedrock-mantle` permission. To enable it later, follow
 [ADR-0014](../../docs/architecture/adr/0014-bedrock-models-luna-nova-titan.md#enabling-luna-later):

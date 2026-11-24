@@ -38,6 +38,7 @@ blueprint.
 | [0021](0021-thomas-mentor-persona.md)                         | Thomas: a stock-avatar mentor persona under its own name (owner-approved release of 2026-11-05), first person, honest when asked; the doctrine as how he thinks             | Accepted                       | 02 §8, owner 2026-11-05 |
 | [0022](0022-coach-on-claude-haiku.md)                         | The coach on Claude Haiku 4.5 (`us.` profile) with Nova 2 Lite behind it; background purposes on Nova 2 Lite; Bedrock prompt caching on the coach's prompt prefix           | Accepted                       | owner 2026-11-06        |
 | [0023](0023-call-recordings.md)                               | Call recordings made in the browser (MediaRecorder on the call's face or presence, both voices, WebVTT captions), in a private owner-only bucket, replayed without the vEIR | Accepted                       | owner 2026-11-06        |
+| [0024](0024-coach-on-luna.md)                                 | The coach on GPT-6 Luna (`us.` profile, Bedrock Converse) with Nova 2 Lite behind it: gateway, permissions and measurements ready, switched off (one line)                  | Proposed                       | owner 2026-11-24        |
 
 Since ADR-0010's revision, production calls speak with an ElevenLabs stock voice ("AI voice", Amazon Polly as
 fallback and for crisis lines) and show a HeyGen LiveAvatar LITE stock face ("AI avatar") to platform admins and

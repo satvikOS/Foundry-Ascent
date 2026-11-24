@@ -51,6 +51,7 @@ describe('usage model', () => {
     });
     expect(describeModel('global.amazon.nova-2-lite-v1:0').role).toBe('Background fallback');
     expect(describeModel('openai.gpt-6-luna').role).toMatch(/disabled/);
+    expect(describeModel('us.openai.gpt-6-luna')).toEqual({ name: 'GPT-6 Luna', role: 'Conversations' });
     expect(describeModel('amazon.titan-embed-text-v2:0').role).toBe('Embeddings');
     expect(describeModel('mock-fallback').name).toBe('Mock provider (fallback)');
     expect(describeModel('something-else')).toEqual({ name: 'something-else', role: 'Other' });

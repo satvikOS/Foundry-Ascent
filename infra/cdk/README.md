@@ -202,6 +202,9 @@ Set a number once the account quota allows (it must leave 10 unreserved).
 | `false` (current: AWS gates Luna for the account) | `models.primary` (`us.anthropic.claude-haiku-4-5-20251001-v1:0`) | `models.fallback` (`us.amazon.nova-2-lite-v1:0`) | none                             |
 | `true`                                            | `models.luna.modelId` (`openai.gpt-6-luna`)                      | `models.primary` (Claude Haiku 4.5)              | `bedrock-mantle:CreateInference` |
 
+GPT-6 Luna as the coach through Bedrock Converse is not that flag: it is `models.primary` `us.openai.gpt-6-luna`, one
+line, prepared and off (ADR-0024; `test/models.test.ts` proves its environment and permissions).
+
 `MODEL_EMBEDDINGS_ID` is always `models.embeddings` (`amazon.titan-embed-text-v2:0`). `models.background` (primary,
 fallback, purposes: Nova 2 Lite `us.` then `global.` for `classification`, `eval`, `ingestion`, `seed`; embeddings always go to Titan)
 becomes `MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID` and `MODEL_BACKGROUND_PURPOSES` of every function
@@ -210,7 +213,7 @@ the flag is a config change plus a normal deploy.
 
 Production's coach model is this configuration: an A/B on another Bedrock model runs in the conversation lab first
 (`coach_model`, docs/runbooks/conversation-lab.md), never by changing production; the lab role may invoke the A/B
-candidates (`ops/lab/models.json` `live.coach`), the app's roles only the effective models above.
+candidates (`ops/lab/models.json` `live.coach`) and the models suite's (`benchmark`), the app's roles only the effective models above.
 
 ### Owner-approved persona releases
 

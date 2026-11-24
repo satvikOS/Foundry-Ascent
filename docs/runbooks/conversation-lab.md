@@ -61,6 +61,9 @@ could not answer it, and a goal or a request for help met with questions only.
 E-crisis corpus, before production turns it on, with no app, browser or database ("Safety screen evaluation" below).
 In every other suite the app runs with the screen on (`CORE_SAFETY_SCREEN=on`).
 
+`models` runs on its own too (never part of `all`): the candidate reasoning, embedding and rerank models, before the app
+uses any, with no app, browser or database ("Models benchmark" below).
+
 `face` runs on its own too (never part of `all`): the HeyGen LiveAvatar FULL stock face against the vendor's free
 sandbox, with the vendor key, and the same call arm in LITE side by side (`face_mode`; "HeyGen sandbox face" below).
 
@@ -260,8 +263,9 @@ The live evaluation defaults to `sample=20` (about USD 1.84 on production's mode
 ### Budget split
 
 `budget_usd` (default 2, at most 50; above 2 only with `approved_over_cap`) is a hard cap for the whole run, split by suite weight (recall 1, voice 1,
-matrix 2, ui 2; `agenda` and `safety` run alone, with all of it, and every call of `safety` is a screen call on the
-app's models: "Safety screen evaluation"). Within a suite:
+matrix 2, ui 2; `agenda`, `safety` and `models` run alone, with all of it; every call of `safety` is a screen call on the
+app's models, "Safety screen evaluation", and every call of `models` the benchmark's own: at most USD 2 whatever was
+approved, "Models benchmark"). Within a suite:
 
 - the **app's share** (recall and voice 85 %, matrix 55 %, ui 100 %) is metered by the app itself (the usage ledger
   behind Admin → Usage: model turns, distillation, embeddings, Polly characters, Transcribe seconds). Before anything
@@ -385,6 +389,63 @@ screens the lines the prefilter lets pass (the screen's recall without the prefi
 it); `--limit N` and `--concurrency N` (default 4) bound a run. Without `MODEL_PROVIDER=bedrock` it runs on the mock
 gateway's rule (a free plumbing check), as does the lab's dry run:
 `python -m conversation_lab run --suite safety --budget-usd 1 --out /tmp/lab --mock` (no database needed).
+
+## Models benchmark
+
+Which models the account may call, and how fast, how good and how expensive each is, before the app uses any of them
+(ADR-0024). The candidates are `benchmark` in `ops/lab/models.json`; the lab role may invoke exactly those
+(`infra/cdk/src/lib/lab-models.ts`: deploy main once after changing the list), and the app's roles none of them.
+
+```bash
+# numbers only (expected about USD 0.25 in all; refused above USD 2)
+gh workflow run ops-conversation-lab.yml -f suite=models -f budget_usd=1
+# with the models' replies and each question's rankings, sealed to your key
+gh workflow run ops-conversation-lab.yml -f suite=models -f budget_usd=1 -f public_key="$(cat "$dir/public.b64")"
+```
+
+`conversation_lab/models_bench.py` runs `apps/api/src/scripts/lab-models.ts`; no app, browser or database. In order:
+
+1. **Access**: one tiny call per candidate. A candidate that cannot be called is reported by its AWS error code
+   (`AccessDeniedException`, `ResourceNotFoundException`, …) and left out; it never fails the run. Mantle's bare
+   `openai.gpt-6-luna` is no candidate (the lab role has no `bedrock-mantle` permission).
+2. **Retrieval**, for each embedding model that answered, at each of its listed sizes: query latency (40 questions one
+   after the other, p50 and p95), price per million tokens, and quality over the committed benchmark. "vector" is cosine
+   similarity alone, "hybrid" is that fused with the word search (reciprocal rank fusion); "word search alone" is BM25 in
+   memory, stronger than the app's own `ts_rank_cd`.
+3. **Rerankers** that answered, on the fused top 20 of the best embedding (by hybrid MRR), for a fixed sample of 40
+   questions; "none" is the same sample without reranking. Amazon Rerank 1.0 is not offered in us-east-1 and is called in
+   us-west-2. One graded row needs an answer to every question of the sample.
+4. **Reasoning models** that answered, at each listed effort: six streamed coaching requests on a fixed synthetic prompt
+   of about 6,000 tokens (`lab-models-prompt.ts`), through the app's gateway at the conversation's settings (first
+   token and whole reply, p50 and p95; tokens, how many of them cached; USD per reply), then four structured answers on
+   the app's annotation schema (valid on the first answer, after a repair or on a second call, or not at all). Request
+   fields Bedrock refused and the gateway left out are listed (`dropped:temperature`).
+
+**The retrieval benchmark** (`packages/db/knowledge/retrieval-benchmark/queries.json`, 158 synthetic questions): student
+questions over the repository's own shared knowledge, cut into passages as it is stored
+(`packages/db/src/retrieval-benchmark/corpus.ts`: the startup knowledge base, the curriculum notes, the programme
+handbook, the approved doctrines and personas' libraries). 130 have passages that answer them (any of them counts),
+paraphrased so that half share no more than an eighth of their content words with the best one, and name hard negatives
+(same subject, no answer); 28 are answered by nothing in the corpus. Reading the columns:
+
+- **R@1, R@3, R@5, MRR**: the answer among the first one, three, five; the mean of 1 / its rank (first 20).
+- **Hard negative first**: questions where a passage on the same subject that does not answer outranked every one that
+  does. Lower is better: such a passage would be cited for something it does not say.
+- **No-answer AUC / caught**: how well the top score alone tells a question nothing answers from one that has an answer
+  (0.5 is a coin toss), and the share of unanswerable questions below the score that keeps 95 % of the answerable ones.
+  It is what a "say I don't know" threshold could do; rank fusion has no such score.
+
+A question or a passage that is wrong is fixed in those two files (a unit test checks that every id exists); the numbers
+of earlier runs then no longer compare. 130 questions put about 4 points on either side of a recall: do not choose between
+models closer than that.
+
+Budget: each call is made only when its worst case (for a reasoning model: its input at the cache-write rate, the whole
+output bound, a repair and a second call) still fits beside what was spent. Retrieval runs first and is cheap; the run's
+price is mostly the two rerankers (USD 2 and 1 per 1,000 queries) and Claude Haiku.
+
+The public summary holds numbers, the candidates' ids and codes (`public_result` reads the report key by key). Locally,
+free, on the mock gateway and hashed embeddings (no database needed):
+`python -m conversation_lab run --suite models --budget-usd 1 --out /tmp/lab --mock`.
 
 ## HeyGen sandbox face
 
@@ -648,14 +709,15 @@ on another Bedrock model for one run, to separate model limits from prompt and s
 12). Production is never changed: the choice sets `MODEL_PRIMARY_ID` and `MODEL_FALLBACK_ID` of the lab's own API
 process only (`conversation_lab/stack.py`), both to the chosen model, so the arm is that model alone (a failure counts,
 it is never answered by another model); the background route (the safety screen) stays production's. Production's
-coach is Claude Haiku 4.5 since 2026-11-06 (ADR-0022), so the A/B candidates are the coach before it (Nova 2 Lite)
-and Claude Sonnet 4.6.
+coach is Claude Haiku 4.5 since 2026-11-06 (ADR-0022), so the A/B candidates are the coach before it (Nova 2 Lite),
+Claude Sonnet 4.6 and GPT-6 Luna (ADR-0024; run the `models` suite first to see whether the account may call it).
 
 | `coach_model`                    | Coach (primary = fallback)                                                                | Judge, `judge_model=auto`           | Judge, `judge_model=ab`    |
 | -------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------- | -------------------------- |
 | `default`                        | production's (`us.anthropic.claude-haiku-4-5-20251001-v1:0`, fallback `us.amazon.nova-…`) | Llama 4 Maverick, then Nova Premier | Llama 4 Maverick, no other |
 | `us.amazon.nova-2-lite-v1:0`     | Nova 2 Lite (us. profile; production's coach until 2026-11-06)                            | as `ab`                             | Llama 4 Maverick, no other |
 | `us.anthropic.claude-sonnet-4-6` | Claude Sonnet 4.6 (us. profile)                                                           | as `ab`                             | Llama 4 Maverick, no other |
+| `us.openai.gpt-6-luna`           | GPT-6 Luna (us. profile, reasoning effort none; never judged by an OpenAI model)          | as `ab`                             | Llama 4 Maverick, no other |
 
 The choices are `ops/lab/models.json` `live.coach`, which the lab role may invoke (`infra/cdk/src/lib/lab-models.ts`;
 deploy main once after adding a model, and enable it in the Bedrock console). The judge is never of the coach's family.
@@ -670,7 +732,8 @@ former. Llama 4 Maverick is also the student simulator, in every arm alike, so i
 The summary records `models.coach`, `models.judge`, `judge_independent` and `selection.judge_policy`. With
 a Claude coach (production's included) the app's share of a shard's budget is 0.9 (its turns are most of the cost). The
 plan (`dry_run`) estimates the coach at ~15.9k input and ~330 output tokens a turn on the coach's us. price
-(production's Claude Haiku 4.5 for `default`), with no prompt-cache discount (an upper bound):
+(production's Claude Haiku 4.5 for `default`), with no prompt-cache discount (an upper bound; GPT-6 Luna, cheaper than
+Nova 2 Lite, is estimated at Nova's figure):
 
 | Selection                  | `default` (Claude Haiku 4.5), `auto` | `default`, `judge_model=ab` | Nova 2 Lite | Claude Sonnet 4.6 |
 | -------------------------- | ------------------------------------ | --------------------------- | ----------- | ----------------- |
