@@ -1,0 +1,1791 @@
+{
+  "version": 1,
+  "about": "Synthetic retrieval benchmark: student-style questions, written for this file (no founder's words), paraphrased away from the passages they ask for. expected: passages that answer (any of them counts; ids of packages/db/src/retrieval-benchmark/corpus.ts); hardNegatives: passages on the same subject that do not answer; kind no_answer: nothing in the corpus answers (retrieval must be able to tell).",
+  "queries": [
+    {
+      "id": "RB-001",
+      "kind": "answerable",
+      "query": "we ship stuff every week but have no clue if anybody cares, is there a cycle for making small things and finding out",
+      "expected": [
+        "skb/framework/F01#1"
+      ],
+      "hardNegatives": [
+        "skb/framework/F08#1",
+        "skb/framework/F02#1"
+      ]
+    },
+    {
+      "id": "RB-002",
+      "kind": "answerable",
+      "query": "i need one sheet that shows who we serve, how we reach them, what we spend and where the money comes from",
+      "expected": [
+        "skb/framework/F02#1"
+      ],
+      "hardNegatives": [
+        "curriculum/ain-curriculum-module-1#1",
+        "skb/framework/F09#1"
+      ]
+    },
+    {
+      "id": "RB-003",
+      "kind": "answerable",
+      "query": "our thing has ten features and people shrug, how do i line it up with what actually hurts them",
+      "expected": [
+        "skb/framework/F03#1"
+      ],
+      "hardNegatives": [
+        "skb/framework/F05#1",
+        "skb/framework/F06#1"
+      ]
+    },
+    {
+      "id": "RB-004",
+      "kind": "answerable",
+      "query": "what should happen before i put a whole semester into making it and hiring someone to sell",
+      "expected": [
+        "skb/framework/F04#1"
+      ],
+      "hardNegatives": [
+        "skb/framework/F01#1",
+        "skb/stage/growth#1"
+      ]
+    },
+    {
+      "id": "RB-005",
+      "kind": "answerable",
+      "query": "i don't really get how nurses work a shift, how should i come up with something they'd find easy",
+      "expected": [
+        "skb/framework/F05#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC13#1",
+        "skb/case/SC02#1"
+      ]
+    },
+    {
+      "id": "RB-006",
+      "kind": "answerable",
+      "query": "two students same age same major, one moved over to us and one didn't, age groups explain nothing",
+      "expected": [
+        "skb/framework/F06#1"
+      ],
+      "hardNegatives": [
+        "skb/framework/F08#1",
+        "skb/framework/F03#1"
+      ]
+    },
+    {
+      "id": "RB-007",
+      "kind": "answerable",
+      "query": "a judge asked how big this gets and i said one percent of a billion, what's the proper way",
+      "expected": [
+        "skb/framework/F07#1"
+      ],
+      "hardNegatives": [
+        "skb/framework/F09#1",
+        "skb/case/SC16#3"
+      ]
+    },
+    {
+      "id": "RB-008",
+      "kind": "answerable",
+      "query": "which numbers do i watch from somebody's very first visit up to them telling a friend",
+      "expected": [
+        "skb/framework/F08#1"
+      ],
+      "hardNegatives": [
+        "skb/framework/F09#1",
+        "skb/case/SC22#1"
+      ]
+    },
+    {
+      "id": "RB-009",
+      "kind": "answerable",
+      "query": "we burn cash on instagram ads and can't tell if each new buyer ever pays that back",
+      "expected": [
+        "skb/framework/F09#1"
+      ],
+      "hardNegatives": [
+        "skb/framework/F08#1",
+        "skb/stage/growth#1"
+      ]
+    },
+    {
+      "id": "RB-010",
+      "kind": "answerable",
+      "query": "any real story of a campus spinout that threw out its first two target industries after a couple dozen chats?",
+      "expected": [
+        "skb/case/SC01#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC01#2",
+        "skb/case/SC01#3"
+      ]
+    },
+    {
+      "id": "RB-011",
+      "kind": "answerable",
+      "query": "the drugstore that put doses into little time-stamped bags, how did that go",
+      "expected": [
+        "skb/case/SC02#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC02#2",
+        "skb/case/SC02#3"
+      ]
+    },
+    {
+      "id": "RB-012",
+      "kind": "answerable",
+      "query": "web shoppers wanted to see the frames on their own face first, what did that brand end up doing",
+      "expected": [
+        "skb/case/SC03#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC03#2",
+        "skb/case/SC03#3"
+      ]
+    },
+    {
+      "id": "RB-013",
+      "kind": "answerable",
+      "query": "shop-floor apps that were tried on one bench before the rest of the plant",
+      "expected": [
+        "skb/case/SC04#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC04#2",
+        "skb/case/SC04#3"
+      ]
+    },
+    {
+      "id": "RB-014",
+      "kind": "answerable",
+      "query": "company whose robots pull weeds and bill growers for it rather than selling the robot",
+      "expected": [
+        "skb/case/SC05#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC05#2",
+        "skb/case/SC08#1"
+      ]
+    },
+    {
+      "id": "RB-015",
+      "kind": "answerable",
+      "query": "somebody who swapped carrying a stand around the building site for a camera strapped to the helmet",
+      "expected": [
+        "skb/case/SC06#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC06#2",
+        "skb/case/SC06#3"
+      ]
+    },
+    {
+      "id": "RB-016",
+      "kind": "answerable",
+      "query": "residents wouldn't walk their bottles to a booth so the team came to their door by bike",
+      "expected": [
+        "skb/case/SC07#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC07#2",
+        "skb/case/SC07#3"
+      ]
+    },
+    {
+      "id": "RB-017",
+      "kind": "answerable",
+      "query": "water plant grown on cow manure runoff, still waiting for permission to sell it as animal food",
+      "expected": [
+        "skb/case/SC08#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC08#2",
+        "skb/case/SC05#1"
+      ]
+    },
+    {
+      "id": "RB-018",
+      "kind": "answerable",
+      "query": "she spoke to the folks who order lunch for clubs and had forty repeat accounts when she finished school",
+      "expected": [
+        "skb/case/SC09#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC09#2",
+        "skb/case/SC09#3"
+      ]
+    },
+    {
+      "id": "RB-019",
+      "kind": "answerable",
+      "query": "the rate-your-plate app that turned into fixing eateries' details across the web and got bought",
+      "expected": [
+        "skb/case/SC10#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC10#2",
+        "skb/case/SC10#3"
+      ]
+    },
+    {
+      "id": "RB-020",
+      "kind": "answerable",
+      "query": "fish-tank herb garden for apartments tried in fifty homes first",
+      "expected": [
+        "skb/case/SC11#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC11#2",
+        "skb/case/SC11#3"
+      ]
+    },
+    {
+      "id": "RB-021",
+      "kind": "answerable",
+      "query": "machines cooking cheap lunches downtown, was that ever an actual place",
+      "expected": [
+        "skb/case/SC12#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC12#2",
+        "skb/case/SC12#3"
+      ]
+    },
+    {
+      "id": "RB-022",
+      "kind": "answerable",
+      "query": "blow-up operating theatre that got sent to a war zone",
+      "expected": [
+        "skb/case/SC13#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC13#2",
+        "skb/case/SC13#3"
+      ]
+    },
+    {
+      "id": "RB-023",
+      "kind": "answerable",
+      "query": "desktop maker that went for three grand when industrial ones were six figures",
+      "expected": [
+        "skb/case/SC14#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC14#2",
+        "skb/case/SC14#3"
+      ]
+    },
+    {
+      "id": "RB-024",
+      "kind": "answerable",
+      "query": "guy who kept misplacing usb sticks and built a sync tool",
+      "expected": [
+        "skb/case/SC15#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC15#2",
+        "skb/case/SC15#3"
+      ]
+    },
+    {
+      "id": "RB-025",
+      "kind": "answerable",
+      "query": "landlords got rival offers for rooftop solar through one site",
+      "expected": [
+        "skb/case/SC16#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC16#2",
+        "skb/case/SC16#3"
+      ]
+    },
+    {
+      "id": "RB-026",
+      "kind": "answerable",
+      "query": "fashion label everyone wanted but the team couldn't pull off",
+      "expected": [
+        "skb/case/SC17#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC17#2",
+        "skb/case/SC17#3"
+      ]
+    },
+    {
+      "id": "RB-027",
+      "kind": "answerable",
+      "query": "matchmaking business that kept swapping direction and never found a way to earn",
+      "expected": [
+        "skb/case/SC18#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC18#2",
+        "skb/case/SC18#3"
+      ]
+    },
+    {
+      "id": "RB-028",
+      "kind": "answerable",
+      "query": "dog walkers misled by how well their very first address did",
+      "expected": [
+        "skb/case/SC19#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC19#2",
+        "skb/case/SC19#3"
+      ]
+    },
+    {
+      "id": "RB-029",
+      "kind": "answerable",
+      "query": "dirty-water membrane group out of a lab that pulled in thirty-odd million",
+      "expected": [
+        "skb/case/SC20#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC20#2",
+        "skb/case/SC08#1"
+      ]
+    },
+    {
+      "id": "RB-030",
+      "kind": "answerable",
+      "query": "bendy stick-on sun panels, are they mass producing yet",
+      "expected": [
+        "skb/case/SC21#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC21#2",
+        "skb/case/SC21#3"
+      ]
+    },
+    {
+      "id": "RB-031",
+      "kind": "answerable",
+      "query": "spanish practice app at the very beginning, how many came back every week versus just tried it",
+      "expected": [
+        "skb/case/SC22#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC22#2",
+        "skb/case/SC22#3"
+      ]
+    },
+    {
+      "id": "RB-032",
+      "kind": "answerable",
+      "query": "newborn sleeping-bag heater charity that set up a company next to it",
+      "expected": [
+        "skb/case/SC23#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC23#2",
+        "skb/case/SC23#3"
+      ]
+    },
+    {
+      "id": "RB-033",
+      "kind": "answerable",
+      "query": "money for tuition lent to moms and dads and wired straight to the school",
+      "expected": [
+        "skb/case/SC24#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC24#2",
+        "skb/case/SC24#3"
+      ]
+    },
+    {
+      "id": "RB-034",
+      "kind": "answerable",
+      "query": "bug scanner that came out of a weekend event inside the team and big names use it",
+      "expected": [
+        "skb/case/SC25#1"
+      ],
+      "hardNegatives": [
+        "skb/case/SC25#2",
+        "skb/case/SC25#3"
+      ]
+    },
+    {
+      "id": "RB-035",
+      "kind": "answerable",
+      "query": "do i study the checkout step or everything the person goes through with their pills at home",
+      "expected": [
+        "skb/case/SC02#2"
+      ],
+      "hardNegatives": [
+        "skb/case/SC02#1",
+        "skb/framework/F05#1"
+      ]
+    },
+    {
+      "id": "RB-036",
+      "kind": "answerable",
+      "query": "plenty of growers want us but our tractors are maxed out, when do we buy another",
+      "expected": [
+        "skb/case/SC05#2"
+      ],
+      "hardNegatives": [
+        "skb/case/SC05#1",
+        "skb/stage/growth#1"
+      ]
+    },
+    {
+      "id": "RB-037",
+      "kind": "answerable",
+      "query": "what we produce is great but it's a pain for the crew to make it happen, keep it or drop it?",
+      "expected": [
+        "skb/case/SC06#2",
+        "skb/case/SC06#3"
+      ],
+      "hardNegatives": [
+        "skb/case/SC06#1"
+      ]
+    },
+    {
+      "id": "RB-038",
+      "kind": "answerable",
+      "query": "the crowdfunding fans love it, how do i check regular people could keep it alive at home",
+      "expected": [
+        "skb/case/SC11#2",
+        "skb/case/SC11#3"
+      ],
+      "hardNegatives": [
+        "skb/case/SC11#1"
+      ]
+    },
+    {
+      "id": "RB-039",
+      "kind": "answerable",
+      "query": "are they coming for dinner or for the robot show",
+      "expected": [
+        "skb/case/SC12#2",
+        "skb/case/SC12#3"
+      ],
+      "hardNegatives": [
+        "skb/case/SC12#1"
+      ]
+    },
+    {
+      "id": "RB-040",
+      "kind": "answerable",
+      "query": "we passed five thousand accounts, can i tell judges people stick around",
+      "expected": [
+        "skb/case/SC15#2",
+        "skb/case/SC22#2"
+      ],
+      "hardNegatives": [
+        "skb/case/SC15#1",
+        "skb/case/SC22#1"
+      ]
+    },
+    {
+      "id": "RB-041",
+      "kind": "answerable",
+      "query": "more purchases came in than we can sew and pay suppliers for, say yes to all of them?",
+      "expected": [
+        "skb/case/SC17#2"
+      ],
+      "hardNegatives": [
+        "skb/case/SC17#1",
+        "skb/framework/F09#1"
+      ]
+    },
+    {
+      "id": "RB-042",
+      "kind": "answerable",
+      "query": "our trial dorm was a hit, how can i tell whether the other halls behave the same",
+      "expected": [
+        "skb/case/SC19#2",
+        "skb/case/SC19#3"
+      ],
+      "hardNegatives": [
+        "skb/case/SC19#1"
+      ]
+    },
+    {
+      "id": "RB-043",
+      "kind": "answerable",
+      "query": "we closed a big round, so does that prove people want it",
+      "expected": [
+        "skb/case/SC20#2"
+      ],
+      "hardNegatives": [
+        "skb/case/SC20#1",
+        "skb/case/SC19#1"
+      ]
+    },
+    {
+      "id": "RB-044",
+      "kind": "answerable",
+      "query": "it works on the bench, what do i check before printing thousands of meters",
+      "expected": [
+        "skb/case/SC21#2",
+        "skb/case/SC21#3"
+      ],
+      "hardNegatives": [
+        "skb/case/SC21#1"
+      ]
+    },
+    {
+      "id": "RB-045",
+      "kind": "answerable",
+      "query": "nobody has missed a repayment after eight weeks, is it safe to say borrowers are fine",
+      "expected": [
+        "skb/case/SC24#2"
+      ],
+      "hardNegatives": [
+        "skb/case/SC24#1",
+        "skb/case/SC24#3"
+      ]
+    },
+    {
+      "id": "RB-046",
+      "kind": "answerable",
+      "query": "engineers get annoyed with all our warnings, what should a trial keep track of",
+      "expected": [
+        "skb/case/SC25#2",
+        "skb/case/SC25#3"
+      ],
+      "hardNegatives": [
+        "skb/case/SC25#1"
+      ]
+    },
+    {
+      "id": "RB-047",
+      "kind": "answerable",
+      "query": "what should we look at about putting up our field clinic bubble before more hospitals get it",
+      "expected": [
+        "skb/case/SC13#2",
+        "skb/case/SC13#3"
+      ],
+      "hardNegatives": [
+        "skb/case/SC13#1"
+      ]
+    },
+    {
+      "id": "RB-048",
+      "kind": "answerable",
+      "query": "our dashboard tells building owners what to do but nothing ever gets signed",
+      "expected": [
+        "skb/case/SC16#2"
+      ],
+      "hardNegatives": [
+        "skb/case/SC16#1",
+        "skb/case/SC16#3"
+      ]
+    },
+    {
+      "id": "RB-049",
+      "kind": "answerable",
+      "query": "when is our pickup loop tight enough to add another neighborhood",
+      "expected": [
+        "skb/case/SC07#2"
+      ],
+      "hardNegatives": [
+        "skb/case/SC07#1",
+        "skb/case/SC07#3"
+      ]
+    },
+    {
+      "id": "RB-050",
+      "kind": "answerable",
+      "query": "we changed the concept five times since september, does that count as learning",
+      "expected": [
+        "skb/case/SC18#2",
+        "skb/case/SC18#3"
+      ],
+      "hardNegatives": [
+        "skb/case/SC18#1"
+      ]
+    },
+    {
+      "id": "RB-051",
+      "kind": "answerable",
+      "query": "correcting shop pages by hand eats hours, what do i try out before taking on more shops",
+      "expected": [
+        "skb/case/SC10#2",
+        "skb/case/SC10#3"
+      ],
+      "hardNegatives": [
+        "skb/case/SC10#1"
+      ]
+    },
+    {
+      "id": "RB-052",
+      "kind": "answerable",
+      "query": "ours is way cheaper, what do i have to show next to the pricey one",
+      "expected": [
+        "skb/case/SC14#2",
+        "skb/case/SC14#3"
+      ],
+      "hardNegatives": [
+        "skb/case/SC14#1"
+      ]
+    },
+    {
+      "id": "RB-053",
+      "kind": "answerable",
+      "query": "ways to let web buyers feel the item without opening shops everywhere",
+      "expected": [
+        "skb/case/SC03#3",
+        "skb/case/SC03#2"
+      ],
+      "hardNegatives": [
+        "skb/case/SC03#1"
+      ]
+    },
+    {
+      "id": "RB-054",
+      "kind": "answerable",
+      "query": "should the do-good side and the money side be one organisation or two",
+      "expected": [
+        "skb/case/SC23#3",
+        "skb/case/SC23#2"
+      ],
+      "hardNegatives": [
+        "skb/case/SC23#1"
+      ]
+    },
+    {
+      "id": "RB-055",
+      "kind": "answerable",
+      "query": "how could we be the one number clubs call for meals each week",
+      "expected": [
+        "skb/case/SC09#3",
+        "skb/case/SC09#2"
+      ],
+      "hardNegatives": [
+        "skb/case/SC09#1"
+      ]
+    },
+    {
+      "id": "RB-056",
+      "kind": "answerable",
+      "query": "should supervisors on each line be able to change the screens themselves",
+      "expected": [
+        "skb/case/SC04#3"
+      ],
+      "hardNegatives": [
+        "skb/case/SC04#1",
+        "skb/case/SC04#2"
+      ]
+    },
+    {
+      "id": "RB-057",
+      "kind": "answerable",
+      "query": "i'm on day one, who should guide me and what should i have on paper when this phase is over",
+      "expected": [
+        "skb/stage/idea#1"
+      ],
+      "hardNegatives": [
+        "skb/stage/validation#1",
+        "skb/stage/MVP#1"
+      ]
+    },
+    {
+      "id": "RB-058",
+      "kind": "answerable",
+      "query": "likes and waitlists aren't enough i guess, what proof do i need before the full version",
+      "expected": [
+        "skb/stage/validation#1",
+        "method/program-method#1"
+      ],
+      "hardNegatives": [
+        "skb/stage/idea#1",
+        "skb/stage/early_traction#1"
+      ]
+    },
+    {
+      "id": "RB-059",
+      "kind": "answerable",
+      "query": "version one is bloated and folks drop off while joining, what should this phase achieve",
+      "expected": [
+        "skb/stage/MVP#1"
+      ],
+      "hardNegatives": [
+        "skb/stage/validation#1",
+        "skb/stage/early_traction#1"
+      ]
+    },
+    {
+      "id": "RB-060",
+      "kind": "answerable",
+      "query": "a handful of accounts pay us but each one wants their own special edition, who can help",
+      "expected": [
+        "skb/stage/early_traction#1"
+      ],
+      "hardNegatives": [
+        "skb/stage/growth#1",
+        "skb/stage/MVP#1"
+      ]
+    },
+    {
+      "id": "RB-061",
+      "kind": "answerable",
+      "query": "everything goes through me and volume keeps climbing",
+      "expected": [
+        "skb/stage/growth#1"
+      ],
+      "hardNegatives": [
+        "skb/stage/expansion#1",
+        "skb/stage/early_traction#1"
+      ]
+    },
+    {
+      "id": "RB-062",
+      "kind": "answerable",
+      "query": "we want to open in another city, what do i have to check again from zero",
+      "expected": [
+        "skb/stage/expansion#1"
+      ],
+      "hardNegatives": [
+        "skb/stage/growth#1",
+        "skb/case/SC19#1"
+      ]
+    },
+    {
+      "id": "RB-063",
+      "kind": "answerable",
+      "query": "what do i hand in when i finish the first part of the ain programme",
+      "expected": [
+        "curriculum/ain-curriculum-module-1#2",
+        "curriculum/ain-curriculum-roadmap#1"
+      ],
+      "hardNegatives": [
+        "curriculum/ain-curriculum-module-2#2",
+        "curriculum/ain-curriculum-module-3#2"
+      ]
+    },
+    {
+      "id": "RB-064",
+      "kind": "answerable",
+      "query": "give me the list of what is in each third of the programme",
+      "expected": [
+        "curriculum/ain-curriculum-roadmap#2",
+        "curriculum/ain-curriculum-roadmap#1"
+      ],
+      "hardNegatives": [
+        "curriculum/ain-curriculum-module-1#2"
+      ]
+    },
+    {
+      "id": "RB-065",
+      "kind": "answerable",
+      "query": "in the second part, is there a chat workspace i have to join",
+      "expected": [
+        "curriculum/ain-curriculum-module-2#2"
+      ],
+      "hardNegatives": [
+        "curriculum/ain-curriculum-module-1#2",
+        "curriculum/ain-curriculum-module-3#2"
+      ]
+    },
+    {
+      "id": "RB-066",
+      "kind": "answerable",
+      "query": "which part of the course talks about getting investors and meeting the right people",
+      "expected": [
+        "curriculum/ain-curriculum-module-3#1",
+        "curriculum/ain-curriculum-module-3#2"
+      ],
+      "hardNegatives": [
+        "curriculum/ain-curriculum-module-2#1"
+      ]
+    },
+    {
+      "id": "RB-067",
+      "kind": "answerable",
+      "query": "how many meetups am i supposed to attend in the opening part",
+      "expected": [
+        "curriculum/ain-curriculum-module-1#2"
+      ],
+      "hardNegatives": [
+        "curriculum/ain-curriculum-module-2#2",
+        "curriculum/ain-curriculum-module-3#2"
+      ]
+    },
+    {
+      "id": "RB-068",
+      "kind": "answerable",
+      "query": "where in the course do i learn llc versus c-corp",
+      "expected": [
+        "curriculum/ain-curriculum-module-2#1",
+        "curriculum/ain-curriculum-module-2#2"
+      ],
+      "hardNegatives": [
+        "curriculum/ain-curriculum-module-1#1"
+      ]
+    },
+    {
+      "id": "RB-069",
+      "kind": "answerable",
+      "query": "what's the very last deliverable of the programme",
+      "expected": [
+        "curriculum/ain-curriculum-module-3#2",
+        "curriculum/ain-curriculum-roadmap#1"
+      ],
+      "hardNegatives": [
+        "curriculum/ain-curriculum-module-2#2"
+      ]
+    },
+    {
+      "id": "RB-070",
+      "kind": "answerable",
+      "query": "once i'm done can i come back and help newer students",
+      "expected": [
+        "curriculum/ain-curriculum-roadmap#1"
+      ],
+      "hardNegatives": [
+        "skb/stage/growth#1",
+        "curriculum/ain-curriculum-module-3#1"
+      ]
+    },
+    {
+      "id": "RB-071",
+      "kind": "answerable",
+      "query": "does the opening block teach the difference between who uses it and who buys it",
+      "expected": [
+        "curriculum/ain-curriculum-module-1#1",
+        "curriculum/ain-curriculum-module-1#2"
+      ],
+      "hardNegatives": [
+        "curriculum/ain-curriculum-module-2#1",
+        "doctrine/corin/who-signs-the-cheque"
+      ]
+    },
+    {
+      "id": "RB-072",
+      "kind": "answerable",
+      "query": "how many chats with people do i need on file to move up, and who signs that off",
+      "expected": [
+        "method/program-method#1"
+      ],
+      "hardNegatives": [
+        "library/corin/faq-how-many-interviews#1",
+        "library/corin/faq-how-many-interviews#2"
+      ]
+    },
+    {
+      "id": "RB-073",
+      "kind": "answerable",
+      "query": "what should i never ask when i sit down with somebody about their struggles",
+      "expected": [
+        "method/program-method#2",
+        "doctrine/corin/the-last-time-interview",
+        "library/corin/last-time-interview-guide#1"
+      ],
+      "hardNegatives": [
+        "library/corin/faq-survey-first#1"
+      ]
+    },
+    {
+      "id": "RB-074",
+      "kind": "answerable",
+      "query": "what has to be written on the sheet for a trial so it isn't just showing off",
+      "expected": [
+        "method/program-method#3",
+        "doctrine/guide/assumptions-to-falsifiable-experiments"
+      ],
+      "hardNegatives": [
+        "method/program-method#4"
+      ]
+    },
+    {
+      "id": "RB-075",
+      "kind": "answerable",
+      "query": "my numbers are from last spring, can they still go in the slides",
+      "expected": [
+        "method/program-method#4",
+        "doctrine/guide/evidence-ledger"
+      ],
+      "hardNegatives": [
+        "method/program-method#3"
+      ]
+    },
+    {
+      "id": "RB-076",
+      "kind": "answerable",
+      "query": "how do i check people truly open their wallet and don't just say so",
+      "expected": [
+        "method/program-method#5",
+        "doctrine/guide/business-model-risk-tests",
+        "library/corin/pilot-pricing#1",
+        "lesson/corin/free-pilot"
+      ],
+      "hardNegatives": [
+        "library/corin/faq-survey-first#1"
+      ]
+    },
+    {
+      "id": "RB-077",
+      "kind": "answerable",
+      "query": "we made it in my professor's lab, may i show it at demo day",
+      "expected": [
+        "method/program-method#6",
+        "doctrine/ruth/ip-and-licensing-readiness",
+        "library/ruth/tto-meeting#1"
+      ],
+      "hardNegatives": [
+        "doctrine/ruth/technical-risk-and-market-risk-ledger"
+      ]
+    },
+    {
+      "id": "RB-078",
+      "kind": "answerable",
+      "query": "who haven't i spoken to that could shoot this whole thing down",
+      "expected": [
+        "doctrine/guide/customer-discovery-discipline"
+      ],
+      "hardNegatives": [
+        "doctrine/guide/evidence-ledger"
+      ]
+    },
+    {
+      "id": "RB-079",
+      "kind": "answerable",
+      "query": "what's the one belief that would sink us if it turned out false, and the quickest way to find out",
+      "expected": [
+        "doctrine/guide/assumptions-to-falsifiable-experiments",
+        "doctrine/corin/smallest-decisive-test",
+        "doctrine/thomas/calibrated-challenge"
+      ],
+      "hardNegatives": [
+        "method/program-method#4"
+      ]
+    },
+    {
+      "id": "RB-080",
+      "kind": "answerable",
+      "query": "did i see this happen or am i guessing",
+      "expected": [
+        "doctrine/guide/evidence-ledger"
+      ],
+      "hardNegatives": [
+        "doctrine/guide/assumptions-to-falsifiable-experiments"
+      ]
+    },
+    {
+      "id": "RB-081",
+      "kind": "answerable",
+      "query": "our biggest rival is people just putting up with it",
+      "expected": [
+        "doctrine/guide/business-model-risk-tests",
+        "method/program-method#5"
+      ],
+      "hardNegatives": [
+        "doctrine/corin/who-signs-the-cheque"
+      ]
+    },
+    {
+      "id": "RB-082",
+      "kind": "answerable",
+      "query": "from a gadget on the bench to the first invoice, what hoops are there",
+      "expected": [
+        "doctrine/guide/commercialization-pathway-mapping",
+        "doctrine/ruth/pathway-map-from-lab-result-to-first-revenue",
+        "library/ruth/pathway-map#1",
+        "method/program-method#6"
+      ],
+      "hardNegatives": [
+        "skb/case/SC20#1"
+      ]
+    },
+    {
+      "id": "RB-083",
+      "kind": "answerable",
+      "query": "grade my talk for the judges out of five",
+      "expected": [
+        "doctrine/guide/rehearsal-rubrics"
+      ],
+      "hardNegatives": [
+        "doctrine/thomas/pitch-and-conversation-practice"
+      ]
+    },
+    {
+      "id": "RB-084",
+      "kind": "answerable",
+      "query": "skip the theory, what choice am i really making here",
+      "expected": [
+        "doctrine/thomas/diagnose-before-advising"
+      ],
+      "hardNegatives": [
+        "doctrine/guide/assumptions-to-falsifiable-experiments"
+      ]
+    },
+    {
+      "id": "RB-085",
+      "kind": "answerable",
+      "query": "he told me he'd use it, she already paid me, how much should each weigh",
+      "expected": [
+        "doctrine/thomas/the-evidence-ladder",
+        "doctrine/corin/the-commitment-ladder",
+        "library/corin/commitment-ladder#1"
+      ],
+      "hardNegatives": [
+        "library/corin/commitment-ladder#3"
+      ]
+    },
+    {
+      "id": "RB-086",
+      "kind": "answerable",
+      "query": "pretend you're a mean vc and cut me off",
+      "expected": [
+        "doctrine/thomas/pitch-and-conversation-practice",
+        "doctrine/guide/rehearsal-rubrics"
+      ],
+      "hardNegatives": [
+        "doctrine/thomas/calibrated-challenge"
+      ]
+    },
+    {
+      "id": "RB-087",
+      "kind": "answerable",
+      "query": "how hard should i be pushed on something that's only a tiny gamble",
+      "expected": [
+        "doctrine/thomas/calibrated-challenge"
+      ],
+      "hardNegatives": [
+        "doctrine/thomas/pitch-and-conversation-practice"
+      ]
+    },
+    {
+      "id": "RB-088",
+      "kind": "answerable",
+      "query": "at a university, whose wallet is it really",
+      "expected": [
+        "doctrine/thomas/who-decides-and-who-pays",
+        "doctrine/corin/who-signs-the-cheque",
+        "lesson/corin/champion-not-buyer"
+      ],
+      "hardNegatives": [
+        "lesson/ruth/pilot-budget-owner"
+      ]
+    },
+    {
+      "id": "RB-089",
+      "kind": "answerable",
+      "query": "they lose six hours a week doing it by hand, what do i charge",
+      "expected": [
+        "doctrine/thomas/pricing-from-the-alternative",
+        "doctrine/corin/price-from-the-workaround",
+        "library/corin/pilot-pricing#2"
+      ],
+      "hardNegatives": [
+        "library/corin/pilot-pricing#1",
+        "skb/framework/F09#1"
+      ]
+    },
+    {
+      "id": "RB-090",
+      "kind": "answerable",
+      "query": "my classmates all say it's awesome, now what",
+      "expected": [
+        "library/corin/commitment-ladder#3",
+        "doctrine/corin/the-commitment-ladder",
+        "library/corin/commitment-ladder#1",
+        "doctrine/corin/the-last-time-interview",
+        "doctrine/guide/customer-discovery-discipline",
+        "library/corin/commitment-ladder#2"
+      ],
+      "hardNegatives": [
+        "library/corin/faq-survey-first#1"
+      ]
+    },
+    {
+      "id": "RB-091",
+      "kind": "answerable",
+      "query": "we speak to people in bursts and then code for a month",
+      "expected": [
+        "doctrine/corin/weekly-discovery-cadence"
+      ],
+      "hardNegatives": [
+        "library/corin/faq-how-many-interviews#1"
+      ]
+    },
+    {
+      "id": "RB-092",
+      "kind": "answerable",
+      "query": "who should i invite for a chat and when do i bring up my own thing",
+      "expected": [
+        "library/corin/last-time-interview-guide#1"
+      ],
+      "hardNegatives": [
+        "library/corin/last-time-interview-guide#2",
+        "library/corin/last-time-interview-guide#3"
+      ]
+    },
+    {
+      "id": "RB-093",
+      "kind": "answerable",
+      "query": "give me the exact first sentence that gets somebody telling a story",
+      "expected": [
+        "library/corin/last-time-interview-guide#2",
+        "method/program-method#2",
+        "doctrine/corin/the-last-time-interview"
+      ],
+      "hardNegatives": [
+        "library/corin/last-time-interview-guide#1"
+      ]
+    },
+    {
+      "id": "RB-094",
+      "kind": "answerable",
+      "query": "just hung up with a student, what do i jot down right away",
+      "expected": [
+        "library/corin/last-time-interview-guide#3",
+        "method/program-method#2"
+      ],
+      "hardNegatives": [
+        "library/corin/last-time-interview-guide#1",
+        "library/corin/last-time-interview-guide#2"
+      ]
+    },
+    {
+      "id": "RB-095",
+      "kind": "answerable",
+      "query": "the chat went great, what do i request before leaving",
+      "expected": [
+        "library/corin/commitment-ladder#2"
+      ],
+      "hardNegatives": [
+        "library/corin/commitment-ladder#3",
+        "library/corin/last-time-interview-guide#1"
+      ]
+    },
+    {
+      "id": "RB-096",
+      "kind": "answerable",
+      "query": "i have two hundred replies on a google form, is it proof",
+      "expected": [
+        "library/corin/commitment-ladder#3",
+        "library/corin/case-campus-marketplace#3",
+        "library/corin/faq-survey-first#1",
+        "library/corin/case-campus-marketplace#1"
+      ],
+      "hardNegatives": [
+        "library/corin/faq-survey-first#2"
+      ]
+    },
+    {
+      "id": "RB-097",
+      "kind": "answerable",
+      "query": "the second-hand textbook team pairing people by hand, what came out of it",
+      "expected": [
+        "library/corin/case-campus-marketplace#2",
+        "library/corin/case-campus-marketplace#3"
+      ],
+      "hardNegatives": [
+        "library/corin/case-campus-marketplace#1"
+      ]
+    },
+    {
+      "id": "RB-098",
+      "kind": "answerable",
+      "query": "the office secretaries adored it yet no one could okay the purchase",
+      "expected": [
+        "library/corin/case-procurement-buyer#1",
+        "library/corin/case-procurement-buyer#2",
+        "lesson/corin/champion-not-buyer"
+      ],
+      "hardNegatives": [
+        "library/corin/case-procurement-buyer#3"
+      ]
+    },
+    {
+      "id": "RB-099",
+      "kind": "answerable",
+      "query": "how did that team slip under the spending limit and land a deal",
+      "expected": [
+        "library/corin/case-procurement-buyer#3"
+      ],
+      "hardNegatives": [
+        "library/corin/case-procurement-buyer#1",
+        "library/corin/case-procurement-buyer#2"
+      ]
+    },
+    {
+      "id": "RB-100",
+      "kind": "answerable",
+      "query": "when am i allowed to stop talking to people",
+      "expected": [
+        "library/corin/faq-how-many-interviews#1"
+      ],
+      "hardNegatives": [
+        "library/corin/faq-how-many-interviews#2",
+        "method/program-method#1"
+      ]
+    },
+    {
+      "id": "RB-101",
+      "kind": "answerable",
+      "query": "is it fine that most of my twenty chats were roommates",
+      "expected": [
+        "library/corin/faq-how-many-interviews#2"
+      ],
+      "hardNegatives": [
+        "library/corin/faq-how-many-interviews#1"
+      ]
+    },
+    {
+      "id": "RB-102",
+      "kind": "answerable",
+      "query": "should i blast a questionnaire to the whole campus right now",
+      "expected": [
+        "library/corin/faq-survey-first#1"
+      ],
+      "hardNegatives": [
+        "library/corin/faq-survey-first#2"
+      ]
+    },
+    {
+      "id": "RB-103",
+      "kind": "answerable",
+      "query": "i've heard a dozen stories, what do i put in a questionnaire to see how common it is",
+      "expected": [
+        "library/corin/faq-survey-first#2"
+      ],
+      "hardNegatives": [
+        "library/corin/faq-survey-first#1"
+      ]
+    },
+    {
+      "id": "RB-104",
+      "kind": "answerable",
+      "query": "is it ok if they get the trial at no charge",
+      "expected": [
+        "library/corin/pilot-pricing#1",
+        "lesson/corin/free-pilot"
+      ],
+      "hardNegatives": [
+        "library/corin/pilot-pricing#2",
+        "library/ruth/paid-pilot-design#3"
+      ]
+    },
+    {
+      "id": "RB-105",
+      "kind": "answerable",
+      "query": "we got fourteen and said we'd quit below fifteen, can we bend it",
+      "expected": [
+        "library/corin/transcript-kill-criterion#1"
+      ],
+      "hardNegatives": [
+        "doctrine/corin/smallest-decisive-test",
+        "method/program-method#3"
+      ]
+    },
+    {
+      "id": "RB-106",
+      "kind": "answerable",
+      "query": "people only open it during finals",
+      "expected": [
+        "lesson/corin/seasonal-spike"
+      ],
+      "hardNegatives": [
+        "skb/case/SC15#2",
+        "skb/case/SC22#2"
+      ]
+    },
+    {
+      "id": "RB-107",
+      "kind": "answerable",
+      "query": "poster session is next week about what our lab came up with, any danger",
+      "expected": [
+        "doctrine/ruth/ip-and-licensing-readiness",
+        "library/ruth/tto-meeting#1",
+        "method/program-method#6"
+      ],
+      "hardNegatives": [
+        "library/ruth/tto-meeting#3"
+      ]
+    },
+    {
+      "id": "RB-108",
+      "kind": "answerable",
+      "query": "does my glucose patch need the government's okay",
+      "expected": [
+        "doctrine/ruth/regulatory-and-certification-triage",
+        "library/ruth/faq-when-regulation#1",
+        "method/program-method#6",
+        "lesson/ruth/claim-decides-class",
+        "library/ruth/faq-when-regulation#2"
+      ],
+      "hardNegatives": [
+        "library/ruth/case-wearable-class#3"
+      ]
+    },
+    {
+      "id": "RB-109",
+      "kind": "answerable",
+      "query": "a clinic wants to try us out, what do we settle up front",
+      "expected": [
+        "doctrine/ruth/pilot-partner-design",
+        "library/ruth/paid-pilot-design#1",
+        "library/ruth/paid-pilot-design#2",
+        "library/ruth/faq-pilot-partner#1",
+        "library/ruth/paid-pilot-design#3",
+        "lesson/ruth/pilot-budget-owner"
+      ],
+      "hardNegatives": [
+        "library/ruth/faq-pilot-partner#2"
+      ]
+    },
+    {
+      "id": "RB-110",
+      "kind": "answerable",
+      "query": "building our own plant costs a fortune and someone else already has one",
+      "expected": [
+        "doctrine/ruth/make-partner-or-license",
+        "library/ruth/case-license-not-manufacture#1",
+        "library/ruth/case-license-not-manufacture#2",
+        "library/ruth/case-license-not-manufacture#3"
+      ],
+      "hardNegatives": [
+        "skb/case/SC21#1"
+      ]
+    },
+    {
+      "id": "RB-111",
+      "kind": "answerable",
+      "query": "it passed every test in the lab so people will want it, right?",
+      "expected": [
+        "doctrine/ruth/technical-risk-and-market-risk-ledger",
+        "skb/case/SC21#2",
+        "skb/case/SC01#2"
+      ],
+      "hardNegatives": [
+        "library/ruth/pathway-map#1"
+      ]
+    },
+    {
+      "id": "RB-112",
+      "kind": "answerable",
+      "query": "which hurdle do i put my money into first",
+      "expected": [
+        "library/ruth/pathway-map#2"
+      ],
+      "hardNegatives": [
+        "library/ruth/pathway-map#1",
+        "library/ruth/pathway-map#3"
+      ]
+    },
+    {
+      "id": "RB-113",
+      "kind": "answerable",
+      "query": "for each hurdle what would convince somebody we're past it, like who owns it or what parts cost",
+      "expected": [
+        "library/ruth/pathway-map#3"
+      ],
+      "hardNegatives": [
+        "library/ruth/pathway-map#1",
+        "library/ruth/pathway-map#2"
+      ]
+    },
+    {
+      "id": "RB-114",
+      "kind": "answerable",
+      "query": "what do i pull together before i sit with the campus patent people",
+      "expected": [
+        "library/ruth/tto-meeting#1",
+        "library/ruth/tto-meeting#2"
+      ],
+      "hardNegatives": [
+        "library/ruth/tto-meeting#3"
+      ]
+    },
+    {
+      "id": "RB-115",
+      "kind": "answerable",
+      "query": "what paper do i carry into that room with the campus patent people",
+      "expected": [
+        "library/ruth/tto-meeting#2"
+      ],
+      "hardNegatives": [
+        "library/ruth/tto-meeting#3"
+      ]
+    },
+    {
+      "id": "RB-116",
+      "kind": "answerable",
+      "query": "what are the campus patent people likely to want from me first",
+      "expected": [
+        "library/ruth/tto-meeting#3"
+      ],
+      "hardNegatives": [
+        "library/ruth/tto-meeting#2"
+      ]
+    },
+    {
+      "id": "RB-117",
+      "kind": "answerable",
+      "query": "the team that saved over twelve months by putting one thing to an expert",
+      "expected": [
+        "library/ruth/case-wearable-class#2"
+      ],
+      "hardNegatives": [
+        "library/ruth/case-wearable-class#1",
+        "library/ruth/case-wearable-class#3"
+      ]
+    },
+    {
+      "id": "RB-118",
+      "kind": "answerable",
+      "query": "they put out a humbler product and left the medical promise for later",
+      "expected": [
+        "library/ruth/case-wearable-class#3",
+        "lesson/ruth/claim-decides-class"
+      ],
+      "hardNegatives": [
+        "library/ruth/case-wearable-class#1"
+      ]
+    },
+    {
+      "id": "RB-119",
+      "kind": "answerable",
+      "query": "became a drawing-board business that collects royalties, no plant",
+      "expected": [
+        "library/ruth/case-license-not-manufacture#3",
+        "library/ruth/case-license-not-manufacture#2"
+      ],
+      "hardNegatives": [
+        "library/ruth/case-license-not-manufacture#1"
+      ]
+    },
+    {
+      "id": "RB-120",
+      "kind": "answerable",
+      "query": "how do i word it for the fda expert",
+      "expected": [
+        "library/ruth/faq-when-regulation#2"
+      ],
+      "hardNegatives": [
+        "library/ruth/faq-when-regulation#1"
+      ]
+    },
+    {
+      "id": "RB-121",
+      "kind": "answerable",
+      "query": "how can i tell a test site is wasting our time",
+      "expected": [
+        "library/ruth/faq-pilot-partner#2",
+        "lesson/ruth/pilot-budget-owner"
+      ],
+      "hardNegatives": [
+        "library/ruth/faq-pilot-partner#1"
+      ]
+    },
+    {
+      "id": "RB-122",
+      "kind": "answerable",
+      "query": "who keeps the upgrades we come up with while working at their site",
+      "expected": [
+        "library/ruth/paid-pilot-design#2",
+        "doctrine/ruth/pilot-partner-design"
+      ],
+      "hardNegatives": [
+        "library/ruth/paid-pilot-design#1",
+        "library/ruth/paid-pilot-design#3"
+      ]
+    },
+    {
+      "id": "RB-123",
+      "kind": "answerable",
+      "query": "how does a trial become an actual order",
+      "expected": [
+        "library/ruth/paid-pilot-design#3"
+      ],
+      "hardNegatives": [
+        "library/ruth/paid-pilot-design#1",
+        "library/ruth/paid-pilot-design#2"
+      ]
+    },
+    {
+      "id": "RB-124",
+      "kind": "answerable",
+      "query": "should i buy the molds now or sign the sole-rights deal they're offering",
+      "expected": [
+        "library/ruth/transcript-irreversible#1"
+      ],
+      "hardNegatives": [
+        "doctrine/ruth/make-partner-or-license",
+        "library/ruth/case-license-not-manufacture#2"
+      ]
+    },
+    {
+      "id": "RB-125",
+      "kind": "answerable",
+      "query": "testers keep begging for stronger functions on our wristband",
+      "expected": [
+        "lesson/ruth/claim-decides-class",
+        "library/ruth/case-wearable-class#1",
+        "library/ruth/case-wearable-class#2"
+      ],
+      "hardNegatives": [
+        "library/ruth/faq-when-regulation#2"
+      ]
+    },
+    {
+      "id": "RB-126",
+      "kind": "answerable",
+      "query": "the scientist is thrilled but has no say over spending",
+      "expected": [
+        "lesson/ruth/pilot-budget-owner",
+        "lesson/corin/champion-not-buyer",
+        "library/ruth/faq-pilot-partner#2",
+        "library/ruth/faq-pilot-partner#1"
+      ],
+      "hardNegatives": [
+        "library/ruth/case-wearable-class#1"
+      ]
+    },
+    {
+      "id": "RB-127",
+      "kind": "answerable",
+      "query": "put every checkpoint between the lab and getting paid into order for me",
+      "expected": [
+        "doctrine/ruth/pathway-map-from-lab-result-to-first-revenue",
+        "library/ruth/pathway-map#1",
+        "library/ruth/pathway-map#2"
+      ],
+      "hardNegatives": [
+        "library/ruth/pathway-map#3"
+      ]
+    },
+    {
+      "id": "RB-128",
+      "kind": "answerable",
+      "query": "rank these for me: they praised it, introduced me to their boss, put down a card",
+      "expected": [
+        "library/corin/commitment-ladder#1",
+        "doctrine/corin/the-commitment-ladder"
+      ],
+      "hardNegatives": [
+        "library/corin/commitment-ladder#3",
+        "library/corin/commitment-ladder#2"
+      ]
+    },
+    {
+      "id": "RB-129",
+      "kind": "answerable",
+      "query": "my hardware thing needs a safety stamp, how do i plan the money and the weeks for that",
+      "expected": [
+        "method/program-method#6",
+        "doctrine/ruth/regulatory-and-certification-triage"
+      ],
+      "hardNegatives": [
+        "library/ruth/pathway-map#3"
+      ]
+    },
+    {
+      "id": "RB-130",
+      "kind": "answerable",
+      "query": "what has to be true in the buyer's head before they say yes, and what did they get last time",
+      "expected": [
+        "doctrine/corin/who-signs-the-cheque"
+      ],
+      "hardNegatives": [
+        "lesson/corin/champion-not-buyer"
+      ]
+    },
+    {
+      "id": "RB-131",
+      "kind": "no_answer",
+      "query": "what's the phone number of the ain center front desk",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-132",
+      "kind": "no_answer",
+      "query": "when is the application deadline for next fall's cohort",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-133",
+      "kind": "no_answer",
+      "query": "how do i file an 83(b) election",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-134",
+      "kind": "no_answer",
+      "query": "what rate does the bank charge on a small business loan this year",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-135",
+      "kind": "no_answer",
+      "query": "which python package should i use to take card payments",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-136",
+      "kind": "no_answer",
+      "query": "help me write a cover letter for a summer internship",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-137",
+      "kind": "no_answer",
+      "query": "what gpa do i need to stay in the honors college",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-138",
+      "kind": "no_answer",
+      "query": "who won last year's regional hackathon",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-139",
+      "kind": "no_answer",
+      "query": "can i work on my company while on a student visa",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-140",
+      "kind": "no_answer",
+      "query": "make me a marathon training plan",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-141",
+      "kind": "no_answer",
+      "query": "how do i fix a merge conflict in git",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-142",
+      "kind": "no_answer",
+      "query": "what's the wifi password at the hub",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-143",
+      "kind": "no_answer",
+      "query": "how do i register a logo in germany",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-144",
+      "kind": "no_answer",
+      "query": "how much should i pay my first engineer",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-145",
+      "kind": "no_answer",
+      "query": "how do payroll taxes work in new york",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-146",
+      "kind": "no_answer",
+      "query": "which phone has the best camera for product photos",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-147",
+      "kind": "no_answer",
+      "query": "how much is parking near the library",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-148",
+      "kind": "no_answer",
+      "query": "what's the boiling point of ethanol",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-149",
+      "kind": "no_answer",
+      "query": "how do i split rent fairly with my roommates",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-150",
+      "kind": "no_answer",
+      "query": "list the venture funds that back fintech in boston",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-151",
+      "kind": "no_answer",
+      "query": "recommend a crm under twenty dollars a month",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-152",
+      "kind": "no_answer",
+      "query": "what's the best font pairing for slides",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-153",
+      "kind": "no_answer",
+      "query": "what does duolingo charge for its subscription today",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-154",
+      "kind": "no_answer",
+      "query": "who is the chief executive of tulip now",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-155",
+      "kind": "no_answer",
+      "query": "what does one surgibox unit cost a hospital",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-156",
+      "kind": "no_answer",
+      "query": "how many stores does warby parker have this year",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-157",
+      "kind": "no_answer",
+      "query": "what share price did dropbox list at",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-158",
+      "kind": "no_answer",
+      "query": "which vc led formlabs' last round",
+      "expected": [],
+      "hardNegatives": []
+    }
+  ]
+}
