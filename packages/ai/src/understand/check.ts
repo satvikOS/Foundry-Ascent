@@ -1,7 +1,9 @@
 import { methodUnit } from '../validators/method.js';
 import { rulesForAPerson } from '../validators/reply-contract.js';
 import { stemsOf } from '../validators/stems.js';
+import { conflictDrop, type ConflictDrop } from './conflicts.js';
 import { claimNumbers, daysIn, figuresIn, sameNumber } from './figures.js';
+import { toThem } from './labels.js';
 import { mergeReadings } from './merge.js';
 import type { RawUnderstanding, UnderstandReadings } from './schema.js';
 import { checkSums, type CheckedSums, type SumDrop } from './sums.js';
@@ -71,7 +73,9 @@ type TextDrop =
   /** Nothing they could count or see. */
   | 'vague'
   /** Nothing of theirs in it. */
-  | 'generic';
+  | 'generic'
+  /** It tells another message's news. */
+  | 'elsewhere';
 
 const MAX_ASK_WORDS = 34;
 const MAX_CLAIM_WORDS = 40;
@@ -144,6 +148,14 @@ const FREE_UNTIL =
   /\b(?:for )?free (?:for now|at first|to (?:start|begin) with|(?:un)?til+ |(?:for )?(?:the |your )?first \d)/iu;
 const CHARGES = /\b(?:charg\w+|pays?|paid|paying|price\w*|sell\w*|fee|deposit)\b/iu;
 
+/** Said to them where that only takes the words for it; else as it is, and left out. */
+function spokenTo(text: string, message: string): string {
+  if (/\bthe founder\b/iu.test(message) || /\b(?:they|them|their|he|him|his|she|her)\b/iu.test(text))
+    return text;
+  const said = toThem(text);
+  return /\b(?:and|but|or) (?:has|is|does|was|[a-z]{3,}s) /iu.test(said) ? text : said;
+}
+
 function rulesOnIt(text: string, referral: UnderstoodReferral | null): boolean {
   if (rulesForAPerson(text)) return true;
   if (RULES_ALWAYS.some((re) => re.test(text)) && !HOLDS_OFF.test(text)) return true;
@@ -154,6 +166,17 @@ function rulesOnIt(text: string, referral: UnderstoodReferral | null): boolean {
     !HOLDS_OFF.test(text)
   );
 }
+
+/** A number of people or days a test may name: small, or round. */
+const testSize = (n: number): boolean => Number.isInteger(n) && n > 0 && n <= 100 && (n <= 12 || n % 5 === 0);
+/** Something to do ("Ask 10 of them …"), or what would have to happen ("8 of 12 pay"): never what did. */
+const TO_DO =
+  /^(?:ask|call|ring|phone|talk|speak|meet|message|email|text|write|send|offer|sell|show|give|get|find|book|invite|visit|run|try|test|charge|collect|count|put|take|bring|post|list|watch|pick|set|make|build|hold|stand|keep|let|have)\b/iu;
+const WOULD =
+  /^(?:if |when |whether |once )?(?:at least |more than |fewer than |less than |most of |about )?(?:\d{1,3}|[a-z]+) (?:of|out of|in) (?:the (?:next )?|every )?(?:\d{1,3}|[a-z]+)\b/iu;
+const DID =
+  /\b(?:paid|said|came|bought|asked|sold|told|were|was|had|did|signed|used|kept|stayed|left|opened|booked|agreed|returned)\b/iu;
+const setsSizes = (text: string): boolean => TO_DO.test(text) || (WOULD.test(text) && !DID.test(text));
 
 /** What a claim may repeat: the numbers, days and names of everything the call was shown, and of what code worked out. */
 class Known {
@@ -168,10 +191,12 @@ class Known {
     this.#words = new Set(all.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
   }
 
-  /** Why a text says more than what is known; null: it does not. */
-  beyond(text: string): 'number' | 'date' | 'name' | null {
+  /** Why a text says more than what is known; null: it does not. `tests`: it sets sizes of something to do. */
+  beyond(text: string, tests = false): 'number' | 'date' | 'name' | null {
+    const marked = tests ? figuresIn(text).filter((f) => f.mark !== null) : [];
+    const size = (n: number): boolean => tests && testSize(n) && !marked.some((f) => sameNumber(f.value, n));
     // "One thing to do" counts nothing.
-    if (claimNumbers(text).some((n) => n !== 1 && !this.#numbers.some((k) => sameNumber(k, n))))
+    if (claimNumbers(text).some((n) => n !== 1 && !size(n) && !this.#numbers.some((k) => sameNumber(k, n))))
       return 'number';
     if (daysIn(text).some((d) => !this.#days.has(d))) return 'date';
     const opens = OPENS_WITH_NAME.exec(text)?.[1];
@@ -256,8 +281,11 @@ export function readUnderstanding(raw: RawUnderstanding, context: UnderstandCont
     };
     const read = plainLine(text, maxWords);
     if ('drop' in read) return drop(read.drop);
-    const { line } = read;
-    const beyond = allowed.beyond(line);
+    const tests =
+      (field === 'result.settles' || field === 'choice.flips_if' || field === 'first_action') &&
+      setsSizes(read.line);
+    const line = OF_THEM.test(read.line) ? spokenTo(read.line, context.message) : read.line;
+    const beyond = allowed.beyond(line, tests);
     if (beyond !== null) return drop(beyond);
     if (field !== 'second_ask' && OF_THEM.test(line)) return drop('voice');
     if (lint === 'plain') return line;
@@ -273,7 +301,7 @@ export function readUnderstanding(raw: RawUnderstanding, context: UnderstandCont
     raw,
     { message: context.message, history: conversation, record: context.record },
     {
-      labelOk: (label) => claim('label', label.replace(/[.:]+$/u, ''), before, 'plain', 16),
+      labelOk: (label) => claim('label', toThem(label.replace(/[.:]+$/u, '')), before, 'plain', 16),
       askText: `${context.message} ${askText ?? ''}`,
     },
   );
@@ -283,15 +311,28 @@ export function readUnderstanding(raw: RawUnderstanding, context: UnderstandCont
 
   const after = known(checked.sums.map((s) => s.value));
   const contradictsLine = raw.contradicts === null ? null : lineOf(raw.contradicts.record);
-  // Found by the part that has no words for it: the line says it itself.
   const contradictsWhy =
-    contradictsLine === null
+    contradictsLine === null || raw.contradicts === null
       ? null
-      : raw.contradicts?.why == null
-        ? contradictsLine.text
-        : claim('contradicts', raw.contradicts.why, after, 'plain');
+      : claim('contradicts', raw.contradicts.why, after, 'plain');
+  const against: ConflictDrop | null =
+    contradictsLine === null || raw.contradicts === null || contradictsWhy === null
+      ? null
+      : conflictDrop({
+          claim: raw.contradicts.claim,
+          why: contradictsWhy,
+          line: contradictsLine,
+          message: context.message,
+          kind: raw.kind,
+          also: raw.also,
+        });
+  if (against !== null) textDrops.push(`contradicts:${against}`);
+  const contradicts =
+    contradictsLine === null || contradictsWhy === null || against !== null
+      ? null
+      : { line: contradictsLine, why: contradictsWhy };
   const record = [
-    ...(contradictsWhy !== null && contradictsLine !== null ? [contradictsLine] : []),
+    ...(contradicts === null ? [] : [contradicts.line]),
     ...raw.record.flatMap((k) => lineOf(k) ?? []),
   ].filter((line, i, all) => all.indexOf(line) === i);
 
@@ -310,6 +351,10 @@ export function readUnderstanding(raw: RawUnderstanding, context: UnderstandCont
   const theirs = stemsOf(
     [context.message, conversation, context.shown, ...context.record.map((r) => r.text)].join('\n'),
   );
+  // What happened is in what they say now or just said; a push back is answered with what stands.
+  const latest = [context.message, ...context.history.slice(-2).map((h) => h.founder)].join('\n');
+  const news = stemsOf(latest);
+  const pushed = raw.kind === 'pushback' || raw.also.includes('pushback');
   const counts = (field: string, text: string | null): string | null => {
     const line = claim(field, text, after);
     if (line === null || observable(line)) return line;
@@ -320,8 +365,18 @@ export function readUnderstanding(raw: RawUnderstanding, context: UnderstandCont
     const line = claim('result.shows', text, after);
     if (line === null) return null;
     const shared = [...stemsOf(line)].filter((w) => theirs.has(w)).length;
-    if (shared >= 2 || (shared >= 1 && claimNumbers(line).length > 0)) return line;
-    textDrops.push('result.shows:generic');
+    if (shared === 0 || (shared === 1 && claimNumbers(line).length === 0)) {
+      textDrops.push('result.shows:generic');
+      return null;
+    }
+    const told = claimNumbers(latest);
+    if (
+      pushed ||
+      [...stemsOf(line)].some((w) => news.has(w)) ||
+      claimNumbers(line).some((n) => told.some((t) => sameNumber(t, n)))
+    )
+      return line;
+    textDrops.push('result.shows:elsewhere');
     return null;
   };
 
@@ -332,10 +387,7 @@ export function readUnderstanding(raw: RawUnderstanding, context: UnderstandCont
       kind: raw.kind,
       also: [...new Set(raw.also)].filter((k) => k !== raw.kind).slice(0, 2),
       record: record.slice(0, MAX_RECORD),
-      contradicts:
-        contradictsLine === null || contradictsWhy === null
-          ? null
-          : { line: contradictsLine, why: contradictsWhy },
+      contradicts,
       sums: checked.sums,
       missing,
       choice: choiceOf(raw.choice, {

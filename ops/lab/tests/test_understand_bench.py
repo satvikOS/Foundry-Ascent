@@ -220,6 +220,16 @@ def test_picks_news_history_kinds_and_friends() -> None:
     history = case(history=("costs",))
     assert bench.grade(history, read(record=[{"text": "A kit sells for 24 dollars."}]), None)["history"]
     assert bench.grade(history, read(record=[{"text": "Clay is brown."}]), None)["history"] is False
+    # What was only said in this conversation is no record line to point at.
+    said = next(c for c in CASES if not c.held_out and c.expect.history and not bench.shown_facts(c))
+    assert "history" not in bench.grade(said, read(), None)
+    # The verdict is said as a word.
+    weak = case(news=("kits",))
+    assert (
+        bench.grade(weak, read(result={"verdict": "too_early", "shows": "It went."}), None)["news"] is False
+    )
+    assert bench.grade(case(kind="social"), read(kind="update"), None)["kind"]
+    assert bench.grade(case(kind="social"), read(kind="choice"), None)["kind"] is False
     assert bench.grade(case(kind="recall", remember=("kits",)), read(kind="recall"), None)["kind"]
     assert bench.grade(case(other_venture=True), read(also=["privacy"]), None)["kind"]
     assert bench.grade(case(other_venture=True), read(), None)["kind"] is False
@@ -291,6 +301,7 @@ def test_the_summary_is_numbers_ids_and_codes() -> None:
     assert first["parts"]["route"] == {
         "calls": 20,
         "skipped": 0,
+        "again": 0,
         "ok": 20,
         "failures": {},
         "ms": {"p50": 900, "p95": 900},
@@ -349,6 +360,7 @@ def test_a_run_writes_its_cases_grades_what_was_read_and_prints_neither(tmp_path
     assert seen[0][-2:] == ["--candidates", NOVA]
     grades = json.loads((tmp_path / "private" / bench.GRADES_FILE).read_text(encoding="utf-8"))
     assert len(grades) == result["cases_read"] * 2
+    assert {g["contradicts"] for g in grades} == {None}
     assert not list((tmp_path).glob("public/*"))
 
 

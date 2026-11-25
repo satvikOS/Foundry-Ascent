@@ -30,8 +30,14 @@ import {
   createModelGateway,
   isModelGatewayError,
   modelGatewayConfigFromEnv,
+  readJudge,
   readParts,
+  readRoute,
+  readSums,
+  sumsAgain,
   thinksOnRequest,
+  type ChatMessage,
+  type GenerateStructuredResult,
   type ModelGateway,
   type Understanding,
   type UnderstandPart,
@@ -108,6 +114,8 @@ export interface PartRow {
   readonly outputTokens: number;
   readonly costUsd: number;
   readonly raw: unknown;
+  /** SUMS was asked once more (a plan and no sum). */
+  readonly again?: true;
 }
 
 export interface Row {
@@ -208,12 +216,14 @@ export function worstUsd(arm: Arm, prepared: PreparedUnderstand): number {
     return part === null
       ? sum
       : sum +
-          reasoningWorstUsd(
-            arm.modelId,
-            charsOf(part),
-            UNDERSTAND_MAX_OUTPUT_TOKENS[name],
-            arm.effort === 'low' && thinksOnRequest(arm.modelId),
-          );
+          // SUMS may be asked once more.
+          (name === 'sums' ? 2 : 1) *
+            reasoningWorstUsd(
+              arm.modelId,
+              charsOf(part),
+              UNDERSTAND_MAX_OUTPUT_TOKENS[name],
+              arm.effort === 'low' && thinksOnRequest(arm.modelId),
+            );
   }, 0);
 }
 
@@ -239,14 +249,14 @@ async function readPart(
   if (prepared === null) return NOT_ASKED;
   const started = performance.now();
   const took = (): number => Math.round(performance.now() - started);
-  try {
-    const result = await gateway.generateStructured<unknown>({
+  const call = (messages: ChatMessage[]): Promise<GenerateStructuredResult<unknown>> =>
+    gateway.generateStructured<unknown>({
       // Sampled as a turn is.
       purpose: 'turn',
       requestId: randomUUID(),
       route: 'understand',
       system: prepared.system,
-      messages: prepared.messages,
+      messages,
       promptCache: prepared.promptCache,
       schemaName: UNDERSTAND_SCHEMA_NAMES[name],
       zodSchema: UNDERSTAND_SCHEMAS[name],
@@ -256,14 +266,23 @@ async function readPart(
       signal: AbortSignal.timeout(BENCH_TIMEOUT_MS),
       ...(arm.effort === 'low' && thinksOnRequest(arm.modelId) ? { think: 'low' as const } : {}),
     });
+  try {
+    const first = await call(prepared.messages);
+    // As a turn does: a plan and no sum is asked for once more.
+    const again = name === 'sums' ? sumsAgain(prepared.messages, readSums(first.value)) : null;
+    const second = again === null ? null : await call(again).catch(() => null);
+    const made = second === null ? [first] : [first, second];
+    const total = (of: (x: GenerateStructuredResult<unknown>) => number): number =>
+      made.reduce((n, x) => n + of(x), 0);
     return {
       code: 'ok',
       ms: took(),
-      inputTokens: result.usage.inputTokens,
-      cachedInputTokens: result.usage.cacheReadInputTokens ?? 0,
-      outputTokens: result.usage.outputTokens,
-      costUsd: result.costUsd,
-      raw: result.value,
+      inputTokens: total((x) => x.usage.inputTokens),
+      cachedInputTokens: total((x) => x.usage.cacheReadInputTokens ?? 0),
+      outputTokens: total((x) => x.usage.outputTokens),
+      costUsd: total((x) => x.costUsd),
+      raw: (second ?? first).value,
+      ...(again === null ? {} : { again: true as const }),
     };
   } catch (err) {
     const attempts = isModelGatewayError(err) ? err.attempts : [];
@@ -294,9 +313,9 @@ function readingsOf(
   const of = <T>(name: UnderstandPart, parse: (raw: unknown) => T): T | null =>
     parts[name].code === 'ok' && kept(name) ? parse(parts[name].raw) : null;
   return {
-    route: of('route', (raw) => UNDERSTAND_SCHEMAS.route.parse(raw)),
-    sums: of('sums', (raw) => UNDERSTAND_SCHEMAS.sums.parse(raw)),
-    judge: of('judge', (raw) => UNDERSTAND_SCHEMAS.judge.parse(raw)),
+    route: of('route', readRoute),
+    sums: of('sums', readSums),
+    judge: of('judge', readJudge),
   };
 }
 

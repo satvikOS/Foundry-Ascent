@@ -69,7 +69,32 @@ async function callTurns(
     expect(sample.firstSpeechMs).not.toBeNull();
     out.push(sequentialOf(rig.queries, sample));
   }
+  // A person is in one call at a time: the next one starts once this one has ended.
+  await rig.drain();
+  const ended = await rig.request(`/calls/${started.call.id}/end`, { body: { reason: 'user' }, cookie });
+  expect(ended.status).toBeLessThan(300);
   return out;
+}
+
+/**
+ * The counts are read from times, so a runner that stalls for a moment can show a trip too many, never one too few: a
+ * call that does not read as pinned is made once more, and each turn counts as the fewer of its two readings.
+ */
+async function callCounts(
+  rig: LatencyRig,
+  turns: readonly SequentialSample[],
+  pinned: readonly { readonly streamOpen: number; readonly firstSpeech: number }[],
+  messages: readonly string[] = MESSAGES,
+): Promise<{ streamOpen: number; firstSpeech: number | null }[]> {
+  const read = turns.map((t) => ({ streamOpen: t.streamOpen, firstSpeech: t.firstSpeech }));
+  if (read.every((t, i) => t.streamOpen === pinned[i]?.streamOpen && t.firstSpeech === pinned[i].firstSpeech))
+    return read;
+  const again = await callTurns(rig, messages);
+  return read.map((t, i) => ({
+    streamOpen: Math.min(t.streamOpen, again[i]?.streamOpen ?? t.streamOpen),
+    firstSpeech:
+      t.firstSpeech === null ? null : Math.min(t.firstSpeech, again[i]?.firstSpeech ?? t.firstSpeech),
+  }));
 }
 
 describe.each([
@@ -91,11 +116,10 @@ describe.each([
     await rig.cleanup();
   });
 
-  it(`waits for ${String(streamOpen)} round trips before its stream opens and ${String(firstSpeech)} before its first spoken unit`, () => {
-    expect(turns.map((t) => ({ streamOpen: t.streamOpen, firstSpeech: t.firstSpeech }))).toEqual(
-      MESSAGES.map(() => ({ streamOpen, firstSpeech })),
-    );
-  });
+  it(`waits for ${String(streamOpen)} round trips before its stream opens and ${String(firstSpeech)} before its first spoken unit`, async () => {
+    const pinned = MESSAGES.map(() => ({ streamOpen, firstSpeech }));
+    expect(await callCounts(rig, turns, pinned)).toEqual(pinned);
+  }, 240_000);
 });
 
 /** An ask a phrase of the playbook names, and a report: neither reads the plays it is near to. */
@@ -103,23 +127,23 @@ describe('a spoken turn a phrase or a rule decides', () => {
   let rig: LatencyRig;
   let turns: SequentialSample[];
 
+  const messages = [
+    'How do I split the equity with my cofounder?',
+    'What should I do next for the library pilot?',
+  ];
+
   beforeAll(async () => {
     rig = await createLatencyRig(LATENCY, { traceQueries: true, face: false, reply });
-    turns = await callTurns(rig, [
-      'How do I split the equity with my cofounder?',
-      'What should I do next for the library pilot?',
-    ]);
+    turns = await callTurns(rig, messages);
   }, 240_000);
   afterAll(async () => {
     await rig.cleanup();
   });
 
-  it('waits for 10 round trips before its stream opens and 13 before its first spoken unit, as before', () => {
-    expect(turns.map((t) => ({ streamOpen: t.streamOpen, firstSpeech: t.firstSpeech }))).toEqual([
-      { streamOpen: 10, firstSpeech: 13 },
-      { streamOpen: 10, firstSpeech: 13 },
-    ]);
-  });
+  it('waits for 10 round trips before its stream opens and 13 before its first spoken unit, as before', async () => {
+    const pinned = messages.map(() => ({ streamOpen: 10, firstSpeech: 13 }));
+    expect(await callCounts(rig, turns, pinned, messages)).toEqual(pinned);
+  }, 240_000);
 });
 
 /**

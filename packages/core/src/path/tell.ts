@@ -92,7 +92,11 @@ const YOU: readonly (readonly [RegExp, string])[] = [
  * only four hours" → "you have only four hours"). `name`: their first name, when the record calls them by it.
  */
 export function toYou(text: string, name = ''): string {
-  let out = text;
+  // A co-founder is somebody else.
+  let out = text.replace(
+    /\b(co-)(f)(?=ounder)/giu,
+    (_whole, co: string, f: string) => `${co}${f === 'F' ? '\uE001' : '\uE000'}`,
+  );
   const called = name.trim();
   if (called.length >= 2)
     out = out.replace(new RegExp(`\\b${called.replace(/[^\p{L}\p{N}]/gu, '.')}\\b`, 'giu'), 'the founder');
@@ -114,7 +118,11 @@ export function toYou(text: string, name = ''): string {
       OTHERS_BETWEEN.test(before) ? whole : `${before} your`,
     );
   for (const [pattern, said] of YOU) out = out.replace(pattern, said);
-  return out.replace(/\s+/g, ' ').trim();
+  return out
+    .replace(/\uE000/gu, 'f')
+    .replace(/\uE001/gu, 'F')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /** A verb an idea's line opens with, of the venture ("helps small schools…") or of the founder ("sell packed lunches…"). */

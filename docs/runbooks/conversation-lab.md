@@ -539,7 +539,8 @@ gh workflow run ops-conversation-lab.yml -f suite=understand -f understand_model
   or said at all (`said`); the referral, and no ruling referral where none is expected; the pick; a result read that names the
   news; a record line or claim that names the history; the kind; friends not taken as proof; the play where a phrase of the
   playbook names one. A failed call got nothing right. No false referral is graded where the judge reads the reply for who
-  decides. Beside them, by part: calls made and skipped, p50/p95, late calls, tokens, USD and what that part is measured on; inputs
+  decides, no history where the fact stands in no record line (it was only said in this conversation). Contradictions are counted, and
+  the sealed grades name each with its line, to be read by eye. Beside them, by part: calls made and skipped, p50/p95, late calls, tokens, USD and what that part is measured on; inputs
   found where the model says they are (and anywhere the founder gave them), sums and texts left out by code.
 - **Outputs.** The summary holds numbers, candidate ids, group names and codes, for all cases, the held-out and the client ones.
   Sealed: the cases, every reading (`understand-bench.json`) and each case's grades (`understand-grades.json`).

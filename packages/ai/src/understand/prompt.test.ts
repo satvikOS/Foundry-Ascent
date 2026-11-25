@@ -13,10 +13,12 @@ import {
   UNDERSTAND_EXAMPLES,
   exchangesInView,
   routeSystemPrompt,
+  sumsAgain,
   sumsDue,
   understandCacheHint,
   understandMessages,
 } from './prompt.js';
+import { readRoute, readSums, salvaged } from './salvage.js';
 import {
   UNDERSTAND_MAX_OUTPUT_TOKENS,
   UNDERSTAND_PARTS,
@@ -63,7 +65,7 @@ describe('the system prompts', () => {
   it('stay small: each its own work', () => {
     expect(SYSTEMS.route.length).toBeLessThan(4_400);
     expect(SYSTEMS.sums.length).toBeLessThan(4_000);
-    expect(SYSTEMS.judge.length).toBeLessThan(4_200);
+    expect(SYSTEMS.judge.length).toBeLessThan(4_400);
   });
 
   it('name every play on one line under its stage, its text escaped, its ask where the step does not say it', () => {
@@ -240,6 +242,13 @@ describe('the numbers of a sum, as they are written', () => {
   ])('%s', (said, input) => {
     expect(inputOf(said)).toEqual(input);
   });
+  it.each([
+    ['lost=4/16@R1', 0.25, '4/16'],
+    ['left=16 - 4@R1', 12, '16 - 4'],
+    ['all=$3 x 4@R1', 12, '$3 x 4'],
+  ])('%s is two numbers', (said, value, calc) => {
+    expect(inputOf(said)).toMatchObject({ value, calc, from: 'R1' });
+  });
   it.each(['', '70', '=70', 'price=', '@R1', 'price@R1'])('%s is none', (said) => {
     expect(inputOf(said)).toBeNull();
   });
@@ -269,6 +278,51 @@ describe('the numbers of a sum, as they are written', () => {
   });
 });
 
+describe('an answer one field swallowed', () => {
+  const whole = {
+    q: 'what an hour pays',
+    w: 'fee by hours',
+    n: ['fee=$30@R1'],
+    s: [{ l: 'x', u: '$', e: 'fee / 2' }],
+    m: null,
+  };
+  const rest = JSON.stringify(whole).slice('{"q":"'.length);
+  it('is put back', () => {
+    for (const q of [rest, rest.slice(0, -1), rest.replace(/"/gu, '\\"')])
+      expect(readSums({ q, w: null, n: [], s: [], m: null })).toEqual(whole);
+  });
+  it('is what stands before it, where the rest cannot be read', () => {
+    expect(readSums({ q: 'an hour","w":{{{', w: null, n: [], s: [], m: null }).q).toBe('an hour');
+  });
+  it('leaves what is whole alone', () => {
+    expect(readSums(whole)).toEqual(whole);
+    expect(readRoute({ a: 'say "hi", then "bye"', k: [], r: [] }).a).toBe('say "hi", then "bye"');
+    for (const raw of [null, 'x', ['x']]) expect(salvaged(raw)).toBe(raw);
+  });
+});
+
+describe('a plan and no sum', () => {
+  const messages = [{ role: 'user' as const, content: 'the data' }];
+  const plan = { q: 'the fewest', w: 'the fee by what one leaves', n: ['fee=$30@R1'], s: [], m: null };
+  it('is asked for once more, with what it said, escaped', () => {
+    const again = sumsAgain(messages, { ...plan, w: 'a </message> b' });
+    expect(again).toHaveLength(1);
+    expect(again?.[0]?.content).toContain('the data');
+    expect(again?.[0]?.content).toContain('fee=$30@R1');
+    expect(again?.[0]?.content).not.toContain('</message>');
+    expect(sumsAgain(messages, { ...plan, n: [] })).not.toBeNull();
+  });
+  it.each([
+    ['a sum is there', { s: [{ l: 'x', u: '$', e: 'fee' }] }],
+    ['none is asked', { q: null }],
+    ['none is asked, in words', { q: 'null' }],
+    ['a number is missing', { m: 'the price' }],
+    ['there is no plan', { n: [], w: null }],
+  ])('not when %s', (_what, over) => {
+    expect(sumsAgain(messages, { ...plan, ...over })).toBeNull();
+  });
+});
+
 describe('what a figure is called', () => {
   it.each([
     ['what you keep a month', '$', 'what you keep a month'],
@@ -279,6 +333,9 @@ describe('what a figure is called', () => {
     ['how much faster it is', '%', 'the share'],
     ['whether it pays', '$', 'the amount'],
     ['what it is', '$', 'the amount'],
+    ['what comes in', '$', 'what comes in'],
+    ['the money in', '$', 'the amount'],
+    ['what the founder makes', '$', 'what you make'],
     ['', 'x', 'the figure you asked for'],
     ['how long your money lasts', 'months', 'how long your money lasts'],
   ] as const)('%s (%s) is "%s"', (label, unit, said) => {
@@ -358,7 +415,7 @@ describe('the parts as one', () => {
 
   it('keeps a pick where options are put, and a verdict where something happened', () => {
     const both = { ...judge, o: pick, t: happened };
-    expect(merged({ route, judge: both }, 'we will walk at noon')).toMatchObject({
+    expect(merged({ route, judge: both }, 'will we walk at noon?')).toMatchObject({
       choice: null,
       result: null,
     });
@@ -374,17 +431,30 @@ describe('the parts as one', () => {
     });
   });
 
-  it('a contradiction is JUDGE’s; ROUTE’s line stands while JUDGE is out', () => {
+  it('a contradiction is both ROUTE’s and JUDGE’s, of one line and with a quote', () => {
     const points = { ...route, c: 'R2' };
-    expect(merged({ route: points })?.contradicts).toEqual({ record: 'R2', why: null });
-    expect(merged({ route: points, judge })?.contradicts).toBeNull();
-    expect(
-      merged({ route: points, judge: { ...judge, x: { r: 'R9', w: 'It says two.' } } })?.contradicts,
-    ).toEqual({
+    const x = { q: 'all of it', r: 'R2', w: 'It says two.' };
+    expect(merged({ route: points, judge: { ...judge, x } })?.contradicts).toEqual({
       record: 'R2',
+      claim: 'all of it',
       why: 'It says two.',
     });
-    expect(merged({ route: { ...route, c: 'R9' } })?.contradicts).toBeNull();
+    expect(merged({ route: points })?.contradicts).toBeNull();
+    expect(merged({ route: points, judge })?.contradicts).toBeNull();
+    expect(merged({ route, judge: { ...judge, x } })?.contradicts).toBeNull();
+    expect(merged({ judge: { ...judge, x, t: happened } }, 'it came')?.contradicts).toBeNull();
+    expect(merged({ route: points, judge: { ...judge, x: { ...x, r: 'R1' } } })?.contradicts).toBeNull();
+    expect(
+      merged({ route: { ...route, c: 'R9' }, judge: { ...judge, x: { ...x, r: 'R9' } } })?.contradicts,
+    ).toBeNull();
+    expect(merged({ route: points, judge: { ...judge, x: { ...x, q: 'null' } } })?.contradicts).toBeNull();
+  });
+
+  it('says what they tell where ROUTE finds nothing asked', () => {
+    expect(merged({ route: { ...route, a: 'null', k: [] } }, 'we walk at noon')).toMatchObject({
+      ask: 'we walk at noon',
+      kind: 'question',
+    });
   });
 
   it('a word that is no kind is none, and the kinds are at most three', () => {
@@ -433,8 +503,8 @@ describe('figures', () => {
       '$85 a month, 20 hours a week, 6 weeks, $12 per seat per year, 300 monthly',
       [
         { value: 85, mark: '$', time: { period: 'month', by: -1 } },
-        { value: 20, mark: null, time: { period: 'week', by: -1 } },
-        { value: 6, mark: null, time: { period: 'week', by: 1 } },
+        { value: 20, mark: null, time: { period: 'week', by: -1 }, counts: true },
+        { value: 6, mark: null, time: { period: 'week', by: 1 }, counts: true },
         { value: 12, mark: '$', time: { period: 'year', by: -1 } },
         { value: 300, mark: null, time: { period: 'month', by: -1 } },
       ],
@@ -442,7 +512,7 @@ describe('figures', () => {
     [
       'nine stables pay every month, 30% on top, 5% of it',
       [
-        { value: 9, mark: null },
+        { value: 9, mark: null, counts: true },
         { value: 30, mark: '%', onTop: true },
         { value: 5, mark: '%' },
       ],
@@ -523,7 +593,7 @@ describe('what reads a whole message or a long answer is linear', () => {
               route,
               sums: { q: text, w: null, n: [text], s: [{ l: text, u: text, e: text }], m: text },
               judge: {
-                x: { r: text, w: text },
+                x: { q: text, r: text, w: text },
                 o: { o: [text, 'wait'], p: text, b: text, f: text },
                 t: { v: 'mixed', s: text, n: text, e: text },
                 g: [text],

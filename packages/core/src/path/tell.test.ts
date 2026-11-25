@@ -283,6 +283,10 @@ describe('the record’s own voice, turned to them', () => {
   });
 
   it('by their own name', () => {
+    // A co-founder is somebody else.
+    expect(toYou('Ines and Odo are co-founders; the founder mends, Odo sells', 'Ines')).toBe(
+      'you and Odo are co-founders; you mend, Odo sells',
+    );
     expect(toYou('Ines is mending sails and has two lofts', 'Ines')).toBe(
       'you are mending sails and have two lofts',
     );

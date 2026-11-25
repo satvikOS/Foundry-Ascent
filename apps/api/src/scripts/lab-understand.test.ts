@@ -110,7 +110,7 @@ describe('the candidates', () => {
     expect(of(`${NOVA}@low`)).toBeGreaterThan(of(`${NOVA}@none`));
     expect(of('openai.gpt-oss-20b-1:0@low')).toBeGreaterThan(0);
     // A whole case on every candidate stays small beside the cap.
-    expect(ARMS.reduce((n, a) => n + worstUsd(a, p), 0)).toBeLessThan(0.2);
+    expect(ARMS.reduce((n, a) => n + worstUsd(a, p), 0)).toBeLessThan(0.3);
   });
 });
 
@@ -179,6 +179,29 @@ describe('a run', () => {
     expect(UNDERSTAND_PARTS.map((part) => row?.parts[part].late)).toEqual([false, true, true]);
     expect(row?.understanding?.sums).toHaveLength(1);
     expect(row?.inTime).toMatchObject({ kind: 'sum', sums: [], points: [] });
+  });
+
+  it('asks SUMS once more for a plan and no sum, and pays for both', async () => {
+    const plan = { q: 'what comes in', w: 'people by price', n: ['people=13@message'], s: [], m: null };
+    class Planning extends Priced {
+      override generateStructured<T>(
+        request: GenerateStructuredRequest<T>,
+      ): Promise<GenerateStructuredResult<T>> {
+        const made = super.generateStructured(request);
+        return request.schemaName === UNDERSTAND_SCHEMA_NAMES.sums
+          ? made.then((r) => ({ ...r, value: plan as T }))
+          : made;
+      }
+    }
+    const gateway = new Planning(0.001);
+    const run = await runBench(arms.slice(0, 1), CASES.slice(0, 1), {
+      budgetUsd: 1,
+      concurrency: 1,
+      gatewayFor: () => gateway,
+    });
+    expect(gateway.requests).toHaveLength(4);
+    expect(run.rows[0]?.parts.sums).toMatchObject({ again: true, costUsd: 0.002 });
+    expect(run.rows[0]?.parts.route).not.toHaveProperty('again');
   });
 
   it('a part a turn would not make is none, and costs nothing', async () => {

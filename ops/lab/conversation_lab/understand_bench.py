@@ -74,7 +74,8 @@ UNSEEN = frozenset({"heldoutb"})
 #: Kinds of reading that agree with what a scenario expects of the turn.
 KINDS: dict[str, frozenset[str]] = {
     "recall": frozenset({"recall"}),
-    "social": frozenset({"social"}),
+    # A turn the reply only acknowledges: thanks, small talk, a promise, a grumble. None of them is an ask.
+    "social": frozenset({"social", "update", "feelings", "pushback"}),
     "privacy": frozenset({"privacy"}),
     "report": frozenset({"update", "result"}),
 }
@@ -257,6 +258,19 @@ def _picks(pick: str, options: Sequence[str]) -> bool:
     return False
 
 
+def shown_facts(c: BenchCase) -> tuple[str, ...]:
+    """The facts a turn is to name that stand in the record the calls are shown: a reading points at record lines, so what
+    was only said in this conversation is the reply's to carry, not a line to name."""
+    lines = [r.content for r in c.scenario.record]
+    lines += [t.say for plan in c.scenario.sessions[: c.session - 1] for t in plan.turns]
+    told = "\n".join(lines)
+    return tuple(
+        f
+        for f in (c.expect.history or c.expect.remember)
+        if f in c.scenario.facts and fact_named(told, c.scenario.facts[f])
+    )
+
+
 def grade(c: BenchCase, u: Mapping[str, Any] | None, phrase_play: str | None) -> dict[str, bool]:
     """What a reading of the case got right, by measure; a measure that does not apply is absent. No reading gets nothing
     right, and is no false referral."""
@@ -279,11 +293,13 @@ def grade(c: BenchCase, u: Mapping[str, Any] | None, phrase_play: str | None) ->
         out["pick"] = isinstance(choice, Mapping) and _picks(str(choice.get("pick", "")), e.pick)
     if e.news:
         result = u.get("result")
-        named = f"{_said(u)}\n{_records(u)}"
+        # The verdict is said as a word of the reply ("It is weak so far").
+        verdict = str(result.get("verdict") or "").replace("_", " ") if isinstance(result, Mapping) else ""
+        named = f"{_said(u)}\n{_records(u)}\n{verdict}"
         out["news"] = isinstance(result, Mapping) and any(
             fact_named(named, c.scenario.facts[f]) for f in e.news
         )
-    wanted = e.history or e.remember
+    wanted = shown_facts(c)
     if wanted:
         told = f"{_records(u)}\n{_said(u)}"
         out["history"] = any(fact_named(told, c.scenario.facts[f]) for f in wanted)
@@ -324,6 +340,13 @@ def _codes(values: Iterable[Any]) -> dict[str, int]:
     return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:12])
 
 
+def _contradicted(u: Any) -> str | None:
+    """The key of the record line a reading says the message denies."""
+    found = u.get("contradicts") if isinstance(u, Mapping) else None
+    line = found.get("line") if isinstance(found, Mapping) else None
+    return str(line.get("key")) if isinstance(line, Mapping) else None
+
+
 def _measures(
     rows: Sequence[Mapping[str, Any]], by_id: Mapping[str, BenchCase], field: str
 ) -> dict[str, dict[str, int]]:
@@ -346,6 +369,7 @@ def part_result(rows: Sequence[Mapping[str, Any]], part: str) -> dict[str, Any]:
     return {
         "calls": len(calls),
         "skipped": len(all_calls) - len(calls),
+        "again": sum(1 for c in calls if c.get("again") is True),
         "ok": sum(1 for c in calls if c.get("code") == "ok"),
         "failures": _codes(c.get("code") for c in calls if c.get("code") != "ok"),
         "ms": {"p50": _percentile(ms, 50), "p95": _percentile(ms, 95)},
@@ -535,6 +559,8 @@ def run_understand(
                     "case": r["caseId"],
                     "code": r.get("code"),
                     "grades": grade(by_id[r["caseId"]], r.get("understanding"), r.get("phrasePlay")),
+                    # Read by eye: each is to be true, and few are.
+                    "contradicts": _contradicted(r.get("understanding")),
                 }
                 for r in rows
                 if r.get("caseId") in by_id
@@ -608,7 +634,7 @@ def tables(result: Mapping[str, Any]) -> list[str]:
         out.append(f"| {a['arm']} | {r['in_time']['read']}/{r['cases']} | {' | '.join(cells)} |")
     out += [
         "",
-        "| Candidate | part | calls (skipped) | p50 / p95 ms | after the cap | tokens in (cached) / out | accuracy | "
+        "| Candidate | part | calls (skipped, asked again) | p50 / p95 ms | after the cap | tokens in (cached) / out | accuracy | "
         "failed calls | USD |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
@@ -621,7 +647,7 @@ def tables(result: Mapping[str, Any]) -> list[str]:
                 f"{k} {_rate(r['measures'].get(k))}" for k in mine if r["measures"].get(k) is not None
             )
             out.append(
-                f"| {a['arm']} | {part} | {p['calls']} ({p['skipped']}) | {p['ms']['p50']} / {p['ms']['p95']} | "
+                f"| {a['arm']} | {part} | {p['calls']} ({p['skipped']}, {p['again']}) | {p['ms']['p50']} / {p['ms']['p95']} | "
                 f"{p['late']} | {t['input']} ({t['cached']}) / {t['output']} | {right or '-'} | "
                 f"{_said_codes(p['failures'])} | {p['cost_usd']} |"
             )

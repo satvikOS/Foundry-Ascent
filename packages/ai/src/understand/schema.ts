@@ -75,8 +75,8 @@ export const SumsReading = z.object({
 export type SumsReading = z.infer<typeof SumsReading>;
 
 export const JudgeReading = z.object({
-  /** What the record says instead of a claim of the message: its line, and in words. */
-  x: z.object({ r: z.string(), w: z.string() }).nullable().catch(null),
+  /** A claim the record denies: the claim word for word, the line, and both sides in words. */
+  x: z.object({ q: z.string(), r: z.string(), w: z.string() }).nullable().catch(null),
   /** The choice: options, pick, because, what would change it. */
   o: z
     .object({ o: z.array(z.string()), p: z.string(), b: z.string(), f: z.string().nullable().catch(null) })
@@ -117,6 +117,8 @@ export interface RawInput {
   readonly unit: '$' | '%' | 'count' | 'time';
   /** `message`, `history`, `standard` or a record key. */
   readonly from: string;
+  /** Written as two numbers of one line ("4 / 16"). */
+  readonly calc?: string;
 }
 
 export interface RawSum {
@@ -135,7 +137,8 @@ export interface RawUnderstanding {
   readonly kind: UnderstoodKind;
   readonly also: readonly UnderstoodKind[];
   readonly record: readonly string[];
-  readonly contradicts: { readonly record: string; readonly why: string | null } | null;
+  /** Where ROUTE and JUDGE name the same line; `claim`: JUDGE's quote of the message. */
+  readonly contradicts: { readonly record: string; readonly claim: string; readonly why: string } | null;
   readonly inputs: readonly RawInput[];
   readonly sums: readonly RawSum[];
   readonly missing: string | null;

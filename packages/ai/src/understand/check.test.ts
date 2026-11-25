@@ -448,7 +448,9 @@ describe('sums', () => {
       }).understanding?.sums[0]?.said;
     expect(of('a + b')).toBe('$0.30');
     expect(of('k * 52')).toBe('$52,000');
-    expect(of('m + a')).toBe('$1,234.60');
+    // A thousand or more is said in whole dollars.
+    expect(of('m + a')).toBe('$1,235');
+    expect(of('m / 4')).toBe('$308.63');
     expect(of('a / 1000')).toBeUndefined();
     expect(of('k - k')).toBe('$0');
   });
@@ -526,11 +528,15 @@ describe('claims', () => {
 
   it.each([
     ['the mentor', 'The mentor has no proof of that.'],
-    ['the founder', 'Ask what the founder sold in May.'],
+    ['the founder, with more of them', 'The founder sold it, but they have no record.'],
+    ['the founder, doing two things', 'The founder walks late and keeps the guide.'],
     ['the opening', 'The opening already says so.'],
     ['the user', 'Tell the user to wait.'],
   ])('speaks to them, never of them or of itself: %s', (_what, text) => {
     expect(points(text).report.textDrops).toEqual(['points:voice']);
+    expect(points('Ask what the founder charges on a walk.').understanding?.points).toEqual([
+      'Ask what you charge on a walk.',
+    ]);
     expect(points('Ask the users who stopped.').understanding?.points).toHaveLength(1);
   });
 
@@ -549,7 +555,7 @@ describe('claims', () => {
   it('first action, avoid, missing and the rest are held to the same', () => {
     const u = checkUnderstanding(
       raw({
-        first_action: 'Ring 25 hotels.',
+        first_action: 'Ring 37 hotels.',
         avoid: 'Saying 25 is a lot.',
         missing: 'what 25 lanterns cost',
         second_ask: 'whether 25 is enough',
@@ -559,7 +565,7 @@ describe('claims', () => {
           does_not_show: 'Whether 25 would.',
           settles: null,
         },
-        contradicts: { record: 'R2', why: 'It says 25 of them left.' },
+        contradicts: { record: 'R2', claim: 'most stayed', why: 'It says 25 of them left.' },
       }),
       context('13 people came'),
     );
@@ -583,13 +589,21 @@ describe('claims', () => {
 
   it('a contradiction names its line, first', () => {
     const u = checkUnderstanding(
-      raw({ record: ['R1'], contradicts: { record: 'R2', why: 'Twelve of 40 came back.' } }),
+      raw({
+        record: ['R1'],
+        contradicts: {
+          record: 'R2',
+          claim: 'almost everybody comes back',
+          why: 'You say almost everybody, and twelve of 40 came back.',
+        },
+      }),
       context('almost everybody comes back, right'),
     );
     expect(u?.contradicts?.line.key).toBe('R2');
     expect(u?.record.map((r) => r.key)).toEqual(['R2', 'R1']);
     expect(
-      checkUnderstanding(raw({ contradicts: { record: 'R8', why: 'No.' } }), context('x'))?.contradicts,
+      checkUnderstanding(raw({ contradicts: { record: 'R8', claim: 'x y', why: 'No.' } }), context('x y'))
+        ?.contradicts,
     ).toBeNull();
   });
 });
@@ -865,6 +879,315 @@ describe('what a sum is built of', () => {
   });
 });
 
+describe('a number of theirs, as it is written', () => {
+  const record = [
+    line('R1', 'A basket sells for 30 dollars; reed is 8, the handle 4 and the dye 3 dollars.'),
+    line('R2', 'Eighteen shops took it in spring at 20 dollars a month; five of them stopped by summer.'),
+  ];
+  const of = (n: Partial<RawUnderstanding>, message = 'what stays') => sumsOf(message, n, { record });
+
+  it('a bare number beside money is money, and a counted thing is none', () => {
+    const basket = [
+      input('price', 30, 'count', 'R1'),
+      input('reed', 8, 'count', 'R1'),
+      input('handle', 4, 'count', 'R1'),
+      input('dye', 3, 'count', 'R1'),
+    ];
+    expect(
+      of({ inputs: basket, sums: [sum('price - reed - handle - dye')] }).understanding?.sums[0],
+    ).toMatchObject({
+      said: '$15',
+      working: '$30 − $8 − $4 − $3',
+    });
+    expect(of({ inputs: [], sums: [sum('30 - 8 - 4 - 3')] }).understanding?.sums[0]?.said).toBe('$15');
+    expect(
+      of({ inputs: [], sums: [sum('40 * 1.5')] }, '40 hours at 1.5 each').understanding?.sums[0]?.said,
+    ).toBe('$60');
+    // Shops are no dollars.
+    const { report } = of({
+      inputs: [input('price', 30, '$', 'R1'), input('shops', 18, 'count', 'R2')],
+      sums: [sum('price - shops')],
+    });
+    expect(report.sumDrops).toEqual(['units']);
+  });
+
+  it('one worked out of two numbers of one line keeps them in the working', () => {
+    expect(
+      of({ inputs: [input('left', 13, 'count', 'R2')], sums: [sum('left * 20')] }).understanding?.sums[0],
+    ).toMatchObject({ said: '$260', working: '(18 − 5) × $20' });
+    expect(of({ inputs: [], sums: [sum('13 * 20')] }).understanding?.sums[0]?.working).toBe('(18 − 5) × $20');
+    expect(
+      of({
+        inputs: [
+          { ...input('lost', 5 / 18, 'count', 'R2'), calc: '5/18' },
+          { ...input('now', 13, 'count', 'R2'), calc: '18 - 5' },
+        ],
+        sums: [
+          sum('now * (1 - lost)', { unit: 'units', noun: 'shops', round: 'none', label: 'the shops left' }),
+        ],
+      }).understanding?.sums[0],
+    ).toMatchObject({ said: 'about 9 shops', working: '(18 − 5) × (1 − 5 ÷ 18)' });
+  });
+
+  it('found nowhere, or worked out of two lines, it is nobody’s', () => {
+    for (const value of [14, 31, 0.4])
+      expect(
+        of({ inputs: [input('n', value, 'count', 'R2')], sums: [sum('n * 20')] }).report.sumDrops,
+        String(value),
+      ).toEqual(['input']);
+    // 30 − 18 is of two lines.
+    expect(
+      of({ inputs: [{ ...input('n', 12, 'count', 'R1'), calc: '30 - 18' }], sums: [sum('n * 20')] }).report
+        .sumDrops,
+    ).toEqual(['input']);
+    // Two ways to it are none.
+    expect(
+      sumsOf('we had 9, 5, 7 and 3', { inputs: [input('n', 2, 'count', 'message')], sums: [sum('n * 24')] })
+        .report.sumDrops,
+    ).toEqual(['input']);
+  });
+
+  it('things that are to be reached are counted, whatever the mark', () => {
+    const at = (label: string) =>
+      of({
+        inputs: [input('price', 30, '$', 'R1'), input('reed', 8, '$', 'R1')],
+        sums: [sum('price / reed', { unit: 'x', label })],
+      }).understanding?.sums[0]?.said;
+    expect(at('baskets to pay for the reed')).toBe('4 baskets');
+    expect(at('the fewest baskets you need')).toBe('4 baskets');
+    expect(at('the price against the reed')).toBe('3.8x');
+  });
+
+  it('what is said of the founder is said to them', () => {
+    expect(
+      of({
+        inputs: [input('price', 30, '$', 'R1'), input('reed', 8, '$', 'R1')],
+        sums: [sum('price - reed', { label: "what the founder keeps of the founder's price" })],
+      }).understanding?.sums[0]?.label,
+    ).toBe('what you keep of your price');
+  });
+});
+
+describe('when the record denies what they say', () => {
+  const rec = [
+    line('R1', 'You charge $24 for a lantern walk.'),
+    line('R2', 'Twelve of 40 visitors came back in May; five of them paid.', 'evidence'),
+    line('R3', 'You are doing this for the first time.', 'founder'),
+    line('R4', 'You decided on 3 walks a week.', 'decision'),
+    line('R5', 'The pier had 80 lamps in March and 62 in April.', 'milestone'),
+    line('R6', 'You told your mentor you will ask 10 hotels.', 'hypothesis'),
+  ];
+  const of = (
+    message: string,
+    claim: string,
+    record: string,
+    why: string,
+    over: Partial<RawUnderstanding> = {},
+  ) =>
+    readUnderstanding(
+      raw({ contradicts: { record, claim, why }, ...over }),
+      context(message, { record: rec }),
+    );
+
+  it.each([
+    [
+      'all of them',
+      'everyone comes back so do we need ads',
+      'everyone comes back',
+      'R2',
+      'You say everyone comes back, and 12 of 40 did.',
+    ],
+    [
+      'growth',
+      'the lamps keep growing, fair to say?',
+      'the lamps keep growing',
+      'R5',
+      'You say growing, and it went from 80 to 62.',
+    ],
+    [
+      'proof',
+      'that is proven demand, right?',
+      'that is proven demand',
+      'R2',
+      'You say proven, and 5 of 40 paid.',
+    ],
+    [
+      'another number for the same thing',
+      'with 25 visitors who came back, is that enough?',
+      '25 visitors who came back',
+      'R2',
+      'You say 25 visitors came back, and 12 of 40 did.',
+    ],
+  ])('%s', (_what, message, claim, record, why) => {
+    const { understanding: u, report } = of(message, claim, record, why);
+    expect(report.textDrops).toEqual([]);
+    expect(u?.contradicts?.line.key).toBe(record);
+  });
+
+  it.each([
+    [
+      'who they are',
+      'everyone loves it',
+      'everyone loves it',
+      'R3',
+      'You say everyone, and it is your first time.',
+      'line',
+      {},
+    ],
+    [
+      'what they were to do',
+      'all of them said no',
+      'all of them',
+      'R6',
+      'You say all, and you ask 10 hotels.',
+      'line',
+      {},
+    ],
+    [
+      'a claim they did not make',
+      'is that enough?',
+      'everyone loves it',
+      'R2',
+      'You say everyone, and 12 of 40 did.',
+      'quote',
+      {},
+    ],
+    ['a word', 'sure, is that enough?', 'sure', 'R2', 'You say sure, and 12 of 40 did.', 'quote', {}],
+    [
+      'the line said again',
+      'what does it mean that 12 came back',
+      '12 came back',
+      'R2',
+      'Twelve of 40 visitors came back.',
+      'claim',
+      {},
+    ],
+    [
+      'nothing rated',
+      'we walk at noon, is that fine',
+      'we walk at noon',
+      'R2',
+      'You say noon, and 12 of 40 came back.',
+      'claim',
+      {},
+    ],
+    [
+      'a line with no shortfall',
+      'everyone pays, is it enough',
+      'everyone pays',
+      'R1',
+      'You say everyone, and you charge $24.',
+      'claim',
+      {},
+    ],
+    [
+      'a new figure',
+      'the 25 visitors price is now $30',
+      'price is now $30',
+      'R1',
+      'You say $30, and you charge $24.',
+      'claim',
+      {},
+    ],
+    [
+      'a plan moved on from',
+      'never mind the 3 walks, we switched to 2 walks always',
+      'switched to 2 walks always',
+      'R4',
+      'You say 2 walks, and you decided 3.',
+      'moved',
+      {},
+    ],
+    [
+      'a report',
+      'everyone came back today',
+      'everyone came back',
+      'R2',
+      'You say everyone, and 12 of 40 did.',
+      'kind',
+      { kind: 'update' },
+    ],
+    [
+      'a recall',
+      'tell me how everyone came back?',
+      'everyone came back',
+      'R2',
+      'You say everyone, and 12 of 40 did.',
+      'kind',
+      { kind: 'recall' },
+    ],
+    [
+      'one side',
+      'everyone comes back, right?',
+      'everyone comes back',
+      'R2',
+      'Twelve of 40 visitors came back in May; five of them paid.',
+      'sides',
+      {},
+    ],
+    [
+      'one side, theirs',
+      'everyone comes back, right?',
+      'everyone comes back',
+      'R2',
+      'You say everyone comes back.',
+      'sides',
+      {},
+    ],
+  ] as const)('%s denies nothing', (_what, message, claim, record, why, code, over) => {
+    const { understanding: u, report } = of(message, claim, record, why, over);
+    expect(u?.contradicts).toBeNull();
+    expect(report.textDrops).toEqual([`contradicts:${code}`]);
+  });
+});
+
+describe('the size of something to do', () => {
+  const of = (field: 'settles' | 'first_action' | 'points', text: string) => {
+    const { understanding: u } = readUnderstanding(
+      raw({
+        kind: 'result',
+        result: {
+          verdict: 'mixed',
+          shows: '13 people came.',
+          does_not_show: null,
+          settles: field === 'settles' ? text : null,
+        },
+        first_action: field === 'first_action' ? text : null,
+        points: field === 'points' ? [text] : [],
+      }),
+      context('13 people came to the pier'),
+    );
+    return field === 'settles'
+      ? u?.result?.settles
+      : field === 'first_action'
+        ? u?.firstAction
+        : u?.points[0];
+  };
+  it.each([
+    'Ask 10 of them to pay and count who does.',
+    'Run it for 2 weeks and count who comes back.',
+    'Offer 20 strangers a walk and see if 5 pay.',
+    'At least 8 of 10 pay.',
+    'If half of 20 visitors pay.',
+  ])('%s', (text) => {
+    expect(of('settles', text)).toBe(text);
+  });
+  it.each([
+    ['a fact', 'The 25 people who paid in May.'],
+    ['what did happen', '8 of 10 visitors paid.'],
+    ['an amount', 'Ask them to pay $33.'],
+    ['a share', 'Ask until 70% of them pay.'],
+    ['too many', 'Ask 250 people to pay.'],
+    ['no size of a test', 'Ask 37 people to pay.'],
+  ])('never %s', (_what, text) => {
+    expect(of('settles', text)).toBeNull();
+  });
+  it('in what is to be done alone', () => {
+    expect(of('first_action', 'Ask 10 of them to pay.')).not.toBeNull();
+    expect(of('points', 'Ask 10 of them to pay.')).toBeUndefined();
+  });
+});
+
 describe('what turns a pick or settles a result', () => {
   it.each([
     ['8 of the 40 come back', true],
@@ -924,13 +1247,15 @@ describe('every worked example', () => {
     };
   };
 
+  /** ROUTE's answer to the same message, where there is one: a contradiction takes both. */
+  const routeOf = (message: string) =>
+    UNDERSTAND_EXAMPLES.route.find((e) => e.message === message)?.answer ?? null;
   it('passes its own checks, whole', () => {
     for (const e of UNDERSTAND_EXAMPLES.route) {
       const { understanding: u, report } = readParts({ route: e.answer }, shown(e));
       expect(report.textDrops, e.message).toEqual([]);
       expect([u?.kind, ...(u?.also ?? [])]).toEqual(e.answer.k);
       expect([u?.playId, u?.stepPlayId, u?.referral]).toEqual([e.answer.p, e.answer.s, e.answer.f]);
-      expect(u?.contradicts?.line.key ?? null).toBe(e.answer.c);
     }
     for (const e of UNDERSTAND_EXAMPLES.sums) {
       const { understanding: u, report } = readParts({ sums: e.answer }, shown(e));
@@ -939,7 +1264,10 @@ describe('every worked example', () => {
       expect(u?.sums.length ?? 0).toBe(e.answer.s.length);
     }
     for (const e of UNDERSTAND_EXAMPLES.judge) {
-      const { understanding: u, report } = readParts({ judge: e.answer }, shown(e));
+      const { understanding: u, report } = readParts(
+        { judge: e.answer, route: routeOf(e.message) },
+        shown(e),
+      );
       expect(report.textDrops, e.message).toEqual([]);
       expect(u?.points).toEqual(e.answer.g);
       expect(u?.choice === null).toBe(e.answer.o === null);

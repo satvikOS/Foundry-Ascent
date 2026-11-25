@@ -26,19 +26,19 @@ const DATA =
 const ROUTE_RULES = `You sort one message a student founder sent to their venture mentor. You do not answer it. Read what they mean: fast typing, slang, second languages, badly transcribed calls, messy notes. Several things may be told and asked at once, and a feeling may stand beside facts: name each.
 
 Fields; null or [] where nothing applies:
-a: what they want to know or get, at most 16 words. b: a second thing this message asks.
+a: what they want to know or get, at most 16 words; when they ask nothing, what they tell. Never null. b: a second thing this message asks.
 k: kinds, the main one first, then up to 2 more that hold:
- privacy: what another founder, team or student does, wrote or charges, or who sees theirs
+ privacy: what another founder, team or student does, wrote or charges, again or otherwise asked, or who sees theirs
  integrity: to make up, hide or mislead
- result: something happened and they bring it (sales, answers, an offer, a refusal, a letter, a test, someone leaving), whatever they ask of it
- update: they tell what they did, will do, decided or changed, or put a record right
+ result: something happened and they bring it (sales, answers, an offer, a refusal, a rule, a letter, a test, someone leaving), whatever they ask of it
+ update: they tell what they have, did, will do, decided or changed, or put a record right
  choice: to pick between options. sum: a figure must be worked out
- recall: what is on record or was said before, also as a recap for someone
- next: what to do, where to start. pushback: they doubt or reject what they were told
- feelings. draft: a text to write. social: greeting, thanks. question: any other how, what, why, whether
- News with a question is result, then the question's kind. News that asks for a figure: result and sum.
+ recall: what their own idea, price or numbers are, what was said or decided, the story so far, a recap for someone
+ next: they ask what to do or where to start. pushback: they doubt or reject what they were told, or you
+ feelings. draft: a text to write. social: greeting, thanks, small talk. question: any other how, what, why, whether
+ A message that asks nothing is result or update, never next or choice. News with a question: result, then the question's kind. News that asks for a figure: result and sum.
 r: up to 3 record keys the answer needs, most telling first.
-c: the record key that denies a claim of theirs (growth, proof, agreement, certainty), or whose decision they go against. A new figure in place of an old one denies nothing: null.
+c: nearly always null. The key of a record line whose counts deny what they claim here: everyone, always, growing, proven, or another number for the same thing. A line said again, a new figure or plan, a step done, a question: null.
 f: who must rule on what THIS message asks: ip (who owns an invention, patents), legal (sign a contract or letter, liability, company form, trademark), valuation (what a stake or company is worth, an investor's offer), equity (splitting shares), immigration (visa, work status), regulatory (health claims, devices, permits, food), irb (research or trials on people), grants (a grant's rules), wellbeing (they are not all right). A question about customers, numbers, words or what to build needs nobody, even if such a thing came up before: null.
 p: id of the play that answers the ask; null when none plainly does. A shared word is not enough.
 s: id of the play whose step they would do next for THIS ask: what the news calls for, what acts on the figure or the pick. Null when nothing new.
@@ -49,30 +49,34 @@ ${DATA}`;
 const SUMS_RULES = `You find the figure a student founder's message asks for and write how to work it out. Code does the arithmetic and refuses any number that is not in the message, the conversation or the record.
 
 Fields; null or [] where nothing applies:
-q: the figure THIS message asks for, in a few words: what is left, whether they make money, how many, how long, what share, how much better or worse, what each hour pays, what an offer says the whole is worth. A message that only brings news, chooses, or asks for advice, a recap, a text or about another team asks for none: null, and n and s are []. A figure asked earlier is not asked now.
-w: how it is worked out, at most 22 words: what comes in, EVERY cost and share that comes off, and the periods (a week, a month).
-n: the numbers it needs, each once: name=value@where. Value as it stands there: 4, $70, 12%. where: message, history or the record key. Only numbers written there, never one you worked out, and none you do not use.
-s: one sum, or one for each figure asked. l: what the figure is, a phrase that can stand before "is" ("what you keep a month", "the drop in returns"), with the period its numbers have; never "how much". u: $, %, x, months, weeks, hours, or what is counted ("boats"). e: names, + - * / ( ), 100, ceil(...) for the fewest that reach something.
-m: when a number it needs is nowhere, that number in words ("what one boat costs you"), and no sum that needs it.
+q: the figure THIS message asks for, in a few words: what is left, whether they make money, how many, how often, how long, what share, how much better, what to charge, what an hour pays, what an offer says the whole is worth. A message that only brings news, chooses, or asks for advice, a recap, a text, how shares are split or about another team asks for none: null, and n and s are []. A figure asked earlier is not asked now; a follow-up ("and at 50?") is.
+w: how it is worked out, at most 22 words: what comes in, EVERY cost and share that comes off, the periods.
+n: the numbers it needs, each once: name=value@where. Value with its sign: 4, $70, 12%; two numbers of one line may be worked on: 9 - 2. where: message, history or the record key. Only numbers written there, all of them used.
+s: never [] when q is there and m is null. One sum, or one for each figure asked. l: what the figure is, to "you", a phrase that can stand before "is" ("what you keep a month"), with its period; never "how much". u: $, %, months, weeks, hours, what is counted ("boats"), x only for how many times as much. e: names of n, numbers of theirs, + - * / ( ), 100, ceil(...).
+m: the one number that is nowhere, in words ("what one boat costs you"), and then no sum; not the figure they ask for.
 
-How:
-- Kept, earned, left, worth it: what comes in minus every cost named anywhere that applies: each sold one's costs times how many, what is paid once, shares and fees. Do not stop at what comes in.
-- To break even, to cover or to earn back an amount: ceil(amount / (price - every cost of one)). Never divide by the price when one has a cost.
-- Better, worse, growth, drop "as a number": the change in %, (new - old) / old; for a fall that is good, (old - new) / old.
-- A share: part / whole, u %. A share taken out of a whole: whole * (1 - share / 100). A share put on top of a base, when the whole is known: base = whole / (1 + share / 100).
-- A part sold for money: the whole is money / (share / 100).
-- Pay per hour: money of a period / hours of the same period. Write weeks and months as they stand: code turns one into the other.
-- How long money lasts: what there is / what goes a month, u months.
+Shapes:
+- one sale: price - every cost of one. Each cost comes off the PRICE, never off another cost.
+- what is kept: sold * (price - costs of one) - what is paid once
+- fewest to break even, cover, earn back: ceil(fixed / (price - costs of one)); to earn a target: ceil((fixed + target) / (price - costs of one))
+- price that keeps p%: cost / (1 - p / 100). From a rate: rate * part of it
+- fee after a discount: price * (1 - off / 100) * (1 - fee / 100)
+- p% on top, the whole known: whole / (1 + p / 100). p% out of it: whole * (1 - p / 100)
+- share, how often: part / whole, u %. Change: (new - old) / old; a good fall: (old - new) / old
+- the same share lost again: left * (1 - lost / all)
+- how long money lasts: cash / burn, u months. An hour: money / hours
+- worth that p% for money says: money / (p / 100)
+Write weeks and months as they stand: code turns one into the other.
 
 ${DATA}`;
 
 const JUDGE_RULES = `You prepare what an honest, experienced mentor rests an answer on, from a student founder's message and record. Write to the founder: "you". Never "the founder", "the mentor", "the user". Fast typing, slang, second languages, messy notes: read each person and fact of them.
 
 Fields; null or [] where nothing applies:
-x: first, hold each claim of the message against the record: growth, proof, agreement, a number, a plan. Where a line denies it, or they go against a decision, r is its key and w one sentence of what it says instead, with its figures. A new figure in place of an old one denies nothing: null.
+x: nearly always null. Only where a claim in THIS message cannot be true beside the counts of a record line: everyone, nobody, always, growing, proven, the only reason, or another number for the same thing. q the claim, copied word for word; r the line's key; w both sides in one sentence ("You say every hall calls back, and the record has 3 of 9."). A line said again, a new figure or plan, a question, a step done: null.
 o: only when they choose between options named in the message or the talk: o the options as they said them, p the pick (one of them, "both" or "neither"), b why, from their own facts, f what would turn it: something they can count or see ("8 of 12 pay before June"). Prefer what brings money or use from strangers sooner, costs fewer hours and can be undone. Asking to pay beats free until some number. Null for shares, ownership, patents, visas, worth, health claims, or whether to sign, agree or accept.
-t: when something happened, or they doubt what they were told. v: strong, promising, mixed, weak, too_early, bad. s: what it shows, with their figures and names. n: what it does not show; for a surprise, the other explanation. e: what settles it, countable: who does what, how many. Kind words, likes, friends, sign-ups and "sounds good" are weak; strangers who pay, come back or bring others are strong; a few of each is too_early; a vague yes is a no until a date. When they push back: s the fact on record, n what nobody knows yet, e the test.
-g: 2 or 3 points the answer makes, each at most 22 words; the first answers the ask. Their facts, what follows, what is not known. Facts before feelings, but name a feeling. No praise, no common advice, no arithmetic.
+t: what THIS message brings, never an older result; or when they doubt what they were told. v: strong, promising, mixed, weak, too_early, bad. s: what it shows, with their figures and names. n: what it does not show; for a surprise, the other explanation. e: what settles it: a thing to do that can be counted ("Ask 10 of them to pay and count who does."). Kind words, likes, friends and family, sign-ups and "sounds good" are weak; strangers who pay, come back or bring others are strong; a few of each is too_early; a vague yes is a no until a date. When they push back: s the fact on record, n what nobody knows yet, e the test.
+g: 2 or 3 points the answer makes, each at most 22 words; the first answers the ask; never [] when they ask. Their facts, what follows, what is not known. Facts before feelings, but name a feeling. No praise, no common advice, no arithmetic.
 d: one thing to do first: who, what, where, from their own facts, at most 20 words. Null for greetings or when a person decides first.
 z: what a careless mentor would say here, or null.
 
@@ -200,7 +204,11 @@ export const UNDERSTAND_EXAMPLES: {
       message:
         'ok so basically everyone loves it, beekeepers r obsessed. shld i order 50 more scales now or wait till the fair',
       answer: {
-        x: { r: 'R2', w: 'Nine were asked for the deposit and one paid it.' },
+        x: {
+          q: 'everyone loves it',
+          r: 'R2',
+          w: 'You say everyone loves it, and one of nine paid the deposit.',
+        },
         o: {
           o: ['order 50 more scales now', 'wait till the fair'],
           p: 'wait till the fair',
@@ -429,4 +437,23 @@ export function sumsDue(context: UnderstandContext): boolean {
       ...context.record.map((r) => r.text),
     ].some(holdsFigure)
   );
+}
+
+/**
+ * SUMS once more, where it named the figure and its numbers or its plan and wrote no sum; null: it wrote one, or says what is
+ * missing, or that none is asked. Asked once, and only then.
+ */
+export function sumsAgain(messages: readonly ChatMessage[], reading: SumsReading): ChatMessage[] | null {
+  const said = (value: string | null): boolean => value !== null && !/^\s*(?:null|none)?\s*$/iu.test(value);
+  if (!said(reading.q) || reading.s.length > 0 || said(reading.m)) return null;
+  if (reading.n.length === 0 && !said(reading.w)) return null;
+  const last = messages.at(-1);
+  if (last === undefined) return null;
+  return [
+    ...messages.slice(0, -1),
+    {
+      ...last,
+      content: `${last.content}\n\nYou answered ${escapeData(truncate(JSON.stringify({ q: reading.q, w: reading.w, n: reading.n }), 700))} and no sum. Answer again and write the sum in s.`,
+    },
+  ];
 }

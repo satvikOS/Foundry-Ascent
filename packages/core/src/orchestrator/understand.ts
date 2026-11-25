@@ -8,12 +8,17 @@ import {
   UNDERSTAND_SCHEMA_NAMES,
   exchangesInView,
   isModelGatewayError,
+  readJudge,
   readParts,
+  readRoute,
+  readSums,
   routeSystemPrompt,
+  sumsAgain,
   sumsDue,
   understandCacheHint,
   understandMessages,
   type ChatMessage,
+  type GenerateStructuredResult,
   type HistoryTurn,
   type PromptCacheHint,
   type PromptContinuity,
@@ -185,6 +190,9 @@ interface PartOutcome {
 }
 const SKIPPED: PartOutcome = { code: 'skipped', ms: null, modelId: null, fallbackUsed: false };
 
+/** Time SUMS needs to be asked once more. */
+const SUMS_AGAIN_MS = 450;
+
 /** Kinds of message whose reply opens on what JUDGE says: it is waited for as long as there is. */
 const JUDGED: ReadonlySet<string> = new Set(['choice', 'result', 'update', 'pushback']);
 export const judgeLeads = (route: RouteReading | null | undefined): boolean =>
@@ -210,6 +218,7 @@ export async function understandTurn(
   const fields = { requestId: meter.ctx.requestId, purpose: meter.purpose, channel: input.channel };
   const took = (): number => Math.round(performance.now() - started);
   const cancel = new AbortController();
+  const over = (): boolean => cancel.signal.aborted;
   const cut = new Promise<'late'>((resolve) => {
     const timer = setTimeout(() => {
       resolve('late');
@@ -228,53 +237,69 @@ export async function understandTurn(
     const readings: { -readonly [P in keyof UnderstandReadings]: UnderstandReadings[P] } = {};
     const outcomes: Record<UnderstandPart, PartOutcome | null> = { route: null, sums: null, judge: null };
     const recorded: Promise<void>[] = [];
+    let askedAgain = false;
     /** One part: its reading is there when it resolves. Never rejects. */
     const ask = async (name: UnderstandPart, prepared: PreparedPart | null): Promise<void> => {
       if (prepared === null) {
         outcomes[name] = SKIPPED;
         return;
       }
-      const request = {
-        purpose: meter.purpose,
-        requestId: meter.ctx.requestId,
-        route: 'understand' as const,
-        system: prepared.system,
-        messages: prepared.messages,
-        promptCache: prepared.promptCache,
-        schemaName: UNDERSTAND_SCHEMA_NAMES[name],
-        zodSchema: UNDERSTAND_SCHEMAS[name],
-        maxOutputTokens: UNDERSTAND_MAX_OUTPUT_TOKENS[name],
-        timeoutMs: budget,
-        // Its budget is short: what a cut-off attempt read is spent all the same.
-        estimateCut: true,
-        signal: options.signal ? AbortSignal.any([options.signal, cancel.signal]) : cancel.signal,
+      const call = async (
+        messages: ChatMessage[],
+        left: number,
+      ): Promise<GenerateStructuredResult<unknown>> => {
+        const request = {
+          purpose: meter.purpose,
+          requestId: meter.ctx.requestId,
+          route: 'understand' as const,
+          system: prepared.system,
+          messages,
+          promptCache: prepared.promptCache,
+          schemaName: UNDERSTAND_SCHEMA_NAMES[name],
+          zodSchema: UNDERSTAND_SCHEMAS[name],
+          maxOutputTokens: UNDERSTAND_MAX_OUTPUT_TOKENS[name],
+          timeoutMs: left,
+          // Its budget is short: what a cut-off attempt read is spent all the same.
+          estimateCut: true,
+          signal: options.signal ? AbortSignal.any([options.signal, cancel.signal]) : cancel.signal,
+        };
+        // A gateway that throws at once fails its part, like one that rejects.
+        const made = Promise.resolve().then(() => gateway.generateStructured<unknown>(request));
+        const record = made.then(
+          (r) => kit.recordUsage({ ...meter, attempts: r.attempts }),
+          (err: unknown) =>
+            kit.recordUsage({ ...meter, attempts: isModelGatewayError(err) ? err.attempts : [] }),
+        );
+        recorded.push(record);
+        // A provider that does not hear its cancellation holds neither the turn nor the host's after-response work.
+        const settled = Promise.race([record, cut.then(() => pause(CANCEL_GRACE_MS))]);
+        options.tails?.push(kit.later(settled));
+        return made;
       };
-      // A gateway that throws at once fails its part, like one that rejects.
-      const call = Promise.resolve().then(() => gateway.generateStructured<unknown>(request));
-      const record = call.then(
-        (r) => kit.recordUsage({ ...meter, attempts: r.attempts }),
-        (err: unknown) =>
-          kit.recordUsage({ ...meter, attempts: isModelGatewayError(err) ? err.attempts : [] }),
-      );
-      recorded.push(record);
-      // A provider that does not hear its cancellation holds neither the turn nor the host's after-response work.
-      const settled = Promise.race([record, cut.then(() => pause(CANCEL_GRACE_MS))]);
-      options.tails?.push(kit.later(settled));
-      try {
-        const result = await call;
-        if (cancel.signal.aborted) return;
-        if (name === 'route') readings.route = UNDERSTAND_SCHEMAS.route.parse(result.value);
-        else if (name === 'sums') readings.sums = UNDERSTAND_SCHEMAS.sums.parse(result.value);
-        else readings.judge = UNDERSTAND_SCHEMAS.judge.parse(result.value);
+      const held = (result: GenerateStructuredResult<unknown>): void => {
+        if (name === 'route') readings.route = readRoute(result.value);
+        else if (name === 'sums') readings.sums = readSums(result.value);
+        else readings.judge = readJudge(result.value);
         outcomes[name] = {
           code: 'ok',
           ms: took(),
           modelId: result.modelId,
           fallbackUsed: result.fallbackUsed,
         };
+      };
+      try {
+        const result = await call(prepared.messages, budget);
+        if (over()) return;
+        held(result);
+        // A plan and no sum: asked for once more, while there is time.
+        const again = name === 'sums' && readings.sums ? sumsAgain(prepared.messages, readings.sums) : null;
+        if (again === null || budget - took() < SUMS_AGAIN_MS) return;
+        askedAgain = true;
+        const second = await call(again, budget - took()).catch(() => null);
+        if (second !== null && !over()) held(second);
       } catch (err) {
         // Cut off by its own deadline, which is the turn's: late, as by the turn.
-        if (cancel.signal.aborted || options.signal?.aborted === true || took() >= budget) return;
+        if (over() || options.signal?.aborted === true || took() >= budget) return;
         outcomes[name] = {
           code: isModelGatewayError(err) ? err.code : err instanceof Error ? err.name : 'unknown',
           ms: took(),
@@ -314,6 +339,8 @@ export async function understandTurn(
       sumsMs: ended('sums').ms,
       judgeCode: ended('judge').code,
       judgeMs: ended('judge').ms,
+      // SUMS wrote a plan and no sum, and was asked once more.
+      sumsAgain: askedAgain,
     };
     if (understanding === null) {
       logger.warn('turn.understand', logged);

@@ -18,6 +18,8 @@ export interface Figure {
   readonly time?: { readonly period: Period; readonly by: 1 | -1 };
   /** A share put on top of a base ("8% on top"): it never comes off the whole. */
   readonly onTop?: true;
+  /** A thing is counted ("30 kits"): never an amount of money. */
+  readonly counts?: true;
 }
 
 const MONTHS =
@@ -91,6 +93,19 @@ const PER =
 const LASTS = /^\s?(day|week|month|year)s\b/iu;
 const ON_TOP = /^\s?(?:[\p{L}'’-]{1,16} ){0,3}on top\b/iu;
 const AFTER = 48;
+/** A word right after a figure that counts nothing: the figure may be money, as the words around it leave it open. */
+const NO_THING = new Set(
+  (
+    'and the for but now how per each every from with plus minus less more off out into apiece total all altogether today then when ' +
+    'what why who which that this they you she him her his its our your their was were are has had have not too also only just extra flat ' +
+    'daily weekly monthly yearly last next after before until till because since while than some any one other others make makes'
+  ).split(' '),
+);
+const NEXT_WORD = /^[ -]?(\p{L}{3,20})/u;
+const countsSomething = (after: string): boolean => {
+  const word = NEXT_WORD.exec(after)?.[1]?.toLowerCase();
+  return word !== undefined && !NO_THING.has(word);
+};
 
 const periodOf = (word: string): Period => {
   const w = word.toLowerCase();
@@ -134,6 +149,7 @@ export function figuresIn(text: string): Figure[] {
     const more = {
       ...(time === undefined ? {} : { time }),
       ...(mark === '%' && ON_TOP.test(after) ? { onTop: true as const } : {}),
+      ...(mark === null && m[7] === undefined && countsSomething(after) ? { counts: true as const } : {}),
     };
     if (m[7] !== undefined && mark === null) out.push({ value: value / 100, mark: '$', ...more });
     out.push({ value, mark, ...more });

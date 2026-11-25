@@ -6,6 +6,35 @@ import type { SumUnit } from './types.js';
  * the sign it came out with. A label that cannot is a plain one, so a right figure is never lost for its words.
  */
 
+const DOES: Readonly<Record<string, string>> = {
+  has: 'have',
+  is: 'are',
+  was: 'were',
+  does: 'do',
+  goes: 'go',
+};
+const verbOfYou = (verb: string): string => {
+  const low = verb.toLowerCase();
+  if (DOES[low] !== undefined) return DOES[low];
+  if (/[^aeiou]ies$/u.test(low)) return `${low.slice(0, -3)}y`;
+  if (/(?:ss|sh|ch|x|z)es$/u.test(low)) return low.slice(0, -2);
+  return /[^s]s$/u.test(low) && low.length > 3 ? low.slice(0, -1) : verb;
+};
+
+/** What is said of the founder, said to them: "what the founder keeps" is "what you keep". */
+export function toThem(text: string): string {
+  return text
+    .replace(/\bthe (?:student )?founder['’]s\b/giu, 'your')
+    .replace(
+      /\bthe (?:student )?founder( (?:also|only|still|now|already|never|really))?(?: ([a-z]+))?/giu,
+      (_w, adverb: string | undefined, verb: string | undefined) =>
+        ['you', adverb?.trim(), verb === undefined ? undefined : verbOfYou(verb)]
+          .filter((x) => x !== undefined)
+          .join(' '),
+    )
+    .replace(/^y(?=ou)/u, (y) => (/^[A-Z]/u.test(text) ? y.toUpperCase() : y));
+}
+
 /** A label of its unit, when the model's is no phrase that stands before "is". */
 const PLAIN: Readonly<Partial<Record<SumUnit, string>>> = {
   $: 'the amount',
@@ -20,14 +49,15 @@ const PLAIN: Readonly<Partial<Record<SumUnit, string>>> = {
 };
 const plainLabel = (unit: SumUnit): string => PLAIN[unit] ?? 'the figure you asked for';
 
-const ENDS_OPEN =
-  /\b(?:is|are|was|were|be|of|in|for|on|at|to|from|with|by|and|or|the|a|an|your|than|if|when|until|per)$/iu;
+const ENDS_OPEN = /\b(?:is|are|was|were|be|of|and|or|the|a|an|your|than|if|when|until|per)$/iu;
+/** "what comes in" is whole, "the money in" is not. */
+const ENDS_ON_PREPOSITION = /\b(?:in|for|on|at|to|from|with|by)$/iu;
 const QUESTION =
   /^(?:whether|if|why|who|whom|does|do|did|is|are|am|was|were|can|could|will|would|should)\b/iu;
 
 /** "how many loans you need" is "the number of loans you need"; what still asks or stops short is the unit's plain label. */
 export function phraseOf(label: string, unit: SumUnit): string {
-  let said = label
+  let said = toThem(label)
     .replace(/\s+/gu, ' ')
     .trim()
     .replace(/[\s.:;,?!=]+$/u, '');
@@ -45,6 +75,7 @@ export function phraseOf(label: string, unit: SumUnit): string {
     said === '' ||
     QUESTION.test(said) ||
     ENDS_OPEN.test(said) ||
+    (!/^what\b/iu.test(said) && ENDS_ON_PREPOSITION.test(said)) ||
     /^how (?:much|far|big|large|good|bad)\b/iu.test(said)
   )
     return plainLabel(unit);

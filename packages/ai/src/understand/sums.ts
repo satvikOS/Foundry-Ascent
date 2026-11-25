@@ -56,7 +56,7 @@ const ADDS = [1, 100];
 const MAX_NODES = 80;
 const isStandard = (n: number): boolean => STANDARD.some((v) => sameNumber(v, n));
 
-interface Found extends Pick<Figure, 'time' | 'onTop'> {
+interface Found extends Pick<Figure, 'time' | 'onTop' | 'counts'> {
   readonly value: number;
   /** `said`: an amount in a word ("half"). */
   readonly mark: FigureMark | 'unmarked' | 'said';
@@ -82,6 +82,7 @@ export function foundIn(value: number, text: string): Found | null {
       mark: marks.size === 1 ? (only ?? 'unmarked') : 'unmarked',
       ...(times.size === 1 && first?.time !== undefined ? { time: first.time } : {}),
       ...(exact.every((f) => f.onTop === true) ? { onTop: true as const } : {}),
+      ...(exact.some((f) => f.counts === true) ? { counts: true as const } : {}),
     };
   }
   if (wanted > 0 && wanted < 1) {
@@ -97,6 +98,9 @@ export function foundIn(value: number, text: string): Found | null {
   if (said.some((s) => sameNumber(s, wanted))) return { value, mark: 'said' };
   return said.some((s) => s > 0 && s < 1 && sameNumber(s * 100, wanted)) ? { value, mark: '%' } : null;
 }
+
+/** Numbers of one line beyond which two of them come to anything. */
+const MAX_LINE_FIGURES = 8;
 
 const recordText = (line: RecordLine): string => line.text;
 
@@ -116,6 +120,10 @@ interface Input extends Pick<Figure, 'time' | 'onTop'> {
   readonly foreign: boolean;
   /** A plain constant, of nobody's. */
   readonly standard?: true;
+  /** Its own words do not say whether it is money. */
+  readonly open?: true;
+  /** Two numbers of one line it is worked out of. */
+  readonly expr?: Expr;
 }
 
 /** An input with the value and the unit its source gives it; null: nobody gave it. */
@@ -131,7 +139,7 @@ function inputOf(raw: RawInput, s: SumSources, strict: boolean): Input | null {
     (place === null ? null : foundIn(raw.value, place)) ??
     foundIn(raw.value, s.message) ??
     (strict ? null : foundIn(raw.value, everywhere(s)));
-  if (found === null) return null;
+  if (found === null) return derivedInput(raw, s, place);
   // "Half" is a share as it is said, never half a percent.
   if (found.mark === 'said')
     return { value: found.value, unit: raw.unit === '%' ? 'count' : raw.unit, foreign: false };
@@ -140,9 +148,54 @@ function inputOf(raw: RawInput, s: SumSources, strict: boolean): Input | null {
     value: found.value,
     unit,
     foreign: found.mark === 'foreign',
+    // "Glaze 3 and the box 2": a bare number that counts nothing may be money.
+    ...((found.mark === null || found.mark === 'unmarked') && unit === 'count' && found.counts !== true
+      ? { open: true as const }
+      : {}),
     ...(found.time === undefined ? {} : { time: found.time }),
     ...(found.onTop === true ? { onTop: true as const } : {}),
   };
+}
+
+const num = (v: number): Expr => ({ t: 'num', v });
+const bin = (op: '+' | '-' | '*' | '/', a: Expr, b: Expr): Expr => ({ t: 'bin', op, a, b });
+
+/** The one way two numbers of one text come to a value (16 − 4, 4 ÷ 16); null: none, or more than one. */
+function workedFrom(value: number, text: string): Expr | null {
+  const numbers = [
+    ...new Set(figuresIn(text).flatMap((f) => (f.mark === null || f.mark === '$' ? [f.value] : []))),
+  ];
+  if (numbers.length > MAX_LINE_FIGURES) return null;
+  const found: Expr[] = [];
+  for (const a of numbers)
+    for (const b of numbers) {
+      if (a === b) continue;
+      if (a > b && sameNumber(a - b, value)) found.push(bin('-', num(a), num(b)));
+      if (b !== 0 && a < b && sameNumber(a / b, value)) found.push(bin('/', num(a), num(b)));
+    }
+  return found.length === 1 ? (found[0] ?? null) : null;
+}
+/** The same over several texts, each a line of its own. */
+function workedInOne(value: number, texts: readonly string[]): Expr | null {
+  const found = texts.flatMap((t) => workedFrom(value, t) ?? []);
+  return found.length === 1 ? (found[0] ?? null) : null;
+}
+const linesOf = (s: SumSources): string[] => [s.message, ...s.record.map(recordText)];
+
+/** An input nobody wrote, worked out of two numbers of one line: the operands stay in the working. */
+function derivedInput(raw: RawInput, s: SumSources, place: string | null): Input | null {
+  const calc = raw.calc === undefined ? null : parseExpr(raw.calc, new Set());
+  const expr =
+    calc?.expr.t === 'bin'
+      ? [...(place === null ? [] : [place]), ...linesOf(s)].some((text) =>
+          nodesOf(calc.expr).every((n) => n.t !== 'num' || foundIn(n.v, text) !== null),
+        )
+        ? calc.expr
+        : null
+      : ((place === null || /^(?:message|history|conversation)$/iu.test(raw.from.trim())
+          ? null
+          : workedFrom(raw.value, place)) ?? workedInOne(raw.value, linesOf(s)));
+  return expr === null ? null : { value: raw.value, unit: 'count', foreign: false, expr };
 }
 
 const grouped = (n: number, places: number): string => {
@@ -184,7 +237,8 @@ export function saidResult(
   if (!Number.isFinite(value) || Math.abs(value) > MAX_VALUE) return null;
   switch (unit) {
     case '$': {
-      const v = rounded(value, 2);
+      // A thousand or more is said in whole dollars.
+      const v = rounded(value, Math.abs(value) >= 1_000 ? 0 : 2);
       return v === 0 && Math.abs(value) > 1e-9 ? null : { value: v, said: saidMoney(v) };
     }
     case '%': {
@@ -228,6 +282,9 @@ export const nounOf = (noun: string | null): string | null => {
   return /^[a-z][a-z'-]{1,20}(?: [a-z'-]{2,20}){0,2}$/u.test(said) ? said : null;
 };
 
+/** A label that counts things to reach something. */
+const COUNTED =
+  /^(?:the )?(?:fewest |number of |least )*([a-z]{2,20}s) (?:(?:that )?(?:you |they )?(?:need|needed|have|must|it takes)\b|(?:a (?:day|week|month|year) )?to (?:break|cover|pay|earn|reach|match|make|get|recover|win)\b)/iu;
 /** A count to reach is a whole one, rounded up, whatever the model says of rounding. */
 const TO_REACH =
   /\b(?:break.?even|fewest|at least|minimum|to cover|to pay (?:for|back|off)|pays? (?:for )?itself|to earn back|how many .{0,40}\b(?:need|needed|must|have to|it takes))\b/iu;
@@ -276,9 +333,6 @@ const PER_PERIOD: Readonly<Record<Period, Readonly<Record<Period, readonly [numb
   month: { day: [1, 30], week: [12, 52], month: [1, 1], year: [12, 1] },
   year: { day: [1, 365], week: [1, 52], month: [1, 12], year: [1, 1] },
 };
-const num = (v: number): Expr => ({ t: 'num', v });
-const bin = (op: '*' | '/', a: Expr, b: Expr): Expr => ({ t: 'bin', op, a, b });
-
 /** A leaf of one period as one of another: 5 hours a week are 5 × 52 ÷ 12 a month. */
 function inPeriod(leaf: Expr, time: NonNullable<Figure['time']>, wanted: Period): Expr {
   // What lasts goes the other way: 6 weeks are 6 × 12 ÷ 52 months.
@@ -337,6 +391,29 @@ function withOnTop(e: Expr, onTop: (leaf: Expr) => boolean): Expr {
   return { ...e, a, b };
 }
 
+/** Bare numbers that are added to or taken off money: money themselves ("glaze 3" of "$24 − $6 − 3"). */
+function moneyBeside(e: Expr, leafOf: (leaf: Expr & { t: 'num' | 'name' }) => Leaf): ReadonlySet<Expr> {
+  const found = new Set<Expr>();
+  const isMoney = (x: Expr): boolean => {
+    const read = evaluate(x, leafOf);
+    return typeof read !== 'string' && read.money === 1;
+  };
+  const mark = (x: Expr): void => {
+    if (x.t === 'num' || x.t === 'name') {
+      if (leafOf(x).money === null) found.add(x);
+    } else if (x.t === 'bin' && (x.op === '+' || x.op === '-')) {
+      mark(x.a);
+      mark(x.b);
+    }
+  };
+  for (const n of nodesOf(e)) {
+    if (n.t !== 'bin' || (n.op !== '+' && n.op !== '-')) continue;
+    if (isMoney(n.a)) mark(n.b);
+    if (isMoney(n.b)) mark(n.a);
+  }
+  return found;
+}
+
 // One sum -------------------------------------------------------------------------------------------------------------
 
 interface SumContext {
@@ -355,11 +432,16 @@ function sumOf(raw: RawSum, c: SumContext): Summed {
   const names = new Set([...c.inputs.keys(), ...c.unknown, ...c.earlier.keys()]);
   const parsed = parseExpr(raw.expr, names);
   if (parsed === null) return { drop: 'expr' };
-  const whole = mapLeaves(parsed.expr, (leaf) =>
-    leaf.t === 'name' && !c.inputs.has(leaf.name) && !c.unknown.has(leaf.name)
-      ? (c.earlier.get(leaf.name) ?? leaf)
-      : leaf,
-  );
+  const text = everywhere(c.sources);
+  const whole = mapLeaves(parsed.expr, (leaf) => {
+    if (leaf.t === 'num')
+      return isStandard(leaf.v) || foundIn(leaf.v, text) !== null
+        ? leaf
+        : (workedInOne(leaf.v, linesOf(c.sources)) ?? leaf);
+    const input = c.inputs.get(leaf.name);
+    if (input !== undefined) return input.expr ?? leaf;
+    return c.unknown.has(leaf.name) ? leaf : (c.earlier.get(leaf.name) ?? leaf);
+  });
   if (nodesOf(whole).length > MAX_NODES) return { drop: 'expr' };
   c.earlier.set(nameKey(raw.label), whole);
   if (!nodesOf(whole).some((n) => n.t === 'bin')) return { drop: 'trivial' };
@@ -367,7 +449,6 @@ function sumOf(raw: RawSum, c: SumContext): Summed {
     if (n.t === 'name' && c.unknown.has(n.name)) return { drop: 'input', invented: n.name };
   const inputOfName = (name: string): Input =>
     c.inputs.get(name) ?? { value: NaN, unit: 'count', foreign: false };
-  const text = everywhere(c.sources);
   const shown = withOnTop(
     whole,
     (leaf) =>
@@ -423,17 +504,26 @@ function sumOf(raw: RawSum, c: SumContext): Summed {
   const leafOf = (n: Expr & { t: 'num' | 'name' }): Leaf => {
     const value = n.t === 'num' ? (literals.get(n)?.value ?? n.v) : inputOfName(n.name).value;
     if (isPercent(n)) return { value: asShare && !pctArgs.has(n) ? value / 100 : value, money: 0 };
-    if (n.t === 'num') return { value, money: literals.get(n)?.money ?? 0 };
-    return { value, money: inputOfName(n.name).unit === '$' ? 1 : 0 };
+    if (n.t === 'num') {
+      const literal = literals.get(n);
+      return { value, money: literal === undefined ? 0 : literal.money };
+    }
+    const input = inputOfName(n.name);
+    return { value, money: input.open === true ? null : input.unit === '$' ? 1 : 0 };
   };
   const found = evaluate(expr, leafOf);
+  const beside = moneyBeside(expr, leafOf);
   if (typeof found === 'string') return { drop: found };
   const wants = raw.unit === '$' ? 1 : 0;
   if (found.money !== null && found.money !== wants) return { drop: 'units' };
   const total = raw.unit === '%' && asShare ? found.value * 100 : found.value;
+  // "kits to pay for the table": so many, however it is marked.
+  const things = raw.unit === 'x' ? COUNTED.exec(raw.label)?.[1]?.toLowerCase() : undefined;
+  const unit: SumUnit = things === undefined ? raw.unit : 'units';
+  const noun = nounOf(things ?? raw.noun);
   const reach = TO_REACH.test(raw.label) || (raw.asked && TO_REACH.test(c.askText));
   const round = raw.round === 'up' || parsed.up || (raw.round === 'none' && reach) ? 'up' : raw.round;
-  const result = saidResult(total, raw.unit, nounOf(raw.noun), round);
+  const result = saidResult(total, unit, noun, round);
   if (result === null) return { drop: 'range' };
   const named = c.labelOk(phraseOf(raw.label, raw.unit));
   if (named === null) return { drop: 'label' };
@@ -442,6 +532,7 @@ function sumOf(raw: RawSum, c: SumContext): Summed {
   const working = renderExpr(expr, (n) => {
     const value = n.t === 'num' ? (literals.get(n)?.value ?? n.v) : inputOfName(n.name).value;
     if (isPercent(n)) return `${plainNumber(value, 2)}%`;
+    if (beside.has(n)) return saidMoney(value);
     const money =
       n.t === 'num'
         ? literals.get(n)?.mark === '$'
@@ -451,7 +542,7 @@ function sumOf(raw: RawSum, c: SumContext): Summed {
   return {
     sum: {
       label,
-      unit: raw.unit,
+      unit,
       value: result.value,
       // "What you lose is $45", never "what you keep is -$45".
       said: loss === null ? result.said : saidMoney(-result.value),

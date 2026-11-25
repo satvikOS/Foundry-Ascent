@@ -176,12 +176,14 @@ export {
   type UnderstandReport,
 } from './understand/check.js';
 export { mergeReadings } from './understand/merge.js';
+export { readJudge, readRoute, readSums, salvaged } from './understand/salvage.js';
 export {
   JUDGE_SYSTEM_PROMPT,
   SUMS_SYSTEM_PROMPT,
   UNDERSTAND_EXAMPLES,
   exchangesInView,
   routeSystemPrompt,
+  sumsAgain,
   sumsDue,
   understandCacheHint,
   understandMessages,

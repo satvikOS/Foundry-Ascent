@@ -11,6 +11,7 @@ path decides and the reply is written. Code checks every field, works out every 
 | `…/schema.ts`                                     | The three answers (short keys, reasoning first), their bounds, the budgets                               |
 | `…/prompt.ts`                                     | The three static system prompts with their worked examples, what each is shown, when SUMS has work       |
 | `…/merge.ts`                                      | The parts as one reading: what a late part leaves empty, what the others then justify                    |
+| `…/conflicts.ts`, `salvage.ts`                    | When the record denies what they say; an answer one field swallowed                                      |
 | `…/check.ts`                                      | `readParts`, `readUnderstanding`: ids, numbers, days, names, rulings, the method lint                    |
 | `…/expr.ts`, `sums.ts`, `figures.ts`, `labels.ts` | The expression parser; the sums, their units and periods; the figures of a text; what a figure is called |
 | `packages/core/src/path/record-lines.ts`          | The record as lines `R1`, `R2`, …                                                                        |
@@ -33,8 +34,8 @@ without it. What each part writes is what its decision needs, so a reading takes
   The studio's test conversations have no path, so they have no reading either. SUMS is skipped when neither the message nor the
   conversation nor the record holds a figure **and** the message asks for none (`sumsDue`).
 - **What they read.** Each part escaped inside its tag (`escapeData`) after a static system prompt, which is one cached prefix a
-  call. The three prompts and schemas together are 23,300 characters (the one call's: 25,200), and with what each is shown the whole
-  stays at or under what the one call read. An instruction inside the data is a message to describe.
+  call. Measured on Nova 2 Lite (lab-bench2): 8,700 tokens in together, 7,700 of them cached, against 7,290 for the one call; each
+  call pays the provider's own tool instructions. An instruction inside the data is a message to describe.
 - **The model.** `MODEL_UNDERSTAND_ID`, else the coach's primary; `MODEL_UNDERSTAND_THINK=low` lets Nova 2 reason first. The
   coach's primary stands behind a model of its own. The gateway routes it (`route: 'understand'`), so no other call changes.
 - **Their budget.** 3.0 s on a typed turn, 1.4 s on a call, the fallback included (`CORE_UNDERSTAND_TYPED_MS` 500 to 10,000,
@@ -43,7 +44,10 @@ without it. What each part writes is what its decision needs, so a reading takes
   cancelled, and the turn never waits longer, even for a provider that does not hear it.
 - **A part that is late or failed** leaves its fields empty. Without ROUTE the others say what the message is: a figure they asked
   for is a `sum`, a pick a `choice`, a verdict a `result`; nothing of those is no reading, and the turn goes on by its rules. ROUTE
-  points at the record line a message denies; JUDGE tests it, and its word stands where it came.
+  and JUDGE each name a line the message denies; without either there is no contradiction.
+- **SUMS again.** An answer that names the figure and its numbers or its plan and writes no sum is asked once more, in what is left of
+  the budget (`sumsAgain`); the first one stands where the second does not come. A field that swallowed the rest of its object is
+  read back (`salvage.ts`).
 - **Their price.** Metered like every call (purpose `turn`, one usage-ledger row per attempt), so the daily caps count them. An
   attempt that was cut off is metered by an estimate of its prompt (`estimateCut`).
 - **What is logged.** `turn.understand`: the code (`ok`, `partial`, `nothing_held`, `late`, `cancelled` or the gateway's),
@@ -65,17 +69,24 @@ Everything a reading says is of the message, the conversation in view, the recor
   one after, or the play of the ask; `sure` counts only with a play.
 - **Claims** (points, reasons, what a result shows, the first action, …): one plain line; a number, a day or a name that nothing it
   was shown holds leaves the claim out; so does markup, an address, the method's lint (`validators/method.ts`), words of the founder,
-  the mentor or the opening (a reply speaks to the founder), and giving it away until enough people have it. A ruling on what
+  the mentor or the opening (a reply speaks to the founder; "the founder keeps" is said as "you keep" where that is all it takes), and giving it away until enough people have it. A ruling on what
   a person decides (who owns it, a status, the law, what a round or a stake is worth, whether to sign or take) is never one:
   saying what to wait for, and whom to ask, is.
-- **A contradiction** names an existing line and says what it holds.
+- **A contradiction** is rare, because the reply opens on it (`conflicts.ts`). ROUTE and JUDGE name the same line, each for itself; the
+  line is evidence, a test, a fact, a decision or a milestone (never who they are, what they hope or what is to be done, nor a
+  decision the message moves on from); JUDGE quotes the claim word for word, and the claim rates or generalises (everyone, always,
+  growing, proven) against counts that fall short, or gives another number for the same thing; what is said of it holds both sides.
+  None in a recall, a draft, small talk or a report that asks nothing, and a new figure in place of an old one denies nothing.
 - **A figure they asked for** is one SUMS says they ask for and ROUTE or the message says so too.
 - **A choice** stands where options are put; its options are theirs (or one's plain no), and it picks one of them, or both or neither,
   with a reason that holds. None where the referral is equity, an invention, immigration, a valuation or a regulation, none on signing,
   agreeing or a company form beside a lawyer's, none on a split, shares, a visa or a patent whatever the referral, and none for free
   where the other option asks for money.
-- **A result** stands where something happened or they push back, and shows a figure or words of theirs.
-- **What turns a pick or settles a result** holds a number, a person or an act they could see, else it is left out.
+- **A result** stands where something happened, they offer something as a sign or push back, and shows a figure or words of theirs, of
+  what they say now or just said.
+- **What turns a pick or settles a result** holds a number, a person or an act they could see, else it is left out. There, and in the
+  first action, a small or round size of something to do ("ask 10 of them", "for 2 weeks") is a test and no invented fact; an amount,
+  a share, and whatever is told as having happened, never.
 - **A referral** is the reading's to add. The rules' own (`referrals.ts`, the risk classifier) stay whatever it says.
 
 ### Sums
@@ -91,10 +102,13 @@ trailing `%`, `ceil(…)` around the whole; nothing is evaluated as code), and t
 - its money is not dollars: `$` is the only currency said, and another one is never relabelled.
 
 What the source says wins over what the model says of a number ("15 percent" is a percentage, whatever its unit). A percentage used
-as it is stands for its share; `/ 100` and `%` are taken as written. Money is to the cent and shows cents only when it is not whole;
+as it is stands for its share; `/ 100` and `%` are taken as written. Money is to the cent under a thousand dollars and whole from there on;
 a share has one decimal; a count that is to be reached (break-even, "how many must I …", `round: up`) is rounded up, any other says
 "about" when it is not whole. The working is drawn from the expression with the inputs in place: `(4 − 1) × $70 + $70 ÷ 2`.
 
+- **Bare numbers.** "Glaze 3" beside dollars is dollars; a number that counts something ("30 kits") never is. Numbers of theirs may
+  be written into the expression. One that nobody wrote is taken when two numbers of one line come to it in one way (18 − 5), and they
+  stand in the working; else it is nobody's.
 - **Periods.** A figure carries the time its own words give it ("$85 a month", "20 hours a week", "6 weeks"). An expression that mixes
   them is worked out in one of them, shown as it is (`20 × 52 ÷ 12`), unless it already holds a constant of time. The label says the
   period the result has ("what you keep that day" of monthly numbers is "what you keep a month").

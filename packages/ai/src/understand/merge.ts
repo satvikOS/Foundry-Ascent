@@ -27,9 +27,21 @@ const kindOf = (value: string): UnderstoodKind | null =>
 /** The message asks for a figure by a word of its own. */
 const FIGURE_ASKED =
   /\b(?:how (?:much|many|long|often|far|soon)|per (?:hour|day|week|month|year|cent|person|unit)|an hour|worth|left|keep|earn|profit|margin|break ?even|(?:making|make|losing|lose) (?:any )?money|percent|percentage|number|figure|adds? up|comes? (?:in|to)|runs? out|paid|costs?|total|average|payback)\b/iu;
+/** Something is asked, marked or not. */
+const QUESTION_PUT =
+  /\?|\b(?:how|what|whats|when|which|am i|are we|do i|do we|did i|did we|is it|is that|does it|will i|can i|tell me|work out|calculate)\b/iu;
 /** They put options side by side. */
 const OPTIONS_PUT =
   /\b(?:or|vs|versus|which|either|between|one of|both|pick|choose|rather|instead|should (?:i|we)|shld (?:i|we))\b/iu;
+/** Something is offered as a sign: what it is worth has to be said. */
+const OFFERS_PROOF =
+  /\b(?:loves?|likes?|proof|proves?|validat\w+|traction|good sign|bad sign|interested)\b/iu;
+/** Told, not asked and not told to do. */
+const STATES = (message: string): boolean =>
+  !message.includes('?') &&
+  !/^\W*(?:please |just |ok(?:ay)? |so |and |now )*(?:tell|give|write|make|show|help|explain|draft|pick|choose|remind|change|list|say|let|can|could|what|how|why|which|who|should|do)\b/iu.test(
+    message,
+  );
 /** Something happened, and they tell it. */
 const TELLS =
   /\b(?:said|says|told|asked|sold|bought|got|did|tried|had|lost|showed|paid|emailed|wrote|left|quit|offered|ran|met|talked|spoke|came|signed|refused|agreed|called|phoned|booked|returned|went|gave|sent|heard|launched|interviewed|happened|dropped|joined|cancel+ed|replied|answered|changed|stopped|started|tested|used|moved|won|failed)\b/iu;
@@ -39,7 +51,9 @@ const asks = (
   route: boolean,
   kinds: readonly UnderstoodKind[],
   message: string,
-): boolean => figure !== null && (!route || kinds.includes('sum') || FIGURE_ASKED.test(message));
+): boolean =>
+  figure !== null &&
+  (!route || kinds.includes('sum') || (FIGURE_ASKED.test(message) && QUESTION_PUT.test(message)));
 
 /** The play that says nothing of other founders: a message it answers asks about one. */
 const PRIVACY_PLAY = 'other-teams-privacy';
@@ -61,7 +75,10 @@ export function mergeReadings(
   const choice = judge?.o != null && (kinds.includes('choice') || OPTIONS_PUT.test(message)) ? judge.o : null;
   const result =
     judge?.t != null &&
-    (kinds.some((k) => k === 'result' || k === 'update' || k === 'pushback') || TELLS.test(message))
+    (kinds.some((k) => k === 'result' || k === 'update' || k === 'pushback') ||
+      TELLS.test(message) ||
+      OFFERS_PROOF.test(message) ||
+      STATES(message))
       ? judge.t
       : null;
   const found: UnderstoodKind[] = [
@@ -74,7 +91,7 @@ export function mergeReadings(
   if (kind === undefined) return null;
   const also = [...found, ...kinds].filter((k, i, all) => k !== kind && all.indexOf(k) === i).slice(0, 2);
   return {
-    ask: text(route?.a) ?? (route === null ? askOf(figure, asked, choice) : ''),
+    ask: text(route?.a) ?? askOf(figure, asked, choice, route === null ? null : message),
     second_ask: text(route?.b),
     kind,
     also,
@@ -102,12 +119,25 @@ export function mergeReadings(
 }
 
 /** What they ask, where the part that says it did not come. */
-function askOf(figure: string | null, asked: boolean, choice: JudgeReading['o']): string {
+function askOf(
+  figure: string | null,
+  asked: boolean,
+  choice: JudgeReading['o'],
+  /** Their own words, where ROUTE came and found nothing asked. */
+  message: string | null,
+): string {
   if (asked && figure !== null) return figure;
-  return choice === null ? 'what happened and what it shows' : `which to choose: ${choice.o.join(' or ')}`;
+  if (choice !== null) return `which to choose: ${choice.o.join(' or ')}`;
+  return message === null
+    ? 'what happened and what it shows'
+    : message
+        .split(/\s+/u)
+        .filter((w) => w !== '')
+        .slice(0, 16)
+        .join(' ');
 }
 
-/** JUDGE tests the message against the record; ROUTE only points at the line, for when JUDGE is late. */
+/** Both name the same line, each for itself; what it takes beyond that is the checks' (`conflictDrop`). */
 function contradictionOf(
   route: RouteReading | null,
   judge: JudgeReading | null,
@@ -115,13 +145,16 @@ function contradictionOf(
 ): RawUnderstanding['contradicts'] {
   const key = (value: string | null | undefined): string | null =>
     [...(value ?? '').toUpperCase().matchAll(/R\d{1,3}/gu)].map((m) => m[0]).find((k) => keys.has(k)) ?? null;
-  const pointed = key(route?.c);
-  if (judge === null) return pointed === null ? null : { record: pointed, why: null };
-  if (judge.x === null) return null;
-  const why = text(judge.x.w);
-  const record = key(judge.x.r) ?? pointed;
-  return record === null || why === null ? null : { record, why };
+  const record = key(judge?.x?.r);
+  const why = text(judge?.x?.w);
+  const claim = text(judge?.x?.q);
+  if (record === null || why === null || claim === null || record !== key(route?.c)) return null;
+  return { record, claim, why };
 }
+
+/** "4 / 16": two numbers and what is done with them. */
+const TWO_NUMBERS = /^\$?(\d[\d,]{0,12}(?:\.\d{1,6})?)\s?([-−+*×x/÷])\s?\$?(\d[\d,]{0,12}(?:\.\d{1,6})?)$/u;
+const placeOf = (from: string): string => (/^conversation$/iu.test(from) ? 'history' : from);
 
 /** `price=$70@R1` as a number of a sum; null: none. */
 export function inputOf(said: string): RawInput | null {
@@ -134,6 +167,13 @@ export function inputOf(said: string): RawInput | null {
   const shown = body.slice(eq + 1).trim();
   if (name === '' || shown === '') return null;
   const [figure] = figuresIn(shown);
+  const calc = TWO_NUMBERS.exec(shown);
+  if (calc !== null) {
+    const [a, b] = [Number((calc[1] ?? '').replace(/,/gu, '')), Number((calc[3] ?? '').replace(/,/gu, ''))];
+    const op = calc[2] ?? '';
+    const value = op === '/' || op === '÷' ? a / b : op === '+' ? a + b : /[*×x]/u.test(op) ? a * b : a - b;
+    return { name, value, unit: 'count', from: placeOf(from), calc: shown };
+  }
   const negative = /^[-−]/u.test(shown) ? -1 : 1;
   const [amount] = saidAmounts(shown);
   if (figure === undefined && amount === undefined) return { name, value: Number.NaN, unit: 'count', from };
@@ -147,7 +187,7 @@ export function inputOf(said: string): RawInput | null {
         : /\b(?:hours?|hrs?|minutes?|mins?|days?|weeks?|months?|years?)\b/iu.test(shown)
           ? 'time'
           : 'count';
-  return { name, value, unit, from: /^conversation$/iu.test(from) ? 'history' : from };
+  return { name, value, unit, from: placeOf(from) };
 }
 
 const TIME_UNITS: readonly (readonly [RegExp, SumUnit])[] = [
