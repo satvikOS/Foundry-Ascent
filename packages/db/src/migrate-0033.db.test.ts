@@ -19,6 +19,7 @@ import { createTestDatabase, makeContext, type TestDatabase } from './testing/te
 const PATH = MIGRATIONS.find((m) => m.version === '0033_founder_path');
 /** The path's later migration: it replaces 0033's erasure of a deleted conversation's words. */
 const IDEA = MIGRATIONS.find((m) => m.version === '0035_path_idea');
+const LOST = MIGRATIONS.find((m) => m.version === '0036_path_lost_step');
 const BEFORE = MIGRATIONS.filter((m) => m.version < '0033');
 const CONFIG: SeedConfig = { homeTenant: { slug: 'ain', name: 'Ain Foundry (test)' }, owner: null };
 const STEP = 'aaaaaaaa-1111-4111-8111-111111111111';
@@ -548,10 +549,10 @@ describe('migration 0033_founder_path', () => {
   });
 
   it('is idempotent: re-running every statement, then the runner, changes nothing', async () => {
-    if (!PATH || !IDEA) throw new Error('0033 or 0035 missing');
+    if (!PATH || !IDEA || !LOST) throw new Error('0033, 0035 or 0036 missing');
     const before = await fingerprint(t.db);
     await t.db.system(async (sx) => {
-      for (const statement of [...splitStatements(PATH.sql), ...splitStatements(IDEA.sql)])
+      for (const statement of [PATH, IDEA, LOST].flatMap((m) => splitStatements(m.sql)))
         await sx.query(statement);
     });
     expect(await fingerprint(t.db)).toBe(before);

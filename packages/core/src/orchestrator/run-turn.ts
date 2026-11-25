@@ -91,7 +91,16 @@ import {
 import { renderLeftOffSection, type LeftOffData } from './continuity-prompt.js';
 import { candidateVisibility, type PlayEvidence } from './evidence.js';
 import { type FaceApproval, generationTotals, SpeechStream } from './generate.js';
-import { embedRetrievalQuery, privateRetrievalOwner, retrieveEvidence } from './retrieval.js';
+import {
+  asksOf,
+  embedRetrievalQuery,
+  packEvidence,
+  privateRetrievalOwner,
+  rerankScores,
+  searchEvidence,
+  turnReranker,
+  type RetrievalArgs,
+} from './retrieval.js';
 import { safetyScreenDue, screenIndirectIdeation } from './safety-screen.js';
 import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
 import {
@@ -1258,6 +1267,10 @@ export function createOrchestrator(
     const announced: Promise<void>[] = [];
     // The retrieval transaction opens while the query is embedded (its begin and context run beside the embedding,
     // which needs no database connection), and the search is used without waiting for the commit: it only reads.
+    const reranker =
+      cfg.turns.rerank && pre.channel === 'text'
+        ? turnReranker(kit, ctx, { purpose: 'turn', ventureId }, a.tails)
+        : null;
     const { value: retrieved, ended } = await kit.readInRequest(ctx, async (scope) => {
       if (ownVector !== null) {
         // One statement of the retrieval's own transaction, on these turns only: which play it is decides what the
@@ -1276,7 +1289,10 @@ export function createOrchestrator(
         announced.push(announce(path, near));
       }
       const vector = await embedding;
-      const evidencePack = await retrieveEvidence(scope.tx, {
+      // Notes near the founder's own words: the search's vector when it adds nothing to them, else theirs when the plays
+      // were compared with it (none is embedded for this).
+      const ownWords = a.query === input.text.trim() ? vector : ownVector === null ? null : await ownVector;
+      const args: RetrievalArgs = {
         tenantId: ctx.tenantId,
         ventureId,
         personaId: active.persona.id,
@@ -1304,12 +1320,23 @@ export function createOrchestrator(
         // keeps its early facts); only what the turns in view taught is left out.
         historySince:
           coach.history.length >= cfg.turns.historyTurns ? (coach.history[0]?.createdAt ?? null) : null,
-      });
-      return { evidencePack, lexicalOnly: vector === null };
+        // With the path alone: its turns are the ones whose citations are checked against what they cite.
+        semantic:
+          cfg.turns.semanticNotes && path !== null
+            ? {
+                asks: pre.mode === 'rehearse' ? null : asksOf(path.decision, input.text),
+                embedding: ownWords,
+                ...(reranker === null ? {} : { reranked: true }),
+              }
+            : null,
+      };
+      return { args, found: await searchEvidence(scope.tx, args), lexicalOnly: vector === null };
     });
     a.tails.push(kit.later(ended));
     await Promise.all(announced);
-    const pack = retrieved.evidencePack;
+    // The reranker's call holds no connection; off (the default), nothing is waited for.
+    const scores = reranker === null ? null : await rerankScores(reranker, input.text, retrieved.found);
+    const pack = packEvidence(retrieved.found, retrieved.args, scores);
     // What was retrieved for the turn is audited as before, written beside the reply rather than ahead of it (the
     // events are the request's: its tenant, person and request id).
     a.tails.push(

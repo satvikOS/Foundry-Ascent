@@ -9,12 +9,13 @@ in `packages/core/src/path/playbook/`; everything here is the machinery that rea
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `words.ts`, `match.ts`           | Normalised words; phrase rules (word boundaries, gaps, `unless`, referral first) and the plainly nearest ask                  |
 | `semantic.ts`                    | The play an ask means when no phrase names one, by its embedding (constants per embedding model); what each play is asked for |
-| `kinds.ts`                       | Kinds of message by rule: social, recall, report, rehearsal, overview, A-or-B, new idea, smaller, commitment, idea, pivot     |
+| `kinds.ts`                       | Kinds of message by rule: social, recall, report, rehearsal, overview, new idea, smaller, commitment, idea, pivot and back    |
+| `counts.ts`, `choice.ts`         | How many of whom did what, exact or not counted; a choice they ask to have made, and the pick the record decides              |
 | `referrals.ts`                   | The risk classifier's categories to the play whose person decides                                                             |
 | `state.ts`, `progress.ts`        | Stage and criteria from the stored path and the record; work a founder reports ("8 of 10")                                    |
 | `steps.ts`                       | One step: from its row or its play, cut to the time they have, taken up again, as it is shown                                 |
 | `engine.ts`                      | `decide(input) -> Decision`: pure (no I/O, model or clock); the turn's step, the path's own, what follows                     |
-| `calc.ts`                        | The sums students ask for, from the numbers they gave; the one number that is missing                                         |
+| `calc.ts`, `calc-read.ts`        | The sums students ask for, from the numbers they gave and their roles; the one number that is missing                         |
 | `news.ts`, `tell.ts`             | What news means, by rule; the record said as a mentor says it, the one prior fact, the story                                  |
 | `brief.ts`, `turn.ts`            | The founder brief (at most 1,200 characters), the arc, and what the prompt and the record carry                               |
 | `report.ts`, `apply.ts`          | The model's `path_report` held to the founder's words; the writes                                                             |
@@ -42,8 +43,10 @@ What they were shown is what is stored (`pathRepo.shownStep`).
 "That's too much", "I only have an hour", "exam week", "something smaller": the same step, same id, cut to its first items
 that fit the minutes, done when those are, due soon. Finishing the small part brings the rest of it back.
 
-A message in distress, or that only says how hard things are, gets no step when it asks nothing of the work, and is never
-matched to a play by meaning.
+A message in distress, or that only says how hard their life is (`isHardship`), gets no step when it asks nothing of the
+work, and is never matched to a play by meaning. Anger at the work or at the advice ("this is useless", "ugh") does: every
+other turn that coaches carries its step, in one word, in slang or in broken English; only social turns, thanks, closings,
+crisis and role-play have none.
 
 ## Which play: a phrase, then meaning, then nothing
 
@@ -93,9 +96,9 @@ the blind ones.
 **A way out.** The prompt is told how the ask was found (`PromptGuidance.matched`). `phrase`: the program's answer first, as
 always. `semantic` (by meaning, or by nearest words): if that answer is not about what they asked, the model answers what
 they asked, and the reply contract puts the program's answer in only for a reply that asks, puts off or says nothing. `none`: the model answers, substance first, nothing invented; a step that shares no word with
-what they asked is `standing`: said once, last, as what stands ("On your path, next is: …"), at most once in three turns
-(`quiet` in between: not said, the card under the reply has it), and never as a "Next:" of theirs. A step given for an
-earlier ask that is not on their path is not said to another subject at all.
+what they asked is `standing`: said once, last, as what stands ("On your path, next is: …"), never as a "Next:" of theirs.
+A typed reply always has it; a call does not say it twice in a row (`quiet`). A step given for an earlier ask that is not on
+their path is not carried to another subject: the path's own step stands there.
 
 ## What the server says, and what the model says
 
@@ -103,9 +106,18 @@ The model writes only a natural answer. Everything that must be exact is code's,
 whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
 
 - **The lead** (`PromptGuidance.lead`, `turn.ts` `leadOf`) opens the reply before the model has written anything, so it costs
-  no time to the first word: a sum, what news or a report shows, "is that good?", where they stand ("get me organized", as
-  a numbered list when they ask for a plan), a recall, the story, a change of direction. Said once: what the model says of
-  it again (its figures, the stage, a second plan, its dates) goes, and a lead said a moment ago is cut to where to start.
+  no time to the first word: a sum, what news or a report shows (what they found first, then how far it gets them), "is that
+  good?", where they stand ("get me organized", as a numbered list when they ask for a plan), a recall, the story, a change
+  of direction, a choice the record decides, the message they asked for, when a step is done. Said once: what the model says
+  of it again (its figures, the stage, a second plan, its dates) goes, and a lead said a moment ago is cut to the next blank
+  or part. No stage is told to someone who did not ask where they stand.
+- **The thing itself.** A reply that starts a step (get me organized, where do I begin, orders, what now, a plan) holds its
+  template, with what they told in it and plain [brackets] for the rest (`startOf`); a table reads as lines.
+- **A choice** (`choice.ts`, `PromptGuidance.choice`): the model is told exactly the options found and that the first sentence
+  picks; `missing_pick` notes one that does not. Code picks only when the record plainly decides (6 of 20 against 11 of 60).
+- **What they found** (`PromptGuidance.finding`) goes to the model in their words, to say what it means.
+- **A push** on what a person decides, or on what is never shared, gets the answer once and then a short no and the next part
+  (`pushAsk`); who decides is said once in a reply (`repeatsReferral`), and a play's answer once in a conversation.
 - **The step line** ends it, once: `**Next:** <title> by <Weekday, Month D>. Done when <done when>.`, on a call "Your next
   step: … by Monday." (a step due today: "today"). Whatever step, deadline, "Next:", done-when or list of the step's parts
   the model writes is left out as a whole block; an answer of fewer than about twelve words left over is the program's own.
@@ -113,15 +125,36 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
 - **The first part** of the step answers "how do I do that?", with its template filled in from their words (`howTo`,
   `fillTemplate`): what they did not tell keeps its [brackets].
 - **One prior fact** (`prior`, `tell.ts` `priorFact`): the confirmed memory, report or sentence of theirs that shares most
-  with the ask, else the idea. The model weaves it in; a typed reply that did not gets one sentence, never of what the
-  coach said in its last reply, of what this message takes back, or of an order in a message.
+  with the ask or bears on the same thing, and tells a number, a name, a decision or an outcome; else the idea, where the
+  answer is for it; else none. Never advice of a course, a plan, a label, or a doing with nothing found. The model weaves it
+  in; a typed reply that did not gets one sentence, said as a person says it, never of what the coach said in its last
+  reply, of what this message takes back, or of an order in a message.
 - **Their facts only** (`said`, `validators/own-facts.ts`): a line of a template that says more than they did keeps its
   bracket; a sentence that gives them customers, sales or money nobody told goes; so do our words ("the playbook says").
 - **Business words** are told in ten words or fewer, once, to who has not said they know them (`validators/glossary.ts`).
-- **Sums** (`calc.ts`): price less costs, margin, break-even, a month at a volume, a rate, payback, a share. Deterministic,
-  shown with its working; units are never mixed (per box and per month), a missing number is the question.
+- **Sums** are worked out by code, never by the model, in two ways:
+  - `calc.ts` (numbers and their roles: `calc-read.ts`) opens the reply when it is **sure**: every role is said beside its
+    number, nothing in the same words is left unplaced, and the words can be read one way only. A fee they pay is a cost, what
+    others charge is nobody's price, money spent in one go is not what one costs, and an amount told with no role, a change
+    ("raise it by 2") or another currency means it says nothing. Below zero is told only when price and costs are both
+    explicit. It covers what one leaves (several costs, a share taken), so many less a fixed cost, a month, break-even, an
+    hour, a quarter hour, shares and churn, the same share again, two groups compared, what a customer cost, the price that
+    keeps a share, what it takes to start, payback, runway, and follow-ups ("and if I do sixty a week?"). With one number
+    missing and nothing that could be it, that number is the question.
+  - Otherwise (`PromptGuidance.asksSum`) the model writes the sum as a **marker**, `[[a - b dollars]]`, and never its result
+    (`packages/ai` `validators/sums.ts`). The gate works it out and says it: "a - b = c dollars", on a call "a minus b, so c
+    dollars". Its numbers must be theirs, the record's, the evidence's or a result said before (months, weeks, percent may
+    multiply and divide), and its units must fit; else its clause goes, as an ungrounded figure's does. A marker that cannot
+    be read never reaches the founder. What is stored is what was shown.
+  - A sum the model works out itself all the same ("a minus b leaves c") is checked: a wrong result is put right when its
+    numbers are theirs and it reads one way, else it goes; nothing after it builds on the wrong one.
 - **News** (`news.ts`, kind `news`): who paid and who did not, a result against the pass line they set, what people said,
-  someone who left, an offer, sign-ups. A sign-up is never called a sale.
+  what stops them, a no and its reason, someone who asks for it, a spending limit, someone who left, an offer, sign-ups and
+  the ones who forgot. A sign-up, a spoken yes, a friend's money and boxes sold are never called paying strangers. Something
+  that happened and no rule reads is still news, with the finding for the model to read.
+- **Counts** (`counts.ts`) are the number that did it ("two of the other four" is two) or nothing: an approximation, a rate, a
+  plan, a denial is not counted. A number taken back ("seven, not ten") is the number from then on, and what it had reached
+  is open again.
 
 ## Rules the code keeps
 
@@ -143,14 +176,18 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
   says it happened, and never short of a count.
 - **The idea.** Stated in a conversation while the intake has none, it is kept word for word (at most 400 characters), and
   leads the brief, with the latest decision. A recall carries in its lead what they asked for: the idea, what was decided and
-  when, what was reported, the open step and its day; the story is dated lines, each thing once, at most eight. A change of direction keeps the new idea, dates the old one in the
-  arc (`venture_paths.pivots`), and opens what the old customer had shown, from talking to customers on (their words stay on the criterion, dated).
+  when, what was reported, which idea they are on, what the venture has and has not; the open step and its day end the reply
+  as on every turn; the story is dated lines, each thing once, at most eight, a change of direction with what brought it. A
+  change of direction wins over a report or a missed day, keeps the new idea, dates the old one in the arc
+  (`venture_paths.pivots`, their words), ends a step of theirs that was about the old one, and opens what the old customer
+  had shown, from talking to customers on (their words stay on the criterion, dated). Going back to an earlier idea (the
+  first, the one before, or one by its words) restores what that one had shown and keeps the other's as dated words.
 - **Who decides.** A referral intent wins over every other ask; a risk the classifier found leads to its play when no
   phrase names one, or brings who decides beside another answer; something said in passing (`note`: "my advisor is on the
   paper") brings it too; a push ("you decide", "what do I take") keeps it. An escalation keeps the model's own next step.
 - **No round trip of its own**, but for an ask no rule names ("By meaning"). A turn's path reads are part of its context
   statement (`turn-context.ts`); the decision is pure; writes run beside the turn's own, only when something changed.
-- **Who sees what.** `venture_paths`, `path_steps`, `path_criteria` (migrations 0033, 0035): read by founders, team and the
+- **Who sees what.** `venture_paths`, `path_steps`, `path_criteria` (migrations 0033, 0035, 0036): read by founders, team and the
   assigned EIR, written by founders and team. Program leads read `app.path_overview` (no words). Deleting a conversation
   erases the words it left (evidence, the idea said in it, a change of it, a step in the founder's own words) and its
   turns' guidance. A temporary chat writes nothing.

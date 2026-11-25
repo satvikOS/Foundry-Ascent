@@ -12,6 +12,12 @@ describe('business words for who never did this', () => {
     expect(withMeanings('Show the value proposition.', known)).toBe('Show the value proposition.');
   });
 
+  it('jobs, pains and gains are told in plain words', () => {
+    expect(withMeanings('List jobs, pains and gains.', new Set())).toBe(
+      'List jobs, pains and gains (what they try to do, what hurts, what they want).',
+    );
+  });
+
   it('on a call it is said, not bracketed', () => {
     expect(withMeanings('Know your runway before you sign.', new Set(), true)).toBe(
       'Know your runway, how long the money lasts, before you sign.',

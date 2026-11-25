@@ -644,10 +644,17 @@ def test_figures_and_dates_are_read_apart() -> None:
     text = "1. Ask 5 people by December 3, at 6:30 pm [E2]\n2. Charge $4.50 in 2026 to thirty nurses"
     assert reading.dates_in(text) == {(12, 3)}
     assert reading.values(text) == {5.0, 4.5, 30.0}
+    assert reading.values("The fee is 50 cents, a ride is 9 dollars.") == {0.5, 9.0}
+    assert [f.classes for f in reading.figure_list("a fee of 50 cents")] == [frozenset({"money"})]
     assert reading.derivable(140, [3.5, 40])
     assert reading.derivable(140, [], given=[3.5, 40])
     assert reading.derivable(3.5, [12, 7, 1.5])
     assert not reading.derivable(48, [3.5, 40])
+    # A price that keeps a share: the cost over what is left of it.
+    assert reading.derivable(11.67, [7, 40], shares=[40])
+    assert reading.derivable(0.6, [7, 40], shares=[40])
+    assert not reading.derivable(11.67, [7, 40])
+    assert not reading.derivable(14, [7, 40], shares=[40])
     # Over a period, or chained, only from numbers the reply itself shows.
     assert reading.derivable(48, [2, 6], period=True)
     assert not reading.derivable(48, [], given=[2, 6], period=True)

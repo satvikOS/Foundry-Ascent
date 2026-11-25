@@ -538,6 +538,31 @@ function cutAround(text: string, claim: Claim): string | null {
   return null;
 }
 
+/** A unit without the aside or clause that holds `[start, end)`, '' when there is none to cut (validators/sums.ts). */
+export function withoutSpan(unit: string, start: number, end: number): string {
+  const head = /^\s*(?:(?:[-*+•]|\d{1,3}[.)])\s+)?/u.exec(unit)?.[0] ?? '';
+  const rest = unit.slice(head.length);
+  const cut = cutAround(rest, {
+    finding: 'figure_unsupported',
+    start: start - head.length,
+    end: end - head.length,
+  });
+  return cut === null || cut === rest ? '' : `${head}${cut}`;
+}
+
+/** What may be stated, with what was said since (a sum worked out by the server). */
+export function supportWith(index: SupportIndex, said: string): SupportIndex {
+  if (said.trim() === '') return index;
+  const numbers = knownNumbersIn(said);
+  return {
+    ...index,
+    known: `${index.known}${flat(said)} `,
+    knownRaw: `${index.knownRaw}\n${said}`,
+    knownNumbers: [...index.knownNumbers, ...numbers],
+    ownNumbers: [...index.ownNumbers, ...numbers],
+  };
+}
+
 /** The sentence without an aside that only offers an unsupported figure as an example, or null when it has none. */
 function withoutExample(text: string, index: SupportIndex): string | null {
   const out = withoutExampleFigures(text, index.knownRaw);

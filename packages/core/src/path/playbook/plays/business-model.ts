@@ -5,7 +5,7 @@ import { AIN, REFERRALS, ain, cite, step } from '../make.js';
 export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   {
     id: 'business-model-canvas',
-    title: 'Fill the Business Model Canvas',
+    title: 'Fill the nine boxes of the Business Model Canvas',
     stage: 'business_model',
     intents: ['business-model-canvas'],
     criteria: ['model-canvas'],
@@ -93,7 +93,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'service-or-product',
-    title: 'Choose service, consulting or product',
+    title: 'Write one fixed offer and ask 3 customers to buy it',
     stage: 'business_model',
     intents: ['service-or-product'],
     criteria: ['model-canvas'],
@@ -143,7 +143,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'revenue-model',
-    title: 'Choose how you get paid',
+    title: 'Choose one way of getting paid and try it on 5 customers',
     stage: 'business_model',
     intents: ['revenue-model'],
     criteria: ['model-canvas'],
@@ -194,7 +194,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'pricing',
-    title: 'Set a first price',
+    title: 'Set a first price and say it to 5 buyers',
     stage: 'business_model',
     intents: ['pricing'],
     criteria: ['model-price'],
@@ -243,7 +243,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'price-test',
-    title: 'Test a price on real buyers',
+    title: 'Offer two prices to 10 buyers each',
     stage: 'business_model',
     intents: ['price-test'],
     criteria: ['model-price'],
@@ -339,7 +339,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'break-even',
-    title: 'Find your break-even point',
+    title: 'Work out how many sales cover your costs',
     stage: 'business_model',
     intents: ['break-even'],
     criteria: ['model-unit-economics'],
@@ -380,7 +380,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'money-to-start',
-    title: 'Work out how much money you need',
+    title: 'Write two lists of the money you need',
     stage: 'business_model',
     intents: ['money-to-start'],
     criteria: ['model-money-needed'],
@@ -409,7 +409,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
         20,
       ),
     ],
-    doneWhen: 'Two lists exist with a source for each line, and the gap to the next proof is one number.',
+    doneWhen: 'You have two lists with a source for each line, and the gap to the next proof is one number.',
     days: 7,
     template: {
       title: 'Money I need',
@@ -429,7 +429,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'financial-forecast',
-    title: 'Make a first financial forecast',
+    title: 'Make a 12-month cash forecast in three versions',
     stage: 'business_model',
     intents: ['financial-forecast'],
     criteria: ['model-money-needed', 'growth-plan'],
@@ -458,7 +458,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
         15,
       ),
     ],
-    doneWhen: 'A 12-month cash row exists in three versions, and the lowest month has a plan.',
+    doneWhen: 'You have a 12-month cash row in three versions, and a plan for the lowest month.',
     days: 7,
     template: {
       title: '12-month cash forecast',
@@ -477,7 +477,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'bootstrapping',
-    title: 'Bootstrap the first version',
+    title: 'Write your loss limit and ask 3 customers to pay early',
     stage: 'business_model',
     intents: ['bootstrapping'],
     criteria: ['model-money-needed'],
@@ -527,7 +527,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'grants-angels-vc',
-    title: 'Choose grants, angels or venture capital',
+    title: 'Choose one money source and list 3 places to apply',
     stage: 'business_model',
     intents: ['grants-angels-vc'],
     criteria: ['model-money-needed'],
@@ -576,7 +576,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'friends-family-money',
-    title: 'Sort out money from family, friends or a crowd',
+    title: 'Write down each family offer and ask a lawyer first',
     stage: 'business_model',
     intents: ['friends-family-money'],
     criteria: [],
@@ -624,7 +624,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'valuation',
-    title: 'Prepare the valuation talk',
+    title: 'Write the proof page and book a talk about terms',
     stage: 'business_model',
     intents: ['valuation'],
     criteria: [],
@@ -676,7 +676,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'term-sheet',
-    title: 'Get a term sheet reviewed',
+    title: 'Have a lawyer read the term sheet',
     stage: 'business_model',
     intents: ['term-sheet'],
     criteria: [],
@@ -717,7 +717,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'equity-split',
-    title: 'Split equity with a cofounder',
+    title: 'Fill in one contribution sheet each and compare them',
     stage: 'business_model',
     intents: ['equity-split'],
     criteria: [],
@@ -765,7 +765,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'cofounder-agreement',
-    title: 'Agree roles and a cofounder agreement',
+    title: 'Write who decides what on one page for a lawyer',
     stage: 'business_model',
     intents: ['cofounder-agreement'],
     criteria: [],
@@ -808,8 +808,53 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
     next: ['equity-split', 'team-conflict', 'legal-structure'],
   },
   {
+    id: 'cofounder-left',
+    title: 'Secure the code and the accounts after a cofounder leaves',
+    stage: 'business_model',
+    intents: ['cofounder-left'],
+    criteria: [],
+    answer:
+      'Secure three things today, before you plan anything else: the code, the accounts and the customers. List what exists and who can get into it. Ask your cofounder in writing for access and a copy of everything. Do not assume the work is yours, because the person who made it may own it. A lawyer tells you who does, and I am not one. Then write to your customers that you are still here.',
+    why: 'People hand things over most easily in the first days. Later it gets slower and costs more.',
+    steps: [
+      step(
+        'List the code, accounts, data and money, and who can get into each',
+        'Where the code is, the domain, the app store, payments, email and the bank.',
+        30,
+      ),
+      step(
+        'Ask for access and a copy of everything in one friendly message',
+        'Short and in writing. No blame, and a date to answer by.',
+        15,
+      ),
+      step(
+        'Take the list to a lawyer and ask who owns what',
+        'Bring anything you both signed or wrote, and who paid for what.',
+        45,
+      ),
+      step('Tell your customers who to write to now', 'Two lines: what still works, and your name.', 20),
+    ],
+    doneWhen:
+      'Every account on the list has a name beside it, you asked for access in writing, and a lawyer has the list.',
+    days: 3,
+    template: {
+      title: 'Handover message',
+      body: 'Hi [name], thank you for what you built. I need to keep [venture] running for our customers. Could you give me access to [accounts] and a copy of [code, designs, data] by [date]? I would like us to write down what each of us keeps.',
+    },
+    traps: ['Locking them out before you asked. It turns a handover into a fight.'],
+    referral: REFERRALS.lawyer(
+      'The list of code, accounts and data, who made what, anything you both signed or wrote, and any shares you promised.',
+    ),
+    citations: [
+      cite('founders-dilemmas', 'Role Dilemmas'),
+      ain(AIN.legalStructure),
+      cite('openstax-entrepreneurship', '13.1 Business Structures: Overview of Legal and Tax Considerations'),
+    ],
+    next: ['cofounder-agreement', 'no-tech-skills', 'find-cofounder'],
+  },
+  {
     id: 'legal-structure',
-    title: 'Choose a legal structure',
+    title: 'Write 3 questions on legal structure and book a meeting',
     stage: 'business_model',
     intents: ['legal-structure'],
     criteria: [],
@@ -861,7 +906,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'contracts-and-insurance',
-    title: 'Sort out contracts, liability and insurance',
+    title: 'Write the deal on one page and have a lawyer read it',
     stage: 'business_model',
     intents: ['contracts-and-insurance'],
     criteria: [],
@@ -913,7 +958,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'taxes',
-    title: 'Set up taxes for a first business',
+    title: 'Open a separate account and start a tax sheet',
     stage: 'business_model',
     intents: ['taxes'],
     criteria: [],
@@ -942,7 +987,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
         45,
       ),
     ],
-    doneWhen: 'A separate account and a sheet exist, and an accountant has your sheet and 3 questions.',
+    doneWhen: 'You have a separate account and a sheet, and an accountant has the sheet and 3 questions.',
     days: 14,
     template: {
       title: 'Records and questions',
@@ -957,7 +1002,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'international-student',
-    title: 'Check what your student visa allows',
+    title: 'Send the International Services Office your list of questions',
     stage: 'idea',
     intents: ['international-student', 'visa-said'],
     criteria: [],
@@ -1002,7 +1047,7 @@ export const BUSINESS_MODEL_PLAYS: readonly Play[] = [
   },
   {
     id: 'permits-food',
-    title: 'Get permits for food or campus sales',
+    title: 'Ask the county and the University about permits',
     stage: 'business_model',
     intents: ['permits-food'],
     criteria: [],

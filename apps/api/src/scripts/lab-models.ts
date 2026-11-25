@@ -5,7 +5,7 @@
  *
  *   MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1 \
  *   pnpm --filter @foundry/api exec tsx src/scripts/lab-models.ts --budget-usd 2 [--requests 6] [--structured 4]
- *     [--rerank-queries 60] [--out DIR]
+ *     [--rerank-queries 60] [--admission-reranks 100] [--out DIR]
  *
  * The conversation lab runs it on GitHub as its `models` suite (ops/lab conversation_lab/models_bench.py, under the
  * lab's role). No app, database or browser.
@@ -19,6 +19,8 @@
  *   and fused with a word search in memory, against the word search alone.
  * - With a local DATABASE_URL (the lab's own, reset and seeded): production's own search with each model's 1024-dimension
  *   vectors, for every candidate set of fusion weights and floors (./lab-retrieval.ts).
+ * - With production's embedding model there too, semantic admission: which shared notes a turn is shown at each floor,
+ *   closeness, limit and way its play is chosen, and which a reranker would choose (./lab-admission.ts).
  * - With each model's 1024-dimension vectors, the path's matching: the play a message gets from the rules alone and with
  *   meaning behind them, on asks, near misses and messages nothing answers (./lab-plays.ts).
  * - Rerankers that answered: the top 20 of production's ranking with production's embedding model, reordered, on a fixed
@@ -78,12 +80,13 @@ import {
 import { z } from 'zod';
 
 import { createDatabase } from '../runtime/common.js';
+import { benchAdmission, type AdmissionResult } from './lab-admission.js';
 import { refusal } from './lab-local-db.js';
 import { benchmarkMessages, benchmarkSystemPrompt } from './lab-models-prompt.js';
 import {
   benchPlays,
   matchingMessages,
-  productionPlay,
+  productionTurn,
   ruleOutcomes,
   type MatchingVectors,
   type PlayMatchingResult,
@@ -897,6 +900,8 @@ export interface BenchOptions {
   readonly requests: number;
   readonly structured: number;
   readonly rerankQueries: number;
+  /** Questions a reranker chooses the notes of (./lab-admission.ts). */
+  readonly admissionReranks: number;
   /** The questions (tests ask fewer); default: the committed ones. */
   readonly queries?: readonly BenchmarkQuery[];
 }
@@ -952,6 +957,8 @@ export async function runModelsBenchmark(
       ? null
       : await openRetrievalStore(database.db, { passages, queries }, database.tenantSlug);
   const search: SearchResult[] = [];
+  let admission: AdmissionResult | null = null;
+  let admissionKept: Record<string, unknown> = {};
   const searchKept: Record<string, Record<string, unknown>> = {};
   const matching = matchingMessages(queries);
   const ruled = ruleOutcomes(matching);
@@ -1009,10 +1016,37 @@ export async function runModelsBenchmark(
       if (store === null) continue;
       const extras = await embedExtras(clients, budget, region, store, { id: c.id, dimensions });
       if (extras === null) continue;
-      const measured = await benchSearch(store, embedded.corpus, extras, productionPlay(vectors));
+      const measured = await benchSearch(store, embedded.corpus, extras, productionTurn(vectors));
       search.push(measured.result);
       searchKept[c.id] = measured.kept;
       if (c.id === PRODUCTION_EMBEDDING.id) {
+        const [model] = candidates.rerankers
+          .filter((r) => may(r.id))
+          .sort((x, y) => x.usdPerThousandQueries - y.usdPerThousandQueries);
+        const measuredNotes = await benchAdmission(
+          store,
+          embedded.corpus,
+          { phrase: productionTurn(vectors, false), meaning: productionTurn(vectors) },
+          model === undefined || options.admissionReranks === 0
+            ? null
+            : {
+                id: model.id,
+                sample: options.admissionReranks,
+                score: async (query, texts) => {
+                  const order = await rerank(clients, budget, model, query, texts);
+                  if (order === null) return null;
+                  const scores = new Array<number>(texts.length).fill(0);
+                  for (const { index, score } of order) scores[index] = score;
+                  return scores;
+                },
+                failed: (error) => {
+                  refusals.add('rerank', model.id, error);
+                  return failureCode(error);
+                },
+              },
+        );
+        admission = measuredNotes.result;
+        admissionKept = measuredNotes.kept;
         best = {
           id: c.id,
           dimensions,
@@ -1082,6 +1116,7 @@ export async function runModelsBenchmark(
       lexical: quality(queries, lexical, { scoresMeanRelevance: true }),
       embeddings,
       search,
+      admission: admission === null ? [] : [admission],
       playMatching: plays,
       rerank: {
         base: best === null ? null : { id: best.id, dimensions: best.dimensions, by: best.by },
@@ -1105,6 +1140,7 @@ export async function runModelsBenchmark(
           ? {}
           : Object.fromEntries([...fused.hybrid].map(([id, r]) => [id, r.slice(0, 5).map((s) => s.id)])),
       search: searchKept,
+      admission: admissionKept,
       playMatching: playsKept,
       rerankings,
     },
@@ -1219,6 +1255,7 @@ export function parseArgs(argv: readonly string[]): Omit<BenchOptions, 'region'>
     requests: 6,
     structured: 4,
     rerankQueries: 60,
+    admissionReranks: 100,
     out: null as string | null,
   };
   const count = (flag: string, value: string, max: number): number => {
@@ -1242,6 +1279,9 @@ export function parseArgs(argv: readonly string[]): Omit<BenchOptions, 'region'>
         break;
       case '--rerank-queries':
         args.rerankQueries = count(flag, value, 200);
+        break;
+      case '--admission-reranks':
+        args.admissionReranks = count(flag, value, 200);
         break;
       case '--out':
         args.out = value;

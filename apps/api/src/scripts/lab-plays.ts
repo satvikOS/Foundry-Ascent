@@ -13,6 +13,7 @@ import { performance } from 'node:perf_hooks';
 
 import { classifyRisk } from '@foundry/ai';
 import {
+  asksOf,
   decide,
   pickPlay,
   PLAY_MATCH_TOP,
@@ -161,11 +162,28 @@ export function ruleOutcomes(messages: readonly Message[]): Ruled[] {
   });
 }
 
-/** The play a turn's first message gets with these vectors, as production decides (null: none were made). */
-export function productionPlay(vectors: MatchingVectors | null): (message: string) => string | null {
+/** What a turn makes of a first message (no venture, no step yet). */
+export interface ChosenTurn {
+  /** The play it is answered with; null: none. */
+  readonly playId: string | null;
+  /** Whether it asks something a shared note may answer, and how plainly (core `asksOf`). */
+  readonly asks: ReturnType<typeof asksOf>;
+}
+export type ChooseTurn = (message: string) => ChosenTurn;
+
+/**
+ * As production decides with these vectors (null: none were made, and the nearest words stand in); `meaning` false: the
+ * phrases and rules alone.
+ */
+export function productionTurn(vectors: MatchingVectors | null, meaning = true): ChooseTurn {
   const near = vectors === null ? null : nearestOf(vectors);
-  return (message) =>
-    playOfDecision(decide({ ...firstMessage(message), near: near?.get(message) ?? 'unavailable' }));
+  return (message) => {
+    const decision = decide({
+      ...firstMessage(message),
+      ...(meaning ? { near: near?.get(message) ?? ('unavailable' as const) } : {}),
+    });
+    return { playId: playOfDecision(decision), asks: asksOf(decision, message) };
+  };
 }
 
 /** The nearest plays of every message, by one model's vectors. */

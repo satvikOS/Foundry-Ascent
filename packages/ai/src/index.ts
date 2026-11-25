@@ -18,6 +18,7 @@ export {
   type LogFields,
   type ModelAttempt,
   type ModelGateway,
+  type Reranker,
   type ModelGatewayInfo,
   type ModelLogger,
   type ModelProviderName,

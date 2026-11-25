@@ -136,6 +136,13 @@ describe('the <path> block', () => {
     expect(renderGuidance({ ...late, step: null }, 'text', { today: TODAY })).not.toContain('path_step');
   });
 
+  it('asks for a sum in a marker when the calculator is not sure of it', () => {
+    const asked = renderGuidance({ ...STEP_ONLY, asksSum: true }, 'text', { today: TODAY });
+    expect(asked).toContain('as a sum like [[8017 - 46 dollars]] or [[46 / 8017 percent]], never solved');
+    expect(renderGuidance(STEP_ONLY, 'text', { today: TODAY })).not.toContain('[[');
+    expect(renderGuidance({ ...SOCIAL, asksSum: true }, 'text', { today: TODAY })).not.toContain('[[');
+  });
+
   it('gives what the reply opens with, the sums, and the one thing on record to build on', () => {
     const g: PromptGuidance = {
       ...SERVICE_OR_PRODUCT,
@@ -152,7 +159,7 @@ describe('the <path> block', () => {
       'Your reply already opens with that, word for word. Write only what comes after it',
     );
     expect(text).toContain('<sums>10 labs x $40 = $400 a month.</sums>');
-    expect(text).toContain('Do no arithmetic of your own.');
+    expect(text).toContain('Any other sum: in [[ ]], never solved.');
     expect(text).toContain('<prior>They decided on October 20 to sell to lab managers</prior>');
     expect(renderGuidance(g, 'voice', { today: TODAY })).toContain('<opens>Ten labs at 40 dollars');
     for (const none of ['<opens>', '<sums>', '<prior>']) expect(block).not.toContain(none);
@@ -556,5 +563,54 @@ describe('how the ask was found', () => {
       expect(text).toContain('<step title=');
       expect(text).not.toContain('Short note');
     }
+  });
+});
+
+describe('what the decision asks of the first sentence', () => {
+  const said = (over: Partial<PromptGuidance>): string =>
+    renderGuidance({ ...SERVICE_OR_PRODUCT, ...over }, 'text', { today: TODAY });
+
+  it('a choice comes with exactly the options they named', () => {
+    const text = said({ choice: { kind: 'either', options: ['the <museum>', 'visitors'] } });
+    expect(text).toContain('Your first sentence names your pick of these');
+    expect(text).toContain('<options>the &lt;museum&gt; | visitors</options>');
+    expect(said({ choice: { kind: 'yes_no', options: ['yes', 'no'] } })).toContain(
+      'Your first word is Yes, No or Not yet',
+    );
+    expect(said({ choice: { kind: 'which', options: [] } })).toContain('names the one you pick');
+    // Decided already, it opens the reply; nothing on a social turn.
+    const lead = { text: 'East: 6 of 20.', voice: 'East: 6 of 20.' };
+    expect(said({ lead, choice: { kind: 'either', options: ['a', 'b'] } })).not.toContain('<options>');
+    expect(said({ kind: 'social', choice: { kind: 'either', options: ['a', 'b'] } })).not.toContain(
+      '<options>',
+    );
+  });
+
+  it('a finding comes in their words, and is never skipped', () => {
+    const text = said({ kind: 'report', ask: null, finding: 'seven love it, but six have <no> space' });
+    expect(text).toContain('<finding>seven love it, but six have &lt;no&gt; space</finding>');
+    expect(text).toContain('say what it means for the venture');
+  });
+
+  it('who decides is told to the model once, and a template the reply opens with is not told again', () => {
+    const referral = { who: 'UR Ventures, the office', bring: 'the form' };
+    expect(said({ referral })).toContain('<referral>');
+    const answered = {
+      title: 't',
+      answer: 'This one is for UR Ventures, the office. Bring the form.',
+      why: '',
+      traps: [],
+      evidenceKeys: [],
+    };
+    expect(said({ referral, ask: answered })).not.toContain('<referral>');
+    expect(
+      said({ referral: { ...referral, told: true }, ask: { ...answered, answer: 'Only UR Ventures can.' } }),
+    ).not.toContain('<referral>');
+    const template = { title: 'Five lines', body: '1. Who: [person]\n2. Problem: [what]' };
+    const step = { ...STEP, template };
+    expect(said({ step })).toContain('Template "Five lines"');
+    expect(
+      said({ step, lead: { text: 'Start.\n\n1. Who: [person]\n2. Problem: [what]', voice: 'Start.' } }),
+    ).not.toContain('Template "Five lines"');
   });
 });

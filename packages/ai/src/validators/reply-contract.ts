@@ -300,6 +300,9 @@ function lowerFirst(text: string): string {
 function doneClause(doneWhen: string): string {
   // Said in the step line already, as the step.
   if (/^\s*this one part is done:/iu.test(doneWhen)) return 'this one part is done';
+  // Its parts were said: the line says how many.
+  const parts = /^\s*these (\d+) parts are done:/iu.exec(doneWhen)?.[1];
+  if (parts !== undefined) return `these ${parts} parts are done`;
   return lowerFirst(stripEnd(doneWhen.replace(/^\s*done when:?\s*/iu, '')));
 }
 
@@ -368,7 +371,8 @@ function sayStep(guidance: PromptGuidance, channel: TurnChannel, today?: string 
   const { step } = guidance;
   if (step === null) return '';
   if (guidance.kind === 'recall') return recalledStep(step, channel, today);
-  if (guidance.stepRole === 'quiet') return '';
+  // Said in the reply before: on a call it is not said twice in a row; a typed reply always has it.
+  if (guidance.stepRole === 'quiet' && channel === 'voice') return '';
   return guidance.stepRole === undefined
     ? stepLine(step, channel, today)
     : standingLine(step, channel, today);
@@ -722,6 +726,12 @@ function saysWho(reply: string, referral: NonNullable<PromptGuidance['referral']
   return who.size === 0 || sharedCount(who, said) >= Math.min(2, who.size) || coverage(who, said) >= 0.4;
 }
 
+/** Whether a reply names the office or person alone ("UR Ventures"). */
+function namesOffice(reply: string, referral: NonNullable<PromptGuidance['referral']>): boolean {
+  const office = (referral.who.split(/[,;]/u)[0] ?? '').replace(/^(?:a|an|the|your) /iu, '').trim();
+  return office !== '' && reply.toLowerCase().includes(office.toLowerCase());
+}
+
 /** A sentence that says to have something with them ("take the form", "see them with your notes"). */
 const CARRIES =
   /\b(?:bring(?:ing)?|tak(?:e|ing)|carry|with|show(?:ing)?|hand(?:ing)?|send(?:ing)?|attach|have (?:ready|on hand))\b/iu;
@@ -759,10 +769,10 @@ function referralRest(reply: string, guidance: PromptGuidance, channel: TurnChan
   const voice = channel === 'voice';
   const who = voice ? clipped(referral.who, SPOKEN_WHO_WORDS) : stripEnd(referral.who);
   const bring = voice ? clipped(referral.bring, SPOKEN_BRING_WORDS) : stripEnd(referral.bring);
-  const said = saysWho(reply, referral);
+  const said = saysWho(reply, referral) || (referral.told === true && namesOffice(reply, referral));
   return [
     said ? '' : `A qualified person decides this: ${lowerFirst(who)}.`,
-    bring === '' || saysBring(reply, referral) ? '' : `Bring ${lowerFirst(bring)}.`,
+    bring === '' || referral.told === true || saysBring(reply, referral) ? '' : `Bring ${lowerFirst(bring)}.`,
   ]
     .filter((p) => p !== '')
     .join(' ');
@@ -836,10 +846,12 @@ export function composedAnswer(guidance: PromptGuidance, channel: TurnChannel): 
       .filter((p) => p !== '')
       .join('\n\n');
   }
-  const where = `You are at ${lowerFirst(stage.title)}, stage ${String(stage.number)} of ${String(stage.count)}.`;
-  if (step === null || guidance.stepRole !== undefined || step.items.length === 0) return where;
+  const given = (voice ? guidance.fallback?.voice : guidance.fallback?.text) ?? '';
+  if (given.trim() !== '') return given;
+  if (step === null || step.items.length === 0)
+    return `You are at ${lowerFirst(stage.title)}, stage ${String(stage.number)} of ${String(stage.count)}.`;
   const parts = subSteps(step, channel);
-  return voice ? parts : `${where} Here is how the step goes:\n\n${parts}`;
+  return voice ? parts : `Here is how the step goes:\n\n${parts}`;
 }
 
 /** The whole reply the path alone gives: the answer, who decides and the step (no model). */
@@ -1003,6 +1015,11 @@ function clean(body: string, guidance: PromptGuidance, channel: TurnChannel, tod
         if (wordsIn(raw) < 3) return;
       }
     }
+    // Who decides, said a second time.
+    if (repeatsReferral(raw, kept.map((k) => k.raw).join(''), guidance)) {
+      leave(u, 'missing_referral');
+      return;
+    }
     // What the server already said first, or a verdict on it.
     if (lead.size > 0 && (repeatsLead(raw, lead) || onlyVerdict(raw))) {
       leave(u, 'step_talk');
@@ -1047,6 +1064,41 @@ export function isServerText(unit: string, guidance: PromptGuidance, channel: Tu
     referralRest('', guidance, channel),
     newIdeaLine(guidance),
   ].some((t) => norm(t).includes(own));
+}
+
+/** Whether a unit only says again who decides, or what to bring, when the reply said both. */
+export function repeatsReferral(unit: string, before: string, guidance: PromptGuidance): boolean {
+  const { referral } = guidance;
+  if (referral === null || before.trim() === '') return false;
+  if (!saysWho(before, referral) || !saysBring(before, referral)) return false;
+  const own = stemsOf(
+    `${referral.who} ${referral.bring} bring take decide decides question answer qualified person one this that`,
+  );
+  const said = stemsOf(unit);
+  return (
+    said.size >= 2 &&
+    coverage(said, own) >= 0.8 &&
+    (saysWho(unit, referral) || coverage(stemsOf(referral.bring), said) >= 0.4)
+  );
+}
+
+const PICKS_YES_NO =
+  /\b(?:yes|no|nope|yep|not|never|partly|neither|only|both|cannot|can['’]t|don['’]t|doesn['’]t|isn['’]t|won['’]t|shouldn['’]t|aren['’]t)\b/iu;
+
+/** Whether a reply's first sentence picks, when they asked to have a choice made of options they named. */
+export function picks(reply: string, guidance: PromptGuidance): boolean {
+  const choice = guidance.choice ?? null;
+  if (choice === null || choice.options.length === 0 || (guidance.lead ?? null) !== null) return true;
+  const first = read(reply).find((u) => u.kind === 'statement' || u.kind === 'block')?.text ?? '';
+  const text = bare(first);
+  if (choice.kind === 'yes_no') return PICKS_YES_NO.test(text);
+  if (/\b(?:both|neither|in this order)\b/iu.test(text)) return true;
+  const said = stemsOf(text);
+  return choice.options.some((o) => {
+    const others = new Set(choice.options.filter((x) => x !== o).flatMap((x) => [...stemsOf(x)]));
+    const own = [...stemsOf(o)].filter((w) => !others.has(w));
+    return (own.length > 0 ? own : [...stemsOf(o)]).some((w) => said.has(w));
+  });
 }
 
 /** Whether a unit only says what the lead said. */
@@ -1169,6 +1221,7 @@ export function checkReplyContract(input: ReplyContractInput): ReplyContractResu
   const c = clean(parts.body, guidance, channel, input.today);
   const findings = new Set<ReplyContractFinding>(c.findings);
   const lead = leadText(guidance, channel);
+  if (!picks(parts.body, guidance)) findings.add('missing_pick');
   if (lead !== '' && !parts.hadLead) findings.add('missing_lead');
   const step = sayStep(guidance, channel, input.today);
   if (step !== '' && !parts.hadStep) findings.add('missing_step');
@@ -1272,8 +1325,7 @@ export function carriesContract(unit: string, guidance: PromptGuidance | null | 
     ].some((t) => t !== undefined && norm(t).includes(own))
   )
     return true;
-  if (guidance.step !== null && guidance.stepRole !== 'quiet' && SERVER_STEP.test(unit.trim()))
-    return namesStep(unit, guidance.step);
+  if (guidance.step !== null && SERVER_STEP.test(unit.trim())) return namesStep(unit, guidance.step);
   if (
     guidance.step !== null &&
     DONE_LINE.test(bare(unit)) &&

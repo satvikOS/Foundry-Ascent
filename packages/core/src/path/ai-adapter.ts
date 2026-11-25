@@ -28,8 +28,12 @@ export interface PathPromptGuidance {
   } | null;
   /** What the server says first, word for word (`PromptGuidance.lead`). */
   readonly lead?: { readonly text: string; readonly voice: string };
+  /** What the server answers with when the model gave too little of an answer. */
+  readonly fallback?: { readonly text: string; readonly voice: string };
   /** Sums of their numbers, given. */
   readonly calc?: readonly string[];
+  /** They ask for a sum the calculator is not sure of. */
+  readonly asksSum?: boolean;
   /** The one question of the reply, when a number is missing. */
   readonly askBack?: string;
   /** The one prior fact the answer builds on. */
@@ -57,12 +61,19 @@ export interface PathPromptGuidance {
     readonly dueOn: string | null;
     readonly overdue: boolean;
   } | null;
-  readonly referral: { readonly who: string; readonly bring: string } | null;
+  readonly referral: { readonly who: string; readonly bring: string; readonly told?: boolean } | null;
   readonly newIdea: { readonly ventureName: string; readonly fact: string | null } | null;
+  /** What came of their work, in their own words. */
+  readonly finding?: string;
+  /** The choice they ask to have made. */
+  readonly choice?: {
+    readonly kind: 'either' | 'which' | 'yes_no';
+    readonly options: readonly string[];
+  } | null;
   readonly criteria?: readonly { readonly id: string; readonly title: string; readonly evidence: string }[];
   /** How what they asked was found (`PromptGuidance.matched`). */
   readonly matched?: 'phrase' | 'semantic' | 'none';
-  /** A step that is not about what they asked: said as what stands on their path, or not again yet. */
+  /** A step that is not about what they asked: said as what stands on their path (on a call, not twice in a row). */
   readonly stepRole?: 'standing' | 'quiet';
 }
 
@@ -194,10 +205,10 @@ function plainGuidance(g: PathPromptGuidance, channel: TurnChannel, today: strin
 }
 
 /** A turn whose reply owes the step: not a social turn, not in role, and a step was decided. */
-export function owesStep(guidance: PathPromptGuidance): boolean {
+export function owesStep(guidance: PathPromptGuidance, channel: TurnChannel = 'text'): boolean {
   return (
     guidance.step !== null &&
-    guidance.stepRole !== 'quiet' &&
+    (guidance.stepRole !== 'quiet' || channel === 'text') &&
     guidance.kind !== 'social' &&
     guidance.kind !== 'rehearsal'
   );
@@ -226,7 +237,7 @@ export function checkReply(
       // A check that cannot run changes nothing.
     }
   }
-  const missing = owesStep(guidance) && !namesStep(reply, guidance.step?.title ?? '');
+  const missing = owesStep(guidance, context.channel) && !namesStep(reply, guidance.step?.title ?? '');
   return {
     findings: missing ? ['missing_step'] : [],
     repaired:
@@ -291,6 +302,8 @@ export function guidanceWords(guidance: PathPromptGuidance): string {
     guidance.prior?.sentence ?? '',
     guidance.prior?.spoken ?? '',
     ask?.block ?? '',
+    guidance.fallback?.text ?? '',
+    guidance.finding ?? '',
   ]
     .filter((t) => t.trim() !== '')
     .join('\n');

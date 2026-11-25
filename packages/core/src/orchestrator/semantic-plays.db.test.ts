@@ -231,7 +231,7 @@ describe('what it never holds up', () => {
 });
 
 describe('a question nothing of the program answers', () => {
-  it('is answered first, and the path’s step only stands: once in three turns, never as the answer', async () => {
+  it('is answered first, and the path’s step only stands: on every typed turn, never as the answer', async () => {
     const core = coreWith();
     const ODD = [
       'Is it odd that the corridor smells of oranges on rainy November mornings?',
@@ -250,7 +250,7 @@ describe('a question nothing of the program answers', () => {
       said.push(run.turn.response?.answer ?? '');
     }
     const standing = said.map((answer) => answer.includes('**On your path, next is:** '));
-    expect(standing).toEqual([true, false, false, true]);
+    expect(standing).toEqual([true, true, true, true]);
     for (const answer of said) expect(answer).not.toMatch(/Next:\*{0,2} |Done when/);
     for (const answer of said) expect(answer.split(/On your path/)[0]?.trim()).not.toBe('');
   });

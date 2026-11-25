@@ -164,11 +164,11 @@ describe('conversation craft in the system prompt', () => {
     );
   });
 
-  it('writes for them only what they said, does no sum of its own, and never says our own words', () => {
+  it('writes for them only what they said, works no sum out, and never says our own words', () => {
     // First live run on Nova 2 Lite: "I study nutrition", "maybe $20 to $50 a month", "the playbook says".
     expect(craft).toContain('holds only what they or the record said; the rest stays in [brackets]');
     expect(craft).toContain('Say what they have, know or can reach only if they did.');
-    expect(craft).toContain('even as an example, nor a sum');
+    expect(craft).toContain('A sum: [[8017 - 46 dollars]], never solved');
     expect(craft).toContain('Never say "playbook".');
   });
 
@@ -329,7 +329,7 @@ describe('conversation craft in the system prompt', () => {
     // 2026-11-24.1: the founder path. The stable prompt is rewritten as a compact guide-first policy (the reply contract,
     // 4,800 to about 3,100 tokens with the doctrine); the incidents each earlier rule came from are held by the
     // validators and the turn's <conversation_state>. The history of the wording is in git.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-26.1');
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-27.1');
   });
 });
 

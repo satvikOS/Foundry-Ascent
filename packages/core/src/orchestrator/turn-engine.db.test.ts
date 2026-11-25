@@ -1194,6 +1194,44 @@ describe('spoken turns', () => {
     expect(gateway.ended).toBe(true);
   });
 
+  it('a sum in a marker is shown, said and stored worked out, however the stream was cut', async () => {
+    const text = 'A mug sells for 18 dollars; clay is 4 dollars and glaze 3. What is the point of a fair?';
+    const reply =
+      'At a fair you keep [[18 - 4 - 3 dollars]] on each mug, before the stall. That is [[99 - 44 dollars]] of nothing. ' +
+      'Sell ten by hand first, and write down what each buyer says about the price.';
+    for (const channel of ['text', 'voice'] as const) {
+      const gateway = new MockModelGateway({ streamDelayMs: 0, streamFixture: () => reply });
+      const { core, orchestrator } = coreWith(gateway);
+      const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+      const { events, outcome } = await run(orchestrator, session.id, {
+        text,
+        mode: 'coach',
+        ...(channel === 'voice' ? { channel, callId: CALL_ID } : {}),
+      });
+      expect(outcome.status).toBe('completed');
+      const worked =
+        channel === 'voice'
+          ? '18 minus 4 minus 3, so 11 dollars on each mug'
+          : '18 - 4 - 3 = 11 dollars on each mug';
+      const shown = deltas(events)
+        .map((d) => d.text)
+        .join('');
+      const turn = completed(events);
+      const stored = turn.response?.answer ?? '';
+      expect(shown).toContain(worked);
+      expect(stored).toBe(shown.trim());
+      expect(stored).not.toMatch(/\[\[|\]\]|99|44/);
+      expect(stored).toContain('Sell ten by hand first');
+      for (const unit of speechUnits(events)) expect(unit.text).not.toMatch(/[[\]]/);
+      if (channel === 'voice')
+        expect(
+          speechUnits(events)
+            .map((u) => u.text)
+            .join(' '),
+        ).toContain(worked);
+    }
+  });
+
   it('a crisis message never waits on, or makes, a fields call (the crisis path gates what is said)', async () => {
     const gateway = new MockModelGateway({ streamDelayMs: 0 });
     const { core, orchestrator } = coreWith(gateway);

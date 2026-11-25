@@ -48,7 +48,7 @@ import { nameBudgetSpent, withoutStockOpener, withoutVocativeName } from './open
 import { guidanceText, type PromptGuidance } from '../prompts/guidance.js';
 import { termsIn, withMeanings } from './glossary.js';
 import { ownFactsUnit } from './own-facts.js';
-import { supportUnit, type SupportIndex } from './citation-support.js';
+import { supportUnit, supportWith, withoutSpan, type SupportIndex } from './citation-support.js';
 import {
   SPOKEN_REPLY_WORDS,
   StepTalk,
@@ -61,12 +61,14 @@ import {
   leadText,
   onlyVerdict,
   repeatsLead,
+  repeatsReferral,
   withoutLabel,
   spokenReserve,
   withoutDeadline,
 } from './reply-contract.js';
 import { stemsOf } from './stems.js';
 import { clampWords, toSpeakable } from './speech.js';
+import { SumFacts, mayHoldSum, sumsUnit } from './sums.js';
 import { findUnitEnd } from './units.js';
 
 export { findUnitEnd } from './units.js';
@@ -124,7 +126,9 @@ export { findUnitEnd } from './units.js';
  *    most, after the step), another step than the path's is left out, the step's day is the path's, the step and the
  *    path's answer are never repeats, and the end of the stream adds what is missing. A statement never waits for any
  *    of it. On a call the step's words are kept free of the spoken budget until it was said.
- * 7. what may be stated (`support`; validators/citation-support.ts): a citation whose source does not support its
+ * 7. sums (validators/sums.ts): a sum the model wrote as a marker (`[[…]]`, never cut across units) is worked out and said
+ *    with its working, a sum it worked out itself is checked and put right; what cannot be told goes with its clause.
+ * 8. what may be stated (`support`; validators/citation-support.ts): a citation whose source does not support its
  *    sentence goes, and so does a figure, a named program, person, law or deadline nobody gave.
  *
  * The final validation of the whole response stays authoritative: units are a preview the client replaces
@@ -350,9 +354,9 @@ export interface GateStats {
   readonly markdownRemovals: number;
 }
 
-/** A reply that opens like structured output instead of prose: JSON, a code fence, a field label. */
+/** A reply that opens like structured output instead of prose: JSON, a code fence, a field label (never a sum's marker). */
 const STRUCTURED_OPENING =
-  /^(?:```|\{|\[\s*[{[]|<\/?(?:answer|reply|response)\b|[*_]{0,2}"?(?:answer|spoken|reply|response|mode|claims|next_actions)"?[*_]{0,2}\s*:)/i;
+  /^(?:```|\{|\[\s*(?:\{|\[\s*["{[])|<\/?(?:answer|reply|response)\b|[*_]{0,2}"?(?:answer|spoken|reply|response|mode|claims|next_actions)"?[*_]{0,2}\s*:)/i;
 /** Characters of a reply's opening needed to tell it from structured output. */
 const OPENING_CHARS = 20;
 const CITATION = / ?\[\s*(E\d+(?:\s*[,;]\s*E\d+)*)\s*\](?!\()/gi;
@@ -503,7 +507,15 @@ export class SentenceGate {
   /** The path's decision the reply is held to, or null (none, or a turn it exempts). */
   readonly #contract: PromptGuidance | null;
   /** The figures known this turn, the path's included. */
-  readonly #figures: string | undefined;
+  #figures: string | undefined;
+  /** What may be stated (`support`), with the sums said since. */
+  #support: SupportIndex | null;
+  /** What a sum of this reply may use (validators/sums.ts); read when the first one may come. */
+  #sums: SumFacts | null = null;
+  /** How much of what they came to is among what may be stated. */
+  #sumsKnown = 0;
+  /** The unit its sums were worked out for last (one that waits for the next is read again). */
+  #summed: { readonly at: number; readonly raw: string; readonly text: string } | null = null;
   /** The model's own step talk, block by block (the server writes the one step line); null: the turn has no step. */
   readonly #talk: StepTalk | null;
   /** What the server says first ('' on a turn that opens with the model's answer), and whether it was said. */
@@ -578,6 +590,7 @@ export class SentenceGate {
       options.knownFigures === undefined || this.#contract === null
         ? options.knownFigures
         : `${options.knownFigures}\n${guidanceText(this.#contract, options.today)}`;
+    this.#support = options.support ?? null;
     this.#news = founderMoves(options.founderText ?? '').includes('news');
     this.#stuck = stuckOn(options.founderText, options.previousReply);
     this.#life = options.founderText === undefined ? null : askedLifeFor(options.founderText, this.#identity);
@@ -805,6 +818,13 @@ export class SentenceGate {
         if (this.#leaks([stable.slice(from)])) return this.#block('cross_venture', units);
       }
       let rawUnit = this.#raw.slice(this.#cursor, end);
+      // Its sums worked out by code, before anything else reads it: a marker never goes further than here.
+      const summed = this.#withSums(rawUnit);
+      if (summed === '') {
+        this.#cursor = end;
+        continue;
+      }
+      rawUnit = summed;
       // A question asked again (by any reading) goes from the reply's trailing hand-back (`handBackCandidate`): it is
       // held until the next unit shows whether anything but another such question follows it (`#onlyQuestionsAfter`).
       // One that comes back whole also goes as it did before (`proseHandBackCandidate`): from that scope's trailing run,
@@ -1165,6 +1185,11 @@ export class SentenceGate {
         this.#leaveOut('contract', rawUnit);
         return 'out';
       }
+      // Who decides, said a second time in one reply.
+      if (repeatsReferral(unit, this.#releasedText, guidance)) {
+        this.#leaveOut('contract', rawUnit);
+        return 'out';
+      }
       if (guidance.step !== null && /:[*_\s]*$/.test(unit)) {
         // "Here's what to do:" waits for what it announces: the model's own step list goes with it.
         const next = this.#nextUnit(end, stable);
@@ -1217,8 +1242,8 @@ export class SentenceGate {
         unit = undated;
       }
     }
-    if (this.#options.support && this.#question === null) {
-      const out = supportUnit(unit, this.#options.support, {
+    if (this.#support !== null && this.#question === null) {
+      const out = supportUnit(unit, this.#support, {
         protect: carriesContract(unit, this.#contract),
         before: this.#shown.slice(-400),
       });
@@ -1258,6 +1283,55 @@ export class SentenceGate {
       unit = told;
     }
     return { unit };
+  }
+
+  /** A unit with its sums worked out and checked (validators/sums.ts); '' when nothing of it may be said. */
+  #withSums(rawUnit: string): string {
+    if (rawUnit.trim() === '' || !mayHoldSum(rawUnit)) return rawUnit;
+    const last = this.#summed;
+    if (last?.at === this.#cursor && last.raw === rawUnit) return last.text;
+    const text = this.#workOut(rawUnit);
+    this.#summed = { at: this.#cursor, raw: rawUnit, text };
+    return text;
+  }
+
+  #workOut(rawUnit: string): string {
+    const o = this.#options;
+    this.#sums ??= new SumFacts(
+      [
+        this.#figures ?? '',
+        o.founderText ?? '',
+        this.#contract === null ? '' : guidanceText(this.#contract, o.today),
+        this.#contract?.said ?? '',
+      ].join('\n'),
+      [...(o.pastReplies ?? []), ...(o.earlierReplies ?? []), o.previousReply],
+    );
+    const facts = this.#sums;
+    const out = sumsUnit(rawUnit, facts, {
+      spoken: o.spoken === true,
+      protect:
+        isProtectedLine(rawUnit, this.#keepReferrals) ||
+        (this.#contract !== null &&
+          isServerText(rawUnit, this.#contract, o.spoken === true ? 'voice' : 'text')),
+      cut: withoutSpan,
+    });
+    // What sums came to, here and in the replies before, may be stated.
+    const added = facts.rendered.slice(this.#sumsKnown);
+    this.#sumsKnown = facts.rendered.length;
+    if (added !== '') {
+      if (this.#figures !== undefined) this.#figures += added;
+      if (this.#support !== null) this.#support = supportWith(this.#support, added);
+    }
+    if (out.text === rawUnit) return rawUnit;
+    this.#supportEdits += out.findings.includes('sum_dropped') ? 1 : 0;
+    this.#rewritten = true;
+    if (out.text === '') {
+      if (/^[ \t]*\n\s*\n/.test(rawUnit)) this.#paragraphLeft = true;
+      this.#leanedOn = this.#contract !== null;
+      this.#keepDropped('support', rawUnit);
+      return '';
+    }
+    return out.text;
   }
 
   /** Whether the next unit is the model's own step talk (read on a copy of the block so far). */

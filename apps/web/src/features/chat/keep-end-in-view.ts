@@ -29,6 +29,24 @@ export function followsAfterScroll(
   return following;
 }
 
+/** Room left above the first words of a reply the page never scrolls away (the header, and a line of what they asked). */
+export const WORDS_MARGIN_PX = 112;
+
+/**
+ * How far the page may go down to show `hidden` pixels of the end: all of it, unless that takes the first words of the
+ * latest reply (`wordsTop`, in viewport pixels; null: none yet) out of view. A reply and its step are often taller than
+ * the screen: what Thomas answered is read from its start.
+ */
+export function revealBy(hidden: number, wordsTop: number | null): number {
+  return wordsTop === null ? hidden : Math.min(hidden, Math.max(0, wordsTop - WORDS_MARGIN_PX));
+}
+
+/** Where the words of the latest reply start (its step shows before them: then where its exchange does). */
+function wordsOfLatest(conversation: HTMLElement | null): HTMLElement | null {
+  const latest = [...(conversation?.querySelectorAll('article') ?? [])].at(-1);
+  return latest?.querySelector<HTMLElement>('[data-slot="markdown"]') ?? latest ?? null;
+}
+
 export interface KeepEndInView {
   /** The conversation, composer included: observed as it grows (the answer streaming in, chips, the saved line). */
   conversationRef: (element: HTMLElement | null) => void;
@@ -45,7 +63,8 @@ export interface KeepEndInView {
  * last lines, then its actions, and the follow-up chips the composer gains at that moment, however long the answer
  * and however tall the composer grows (LAB-U1: a four-paragraph answer and long chips left the actions behind the
  * composer). The page follows the end from the moment a message is sent (or whenever the reader is at the end) and
- * stops as soon as the reader scrolls up away from it: someone reading the answer from its start is never moved.
+ * stops as soon as the reader scrolls up away from it: someone reading the answer from its start is never moved. A reply
+ * keeps its first words in view ({@link revealBy}): it is read from its start, and its step after it.
  *
  * The page moves only while an answer streams in (`streaming`) or when `changeKey` changes (what just finished:
  * the latest exchange, its follow-ups, its saved line), never because the reader opened something at the end.
@@ -80,7 +99,8 @@ export function useKeepEndInView({
   }, []);
 
   const reveal = useCallback(() => {
-    const by = hidden();
+    const words = wordsOfLatest(conversation.current);
+    const by = revealBy(hidden(), words ? words.getBoundingClientRect().top : null);
     if (by > 1) window.scrollBy({ top: by, behavior: 'instant' });
   }, [hidden]);
 

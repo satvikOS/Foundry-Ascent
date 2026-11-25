@@ -44,6 +44,7 @@ import { cutMetaNarration } from './meta-narration.js';
 import {
   NEWS_FALLBACK,
   asksToRepeat,
+  isProtectedLine,
   repeatFallbackFor,
   welcomesSignOff,
   wrapsUp,
@@ -56,7 +57,7 @@ import {
   announcedCountGap,
 } from './social.js';
 import { guidanceText, type PromptGuidance } from '../prompts/guidance.js';
-import { checkCitationSupport, type SupportIndex } from './citation-support.js';
+import { checkCitationSupport, supportWith, withoutSpan, type SupportIndex } from './citation-support.js';
 import { ownFactsUnit } from './own-facts.js';
 import {
   SPOKEN_REPLY_WORDS,
@@ -72,6 +73,7 @@ import {
 } from './reply-contract.js';
 import { unitsOf } from './units.js';
 import { SPOKEN_MAX_CHARS, SPOKEN_MAX_WORDS, clampWords, deriveSpoken, toSpeakable } from './speech.js';
+import { SumFacts, sumsText } from './sums.js';
 
 export interface CoachResponseLimits {
   answerMaxChars: number;
@@ -571,12 +573,44 @@ export function validateCoachResponse(
       ? options.guidance
       : null;
   const saidAloud = options.released === true && channel === 'voice';
-  const knownFigures =
+  let knownFigures =
     options.knownFigures === undefined
       ? undefined
       : guidance === null
         ? options.knownFigures
         : `${options.knownFigures}\n${guidanceText(guidance, options.today)}`;
+  // Sums (validators/sums.ts): each marker worked out, each sum written out checked, whatever else is exempt. A reply the
+  // gate released holds no marker any more; its sums read the same here.
+  const sums = new SumFacts(
+    [
+      knownFigures ?? '',
+      options.founderText ?? '',
+      options.guidance == null
+        ? ''
+        : `${guidanceText(options.guidance, options.today)}\n${options.guidance.said ?? ''}`,
+    ].join('\n'),
+    [...(options.pastReplies ?? []), ...(options.earlierReplies ?? []), options.previousReply],
+  );
+  let support = options.support ?? null;
+  let sumsKnown = 0;
+  const summed = (text: string, note: boolean): string => {
+    const out = sumsText(text, sums, {
+      spoken: channel === 'voice',
+      cut: withoutSpan,
+      protect: (unit) =>
+        isProtectedLine(unit, forcedEscalationFor(options.preRisk) !== null) ||
+        (guidance !== null && isServerText(unit, guidance, channel)),
+    });
+    const added = sums.rendered.slice(sumsKnown);
+    sumsKnown = sums.rendered.length;
+    if (added !== '') {
+      if (knownFigures !== undefined) knownFigures += added;
+      if (support !== null) support = supportWith(support, added);
+    }
+    if (note && out.edits > 0)
+      for (const f of new Set(out.findings)) notes.push(`${f}:${out.findings.filter((x) => x === f).length}`);
+    return out.text;
+  };
   // The forms of the questions asked lately: this conversation's replies and the end of the last ones.
   const usedFrames: ReadonlySet<string> = new Set(
     [...earlier, ...(options.pastReplies ?? [])].flatMap((t) =>
@@ -594,7 +628,7 @@ export function validateCoachResponse(
     return body === '' ? lead : `${lead}${channel === 'voice' ? ' ' : '\n\n'}${body}`;
   };
   const craftedBody = (text: string, note: boolean, lead = ''): string => {
-    let out = text;
+    let out = summed(text, note);
     if (news) {
       const unparked = withoutAgendaPush(out);
       if (unparked.dropped > 0) {
@@ -681,16 +715,15 @@ export function validateCoachResponse(
     if (varied.rephrased > 0 && note) notes.push(`question_rephrased:${varied.rephrased}`);
     out = varied.text;
     if (saidAloud || identityAsked) return out;
-    if (options.support) {
-      const support = checkCitationSupport(out, options.support, {
+    if (support !== null) {
+      const held = checkCitationSupport(out, support, {
         protect: (unit) => carriesContract(unit, guidance),
       });
-      if (support.citationsDropped > 0 && note)
-        notes.push(`citations_unsupported:${support.citationsDropped}`);
-      const claims = support.sentencesRemoved + support.sentencesNeutralised;
+      if (held.citationsDropped > 0 && note) notes.push(`citations_unsupported:${held.citationsDropped}`);
+      const claims = held.sentencesRemoved + held.sentencesNeutralised;
       if (claims > 0 && note) notes.push(`claims_removed:${claims}`);
       // With nothing left, the path's own reply stands in its place (below); with no path, the reply as it was written.
-      if (support.text !== '' || guidance !== null) out = support.text;
+      if (held.text !== '' || guidance !== null) out = held.text;
     }
     if (guidance !== null) {
       const own = ownFactsText(out, guidance, knownFigures ?? '');
@@ -731,7 +764,10 @@ export function validateCoachResponse(
   const plain = (value: string): string => {
     const out = sanitizePlainText(value);
     if (out.changed && value.includes('<')) plainChanged += 1;
-    return out.text;
+    // A field never holds a sum's marker either.
+    return out.text.includes('[[') || out.text.includes(']]')
+      ? sumsText(out.text, sums, { cut: withoutSpan }).text
+      : out.text;
   };
   r.claims = r.claims.map((c) => ({ ...c, text: plain(c.text) })).filter((c) => c.text !== '');
   r.uncertainty = r.uncertainty.map((u) => ({ ...u, item: plain(u.item) })).filter((u) => u.item !== '');

@@ -35,18 +35,18 @@ export function asksFor(text: string): boolean {
       QUESTION_START.test(s) ||
       WORK_START.test(s) ||
       ASKS_AFTER.test(s) ||
-      /\b(?:can|could|would|will) you\b|\bi (?:need|want|would like) (?:you |some |your )*(?:help|advice|to (?:know|understand|learn|figure|decide|get|find))\b|\bhelp me\b|\bi (?:do not|am not sure|am unsure)(?: know)? (?:how|what|which|who|where|whether|if)\b|\bnot sure (?:how|what|which|who|where|whether|if)\b/.test(
+      /\b(?:can|could|would|will) you\b|\b(?:just |please |so |now |then )?(?:tell|show|teach) me (?:what|how|why|where|which|who|if|whether|exactly|honestly|straight)\b|\bwhat is wrong with\b|\bi (?:need|want|would like) (?:you |some |your )*(?:help|advice|to (?:know|understand|learn|figure|decide|get|find))\b|\bhelp me\b|\bi (?:do not|am not sure|am unsure)(?: know)? (?:how|what|which|who|where|whether|if)\b|\bnot sure (?:how|what|which|who|where|whether|if)\b/.test(
         s,
       ),
   );
 }
 
 const ACKNOWLEDGES =
-  /^(?:(?:ok(?:ay)?|kk?|cool|great|nice|perfect|awesome|got it|sounds good|makes sense|understood|alright|all right|fine|sure|noted|thanks?|thank you|cheers|yep|yeah|yes|right|true|good|will do|lol|haha|wow|hmm+|interesting)[ ,.!]*){1,4}$/;
+  /^(?:(?:ok(?:ay)?|kk?|cool|great|nice|perfect|awesome|got it|sounds good|makes sense|understood|alright|all right|fine|sure|noted|thanks?|thank you|cheers|yep|yeah|yes|good|will do|lol|haha|wow)[ ,.!]*){1,4}$/;
 
 /** Small talk about the coach: never something to plan. */
 const SMALL_TALK =
-  /\bweather\b.*\b(?:there|you|where you are)\b|\bhow(?: is| was) your (?:day|week|weekend|morning|evening)\b|\bwhere are you (?:right now|based|from)\b|\byour favou?rite (?:\w+ )?(?:food|colou?r|movie|song|book|team|band)\b|\bdo you (?:even |ever |really )?(?:sleep|eat|dream|have (?:kids|a dog|a cat|hobbies|a family|a life|feelings))\b|\b(?:you have no idea|you do not know) what you are (?:talking|saying)\b/;
+  /\bweather\b.*\b(?:there|you|where you are)\b|\bhow(?: is| was) your (?:day|week|weekend|morning|evening)\b|\bwhere are you (?:right now|based|from)\b|\byour favou?rite (?:\w+ )?(?:food|colou?r|movie|song|book|team|band)\b|\bdo you (?:even |ever |really )?(?:sleep|eat|dream|have (?:kids|a dog|a cat|hobbies|a family|a life|feelings))\b/;
 
 /** Wishes, farewells and hellos the social turn's own words do not know ("have a great weekend", "I'm back", "see you Monday"). */
 const COURTESY: readonly RegExp[] = [
@@ -100,6 +100,19 @@ export function isVenting(text: string): boolean {
   return VENTS.test(said) && !contentStems(said).some((w) => WORK_WORDS.has(w) || AT_WORK.has(w));
 }
 
+/** Anger or weariness at the work or at the advice: answered, with what stands on their path. */
+const FRUSTRATED =
+  /\bugh+\b|\bhate (?:this|it|that|everything about|you|these)\b|\bsick of (?:this|it|that|you|doing)\b|\bdriving me (?:crazy|nuts|insane)\b|\bfed up\b|\bover it\b|\bi am done\b|\b(?:useless|pointless|nonsense|waste of (?:my )?time)\b|\bnothing (?:works|is working)\b/;
+
+const THEIR_PEOPLE =
+  /\bmy (?:\w+ )?(?:roommate|housemate|mom|mum|mother|dad|father|parents?|brother|sister|family|boyfriend|girlfriend|partner|friends?|grandma|grandpa|professor|boss|ex)\b/;
+
+/** They tell how hard their life is right now, and nothing of the work: a person first, and no step. */
+export function isHardship(text: string): boolean {
+  const said = plain(text);
+  return isVenting(text) && (!FRUSTRATED.test(said) || THEIR_PEOPLE.test(said));
+}
+
 /** A statement that says what they want, lack, fear or cannot get done: it asks for help without asking. */
 const NEEDS =
   /\b(?:need|want|wish|hope|trying|try|looking for|search(?:ing)?|struggl\w*|stuck|lost|unsure|not sure|wonder\w*|confus\w*|worried|nervous|afraid|scared|torn|undecided|no (?:idea|clue)|cannot|can not|could not|will not|would not|do not|does not|did not|never|nobody|no one|none|nothing|keeps?|too (?:many|much|few|big|small|expensive|early|late)|instead|rather|should|might|maybe|thinking (?:of|about)|supposed to|have to|must|only (?:have|know)|how|what|which|whether|where|who|why|if|but|or)\b/;
@@ -129,6 +142,20 @@ const RECALL: readonly RegExp[] = [
   /^(?:(?:um+|uh+|so|like)[, ]+)*what (?:does|about|is|was) (?:what (?:does|about|is|was) )?(?:my|our) (?:startup |business |venture )?idea\s*[?.!]*$/,
   /\b(?:and )?did (?:i|we) have (?:something|anything) to do\b|\bwhat (?:was|were) (?:i|we) (?:supposed|going|meant) to do\b/,
   /\bwhat did you (?:tell|give|say to) (?:me|us)\b(?! to do)/,
+  // The story.
+  /\b(?:tell|give|walk|take|show|read) (?:me|us)(?: through| over)?(?: back)? (?:the |my |our |this )?(?:(?:whole|full|entire|complete|short) )?(?:story|history|journey|timeline)\b/,
+  /\b(?:whole|full|entire) (?:story|history|journey)\b|\b(?:the|our|my) (?:story|journey|timeline) so far\b/,
+  /\bhow (?:did|have) (?:we|i) (?:get|got|end up|ended up|arrive|come) (?:here|to (?:this|where)|this far)\b|\bwhy (?:we|i) are where (?:we|i) are\b|\bwhy are (?:we|i) where (?:we|i) are\b/,
+  /\b(?:everything|all) (?:that )?(?:we|i)(?: have)? (?:did|done|tried|decided|learned|found)(?: out)?(?: so far| until now| up to now)?\s*[?.!]*$|\bwhat (?:has|have) (?:happened|i done|we done|i tried|we tried|i learned|we learned) (?:so far|until now|up to now|since)\b/,
+  /\b(?:recap|summary|rundown|run ?down|overview) of (?:everything|what (?:we|i)|our|my|where|the (?:story|last))\b|\b(?:give|need|want) (?:me |us )?(?:a |the )?(?:quick |short |full )?recap\b|^(?:quick |please |a )*recap(?: please| me| us)?\s*[?.!]*$/,
+  // Which idea, and what the venture has.
+  /\bwhich (?:of (?:the|my|our|those|these) (?:two |three |2 |3 )?)?(?:ideas?|ventures?|directions?|versions?|plans?|one) (?:are|am|is) (?:we|i|it)(?: still)? (?:on|doing|working on|at|with|in|building|following)\b|\bwhich (?:idea|venture|direction|version) (?:is|are) (?:it|this|we|the current|current|live|open|active|now)\b/,
+  /\bwhat (?:idea|venture|direction|version) (?:are|am) (?:we|i)(?: currently| still)? (?:on|doing|working on|building|pursuing)\b|\bwhat (?:is|was) (?:the|my|our) (?:current|latest|new|first|old|original|previous) (?:idea|direction|venture|version|plan)\b/,
+  /\bare (?:we|i) still (?:on|doing|building|going with|working on)\b|\bwhat (?:are|am) (?:we|i) (?:building|making|selling|doing) (?:now|again|these days|at the moment)\b/,
+  /\bwhat (?:[\w'&-]+ ){1,3}(?:has|have|had)(?: got| proven| shown)?(?: so far)?,? (?:and|and what) (?:what )?(?:it |we |i |they |is |are )?(?:has|have|had|do|does|is|are|still)?\s*(?:not|no|missing|lacks?|left|to (?:do|prove|show))\b|\bwhat (?:do|does) (?:[\w'&-]+ ){1,3}have (?:and|or) (?:not|lack|what)\b/,
+  /\bwhat (?:have|has) (?:we|i|[\w'&-]+) (?:actually |really )?(?:proven|proved|shown|achieved|learned|got|validated)(?: so far| yet)?\s*[?.!]*$|\bwhat (?:do|does) (?:we|i|[\w'&-]+) (?:actually |really )?(?:have|know)(?: for sure)? so far\b|\bwhat (?:do|does) (?:we|i) know for (?:sure|certain)\b/,
+  /\bwhat (?:is|are)(?: still)? (?:missing|left to (?:prove|show)|proven|proved|not proven)(?: (?:for|in|from|with) (?:my|our|the|this) (?:venture|startup|idea|business|company|project|path|record))?\s*[?.!]*$|\bwhat (?:am|are) (?:i|we)(?: still)? missing\b|\bwhat (?:has|have) (?:[\w'&-]+ )?(?:not been|still to be) (?:proven|shown)\b/,
+  /\b(?:status|state) of (?:my|our|the) (?:venture|startup|idea|business|company|project)\b|\bwhere (?:does|is) (?:my|our|the) (?:venture|startup|idea|business|company|project) (?:stand|at|now)\b/,
 ];
 
 /** The message asks what was said, decided or known before. */
@@ -170,8 +197,18 @@ const OVERVIEW: readonly RegExp[] = [
   /\b(?:help (?:me|us)|let us|can we|want to|ready to) (?:to )?(?:get started|begin)\b/,
   /\bwhere do (?:i|we) even (?:start|begin)\b|^(?:(?:ok(?:ay)?|so|and|alright|great|done|right)[, ]+)*what (?:now|next)\s*[?.!]*$/,
   /\b(?:give|make|build|write|need|want) (?:me |us )?(?:a |an |the |my )?(?:\w+ )?plan for (?:the |this |my )?(?:next )?(?:\w+ )?(?:weeks?|month|semester|term)\b/,
-  /\b(?:ok(?:ay)?,? )?(?:let us get |get |getting )?back to (?:it|work|business|the plan|my plan|our plan)\b/,
   /\bi am (?:lost|overwhelmed|all over the place|stuck and do not know)\b/,
+  // In fewer words, and other words.
+  /\bwhat should (?:i|we) be (?:doing|working on|focusing on)\b|\bwhat (?:do|should|can|would) (?:i|we) do (?:this|next|the coming) (?:week|weekend|month|semester)\b/,
+  /\bwhat (?:i|we) (?:must |should |can |have to |need to )?do (?:tomorrow|tonight|today|now|right now|next|first|this week|on monday)\b/,
+  /\bwhat (?:do|should|would|can) (?:i|we) do (?:tomorrow|tonight|today|now|right now|on monday)(?: (?:morning|afternoon|evening|night))?\b/,
+  /\bwhat would you do(?: (?:first|next|now|right now))?(?: if (?:you|this|it) (?:were|was) (?:me|yours?|your (?:idea|venture|startup))| in my (?:place|shoes|position|situation)| as me)\b/,
+  /\b(?:my|your|the|any|give me|marching) orders(?: please| boss| now| for (?:today|this week))?\s*[?.!]*$|^(?:(?:ok(?:ay)?|yes|so|fine|right|alright|boss|chief|captain|coach)[,. ]+)*orders(?: please| boss)?\s*[?.!]*$/,
+  /\b(?:just )?tell me (?:exactly |straight |simply )?what (?:to do|i (?:do|should do|have to do|need to do|must do))(?: (?:next|now|first|today|this week|tomorrow))?\s*[?.!]*$/,
+  /\b(?:give|tell|name) me (?:just |only )?(?:one|a single|the one) (?:thing|task|job|action|step)(?: (?:to do|i (?:can|should|must) do|that i (?:can|should) do)\b.{0,60})?\s*[?.!]*$|\bone thing,? what (?:would|should|is) it (?:be)?\b/,
+  /\b(?:the |your |my )?least (?:dumb|stupid|bad|risky)(?: one| thing| move| option)?\b/,
+  /\bwhat is the (?:one|single|most (?:useful|important)|smartest|best|least (?:dumb|stupid|bad)) (?:thing|move|step) (?:i|we|to|that i|that we)\b/,
+  /\bwhat (?:is|are) my (?:step|steps|task|tasks|homework|assignment|to ?do|job)(?: (?:now|today|this week|right now|for (?:today|this week|now)))?\s*[?.!]*$/,
 ];
 
 /** "What would I do first for that?": about what was just said, not about the whole path. */
@@ -179,8 +216,13 @@ const ABOUT_THAT = /\b(?:for|with|on|about) (?:that|this|it|those|these|them|tha
 
 /** "Get me organized", "what do I do next", "where do I start": the whole path is the answer. */
 export function asksOverview(text: string): boolean {
-  return sentences(text).some((s) => !ABOUT_THAT.test(s) && OVERVIEW.some((r) => r.test(s)));
+  const own = sentences(text);
+  if (own.some((s) => !ABOUT_THAT.test(s) && OVERVIEW.some((r) => r.test(s)))) return true;
+  // "Okay, back to it." alone; with a question of its own, that is what they ask.
+  return own.some((s) => BACK_TO_IT.test(s)) && !own.some((s) => !BACK_TO_IT.test(s) && asksFor(s));
 }
+
+const BACK_TO_IT = /\b(?:let us get |get |getting )?back to (?:it|work|business|the plan|my plan|our plan)\b/;
 
 const THAT = '(?:that|this|it|them|those|these|(?:the|that|this) (?:first )?(?:step|part|thing|bit))';
 const HOW_TO: readonly RegExp[] = [
@@ -206,6 +248,22 @@ export function asksHowTo(text: string): boolean {
   return sentences(text).some((s) => HOW_TO.some((r) => r.test(s)));
 }
 
+const WHEN_DONE =
+  /\bhow (?:will|do|would|can|should) (?:i|we) (?:know|tell)(?: that| if| when)? (?:i|we|it|this|that)(?: am| are| is| have|'ve)? (?:done|finished|enough|did|worked|works|good enough|ready|complete|through)\b|\bhow (?:will|do|would|can) (?:i|we) know (?:(?:i|we) have |(?:i|we) |it is |that is |this is )?(?:(?:done )?enough|when to stop|when it is (?:done|enough))\b|\bwhen (?:is|am|are|will) (?:it|this|that|i|we|the step)(?: be)? (?:done|finished|enough|complete|through)\b|\bwhat (?:does|would) (?:done|enough|good enough) (?:look like|mean)\b|\bwhat counts as (?:done|enough|finished)\b|\bhow (?:much|many) is enough\b/;
+
+/** They ask when the step just given is done. */
+export function asksWhenDone(text: string): boolean {
+  return sentences(text).some((s) => WHEN_DONE.test(s));
+}
+
+const MESSAGE_ASKED =
+  /\b(?:write|draft|give|send|show|make|compose|type)(?: me| us)?(?: out)? (?:the|a|an|that|my|this|some)(?: (?:short|first|cold|quick|exact|actual|whole|good|simple))* (?:message|e-?mail|text|note|dm|script|invitation|invite|post|lines?)\b|\bwhat (?:do|should|would) (?:i|we) (?:write|say|text|send)(?: to)? (?:them|him|her|to them|people|someone|that person)\b|\bwhat (?:should|would) the (?:message|e-?mail|text|note) (?:say|be)\b/;
+
+/** They ask for the message to send, written out. */
+export function asksMessage(text: string): boolean {
+  return sentences(text).some((s) => MESSAGE_ASKED.test(s));
+}
+
 // ------------------------------------------------------------------------------------------------
 // Too big for the time they have
 // ------------------------------------------------------------------------------------------------
@@ -221,7 +279,7 @@ export interface SmallerAsk {
 }
 
 const TOO_BIG =
-  /\b(?:that|this|it) is (?:(?:a bit|a lot|way|still|kind of|just|probably|honestly|really) )*too (?:much|big|long)\b(?! (?:money|cash|to pay|to charge))|\btoo (?:much|big|long) (?:for me |to do |work )?(?:before|right now|this week|today|tonight|at once)\b|\bsomething (?:much |a bit |a little |a lot )?(?:smaller|shorter|quicker|lighter|easier)\b|\b(?:smaller|shorter|quicker|lighter|mini) (?:step|version|one|task|piece|thing)\b|\bsmallest (?:step|piece|task|first step|thing (?:that )?(?:i|we) can (?:do|finish|get done))\b|\b(?:break|split|cut) (?:it|that|this) (?:down|up|into)\b|\bi (?:can not|do not) (?:fit|have (?:the )?time for) (?:that|this|it|all)\b/;
+  /\b(?:that|this|it) is (?:(?:a bit|a lot|way|still|kind of|just|probably|honestly|really) )*too (?:much|big|long)\b(?! (?:money|cash|to pay|to charge))|\btoo (?:much|big|long) (?:for me |to do |work )?(?:before|right now|this week|today|tonight|at once)\b|\bsomething (?:much |a bit |a little |a lot )?(?:smaller|shorter|quicker|lighter|easier)\b|\b(?:smaller|shorter|quicker|lighter|mini) (?:step|version|one|task|piece|thing)\b|\b(?:a |one |some )?small (?:thing|step|task)\b|\bsomething small\b|\bsmallest (?:step|piece|task|first step|thing (?:that )?(?:i|we) can (?:do|finish|get done))\b|\b(?:break|split|cut) (?:it|that|this) (?:down|up|into)\b|\bi (?:can not|do not) (?:fit|have (?:the )?time for) (?:that|this|it|all)\b/;
 const EXAMS =
   /\b(?:it is|this is|i am in|i have|i have got|we have|during|until after|because of|in the middle of) (?:my |our |the |an? )?(?:\w+ ){0,2}(?:(?:exam|finals|midterms?) (?:week|season|period)|exams|finals|midterms)\b|^(?:(?:ok|okay|but|sorry|so)[, ]+)?(?:exam|finals|midterms?) week\b|\bmy (?:\w+ )?(?:exam|final|midterm) is (?:today|tomorrow|this week|on (?:mon|tues|wednes|thurs|fri|satur|sun)day)\b/;
 const ONE_OR_N = '(half an|an?|one|two|three|four|five|six|seven|eight|ten|\\d+(?:\\.\\d+)?)';
@@ -258,6 +316,23 @@ function timeHad(t: string): { minutes: number; weekly: boolean } | null {
   const unit = UNIT_MINUTES.find(([re]) => re.test(found[2] ?? ''))?.[1] ?? 60;
   const minutes = Math.round(n * unit);
   return Number.isFinite(minutes) && minutes > 0 ? { minutes, weekly: found[3] !== undefined } : null;
+}
+
+const HAVE_TIME = new RegExp(
+  `\\b(?:i|we) (?:only |just |really )*(?:have|got|get)(?: (?:only|just|about|around|maybe|like|roughly))* ((?:${ONE_OR_N}) ${UNIT}(?: (?:a|per|each|every) (?:week|month|day))?)\\b|\\bmy ((?:${ONE_OR_N}) ${UNIT})\\b`,
+);
+
+/** The time they say they have for it, in minutes and in their words ("four hours a week"); null: none said. */
+export function timeSaid(text: string): { readonly minutes: number; readonly said: string } | null {
+  const m = HAVE_TIME.exec(plain(text));
+  const said = m?.[1] ?? m?.[4];
+  if (m === null || said === undefined) return null;
+  const n = m[2] ?? m[5] ?? '';
+  const unit = m[3] ?? m[6] ?? '';
+  const minutes = Math.round(
+    (NUMBERS[n] ?? Number(n)) * (UNIT_MINUTES.find(([re]) => re.test(unit))?.[1] ?? 60),
+  );
+  return Number.isFinite(minutes) && minutes > 0 ? { minutes, said } : null;
 }
 
 /**
@@ -306,7 +381,7 @@ const ACTED_BY_THEM = new RegExp(
   `\\b(?:i|we|my cofounder|my co-founder|my team|our team) (?:(?:have|had|just|already|finally|also|actually|only|even|then|now) )*${ACTED}\\b`,
 );
 const NOT_YET =
-  /^(?:(?:hi|hey|sorry|honestly|no|nope)[,:.! ]+)*not yet\b|^(?:no|nope)(?=[,.! ]|$)(?![,.! ]+(?:i mean|wait|what i|that is|it is|the|not that|actually|more)\b)|\b(?:have|had|did|could|was|were) not (?:yet |really |quite |even )*(?:do|done|get|got|gotten|manage|managed|finish|finished|start|started|send|sent|reach|reached|call|called|talk|talked|able|had (?:time|a chance)|have (?:time|a chance)|it|that|them)\b|\b(?:ran out of|no|not enough) time\b|\b(?:i|we) (?:forgot|missed (?:it|that|the))\b/;
+  /^(?:(?:hi|hey|sorry|honestly|no|nope)[,:.! ]+)*not yet\b|^(?:no|nope)(?=[,.!]|$| (?:i|we|sorry|unfortunately|not|time|did|have) ?\b)(?![,.! ]+(?:i mean|wait|what i|that is|it is|the|not that|actually|more)\b)|\b(?:have|had|did|could|was|were) not (?:yet |really |quite |even )*(?:do|done|get|got|gotten|manage|managed|finish|finished|start|started|send|sent|reach|reached|call|called|talk|talked|able|had (?:time|a chance)|have (?:time|a chance)|it|that|them)\b|\b(?:ran out of|no|not enough) time\b|\b(?:i|we) (?:forgot|missed (?:it|that|the))\b/;
 const BLOCKED =
   /\b(?:(?:i|we) (?:am|are|was|were|got|get) (?:stuck|blocked)|(?:no ?one|nobody|none of them) (?:has |have |had )?(?:replied|answered|responded|showed|wants?|wanted)|(?:still )?waiting (?:on|for) (?:a |an |the |their |his |her )?(?:reply|answer|response|approval|permission)|(?:could|can) not (?:find|reach|get) (?:anyone|any|them|a single))\b/;
 const DROPPED =
@@ -359,6 +434,19 @@ export function reportOf(text: string): MessageReport | null {
   if (notYet !== null) return { state: 'not_yet', quote: notYet };
   const started = find((s) => !asked(s) && STARTED.test(s) && !NEGATED.test(s));
   return started === null ? null : { state: 'started', quote: started };
+}
+
+/** A text of theirs they paste to have read ("here is the paragraph from my summary: …"): what it says is no report. */
+const PASTED =
+  /\b(?:here (?:is|are|comes)|this is|below is|read|check|fix|look at|rate|review|edit) (?:the|my|our|a|this)(?: [\w'-]+){0,4}? (?:paragraph|text|draft|summary|pitch|e-?mail|post|abstract|copy|slides?|message|letter|page|plan|essay|proposal|bio|description|statement|intro|blurb|script|application)\b[^:\n]{0,90}:\s*/i;
+
+/** The message without a text pasted into it: what they say themselves. */
+export function ownWords(text: string): string {
+  const m = PASTED.exec(text);
+  if (m === null) return text;
+  const pasted = text.slice(m.index + m[0].length);
+  if (pasted.split(/\s+/).length < 25) return text;
+  return text.slice(0, m.index + m[0].length).replace(/:\s*$/, '.');
 }
 
 const FINISHED = /\b(?:done|finished|completed|did it|did that|did them|sent (?:it|them)|it went out)\b/;
@@ -433,7 +521,7 @@ export function choiceOf(text: string): string[] {
 }
 
 const FIRST_TIME =
-  /\b(?:never (?:ever )?(?:done|started|built|run|had|tried) (?:this|that|anything|one|it|a (?:startup|business|venture|company))|first[- ]time (?:founder|entrepreneur)|(?:this is )?(?:my|our) first (?:startup|venture|business|company|time)|(?:do not|did not) know (?:anything|much|a thing|the first thing) about (?:business|startups?|entrepreneurship|running)|know nothing about (?:business|startups?)|new to (?:business|startups?|entrepreneurship|commerciali[sz]ation|this)|no (?:business|startup) (?:experience|background|knowledge)|(?:complete |total )?beginner)\b/;
+  /\b(?:never (?:ever )?(?:done|started|built|run|had|tried) (?:this|that|anything|one|it|a (?:startup|business|venture|company))|first[- ]time (?:founder|entrepreneur)|(?:this is )?(?:my|our) first (?:startup|venture|business|company|time)|(?:do not|did not) know (?:anything|much|a thing|the first thing) about (?:business|startups?|entrepreneurship|running)|know nothing about (?:business|startups?)|new to (?:business|startups?|entrepreneurship|commerciali[sz]ation|this)|no (?:business|startup) (?:experience|background|knowledge)|(?:complete |total )?beginner|(?:do not|did not) (?:really )?(?:know|understand|get) (?:the |any of the |anything about the )?(?:business|money) (?:side|part|stuff)|zero business (?:background|experience|knowledge)|first (?:company|startup|venture|business) for me|never (?:taken|took|had) a business class|no clue about business|clueless about business)\b/;
 
 /** They say they have never done this before. */
 export function saysFirstTime(text: string): boolean {
@@ -580,28 +668,128 @@ const HYPOTHESIS = /\b(?:if i|if we|what if|suppose|imagine|thinking (?:of|about
 /** A change of the idea: their sentence that says so, and the new idea in their words. */
 export interface Pivot {
   readonly quote: string;
+  /** What they said of it ("back to the reading corners. A library lends its room"). */
   readonly to: string;
+  /** The new idea alone ("an app with a story a night for parents"). */
+  readonly idea: string;
+  /** They go back to an idea they had: the first one, the one before, or one by its words. */
+  readonly back: 'first' | 'last' | 'named' | null;
 }
 
 const PIVOTS =
-  /\b(?:i|we|my team|our team)(?: are| am| have)?(?: now| just| all| both| finally)* (?:decided (?:to pivot|on a pivot)|decided: (?:we|i) pivot|agreed to pivot|pivoting|pivoted|pivot)\b|\bwe pivot\b/;
+  /\b(?:i|we|my team|our team)(?: are| am| have)?(?: now| just| all| both| finally)* (?:decided (?:to pivot|on a pivot)|decided: (?:we|i) pivot|agreed to pivot|pivoting|pivoted|pivot)\b|\bwe pivot\b|^(?:(?:so|ok(?:ay)?|big news|update|news)[,:. ]+)*pivot(?:ing)?(?: time)?\s*(?:[:,.-]|to\b|$)/;
 const SWITCHES =
-  /\b(?:i|we)(?: are| am| have)?(?: now| just)* (?:(?:switch(?:ed|ing)|chang(?:ed|ing)) (?:(?:the|our|my) (?:whole )?(?:idea|business|product|venture|startup|customers?)|direction)\b|switch(?:ed|ing) (?:from [^.,;]{3,60} )?to (?:selling|building|making|renting|offering|serving|targeting|doing)\b)/;
+  /\b(?:i|we)(?: are| am| have)?(?: now| just)* (?:(?:switch(?:ed|ing)|chang(?:ed|ing)) (?:(?:the|our|my) (?:whole )?(?:idea|business|product|venture|startup|customers?)|direction)\b|switch(?:ed|ing) (?:from [^.,;]{3,60} )?to (?:selling|building|making|renting|offering|serving|targeting|doing)\b|shift(?:ed|ing)? (?:the |our |my )?(?:whole )?focus (?:to|toward|towards|onto)\b)/;
 const NOW_DOING =
   /\b(?:i|we) are now (?:doing|building|selling|making|offering|renting|focusing on|going after|serving|targeting)\b/;
+/** "I'm changing direction", "new direction:", "we go another way with it". */
+const DIRECTION =
+  /\b(?:chang(?:e|ed|ing)|switch(?:ed|ing)?|shift(?:ed|ing)?|taking (?:it|us|this)|going|went|head(?:ed|ing)|mov(?:ed|ing)) (?:in |into )?(?:a |the |our |my )?(?:(?:totally|completely|whole|very) )?(?:new |different |another )?direction\b|\b(?:chang(?:e|ed|ing)|switch(?:ed|ing)?) direction\b|^(?:(?:so|ok(?:ay)?|update|news)[,:. ]+)*(?:a )?(?:new|change of) direction\s*[:,.-]|\bnew direction (?:is|for us|from now)\b/;
+/** "Ditching the corners for an app", "dropping lunches, doing soup instead", "scrapping X; now it's Y". */
+const DROPS =
+  /\b(?:i|we|my team)(?: are| am| have)?(?: now| just| finally| going to| decided to)* (?:drop(?:ped|ping)?|ditch(?:ed|ing)?|scrap(?:ped|ping)?|abandon(?:ed|ing)?|kill(?:ed|ing)?|leav(?:e|ing)|giv(?:e|ing) up on|gave up on|mov(?:e|ed|ing) (?:on |away )?from|stop(?:ped|ping)? (?:doing|selling|making|building|offering)) (?!it\b|that\b|this\b|out\b|class)(\S[^.;:]{2,80}?)(?:,| and|;| -)? (?:for|to|and (?:do|doing|sell|selling|build|building|make|making|start|starting|rent|renting|offer|offering|now)|now|instead|we|i)\b/;
+const FROM_NOW =
+  /^(?:(?:so|ok(?:ay)?|update|news)[,:. ]+)*from (?:now on|today)(?: on)?,? (?:i|we) (?:will |are |am |just )*(?:do|doing|sell|selling|build|building|make|making|rent|renting|offer|offering|serve|serving|target|targeting|run|running|focus(?:ing)? on)\b/;
+/** "No corners: an app for parents instead." on its own. */
+const NO_INSTEAD = /^no (?:more |longer )?[^.,;:]{2,60}[,;:.-]+ ?(?=\S).{8,}\binstead\b/;
 const PIVOT_TO =
-  /\b(?:pivot(?:ing|ed)?|switch(?:ed|ing)?|chang(?:ed|ing))(?: (?:the|our|my) (?:whole )?(?:idea|business|product|venture|startup|customers?)| direction)?(?: from [^.,;]{3,80}?)? (?:to|toward|towards|into) (?:(?:we|i) (?:['’]?(?:re|ll|m)|are|will|am) )?(?:now )?(\S.*)$/iu;
+  /\b(?:pivot(?:ing|ed)?|switch(?:ed|ing)?|chang(?:ed|ing)|shift(?:ed|ing)?|mov(?:ed|ing)|go(?:ing)?|head(?:ing)?)(?: (?:the|our|my) (?:whole )?(?:idea|business|product|venture|startup|customers?|focus)| (?:in a |in |a )?(?:new |different )?direction| away| on)?(?: from [^.,;]{3,80}?)? (?:to|toward|towards|into) (?:(?:we|i) (?:['’]?(?:re|ll|m)|are|will|am) )?(?:now )?(\S.*)$/iu;
 const NOW_CLAUSE =
   /\bnow ((?:doing|building|selling|making|offering|renting|focusing on|going after|serving|targeting)\b.*)$/iu;
+const DROP_AND = /\band (?:now )?(?:(?:doing|do|starting|start)\s+)?(\S.*)$/iu;
+const DROP_FOR = /\b(?:for|to|now (?:it is |it['’]s )?)\s+(\S.*)$/iu;
+const AFTER_MARK = /^[^:]{2,60}?[:—–]\s*(\S.*)$/u;
 const INSTEAD =
   /\b(?:instead|no more|no longer|stop(?:ped|ping)? (?:selling|making|doing|building|serving)|from now on|rather than)\b/;
+/** A way of working, never a venture: "switching from email to calls" changes no idea. */
+const METHOD =
+  /\b(?:e-?mails?|calls?|calling|phone|texts?|texting|surveys?|interviews?|zoom|notion|excel|sheets?|slack|figma|python|react|flutter|stripe|venmo|fridays?|mondays?|tuesdays?|wednesdays?|thursdays?|saturdays?|sundays?|mornings?|evenings?|weekends?|majors?|minors?|classes|courses?|dorms?|teams?|templates?|fonts?|logos?|names?|titles?|colou?rs?|bank|lawyers?|advisors?|mentors?|script|deck|slides?)\b/i;
+const NO_LEAD = /^no (?:more|longer)?\s*[^.,;:—–]{2,60}[,.;:—–-]+\s*(?:but |and |now |just |instead[, ]+)?/i;
+const UNSURE = /\b(?:if|should|might|maybe|perhaps|thinking (?:of|about)|considering|wonder(?:ing)?|not)\b/;
+const PAST_TOLD =
+  /\b(?:ago|last (?:week|month|year|term|semester|time)|yesterday we talked|back then|used to|remember)\b/;
+
+/** They go back to an idea they had. */
+const BACK =
+  /\b(?:(?:am|are|i|we|let us|will|have|had|is|are all)(?: now| just| both| all| decided to| have decided to| going to)* (?:going|go|went|gone|moving|move|moved|switching|switch|switched|turning|coming|come|came|returning|return|returned|reverting|revert|reverted|head(?:ed|ing)?|back)|^(?:(?:so|ok(?:ay)?|update|news|decided)[,:. ]+)*(?:going|switching|moving|returning|reverting|back)) (?:back )?(?:to|on|with) (?:the |my |our |doing |selling |making |building |that |those )*(\S[^.;!?]*)/;
+const BACK_WORD =
+  /\b(?:back|return(?:ing|ed)?|revert(?:ing|ed)?|original|first idea|old idea|earlier idea|previous idea)\b/;
+const UNDO =
+  /\b(?:undo|undoing|reverse|reversing|cancel(?:l?ing)?|scrap(?:ping)?|revert(?:ing)?|take back|taking back|forget|never mind|un-?pivot(?:ing)?) (?:the |that |this |my |our |about the )*(?:pivot|change of direction|switch|change of idea|new direction)\b|\b(?:the|that|our|my) pivot (?:was|is) (?:a mistake|wrong|off|cancel(?:l)?ed|undone)\b|\bun-?pivot\b/;
+const FIRST_ONE =
+  /^(?:(?:first|original|initial|very first|earliest) (?:idea|plan|version|venture|product|one|direction|concept)|where (?:we|i) started|what (?:we|i) (?:had|started with)(?: first)?)\b/;
+const LAST_ONE =
+  /^(?:(?:old|previous|earlier|former|last|other|prior) (?:idea|plan|version|venture|product|one|direction|concept)|what (?:we|i) (?:were|was) doing(?: before)?|the idea before)\b/;
+/** Going back to these is no idea ("back to work", "back to it", "back to school"). */
+const NOT_AN_IDEA =
+  /^(?:it|this|that|work|business|basics|school|class|classes|sleep|bed|home|campus|town|you|me|them|him|her|us|the plan|plan|topic|question|point|start|beginning|square one|normal|step|first step|task|list|drawing board|boston|rochester|lab|work on|coaching|what you said|your (?:question|point|advice)|my (?:question|point)|pricing|price|email|emails|interviews|customers?)\b/;
+
+/** The words of a new idea, without what it ends and the "instead" that says so. */
+function newIdeaIn(text: string): string {
+  const said = endless(text);
+  const rest = said.replace(NO_LEAD, '');
+  const kept = rest !== said && contentStems(rest).length >= 2 ? rest : said;
+  return endless(
+    (kept === said ? said : kept.replace(/[, ]+instead(?= of\b|$)/i, '')).replace(
+      /,? (?:because|since) .*$/i,
+      (tail) => (contentStems(kept.replace(tail, '')).length >= 2 ? '' : tail),
+    ),
+  );
+}
+
+/** What something is dropped for ("ditching the candles for soap", "dropping the app and building a tool"). */
+function droppedFor(sentence: string): string | undefined {
+  const from = sentence.slice(
+    Math.max(0, sentence.search(/\b(?:drop|ditch|scrap|abandon|kill|leav|giv|gave|mov|stop)/iu)),
+  );
+  const and = /\band (?:now )?(?:do|sell|build|mak|start|rent|offer|run|serv)\w*\b/iu.test(from);
+  return (and ? DROP_AND : DROP_FOR).exec(from)?.[1];
+}
+
+/** Going back to an idea they had; null: nothing of the kind. */
+function backOf(own: readonly string[]): Pivot | null {
+  for (let i = 0; i < own.length; i += 1) {
+    const sentence = own[i] ?? '';
+    const s = plain(sentence);
+    if (
+      s.endsWith('?') ||
+      QUESTION_START.test(s) ||
+      UNSURE.test(s) ||
+      /\b(?:ago|last (?:week|month|time))\b/.test(s)
+    )
+      continue;
+    const undone = UNDO.test(s);
+    const found = undone ? null : BACK.exec(s);
+    const target = (found?.[1] ?? '').trim();
+    if (!undone && (found === null || !BACK_WORD.test(s) || NOT_AN_IDEA.test(target))) continue;
+    const why = own
+      .slice(i + 1, i + 3)
+      .filter((x) => !plain(x).endsWith('?') && !QUESTION_START.test(plain(x)))
+      .map(endless);
+    const at = sentence.search(/\b(?:back|return\w*|revert\w*)\b/i);
+    const said =
+      undone || at < 0
+        ? endless(sentence)
+        : endless(sentence.slice(at)).replace(/^(?:return|revert)(?:ing|ed)? (?:back )?to\b/i, 'back to');
+    return {
+      quote: sentence,
+      to: clip([/^back\b/i.test(said) ? said : `back: ${said}`, ...why].join('. ')),
+      idea: '',
+      back: undone || LAST_ONE.test(target) ? 'last' : FIRST_ONE.test(target) ? 'first' : 'named',
+    };
+  }
+  return null;
+}
 
 /**
- * The change of direction a message states ("we decided to pivot to…", "I'm pivoting. No more lunches, I'll rent…
- * instead"), with the new idea in their own words; null when it asks about one, recalls one, or names no new idea.
+ * The change of direction a message states ("we decided to pivot to…", "I'm changing direction. No lunches: I'll rent jars
+ * instead", "I'm going back to the first idea"), with the new idea in their own words; null when it asks about one, recalls
+ * one, or names no new idea.
  */
 export function pivotOf(text: string): Pivot | null {
   const own = ownSentences(text);
+  const back = backOf(own);
+  if (back !== null) return back;
   for (let i = 0; i < own.length; i += 1) {
     const sentence = own[i] ?? '';
     const s = plain(sentence);
@@ -610,25 +798,57 @@ export function pivotOf(text: string): Pivot | null {
       QUESTION_START.test(s) ||
       WORK_START.test(s) ||
       ASKS_AFTER.test(s) ||
-      /\b(?:if|should|might|maybe|thinking (?:of|about)|not)\b/.test(s)
+      UNSURE.test(s) ||
+      PAST_TOLD.test(s)
     )
       continue;
+    const drops = DROPS.exec(s);
+    const alone = NO_INSTEAD.test(s);
     const cue =
-      PIVOTS.test(s) || (SWITCHES.test(s) && contentStems(sentence).length >= 3) || NOW_DOING.test(s);
+      PIVOTS.test(s) ||
+      (SWITCHES.test(s) && contentStems(sentence).length >= 3) ||
+      NOW_DOING.test(s) ||
+      DIRECTION.test(s) ||
+      FROM_NOW.test(s) ||
+      alone ||
+      drops !== null;
     if (!cue) continue;
-    const to = PIVOT_TO.exec(sentence)?.[1] ?? NOW_CLAUSE.exec(sentence)?.[1];
-    if (to !== undefined && contentStems(to).length >= 2) return { quote: sentence, to: clip(endless(to)) };
+    const named =
+      (alone ? sentence : undefined) ??
+      PIVOT_TO.exec(sentence)?.[1] ??
+      NOW_CLAUSE.exec(sentence)?.[1] ??
+      (FROM_NOW.test(s) ? sentence.replace(/^.*?\bfrom (?:now on|today)(?: on)?,?\s*/iu, '') : undefined) ??
+      (drops === null ? undefined : droppedFor(sentence)) ??
+      (DIRECTION.test(s) || PIVOTS.test(s) ? AFTER_MARK.exec(sentence)?.[1] : undefined);
+    if (named !== undefined && contentStems(named).length >= 2) {
+      // "Switching from email to calls" is a way of working.
+      if (METHOD.test(named) && contentStems(named.replace(new RegExp(METHOD.source, 'gi'), ' ')).length < 2)
+        continue;
+      if (METHOD.test(named) && !PIVOTS.test(s) && !DIRECTION.test(s) && !SWITCHES.test(s) && !alone)
+        continue;
+      const to = clip(endless(named));
+      return { quote: sentence, to, idea: newIdeaIn(to), back: null };
+    }
+    if (drops !== null || alone) continue;
     // The sentences after "we're pivoting" tell the new idea.
     const told: string[] = [];
     for (const later of own.slice(i + 1, i + 4)) {
       const l = plain(later);
       if (l.endsWith('?') || QUESTION_START.test(l)) break;
-      if (told.length === 0 && !INSTEAD.test(l) && !/\b(?:i|we) (?:will|are|am) \w+/.test(l)) continue;
+      if (
+        told.length === 0 &&
+        !INSTEAD.test(l) &&
+        !/\b(?:i|we) (?:will|are|am) \w+/.test(l) &&
+        !/^(?:it is|the (?:new )?(?:idea|plan|product) is|now it is|an? |no )/.test(l)
+      )
+        continue;
       told.push(endless(later));
       if (INSTEAD.test(l)) break;
     }
-    if (told.length > 0 && contentStems(told.join('. ')).length >= 3)
-      return { quote: sentence, to: clip(told.join('. ')) };
+    if (told.length > 0 && contentStems(told.join('. ')).length >= 3) {
+      const to = clip(told.join('. '));
+      return { quote: sentence, to, idea: newIdeaIn(to), back: null };
+    }
   }
   return null;
 }

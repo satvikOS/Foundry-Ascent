@@ -44,7 +44,14 @@ const CANDIDATES: Candidates = {
     { id: 'amazon.rerank-v1:0', region: 'us-west-2', usdPerThousandQueries: 1 },
   ],
 };
-const OPTIONS = { region: 'us-east-1', budgetUsd: 2, requests: 2, structured: 2, rerankQueries: 20 };
+const OPTIONS = {
+  region: 'us-east-1',
+  budgetUsd: 2,
+  requests: 2,
+  structured: 2,
+  rerankQueries: 20,
+  admissionReranks: 0,
+};
 
 /** The mock clients without the mock's streaming delays. */
 function clients(change: Partial<Clients> = {}): Clients {
@@ -314,6 +321,7 @@ describe('the command line and its inputs', () => {
       requests: 6,
       structured: 4,
       rerankQueries: 60,
+      admissionReranks: 100,
       out: null,
     });
     expect(parseArgs(['--budget-usd', '0.5', '--requests', '3', '--out', 'x'])).toMatchObject({

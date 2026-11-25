@@ -5,7 +5,7 @@ import { AIN, REFERRALS, ain, cite, step } from '../make.js';
 export const TRANSITION_PLAYS: readonly Play[] = [
   {
     id: 'leaving-ain',
-    title: 'Check if you are ready to leave the Ain Center',
+    title: 'Fill the six lines of the readiness check',
     stage: 'transition',
     intents: ['leaving-ain'],
     criteria: ['transition-ready'],
@@ -45,7 +45,7 @@ export const TRANSITION_PLAYS: readonly Play[] = [
   },
   {
     id: 'next-home',
-    title: 'Choose an incubator, accelerator or neither',
+    title: 'Compare three next homes and send one application',
     stage: 'transition',
     intents: ['next-home'],
     criteria: ['transition-next-home'],
@@ -89,7 +89,7 @@ export const TRANSITION_PLAYS: readonly Play[] = [
   },
   {
     id: 'after-graduation',
-    title: 'Keep the venture going after graduation',
+    title: 'Fill a one-page handover and choose who runs it',
     stage: 'transition',
     intents: ['after-graduation'],
     criteria: ['transition-handover'],
@@ -132,7 +132,7 @@ export const TRANSITION_PLAYS: readonly Play[] = [
   },
   {
     id: 'quit-or-continue',
-    title: 'Decide to stop, pause or continue',
+    title: 'List your last tests and choose to stop, pause or go on',
     stage: 'transition',
     intents: ['quit-or-continue'],
     criteria: ['validation-decision'],
@@ -170,7 +170,7 @@ export const TRANSITION_PLAYS: readonly Play[] = [
   },
   {
     id: 'student-to-mentor',
-    title: 'Mentor the next student founders',
+    title: 'Offer the program lead one session with a new team',
     stage: 'transition',
     intents: ['student-to-mentor'],
     criteria: ['transition-handover'],

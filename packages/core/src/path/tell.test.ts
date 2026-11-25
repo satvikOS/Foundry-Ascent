@@ -79,7 +79,10 @@ describe('the story', () => {
       ]),
     ).toEqual([
       { on: '2026-11-02', said: 'you sold six soaps at the fair' },
-      { on: '2026-11-09', said: 'you changed direction to this: refills for salons' },
+      {
+        on: '2026-11-09',
+        said: 'because of that, you changed direction to this: refills for salons',
+      },
     ]);
   });
 
@@ -129,7 +132,7 @@ describe('the one fact on record that bears on what they ask', () => {
   it('is said as a clause, with the server’s sentence for a reply that left it out', () => {
     expect(priorFact(source())).toEqual({
       fact: 'two salons pay 60 dollars a month each',
-      sentence: 'Build on what you have: two salons pay 60 dollars a month each.',
+      sentence: 'You already know that two salons pay 60 dollars a month each.',
     });
   });
 
@@ -164,9 +167,12 @@ describe('the one fact on record that bears on what they ask', () => {
         updatedAt: '2026-11-17T10:00:00.000Z',
       },
     ];
-    expect(priorFact(source({ reads: { ...NO_READS, criteria } }))?.fact).toBe(
+    const talk = { message: 'Who should I talk to next?', about: 'Run a problem interview' };
+    expect(priorFact(source({ ...talk, reads: { ...NO_READS, criteria } }))?.fact).toBe(
       'you did eight interviews; six of them said the pump leaks in the bag',
     );
+    // What people said of a pump says nothing of a price.
+    expect(priorFact(source({ reads: { ...NO_READS, criteria } }))?.fact).toBe('soap in refill pouches');
     // A decision that names nothing is nothing to build on.
     const bare = [memory({ type: 'decision', title: "I'm pivoting", content: "I'm pivoting." })];
     expect(priorFact(source({ reads: { ...NO_READS, memory: bare }, oneLiner: '' }))).toBeNull();
@@ -223,13 +229,13 @@ describe('the one fact on record that bears on what they ask', () => {
 
   it('their idea is put beside an answer it can be applied to, when the record holds nothing nearer', () => {
     const idea = { reads: NO_READS, applies: true };
-    expect(priorFact(source(idea))?.sentence).toBe('Apply it to your idea: soap in refill pouches.');
+    expect(priorFact(source(idea))?.sentence).toBe('In your case that is soap in refill pouches.');
     // Not again a moment after, unless the idea is what they ask about.
     const said = 'You sell soap in refill pouches.';
     expect(priorFact(source({ ...idea, said }))?.sentence).toBe('');
     expect(priorFact(source({ ...idea, said, message: 'Tell me my idea is great.' }))).toEqual({
       fact: 'soap in refill pouches',
-      sentence: 'Apply it to your idea: soap in refill pouches.',
+      sentence: expect.stringContaining('soap in refill pouches.') as string,
       // Asked about the idea, a call names it too.
       spoken: 'That is for your idea: soap in refill pouches.',
     });
@@ -244,6 +250,6 @@ describe('the one fact on record that bears on what they ask', () => {
     expect(
       priorFact(source({ reads: NO_READS, earlier: ['I sold nine pouches at 4 dollars at the price test.'] }))
         ?.sentence,
-    ).toBe('Build on this: you sold nine pouches at 4 dollars at the price test.');
+    ).toBe('Remember that you sold nine pouches at 4 dollars at the price test.');
   });
 });

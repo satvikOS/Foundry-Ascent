@@ -10,6 +10,16 @@ function chunked(text: string, size: number): string[] {
   return out;
 }
 
+it('a reply that opens with a sum in a marker is prose', () => {
+  const reply = '[[18 - 4 dollars]] is what one mug leaves you.';
+  for (let size = 0; size < 12; size += 1) {
+    const x = new ReplyExtractor();
+    for (const chunk of chunked(reply, size)) x.push(chunk);
+    x.end();
+    expect([x.shape, x.text]).toEqual(['prose', reply]);
+  }
+});
+
 interface Read {
   readonly text: string;
   readonly handed: string[];

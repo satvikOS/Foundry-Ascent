@@ -186,7 +186,15 @@ export {
   type EvidencePackOptions,
   type KeyedEvidence,
 } from './orchestrator/evidence.js';
-export { privateRetrievalOwner, retrieveEvidence } from './orchestrator/retrieval.js';
+export {
+  asksOf,
+  packEvidence,
+  privateRetrievalOwner,
+  rerankScores,
+  retrieveEvidence,
+  searchEvidence,
+  type RetrievalArgs,
+} from './orchestrator/retrieval.js';
 export { playRefId } from './orchestrator/evidence.js';
 export { SYNTHETIC_WARM_UP_GUARDS, warmTurnEngine, type TurnWarmUpGuards } from './orchestrator/warm-up.js';
 export { assembleContext, estimateTokens, type AssembledContext } from './orchestrator/context-budget.js';

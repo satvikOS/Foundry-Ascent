@@ -121,6 +121,22 @@ export const DEFAULT_MODEL_PRICES: PricingTable = {
   'mock-embeddings': { inputPerMillionUsd: 0, outputPerMillionUsd: 0 },
 };
 
+/**
+ * Rerankers are billed per query of up to 100 documents (Amazon Bedrock pricing page, checked 2026-11-24): USD per one
+ * thousand.
+ */
+export const RERANK_USD_PER_THOUSAND: Readonly<Record<string, number>> = {
+  'amazon.rerank-v1:0': 1,
+  'cohere.rerank-v3-5:0': 2,
+};
+
+/** What one rerank request costs; a model without a price costs what the dearest does. */
+export function rerankCostUsd(modelId: string, documents: number): number {
+  const perThousand =
+    RERANK_USD_PER_THOUSAND[normalizeModelId(modelId)] ?? Math.max(...Object.values(RERANK_USD_PER_THOUSAND));
+  return (Math.max(1, Math.ceil(documents / 100)) * perThousand) / 1_000;
+}
+
 const GEO_PREFIX = /^(?:us|eu|apac|jp|au|ca|us-gov|global)\./;
 
 function lastIdSegment(modelId: string): string {

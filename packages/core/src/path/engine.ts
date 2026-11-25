@@ -11,23 +11,28 @@ import { type pathRepo, type retrievalRepo } from '@foundry/db';
 
 import { isReference } from './brief.js';
 import { calcAsked, calcOf, type CalcAsk, type CalcResult, type Ratio } from './calc.js';
+import { choiceIn, type Choice } from './choice.js';
 import { addDays, dueOnFor } from './dates.js';
 import {
   asksFor,
+  asksMessage,
+  asksWhenDone,
   asksHowTo,
   asksOverview,
   asksRecall,
   bringsNewIdea,
-  choiceOf,
   commitmentOf,
   isCommitted,
   isFragment,
+  isHardship,
   isInDistress,
   isReaction,
   isRehearsal,
   isSocial,
   isVenting,
   needsAPerson,
+  ownSentences,
+  ownWords,
   pivotOf,
   pushesOn,
   reportFinishes,
@@ -50,16 +55,21 @@ import {
   type Asking,
   type IntentMatch,
 } from './match.js';
-import { asksIfGood, lastResult, newsOf, type News } from './news.js';
+import { asksIfGood, findingIn, lastResult, newsOf, tellsNews, type News } from './news.js';
 import { reportedWork, withWork, type AppliedWork, type ReportedWork } from './progress.js';
 import { referralForRisk } from './referrals.js';
 import { pickPlay, playMatchProfile, type Openness, type SemanticMatch } from './semantic.js';
 import {
+  earlierDay,
   earlierEvidence,
+  hasEvidence,
   isShownCriterion,
   missingOf,
   pathState,
+  progressIn,
+  recordShowing,
   stageOrder,
+  wordsOfEvidence,
   type PathSource,
   type PathState,
 } from './state.js';
@@ -135,6 +145,15 @@ export interface AppliedPivot extends Pivot {
   readonly reopened: readonly PathCriterion[];
   /** What had been shown of those, in their words, kept with its day (it counts for nothing now). */
   readonly kept: readonly { readonly criterionId: string; readonly evidence: string }[];
+  /** What the idea they go back to had shown, counting again. */
+  readonly restored: readonly {
+    readonly criterion: PathCriterion;
+    readonly status: 'claimed' | 'open';
+    readonly evidence: string | null;
+    readonly sourceSessionId: string | null;
+  }[];
+  /** Steps in their own words that were about the old direction: they end with it. */
+  readonly ends: readonly pathRepo.PathStepRecord[];
   /** The stage the path stands at now. */
   readonly stage: VentureStage;
 }
@@ -198,8 +217,8 @@ export interface Decision {
   readonly idea: string | null;
   readonly pivot: AppliedPivot | null;
   readonly checkIn: PathCheckIn | null;
-  /** The options of a choice they asked to have made. */
-  readonly choice: readonly string[];
+  /** The choice they asked to have made, with the pick what they told decides; null: none. */
+  readonly choice: Choice | null;
   readonly newIdea: { readonly ventureName: string; readonly fact: string | null } | null;
   readonly firstTime: boolean;
   /** They say in this message that they have never done this. */
@@ -212,6 +231,14 @@ export interface Decision {
   readonly calc: CalcResult;
   /** They ask how to do the step just given: its first item is the answer. */
   readonly howTo: boolean;
+  /** They ask when the step is done: its done-when is the answer. */
+  readonly whenDone: boolean;
+  /** They ask for the message to send: its template is the answer. */
+  readonly message: boolean;
+  /** What they say came of it, in their own words said back; '' when they tell none. */
+  readonly finding: string;
+  /** They tell how hard it is, and ask nothing of the work. */
+  readonly vents: boolean;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -583,17 +610,23 @@ function withPivot(
   const { playbook, reads } = input;
   const order = stageOrder(playbook);
   const from = order.indexOf(ABOUT_THE_CUSTOMER_FROM);
-  const reopened = state.criteria
-    .filter(
-      (c) =>
-        (c.status !== 'open' || c.progress !== null) && order.indexOf(c.criterion.stage) >= Math.max(0, from),
-    )
+  const ofCustomer = (c: PathCriterion): boolean => order.indexOf(c.stage) >= Math.max(0, from);
+  const shown = state.criteria
+    .filter((c) => (c.status !== 'open' || c.progress !== null) && ofCustomer(c.criterion))
     .map((c) => c.criterion);
-  const back = from < 0 ? state.stageIndex : Math.min(state.stageIndex, from);
-  const stage = order[back] ?? state.stage;
   const told = reads.path?.intake?.idea.trim() ?? '';
   const old = told === '' ? input.venture.oneLiner.trim() : told;
-  const ids = new Set([...reopened.map((c) => c.id)]);
+  const restored = pivot.back === null ? [] : restoredBy(input, pivot.idea);
+  const again = new Set(restored.map((r) => r.criterion.id));
+  const reopened = shown.filter((c) => !again.has(c.id));
+  const back = from < 0 ? state.stageIndex : Math.min(state.stageIndex, from);
+  // The idea they go back to had its stage: the program's, when its record was of it, and what it shows.
+  const had =
+    pivot.back === null
+      ? back
+      : Math.max(back, restored.some((r) => r.status === 'claimed') ? order.indexOf(input.venture.stage) : 0);
+  const stage = order[Math.min(had, order.length - 1)] ?? state.stage;
+  const ids = new Set(reopened.map((c) => c.id));
   const open = reads.criteria.filter((c) => ids.has(c.criterionId));
   const kept = open.flatMap((c) =>
     c.evidence === null
@@ -622,23 +655,28 @@ function withPivot(
         doneSoFar: '',
         block: '',
       }),
-      idea: pivot.to,
+      idea: pivot.idea,
     },
     pivots: [...(reads.path?.pivots ?? []), { on: input.today, from: old, to: pivot.to, sessionId: null }],
   };
+  // A step in their own words was about the old direction: it ends with it.
+  const ends = reads.steps.filter((s) => s.status === 'now' && s.origin === 'founder');
+  const changes = reopened.length > 0 || restored.length > 0;
   return {
-    applied: { ...pivot, from: old, reopened, kept, stage },
+    applied: { ...pivot, from: old, reopened, kept, restored, ends, stage },
     reads: {
       ...reads,
       // The step they were on waits: the new direction starts with what it opened.
       steps: reads.steps.map((s) =>
-        s.status === 'now' && s.origin === 'path' && reopened.length > 0
-          ? { ...s, status: 'next' as const, dueOn: null }
-          : s,
+        ends.includes(s)
+          ? { ...s, status: 'skipped' as const }
+          : s.status === 'now' && s.origin === 'path' && changes
+            ? { ...s, status: 'next' as const, dueOn: null }
+            : s,
       ),
       path: { ...path, stage },
       criteria: [
-        ...reads.criteria.filter((c) => !ids.has(c.criterionId)),
+        ...reads.criteria.filter((c) => !ids.has(c.criterionId) && !again.has(c.criterionId)),
         ...[...ids].map((criterionId) => ({
           criterionId,
           status: 'open' as const,
@@ -648,9 +686,49 @@ function withPivot(
           // Nothing on record yet is newer than the change: the old customer's evidence does not count.
           updatedAt: '9999-12-31T00:00:00.000Z',
         })),
+        ...restored.map((r) => ({
+          criterionId: r.criterion.id,
+          status: r.status,
+          evidence: r.evidence,
+          stepId: null,
+          sourceSessionId: r.sourceSessionId,
+          updatedAt: '9999-12-31T00:00:00.000Z',
+        })),
       ],
     },
   };
+}
+
+/** What an idea they go back to had shown: its evidence from before the change, and what its record held then. */
+function restoredBy(input: DecideInput, idea: string): AppliedPivot['restored'] {
+  const { playbook, reads } = input;
+  const was = earlierIdeas(input).find((x) => x.idea === idea);
+  if (was === undefined) return [];
+  const memory = reads.memory.filter((m) => {
+    const on = m.createdAt.slice(0, 10);
+    return on <= was.until && (was.from === '' || on > was.from);
+  });
+  return playbook.criteria.flatMap((criterion) => {
+    const row = reads.criteria.find((c) => c.criterionId === criterion.id);
+    if (row === undefined) return [];
+    const day = earlierDay(row.evidence ?? '');
+    if (row.evidence !== null && day !== null && day <= was.until && (was.from === '' || day > was.from)) {
+      const words = row.evidence.replace(/^Before \d{4}-\d{2}-\d{2}: /, '');
+      return [
+        {
+          criterion,
+          status: progressIn(words) === null ? ('claimed' as const) : ('open' as const),
+          evidence: words,
+          sourceSessionId: row.sourceSessionId,
+        },
+      ];
+    }
+    if (row.status !== 'open' || row.evidence !== null || !hasEvidence(memory)) return [];
+    const record = recordShowing(criterion, memory);
+    return record === null
+      ? []
+      : [{ criterion, status: 'claimed' as const, evidence: record.title, sourceSessionId: null }];
+  });
 }
 
 /** Words that name the venture rather than a fact of it. */
@@ -691,7 +769,8 @@ function recordTexts(input: DecideInput): string[] {
         .filter((t) => t.trim() !== '')
         .join('. ');
     }),
-    ...input.reads.criteria.map((c) => c.evidence ?? ''),
+    // Their words, never the count kept before them ("2 of 5: …").
+    ...input.reads.criteria.map((c) => wordsOfEvidence(c.evidence ?? '')),
     ...input.reads.steps.map((s) => s.evidence ?? ''),
   ].filter((t) => t.trim() !== '');
 }
@@ -735,7 +814,7 @@ export function decide(input: DecideInput): Decision {
     idea: null,
     pivot: null,
     checkIn: null,
-    choice: [],
+    choice: null,
     newIdea: null,
     firstTime,
     firstTimeNow: saysFirstTime(input.message),
@@ -743,6 +822,10 @@ export function decide(input: DecideInput): Decision {
     result: null,
     calc: NO_CALC,
     howTo: false,
+    whenDone: false,
+    message: false,
+    finding: '',
+    vents: false,
   } as const;
 
   if (input.crisis) return { ...base, kind: 'crisis' };
@@ -762,9 +845,11 @@ export function decide(input: DecideInput): Decision {
   const on = currentStep(input, before);
   const onRow = input.reads.steps.find((s) => s.id === on?.view.id && s.status === 'now') ?? null;
   const reacts = isReaction(message);
+  // A text pasted to have it read is no report, news or change of theirs.
+  const theirs = ownWords(message);
   const referralMatch = reacts ? null : phraseIntent(playbook, message, (i) => i.referral === true);
-  const report = reportOf(message);
-  const committed = commitmentOf(message, input.today);
+  const report = reportOf(theirs);
+  const committed = commitmentOf(theirs, input.today);
   const commitment = isCommitted(committed) ? committed : null;
   const earlier = stepBefore(input, previous, on);
 
@@ -781,7 +866,7 @@ export function decide(input: DecideInput): Decision {
     return { ...base, kind: 'social', commitment, keeps: accepted(input, commitment, earlier) };
 
   const recallAsked = referralMatch === null && asksRecall(message);
-  const pivot = recallAsked ? null : pivotOf(message);
+  const pivot = recallAsked ? null : pivotIn(input, pivotOf(theirs));
   const isNote = (i: PathIntent): boolean => i.note === true;
   // "How do I price it, and what's next?": the question a play answers is answered, and its step is the next one.
   const asksElse = sentences(message).some(
@@ -798,6 +883,8 @@ export function decide(input: DecideInput): Decision {
   // The founder's explicit ask: a phrase of the playbook (a plain report that happens to hold one asks nothing).
   const told = { record: recordTexts(input), earlier: input.earlierMessages ?? [] };
   const howTo = earlier !== null && !recallAsked && asksHowTo(message);
+  const whenDone = earlier !== null && !recallAsked && !howTo && asksWhenDone(message);
+  const toSend = !recallAsked && !howTo && pivot === null && asksMessage(message);
   const result = asksIfGood(message) ? lastResult([...told.record, ...told.earlier]) : null;
   const heldIntent = heldBy(playbook, previous);
   const upset = needsAPerson(message);
@@ -822,7 +909,7 @@ export function decide(input: DecideInput): Decision {
         (report.state !== 'done' ||
           reportedWork(before, message).length > 0 ||
           (onRow !== null && reportFinishes(message, report, onRow))));
-    if ((askLike || !reports) && !reacts && !howTo)
+    if ((askLike || !reports) && !reacts && !howTo && !whenDone)
       match = phraseIntent(playbook, message, (i) => !isNote(i));
     // In passing, a word of a play ("the pricing page is blue") asks nothing: a statement says more of it than that.
     if (asking === 'statement' && match !== null && match.score < STATEMENT_PHRASE) match = null;
@@ -840,9 +927,10 @@ export function decide(input: DecideInput): Decision {
   const ruled: PathIntent | null =
     referralMatch?.intent ??
     (pivot !== null ? null : (match?.intent ?? risky ?? (pushes ? heldIntent : null)));
-  const work = recall || newIdea || pivot !== null ? [] : reportedWork(before, message);
+  const work = recall || newIdea || pivot !== null ? [] : reportedWork(before, theirs);
   // They tell how hard it is, and ask nothing: no task is pushed.
   const vents = isVenting(message);
+  const hardship = isHardship(message);
   // Nothing any phrase or rule reads in it: what is left may be matched by meaning.
   const unread =
     ruled === null &&
@@ -856,6 +944,8 @@ export function decide(input: DecideInput): Decision {
     (smaller === null || (askLike && !smaller.strict)) &&
     !recorded &&
     !howTo &&
+    !whenDone &&
+    !toSend &&
     result === null &&
     !reacts &&
     !vents &&
@@ -902,19 +992,25 @@ export function decide(input: DecideInput): Decision {
   const referral = play?.referral ?? passing;
 
   // What they report: the step finished, work of the path's criteria, or a step not done.
-  const reported =
+  const told1 =
     report !== null && !askLike ? report : report !== null && on !== null && intent === null ? report : null;
+  // A change of direction is no missed day, and no step dropped: only work that was done is reported beside it.
+  const reported = pivot !== null && told1 !== null && told1.state !== 'done' ? null : told1;
   // A founder who is upset, or asks about safety or a conflict, is never pushed a task (a smaller one is no push).
   const support =
     input.riskCategories.some((c) => SUPPORT.has(c)) ||
-    ((upset || (vents && reported === null)) && intent === null && !(smaller !== null && earlier !== null));
+    ((upset || (hardship && reported === null)) &&
+      intent === null &&
+      !(smaller !== null && earlier !== null));
 
-  const completes = finished(input, report, onRow, work);
+  const completes = reported === null && pivot !== null ? null : finished(input, report, onRow, work);
 
   let reads = completes === null ? input.reads : withCompleted(input.reads, completes);
   let state = completes === null ? before : pathState(playbook, { ...input, reads });
   const rest = work.filter(
-    (w) => !isShownCriterion(state, w.criterion.id) && w.criterion.id !== completes?.step.criterionId,
+    (w) =>
+      (w.corrects !== undefined || !isShownCriterion(state, w.criterion.id)) &&
+      w.criterion.id !== completes?.step.criterionId,
   );
   // A finished step of a later stage moves the path there too.
   const finishedCriterion =
@@ -953,7 +1049,7 @@ export function decide(input: DecideInput): Decision {
   const news =
     recall || newIdea || pivot !== null || support
       ? null
-      : newsOf({ message, before: [...told.record, ...told.earlier] });
+      : newsOf({ message: theirs, before: [...told.record, ...told.earlier] });
   const kind: TurnKind = newIdea
     ? 'new_idea'
     : recall
@@ -962,7 +1058,16 @@ export function decide(input: DecideInput): Decision {
           (!asks && (reported !== null || (commitment !== null && !askLike) || work.length > 0)) ||
           (asksPath && (completes !== null || work.length > 0))
         ? 'report'
-        : news !== null && !asks && !askLike
+        : !asks &&
+            !askLike &&
+            (news !== null ||
+              // Something happened, and no rule reads what it means: the model says it.
+              (tellsNews(theirs) &&
+                !vents &&
+                !upset &&
+                !reacts &&
+                smaller === null &&
+                statedIdea(theirs, input.venture.name) === null))
           ? 'news'
           : 'coaching';
 
@@ -998,7 +1103,7 @@ export function decide(input: DecideInput): Decision {
     }
   } else if (kind === 'news') {
     // What they tell moves nothing by itself: the path's own step stands.
-  } else if (carriable && !support) {
+  } else if (carriable && !support && (!earlier.offered || goesOn(input, earlier, askLike))) {
     turn = earlier;
     carried = true;
   }
@@ -1066,11 +1171,14 @@ export function decide(input: DecideInput): Decision {
     commitment: kind === 'report' ? commitment : null,
     idea:
       keptIdea === '' && !newIdea && pivot === null && !recall
-        ? statedIdea(message, input.venture.name)
+        ? statedIdea(theirs, input.venture.name)
         : null,
     pivot: appliedPivot,
     checkIn: checkIn !== null && namesStep(input.previousReply, checkIn.title) ? null : checkIn,
-    choice: choiceOf(message),
+    choice:
+      (kind === 'coaching' || kind === 'new_idea') && referral === null && !overview && intent?.holds !== true
+        ? choiceIn({ message: theirs, earlier: told.earlier, told: told.record })
+        : null,
     newIdea: newIdea ? { ventureName: input.venture.name, fact: concreteFact(input.reads.memory) } : null,
     firstTime,
     firstTimeNow: base.firstTimeNow,
@@ -1078,7 +1186,69 @@ export function decide(input: DecideInput): Decision {
     result,
     calc,
     howTo: howTo && carried,
+    whenDone: whenDone && carried,
+    message: toSend && step !== null && kind === 'coaching' && intent === null,
+    finding: foundIn(theirs, kind, news, appliedPivot, overview && work.length + Number(news !== null) > 0),
+    vents: vents && reported === null,
   };
+}
+
+/** What came of their work, for the model to read: the result beside another ask, else what they tell. */
+function foundIn(
+  message: string,
+  kind: TurnKind,
+  news: News | null,
+  pivot: AppliedPivot | null,
+  beside: boolean,
+): string {
+  if (kind === 'coaching' && news !== null && news.ratio !== null)
+    return news.means.split(/(?<=[.:]) /u)[0]?.replace(/[.:]$/u, '') ?? '';
+  return kind === 'report' || kind === 'news' || beside ? findingIn(message, pivot?.quote ?? '') : '';
+}
+
+/** Whether a message goes on about the step of the turn before, when that is no step of their path. */
+function goesOn(input: DecideInput, earlier: TurnStep, askLike: boolean): boolean {
+  const { message } = input;
+  if (!askLike || refersBack(message) || meaningWords(message) <= FOLLOW_UP_WORDS) return true;
+  const view = earlier.step?.view;
+  const about = new Set(
+    contentStems(
+      `${view?.title ?? ''}. ${view?.doneWhen ?? ''}. ${(view?.items ?? []).map((i) => i.do).join('. ')}. ${input.earlierMessages?.at(-1) ?? ''}`,
+    ).filter((w) => !/^\d+$/.test(w)),
+  );
+  return contentStems(message).some((w) => about.has(w));
+}
+
+/** The change of direction with the idea it is to; null: they go back to an idea nobody knows. */
+function pivotIn(input: DecideInput, pivot: Pivot | null): Pivot | null {
+  if (pivot?.back == null) return pivot;
+  const ideas = earlierIdeas(input);
+  const idea =
+    pivot.back === 'first'
+      ? ideas[0]
+      : pivot.back === 'last'
+        ? ideas.at(-1)
+        : ideas
+            .map((x) => ({ x, shared: sharedWords(x.idea, pivot.to.split(/\. /u)[0] ?? '') }))
+            .filter((x) => x.shared > 0)
+            .sort((a, b) => b.shared - a.shared)[0]?.x;
+  return idea === undefined ? null : { ...pivot, idea: idea.idea };
+}
+
+const sharedWords = (a: string, b: string): number => {
+  const words = new Set(contentStems(a));
+  return contentStems(b).filter((w) => words.has(w)).length;
+};
+
+/** The ideas the venture had before the one it is on, oldest first, with the day each ended. */
+function earlierIdeas(
+  input: Pick<DecideInput, 'reads' | 'venture'>,
+): { readonly idea: string; readonly until: string; readonly from: string }[] {
+  const pivots = input.reads.path?.pivots ?? [];
+  const now = input.reads.path?.intake?.idea.trim() ?? '';
+  return pivots
+    .map((p, i) => ({ idea: p.from.trim(), until: p.on, from: pivots[i - 1]?.on ?? '' }))
+    .filter((x) => x.idea !== '' && x.idea !== now);
 }
 
 /** Words of its own a question that points back has at most, to go on about what was said and ask nothing else. */
@@ -1171,6 +1341,14 @@ function pastOf(clause: string): string {
     .replace(/^sell\b/i, 'sold');
 }
 
+/** Their words for what they finished: the sentence that says it, and what they found, as they wrote them. */
+function evidenceOf(message: string, quote: string): string {
+  const own = ownSentences(message);
+  const at = own.indexOf(quote);
+  const found = own.slice(at + 1, at + 4).filter((x) => !x.trim().endsWith('?') && !asksFor(x));
+  return [quote, ...found].join(' ').slice(0, 600).trim();
+}
+
 /** The stored step the report finishes; a report of other work of the path ("done, I talked to all ten") does not. */
 function finished(
   input: DecideInput,
@@ -1191,7 +1369,7 @@ function finished(
   if (!reportFinishes(input.message, report, stored)) return null;
   return {
     step: stored,
-    evidence: report.quote,
+    evidence: evidenceOf(ownWords(input.message), report.quote),
     rest: restOf(input, stored, playOf(input.playbook, stored.playId), deadlineOf(input)),
   };
 }

@@ -310,6 +310,8 @@ citation, lane, components}`; core assigns `E1…En`. Measured by `packages/core
   — program/public/persona corpora (`venture_id IS NULL`): ANN candidates from the partial **HNSW** index
   ∪ lexical candidates, then fused; persona chunks (kind `doctrine`) only for `personaId`.
   `corpus: {founderText, topics?, play?, limit=2}` adds the cited corpus beside `limit` (below).
+  `semantic: {asks, embedding, channel, …}` adds, as lane `semantic`, the shared notes near the founder's own words: only
+  candidates, which `admitSemantic` chooses from (docs/architecture/knowledge-pools.md §3.7).
 - `searchResources({tenantId, query, stage?, limit=4})` — lexical; the stage fit is part of the authority.
 - `searchPatterns({tenantId, query, limit=2})` — published, unexpired.
 

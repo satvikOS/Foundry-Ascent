@@ -10,6 +10,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { PLAYBOOK, PLAYBOOK_VERSION } from './index.js';
+import { CRITERION_COUNTED } from './phrases.js';
 import {
   CLIENT_QUESTIONS,
   HELD_OUT_ASKS,
@@ -20,6 +21,7 @@ import {
 } from './test-fixtures.js';
 import { decide } from '../engine.js';
 import { phraseIntent } from '../match.js';
+import { topicOf } from '../state.js';
 import { fresh, input } from '../testing/inputs.js';
 
 const { plays, criteria, intents, sources, stages } = PLAYBOOK;
@@ -197,6 +199,32 @@ describe('playbook: how it sounds', () => {
         11.8 * (ws.reduce((n, w) => n + syllables(w), 0) / ws.length) -
         15.59;
       expect(grade, p.id).toBeLessThanOrEqual(8);
+    }
+  });
+
+  it('names each step as an action that reads after "Next:" and before its day', () => {
+    const verbs =
+      /^(?:Answer|Ask|Book|Build|Call|Choose|Compare|Count|Do|Fill|Find|Get|Give|Have|Help|Hold|Launch|List|Make|Match|Meet|Name|Offer|Open|Put|Rewrite|Run|Score|Secure|Sell|Send|Serve|Set|Start|Submit|Test|Try|Win|Work out|Write)\b/;
+    for (const p of plays) {
+      expect(p.title, p.id).toMatch(verbs);
+      expect(p.title.length, p.id).toBeLessThanOrEqual(70);
+      // "…: stop or go on by Friday", "… before you build by Friday" and "…, not friends by Friday" do not read.
+      expect(p.title, p.id).not.toMatch(/[:;?!.]$|:|\bbefore\b|, not [^,]*$|\bthis (?:month|week)\b/);
+      // Something to see at the end of it, never a state of mind.
+      expect(p.title, p.id).not.toMatch(
+        /^(?:Know|Understand|Learn|Think|Get organi|Get unstuck|Prepare|Plan|Start the path|Check rivals|Handle|Sort out|See)\b/,
+      );
+      expect(p.title, p.id).not.toMatch(
+        /\b(?:beachhead|persona|unit economics|value proposition|wizard of oz|concierge|bottom[- ]up|runway|validate|leverage)\b/i,
+      );
+      expect(p.doneWhen, p.id).not.toMatch(/\bexists?\b/);
+    }
+  });
+
+  it('names what each counted criterion is a number of, after "2 of the 5"', () => {
+    for (const c of criteria) {
+      if (topicOf(c)?.counted !== true) continue;
+      expect(CRITERION_COUNTED[c.id], c.id).toMatch(/^[a-z][a-z ]*s\b/);
     }
   });
 

@@ -50,7 +50,7 @@ export function CallStep({
     <section
       aria-label="Next step"
       data-slot="call-step"
-      className="glass mx-4 mt-2 rounded-2xl border border-(--glass-border) px-3.5 sm:mx-auto sm:w-full sm:max-w-xl"
+      className="glass mx-4 mt-2 min-w-0 rounded-2xl border border-(--glass-border) px-3.5 sm:mx-auto sm:w-full sm:max-w-xl"
     >
       <button
         type="button"

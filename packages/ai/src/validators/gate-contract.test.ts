@@ -317,6 +317,13 @@ describe('the gate holds a streamed reply to the contract', () => {
     expect(text.endsWith(NEXT)).toBe(true);
   });
 
+  it('who decides is said once in a streamed reply too', () => {
+    const reply =
+      'Ask the university technology transfer office, and a lawyer before you sign anything. Bring the invention history page, the lab agreement and any grant terms. That one is for the university technology transfer office, and a lawyer before you sign anything.';
+    const { text } = stream(reply, { guidance: IP_REFERRAL, founderText: 'Who owns it?' });
+    expect(text.match(/a lawyer before you sign anything/g)).toHaveLength(1);
+  });
+
   it('a story the server told is not told again with its dates', () => {
     const lead = {
       text: 'You started with this idea: soap.\n- November 2: you sold six soaps.',

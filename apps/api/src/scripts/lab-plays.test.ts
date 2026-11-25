@@ -13,7 +13,7 @@ import {
   MIN_CHOSEN_RIGHT,
   nearestOf,
   NO_ASK_SETS,
-  productionPlay,
+  productionTurn,
   ruleOutcomes,
   type MatchingVectors,
 } from './lab-plays.js';
@@ -113,13 +113,13 @@ describe('the measure', () => {
     for (const r of ruled) if (r.open !== null) expect(r.playId, r.message.id).toBeNull();
     const first = messages.find((m) => m.set === 'blind');
     expect(near.get(first?.text ?? '')?.plays).toHaveLength(3);
-    const choose = productionPlay(perfect);
-    const late = productionPlay(null);
+    const choose = productionTurn(perfect);
+    const late = productionTurn(null);
     const { kept } = benchPlays(ruled, perfect, 1024);
     for (const r of ruled.filter((_, i) => i % 25 === 0)) {
       const row = kept[r.message.id] as { production: string | null; fallback: string | null };
-      expect(choose(r.message.text), r.message.id).toBe(row.production);
-      expect(late(r.message.text), r.message.id).toBe(row.fallback);
+      expect(choose(r.message.text).playId, r.message.id).toBe(row.production);
+      expect(late(r.message.text).playId, r.message.id).toBe(row.fallback);
     }
   });
 

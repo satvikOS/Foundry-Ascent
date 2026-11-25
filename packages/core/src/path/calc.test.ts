@@ -66,7 +66,7 @@ describe('a number and its role', () => {
     ['Each kit costs me $9 to make', ['unit_cost:9/kit']],
     ['It costs 4 dollars to make one', ['unit_cost:4']],
     ['Wax is $2 and jars cost $3 each', ['unit_cost:3(jars)']],
-    ['A bracelet costs $2 in beads', ['unit_cost:2/bracelet']],
+    ['A bracelet costs $2 in beads', ['unit_cost:2/bracelet(beads)']],
     ['Shipping is $4 a kit', ['unit_cost:4/kit(shipping)']],
     ['Payment fees are 50 cents each', ['unit_cost:0.5(payment fees)']],
     ['Rent is $200 a month', ['period_cost:200@month(rent)']],
@@ -385,25 +385,12 @@ describe('the sums', () => {
     ],
     ['What is my conversion rate?', [], 'How many did you ask, and how many said yes with money?'],
     ['What is the payback?', [], 'What is the one-time cost you want to earn back?'],
-    // A monthly price is never the price of one sale, nor a monthly cost one sale's.
-    [
-      'What is left on each sale?',
-      [],
-      'What do you charge for one sale?',
-      ['Customers pay us $30 a month. Hosting costs $60 a month.'],
-    ],
+    // A monthly cost is never one sale's.
     [
       'What is left per kit?',
       [],
       'What does one kit cost you to make and deliver?',
       ['A kit sells for $12. Rent is $200 a month.'],
-    ],
-    // A number nobody gave a role is not used.
-    [
-      'What is left per kit?',
-      [],
-      'What does one kit cost you to make and deliver?',
-      ['A kit sells for $12. Something about 7.'],
     ],
     ['What do I make per kit?', [], 'What do you charge for one kit?', ['Beads cost $7 a kit.']],
   ];

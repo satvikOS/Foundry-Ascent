@@ -209,7 +209,10 @@ describe('what the prompt and the record carry', () => {
   });
 
   it('carries the choice, the answer with its steps, the step and the criteria still open', () => {
-    expect(turn.prompt.brief).toContain('choose between: service business | consulting | some of each');
+    expect(turn.prompt.choice).toEqual({
+      kind: 'either',
+      options: ['service business', 'consulting', 'some of each'],
+    });
     expect(turn.prompt.ask?.answer).toContain('Start as a service');
     expect(turn.prompt.step?.title).toBe('Choose between service and product');
     expect(turn.prompt.pathStep).toEqual({ title: 'Run one test with a pass line', dueOn: '2026-12-04' });

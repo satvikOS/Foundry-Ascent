@@ -49,6 +49,28 @@ describe('a sum they ask for', () => {
     expect(guidanceWords(prompt)).toContain('$4.50 left per box');
   });
 
+  it('is not told when its words can be read two ways: the model is asked for it', () => {
+    const { prompt } = turnOf('What do I make on one soap?', {}, ['A soap is 9 dollars. I sell it for 20.']);
+    expect([prompt.lead, prompt.calc, prompt.askBack, prompt.asksSum]).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      true,
+    ]);
+    expect(turnOf(`${SOAP} What is my margin?`).prompt.asksSum).toBeUndefined();
+  });
+
+  it('a working said a moment ago is not said again', () => {
+    const line = '$9 price - $4.50 cost = $4.50 left per box.';
+    const ask = 'What do I make on 10 boxes?';
+    expect(turnOf(ask, {}, [SOAP]).prompt.lead?.text).toBe(
+      `10 boxes x $4.50 left per box = $45 before other costs. ${line}`,
+    );
+    expect(turnOf(ask, {}, [SOAP], [line]).prompt.lead?.text).toBe(
+      '10 boxes x $4.50 left per box = $45 before other costs.',
+    );
+  });
+
   it('with a number missing, the one question is that number', () => {
     const { prompt } = turnOf('What is my break even?', {}, [SOAP]);
     expect(prompt.calc).toEqual(['$9 price - $4.50 cost = $4.50 left per box.']);
@@ -155,7 +177,18 @@ describe('where they stand', () => {
   it('"get me organized" is said by a mentor: the stage, what is missing in short names, the start', () => {
     const { prompt } = turnOf('Can you help me get organized?');
     expect(prompt.lead?.text).toBe(
-      'You are on stage 1 of 7 with New venture, pinning down the idea. Still missing: the idea on one page, who uses it and who pays and the thing most likely to sink it. Start with this: write the five lines in plain words.',
+      [
+        'You are on stage 1 of 7 with New venture, pinning down the idea. Still missing: the idea on one page, the user and the payer by name, and the thing most likely to sink it. Start with this: write the five lines in plain words.',
+        '',
+        'Here it is to fill in, and the [brackets] are yours:',
+        '',
+        '1. Who: [type of person] (seen / guess)',
+        '2. Problem: [what goes wrong, how often] (seen / guess)',
+        '3. Today: [what they do now and what it costs them] (seen / guess)',
+        '4. Idea: [what I would do, in one sentence] (seen / guess)',
+        '5. Why me: [what I know or can reach] (seen / guess)',
+        'Check first: line [number], with [name], on [day]',
+      ].join('\n'),
     );
     expect(prompt.lead?.voice.split(' ').length).toBeLessThanOrEqual(45);
   });
@@ -168,7 +201,10 @@ describe('where they stand', () => {
       [],
       [first.prompt.lead?.text ?? ''],
     );
-    expect(prompt.lead?.text).toMatch(/^Start with this: write the five lines in plain words\. [A-Z]/);
+    expect(prompt.lead?.text).toMatch(
+      /^Start with one blank, "Who": type of person\. Write it in one plain line/,
+    );
+    expect(prompt.lead?.text).not.toContain('1. Who:');
     expect(prompt.lead?.text).not.toContain('stage 1 of 7');
   });
 

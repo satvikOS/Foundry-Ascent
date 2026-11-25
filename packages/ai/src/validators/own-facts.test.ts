@@ -19,6 +19,19 @@ const GUIDANCE: PromptGuidance = {
 };
 const of = (unit: string, guidance: PromptGuidance | null = GUIDANCE) => ownFactsUnit(unit, guidance);
 
+describe('a sum shown step by step', () => {
+  it('each step may build on the one before it, and on no other', () => {
+    const guidance: PromptGuidance = {
+      ...GUIDANCE,
+      said: 'A lamp leaves me 13 dollars. The stall is 95 dollars. 20 lamps.',
+    };
+    const right = 'At $13 a lamp, 20 lamps bring $260, and after the $95 stall you keep $165.';
+    expect(of(right, guidance).text).toBe(right);
+    expect(of('You keep $165 of it.', guidance).text).toBe('');
+    expect(of('At $13 a lamp, 20 lamps bring $260, and you keep $171.', guidance).text).toBe('');
+  });
+});
+
 describe('a line of a template written for them', () => {
   it.each([
     ['Why me: I study chemistry and know the gym kitchens', 'Why me: [what you know, have or can reach]'],

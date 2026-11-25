@@ -7,12 +7,21 @@
  *   each candidate set of fusion weights: which order puts the answer first;
  * - **floors**: the same search with the code's floors and with the floors these vectors suggest: what is returned for a
  *   question, and whether nothing is returned for a question nothing answers;
- * - **production**: `retrieveEvidence` in the home tenant as a founder's turn calls it (row-level security, lanes, gates,
- *   budgets), with the play a turn chooses for the message (./lab-plays.ts), and without it.
+ * - **production**: a turn's search and evidence (core `searchEvidence`, `packEvidence`) in the home tenant as a founder's
+ *   turn calls them (row-level security, lanes, gates, budgets), with the play a turn chooses for the message
+ *   (./lab-plays.ts) and semantic admission as the code ships it, and with neither;
+ * - **admission** (./lab-admission.ts): the same with semantic admission at other constants.
  *
  * Everything returned is numbers and fixed names; each question's passages go to the private report.
  */
-import { playRefId, PLAYBOOK, retrieveEvidence } from '@foundry/core';
+import {
+  packEvidence,
+  playRefId,
+  PLAYBOOK,
+  searchEvidence,
+  type EvidencePack,
+  type RetrievalArgs,
+} from '@foundry/core';
 import { retrievalRepo, type Db } from '@foundry/db';
 import {
   embedStored,
@@ -29,7 +38,7 @@ import {
   type StoredBenchmark,
 } from '@foundry/db/retrieval-benchmark';
 
-import { productionPlay } from './lab-plays.js';
+import { productionTurn, type ChooseTurn, type ChosenTurn } from './lab-plays.js';
 
 /** Candidate fusion weights by name; `default` is what the code ships. */
 export const FUSION_VARIANTS = {
@@ -164,7 +173,7 @@ export function calibrate(queries: readonly BenchmarkQuery[], embedded: Embedded
   };
 }
 
-async function pooled<T, R>(items: readonly T[], job: (item: T) => Promise<R>): Promise<R[]> {
+export async function pooled<T, R>(items: readonly T[], job: (item: T) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;
   await Promise.all(
@@ -187,7 +196,7 @@ export interface Returned {
   readonly score: number;
   readonly vector: number;
 }
-type Rankings = ReadonlyMap<string, readonly Returned[]>;
+export type Rankings = ReadonlyMap<string, readonly Returned[]>;
 
 async function searchBenchmark(
   store: RetrievalStore,
@@ -220,57 +229,96 @@ async function searchBenchmark(
   return new Map(store.queries.map((q, i) => [q.id, found[i] ?? []]));
 }
 
-/** The play a turn answers a message with (a first message: no venture, no step yet), by its id; null: none. */
-export type ChoosePlay = (message: string) => string | null;
 type Play = (typeof PLAYBOOK.plays)[number];
 const playById = (id: string | null): Play | null => PLAYBOOK.plays.find((play) => play.id === id) ?? null;
 
-async function searchProduction(
-  store: RetrievalStore,
-  embedded: EmbeddedCorpus,
-  tuning: retrievalRepo.RetrievalTuning | undefined,
-  choose: ChoosePlay | null,
-): Promise<Rankings> {
+/** A question as a founder's turn searches for it: their first message, no venture. */
+export type TurnSearch = (
+  q: BenchmarkQuery,
+  turn: ChosenTurn,
+  options?: {
+    readonly tuning?: retrievalRepo.RetrievalTuning;
+    /** Semantic admission: off (the gates alone), as the code ships it, or with the candidates a reranker would read. */
+    readonly semantic?: 'off' | 'on' | 'reranked';
+  },
+) => { readonly args: RetrievalArgs; readonly search: () => Promise<retrievalRepo.EvidenceResults> };
+
+/** How a turn searches the home tenant with these vectors, under a founder's row-level security. */
+export function turnSearch(store: RetrievalStore, embedded: EmbeddedCorpus): TurnSearch {
   const { production } = store;
-  const passageOf = new Map(production.rows.map((r) => [r.id, r.passageId] as const));
   const personaOf = new Map(
     production.rows.flatMap((r) => (r.passageId === null ? [] : [[r.passageId, r.personaId] as const])),
   );
-  const playOf = new Map(PLAYBOOK.plays.map((play) => [playRefId(play.id), `play/${play.id}`]));
-  const found = await pooled(store.queries, async (q) => {
+  return (q, turn, options = {}) => {
     // Whose library answers: the passage's own persona, else the coach most ventures have.
     const persona =
       q.expected.map((id) => personaOf.get(id) ?? null).find((id) => id !== null) ??
       production.coachPersonaId ??
       '';
-    const play = choose === null ? null : playById(choose(q.query));
-    const pack = await store.db.withContext(
-      { principalId: production.principalId, tenantId: production.tenantId, requestId: 'lab-retrieval' },
-      (tx) =>
-        retrieveEvidence(tx, {
-          tenantId: production.tenantId,
-          ventureId: null,
-          personaId: persona,
-          stage: null,
-          query: q.query,
-          founderText: q.query,
-          embedding: storableVector(embedded.queries.get(q.id) ?? [], embedded.modelId),
-          dataClassCeiling: 'venture_private',
-          budgets: { memory: 0, chunks: 0, doctrine: 2, resources: 1, patterns: 1 },
-          privateOwnerId: null,
-          play: play === null ? null : { play, sources: PLAYBOOK.sources },
-          ...(tuning === undefined ? {} : { tuning }),
-        }),
-    );
-    return pack.items.map(({ item }) => ({
-      id:
-        playOf.get(item.refId) ??
-        passageOf.get(item.refId) ??
-        production.lessonOf.get(item.refId) ??
-        `other/${item.kind}`,
-      score: item.score,
-      vector: 0,
-    }));
+    const play = playById(turn.playId);
+    const embedding = storableVector(embedded.queries.get(q.id) ?? [], embedded.modelId);
+    const { semantic = 'on', tuning } = options;
+    const args: RetrievalArgs = {
+      tenantId: production.tenantId,
+      ventureId: null,
+      personaId: persona,
+      stage: null,
+      query: q.query,
+      founderText: q.query,
+      embedding,
+      dataClassCeiling: 'venture_private',
+      budgets: { memory: 0, chunks: 0, doctrine: 2, resources: 1, patterns: 1 },
+      privateOwnerId: null,
+      play: play === null ? null : { play, sources: PLAYBOOK.sources },
+      semantic: semantic === 'off' ? null : { asks: turn.asks, embedding, reranked: semantic === 'reranked' },
+      ...(tuning === undefined ? {} : { tuning }),
+    };
+    return {
+      args,
+      search: () =>
+        store.db.withContext(
+          {
+            principalId: production.principalId,
+            tenantId: production.tenantId,
+            requestId: 'lab-retrieval',
+          },
+          (tx) => searchEvidence(tx, args),
+        ),
+    };
+  };
+}
+
+/** The benchmark's id of what the home tenant stores. */
+export function storedIds(store: RetrievalStore): (refId: string, kind: string) => string {
+  const { production } = store;
+  const passageOf = new Map(production.rows.map((r) => [r.id, r.passageId] as const));
+  const playOf = new Map(PLAYBOOK.plays.map((play) => [playRefId(play.id), `play/${play.id}`]));
+  return (refId, kind) =>
+    playOf.get(refId) ?? passageOf.get(refId) ?? production.lessonOf.get(refId) ?? `other/${kind}`;
+}
+
+/** A turn's evidence by those ids, in its order. */
+export function packIds(store: RetrievalStore): (pack: EvidencePack) => Returned[] {
+  const idOf = storedIds(store);
+  return (pack) =>
+    pack.items.map(({ item }) => ({ id: idOf(item.refId, item.kind), score: item.score, vector: 0 }));
+}
+
+/** What a turn is shown: `choose` null: the gates' items alone (no play, semantic admission off). */
+async function searchProduction(
+  store: RetrievalStore,
+  embedded: EmbeddedCorpus,
+  tuning: retrievalRepo.RetrievalTuning | undefined,
+  choose: ChooseTurn | null,
+): Promise<Rankings> {
+  const turn = turnSearch(store, embedded);
+  const ids = packIds(store);
+  const found = await pooled(store.queries, async (q) => {
+    const { args, search } = turn(q, choose?.(q.query) ?? { playId: null, asks: null }, {
+      ...(tuning === undefined ? {} : { tuning }),
+      semantic: choose === null ? 'off' : 'on',
+    });
+    return ids(packEvidence(await search(), args));
   });
   return new Map(store.queries.map((q, i) => [q.id, found[i] ?? []]));
 }
@@ -302,7 +350,7 @@ export interface FamilyRecall {
   readonly found: number;
 }
 
-function byFamily(queries: readonly BenchmarkQuery[], ranked: Rankings): Record<Family, FamilyRecall> {
+export function byFamily(queries: readonly BenchmarkQuery[], ranked: Rankings): Record<Family, FamilyRecall> {
   const of = (family: Family): FamilyRecall => {
     const prefixes: readonly string[] = FAMILIES[family];
     const within = (id: string): boolean => prefixes.includes(id.split('/', 1)[0] ?? '');
@@ -345,9 +393,9 @@ export interface SearchResult {
     readonly questions: number;
     /** Share of the answerable ones whose play, as a turn chooses it from the message alone, answers. */
     readonly playAnswers: number;
-    /** The retrieved items alone, for each floors, and with the old equal weights. */
+    /** What the gates alone retrieve (no play, semantic admission off), for each floors, and with the old equal weights. */
     readonly retrieval: Readonly<Record<FloorVariant | 'equal_weights', Measured>>;
-    /** With the play, as a founder's turn has them. */
+    /** A founder's turn as the code ships it: its play, what the gates bring, and semantic admission. */
     readonly pack: Measured;
     readonly families: Readonly<Record<Family, FamilyRecall>>;
   };
@@ -371,7 +419,7 @@ export async function benchSearch(
   store: RetrievalStore,
   embedded: EmbeddedCorpus,
   extras: ReadonlyMap<string, readonly number[]>,
-  choose: ChoosePlay = productionPlay(null),
+  choose: ChooseTurn = productionTurn(null),
 ): Promise<{ result: SearchResult; candidates: Candidates; kept: Record<string, unknown> }> {
   const calibration = calibrate(store.queries, embedded);
   await store.db.system(async (sx) => {
@@ -431,7 +479,7 @@ export async function benchSearch(
   const pack = await searchProduction(store, embedded, undefined, choose);
   const bare = await searchProduction(store, embedded, undefined, null);
   const playAnswers = answerable.filter((q) => {
-    const play = playById(choose(q.query));
+    const play = playById(choose(q.query).playId);
     return play !== null && q.expected.includes(`play/${play.id}`);
   }).length;
   const retrievalOf = async (tuning: retrievalRepo.RetrievalTuning): Promise<Measured> =>

@@ -5,7 +5,7 @@ import { AIN, REFERRALS, ain, cite, step } from '../make.js';
 export const IDEA_PLAYS: readonly Play[] = [
   {
     id: 'get-organized',
-    title: 'Get your idea organized',
+    title: 'Write your idea in five lines and book 3 talks',
     stage: 'idea',
     intents: ['get-organized'],
     criteria: ['idea-one-page'],
@@ -54,7 +54,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'start-from-zero',
-    title: 'Start with no business background',
+    title: 'Write your first claim and ask 3 people about it',
     stage: 'idea',
     intents: ['start-from-zero'],
     criteria: ['idea-one-page'],
@@ -99,7 +99,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'what-next',
-    title: 'Know where you are and what comes next',
+    title: 'Put one step in your calendar, with its day',
     stage: 'idea',
     intents: ['what-next'],
     criteria: [],
@@ -139,7 +139,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'real-business',
-    title: 'Decide if this is a real business',
+    title: 'Try to sell it to 20 strangers and count who pays',
     stage: 'idea',
     intents: ['real-business'],
     criteria: ['idea-biggest-risk'],
@@ -239,7 +239,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'idea-or-problem',
-    title: 'Turn an idea into a problem',
+    title: 'Write the problem without your product in it',
     stage: 'idea',
     intents: ['idea-or-problem'],
     criteria: ['idea-one-page'],
@@ -280,7 +280,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'pick-an-idea',
-    title: 'Choose between several ideas',
+    title: 'Score your ideas and pick one',
     stage: 'idea',
     intents: ['pick-an-idea'],
     criteria: ['idea-one-page'],
@@ -321,7 +321,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'friends-love-it',
-    title: 'Get real proof beyond your friends',
+    title: 'Ask 20 strangers, not friends, to pay',
     stage: 'idea',
     intents: ['friends-love-it'],
     criteria: ['idea-biggest-risk', 'validation-commitment'],
@@ -371,7 +371,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'biggest-reason-to-fail',
-    title: 'Find the biggest reason it could fail',
+    title: 'List what must be true and test the weakest part',
     stage: 'idea',
     intents: ['biggest-reason-to-fail'],
     criteria: ['idea-biggest-risk'],
@@ -421,7 +421,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'honest-read',
-    title: 'Get an honest read of the idea',
+    title: 'Set how many strangers must pay and ask them',
     stage: 'idea',
     intents: ['honest-read'],
     criteria: ['idea-biggest-risk'],
@@ -451,7 +451,7 @@ export const IDEA_PLAYS: readonly Play[] = [
       ),
     ],
     doneWhen:
-      'A target number and date were written first, and the real number of paying strangers is next to it.',
+      'You wrote a target number and a date first, and the real number of paying strangers is next to it.',
     days: 14,
     template: {
       title: 'Honest read',
@@ -468,7 +468,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'customer-user-buyer',
-    title: 'Tell the user, the customer and the buyer apart',
+    title: 'Name who uses it, who pays and who says yes',
     stage: 'idea',
     intents: ['customer-user-buyer'],
     criteria: ['idea-who-pays'],
@@ -508,7 +508,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'other-teams-privacy',
-    title: 'Check rivals from public facts only',
+    title: 'Write one page on rivals from public facts',
     stage: 'idea',
     intents: ['other-teams-privacy'],
     criteria: [],
@@ -553,7 +553,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'someone-has-my-idea',
-    title: 'Find where a rival falls short',
+    title: "Ask 5 of a rival's users what it does badly",
     stage: 'idea',
     intents: ['someone-has-my-idea'],
     criteria: ['discovery-alternatives'],
@@ -599,7 +599,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'share-the-idea',
-    title: 'Share the idea without losing it',
+    title: 'List what you share and what you keep to yourself',
     stage: 'idea',
     intents: ['share-the-idea'],
     criteria: [],
@@ -643,7 +643,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'student-ip',
-    title: 'Find out who owns the lab work',
+    title: 'Write the timeline of the lab work and book UR Ventures',
     stage: 'idea',
     intents: ['student-ip', 'lab-work-said'],
     criteria: [],
@@ -690,7 +690,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'sign-ip-form',
-    title: 'Get the IP form read before you answer',
+    title: 'Have the IP form read by UR Ventures or a lawyer',
     stage: 'idea',
     intents: ['sign-ip-form'],
     criteria: [],
@@ -738,7 +738,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'biotech-path',
-    title: 'Start the path for a biotech or medical idea',
+    title: 'Write what it is for in one sentence and book UR Ventures',
     stage: 'idea',
     intents: ['biotech-path'],
     criteria: ['idea-biggest-risk'],
@@ -786,7 +786,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'no-tech-skills',
-    title: 'Start without a technical founder',
+    title: 'Run it by hand for 8 people',
     stage: 'idea',
     intents: ['no-tech-skills'],
     criteria: ['idea-biggest-risk'],
@@ -833,7 +833,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'time-with-classes',
-    title: 'Fit the venture around classes',
+    title: 'Put two venture blocks a week in your calendar',
     stage: 'idea',
     intents: ['time-with-classes'],
     criteria: [],
@@ -879,7 +879,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'stuck',
-    title: 'Get unstuck',
+    title: 'Do the 15-minute version of what you are avoiding',
     stage: 'idea',
     intents: ['stuck'],
     criteria: [],
@@ -923,7 +923,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'job-or-startup',
-    title: 'Choose between a job and the startup',
+    title: 'Write the date and the numbers that decide job or startup',
     stage: 'idea',
     intents: ['job-or-startup'],
     criteria: [],
@@ -970,7 +970,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'foundry-path',
-    title: 'See how the Ain Foundry modules fit',
+    title: 'Put your next Foundry due date in your calendar',
     stage: 'idea',
     intents: ['foundry-path'],
     criteria: [],
@@ -1007,7 +1007,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'name-and-brand',
-    title: 'Choose a working name',
+    title: 'Choose one working name and check that it is free',
     stage: 'idea',
     intents: ['name-and-brand'],
     criteria: [],
@@ -1040,7 +1040,7 @@ export const IDEA_PLAYS: readonly Play[] = [
   },
   {
     id: 'social-venture',
-    title: 'Choose charity or company for a social venture',
+    title: 'Help 10 people and name a price to 2 payers',
     stage: 'idea',
     intents: ['social-venture'],
     criteria: ['idea-who-pays'],

@@ -242,7 +242,7 @@ describe('reports', () => {
     });
     expect(d.step?.view.doneWhen).toContain('2 more make 10 in all');
     // The row keeps the play's own words: what remains is worked out when it is shown.
-    expect(d.keeps?.view.title).toBe('Run a problem interview');
+    expect(d.keeps?.view.title).toBe('Write five interview questions and start the talks');
     expect(d.then[0]?.playId).toBe('synthesize-interviews');
     const rows = Object.fromEntries((d.applied?.rows ?? []).map((r) => [r.criterionId, r]));
     expect(rows['discovery-ten-conversations']).toMatchObject({
@@ -253,7 +253,7 @@ describe('reports', () => {
     const { prompt } = turnOf(told);
     // What it shows, by the code: the share, what that means, what it does not show, and how far they are.
     expect(prompt.lead?.text).toBe(
-      '6 of 8 (75%) said the problem is the missing microwave, not the food: more than half is a pattern, so it leads now. It shows the problem, not yet that they would pay to have it gone. That is 8 of the 10 customer talks, 2 to go. That puts you on stage 2, talking to customers.',
+      '6 of 8 (75%) said the problem is the missing microwave, not the food: more than half is a pattern, so it leads now. It shows the problem, not yet that they would pay to have it gone. That is 8 of the 10 customer talks, 2 to go.',
     );
     expect(prompt.brief).toContain(`They reported (8 of 10 done): "${told}"`);
   });
@@ -615,11 +615,11 @@ describe('the idea, kept in their words', () => {
     expect(prompt.lead?.text).toBe(
       [
         'You started with this idea: packed lunches for nurses.',
-        '- November 10: you did eight interviews. Six have no microwave.',
-        '- November 17: you changed direction to this: rent thermos jars with soup.',
+        '- November 10: you did eight interviews; six have no microwave.',
+        '- November 17: because of that, you changed direction to this: rent thermos jars with soup.',
       ].join('\n'),
     );
-    expect(decision.step?.view.title).toBe('Run a problem interview');
+    expect(decision.step?.view.title).toBe('Write five interview questions and start the talks');
   });
 
   it('after it, the program’s stage and the old record show nothing until something new does', () => {
@@ -744,7 +744,9 @@ describe('who decides, and what is never shared', () => {
     ]) {
       const d = at(message, next(first));
       expect([d.play?.id, d.pushes], message).toEqual(['other-teams-privacy', true]);
-      expect(turnOf(message, next(first)).prompt.ask?.answer, message).toMatch(/stays with them/);
+      expect(turnOf(message, next(first)).prompt.ask?.answer, message).toMatch(
+        /cannot share|stays private|stays with them/,
+      );
     }
     expect(at('Fine. How do I find out who my competitors are?', next(first)).play?.id).toBe('competitors');
   });
@@ -816,8 +818,8 @@ describe('organise me, on a venture with a record; and another idea', () => {
       const lead = prompt.lead?.text ?? '';
       expect(lead, message).toMatch(/^You are on stage 3 of 7 with ToolTally, proving someone wants it\./);
       expect(lead, message).toContain('one shop kept 900 tools on a clipboard');
-      expect(lead, message).toMatch(/Start with this: [a-z][^.]*\.$/);
-      expect(lead.split(' ').length, message).toBeLessThanOrEqual(110);
+      expect(lead, message).toMatch(/Start with this: [a-z][^.]*\.\n\nHere it is to fill in/);
+      expect(lead.split(' ').length, message).toBeLessThanOrEqual(190);
       // Said once: what it names of the record is not also left for the model to build on.
       expect(prompt.prior?.sentence ?? '', message).toBe('');
     }
@@ -833,7 +835,7 @@ describe('organise me, on a venture with a record; and another idea', () => {
       'service-or-product',
     ]);
     expect(d.newIdea?.fact).toContain('900 tools');
-    expect(d.choice).toHaveLength(3);
+    expect(d.choice?.options).toHaveLength(3);
     expect([d.step?.view.playId, d.step?.view.origin, d.offered, d.keeps]).toEqual([
       'idea-on-a-page',
       'coach',
@@ -872,7 +874,10 @@ describe('how the prompt is told it was found', () => {
     expect(prompt('What next?').matched).toBe('phrase');
     expect(prompt('What was my idea again?').matched).toBe('phrase');
     const meant = prompt('Which figure belongs on the sticker?', { near: near('pricing') });
-    expect([meant.matched, meant.ask?.title]).toEqual(['semantic', 'Set a first price']);
+    expect([meant.matched, meant.ask?.title]).toEqual([
+      'semantic',
+      'Set a first price and say it to 5 buyers',
+    ]);
     // Plainly nearest words are no more than that either.
     expect(prompt('How do I work out how big the market is', { near: 'unavailable' }).matched).toBe(
       'semantic',
@@ -880,12 +885,11 @@ describe('how the prompt is told it was found', () => {
     expect([prompt(ODD).matched, prompt(ODD).ask]).toEqual(['none', null]);
   });
 
-  it('a step that is not about the message only stands, once in three turns', () => {
+  it('a step that is not about the message only stands; a call does not say it twice in a row', () => {
     expect(prompt(ODD).stepRole).toBe('standing');
     const said = 'Open a window. On your path, next is: put the idea on one page by Monday.';
     expect(prompt(ODD, {}, [said]).stepRole).toBe('quiet');
-    expect(prompt(ODD, {}, [said, 'Ask the porter.']).stepRole).toBe('quiet');
-    expect(prompt(ODD, {}, [said, 'Ask the porter.', 'And the dean.']).stepRole).toBe('standing');
+    expect(prompt(ODD, {}, [said, 'Ask the porter.']).stepRole).toBe('standing');
     // It shares a word that says something with the step, or is answered by the program.
     expect(prompt('Is it odd that one page took me a week?').stepRole).toBeUndefined();
     expect(prompt('How should I price it?').stepRole).toBeUndefined();
@@ -896,9 +900,11 @@ describe('how the prompt is told it was found', () => {
     const asked = at('How should I price it?');
     expect(prompt('ok how do I do that', next(asked)).stepRole).toBeUndefined();
     expect(prompt('just give me your best estimate', next(asked)).stepRole).toBeUndefined();
-    // Given for an earlier ask and not on their path: the card has it.
-    expect(
-      prompt('Is the corridor beside the chapel louder on rainy mornings in November?', next(asked)).stepRole,
-    ).toBe('quiet');
+    // Given for an earlier ask and not on their path: another subject has the path's own step, as what stands.
+    const other = 'Is the corridor beside the chapel louder on rainy mornings in November?';
+    expect([prompt(other, next(asked)).stepRole, at(other, next(asked)).step?.view.playId]).toEqual([
+      'standing',
+      'idea-on-a-page',
+    ]);
   });
 });

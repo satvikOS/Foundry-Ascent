@@ -50,6 +50,9 @@ export const INTENTS: readonly PathIntent[] = [
   intent(
     'start-from-zero',
     `
+    what does a founder actually do
+    what does a founder do all day
+    what do founders do all day
     idea stage and I've never done this
     engineering student with no idea about business
     I don't know anything about business
@@ -101,6 +104,9 @@ export const INTENTS: readonly PathIntent[] = [
   intent(
     'real-business',
     `
+    is this a real business
+    is it a real business
+    is that a real business
     is my delivery idea a real business
     a real business or just a project
     would this be a real business
@@ -246,6 +252,8 @@ export const INTENTS: readonly PathIntent[] = [
   intent(
     'customer-user-buyer',
     `
+    sell this to ... or to
+    should I sell to ... or to
     what's the difference between a customer and a user
     who is my customer versus my user
     who is actually paying, the user or the buyer
@@ -309,6 +317,11 @@ export const INTENTS: readonly PathIntent[] = [
   intent(
     'someone-has-my-idea',
     `
+    launched the same thing
+    launched the same thing for free
+    does the same thing for free
+    released the same thing
+    just copied our idea
     someone is already doing my idea
     I found a company that does exactly what I want to do
     somebody else is building the same thing
@@ -628,6 +641,9 @@ export const INTENTS: readonly PathIntent[] = [
   intent(
     'find-ten-people',
     `
+    who even buys this
+    who would even buy this
+    who buys this thing
     who is my customer and where do I find ten
     who is my customer
     how do I find people to interview
@@ -946,6 +962,27 @@ export const INTENTS: readonly PathIntent[] = [
     { unless: ['equity', 'split', 'shares', 'leaving', 'fight', 'fighting'] },
   ),
   intent(
+    'cofounder-left',
+    `
+    my cofounder left
+    my co-founder left
+    my cofounder quit
+    my co-founder quit
+    my cofounder is leaving
+    my co-founder is leaving
+    my technical cofounder walked out
+    my cofounder walked away from the startup
+    my cofounder resigned
+    my cofounder dropped out of the venture
+    our developer left and wrote all the code
+    my cofounder left and has the code
+    what happens when my cofounder leaves
+    lost my cofounder
+    my partner left the company
+    `,
+    { referral: true, unless: ['a message', 'a note', 'for class', 'on vacation'] },
+  ),
+  intent(
     'team-conflict',
     `
     my cofounder and I are fighting
@@ -1030,6 +1067,9 @@ export const INTENTS: readonly PathIntent[] = [
   intent(
     'smallest-test',
     `
+    what is the first experiment I run
+    first experiment to run
+    what is the first test I run
     what is an MVP
     what should my MVP be
     how do I build a minimum viable product
@@ -1395,6 +1435,9 @@ export const INTENTS: readonly PathIntent[] = [
   intent(
     'revenue-model',
     `
+    the money bit
+    money bit how
+    how does the money part work
     how will my business make money
     what revenue model should I use
     subscription or one time payment
@@ -1679,6 +1722,7 @@ export const INTENTS: readonly PathIntent[] = [
   intent(
     'legal-structure',
     `
+    DBA ... LLC
     should I form an LLC
     LLC or C corp
     when should I incorporate
@@ -1761,6 +1805,10 @@ export const INTENTS: readonly PathIntent[] = [
   intent(
     'first-ten-customers',
     `
+    get my first paying group
+    land a first customer
+    sell the first one to
+    who do I sell the first
     how do I get my first customers
     how do I get my first 10 customers
     how do I make my first sale
@@ -1951,6 +1999,8 @@ export const INTENTS: readonly PathIntent[] = [
   intent(
     'elevator-pitch',
     `
+    help me prepare a pitch
+    prepare a pitch
     help me write an elevator pitch
     30 second pitch
     how do I describe my startup in one sentence
@@ -2003,7 +2053,6 @@ export const INTENTS: readonly PathIntent[] = [
     help me get ready to pitch to judges
     pitching at a competition, help me prepare slides and a live pitch
     live pitch in front of judges
-    prepare a pitch
     pitching at a competition
     pitch at a competition
     in a pitch competition
@@ -2027,6 +2076,9 @@ export const INTENTS: readonly PathIntent[] = [
   intent(
     'qa-prep',
     `
+    what question will the judges
+    what will the judges ask
+    what are judges going to ask
     what questions will judges ask
     help me prepare for Q&A
     practice hard questions with me
@@ -2265,6 +2317,10 @@ export const INTENTS: readonly PathIntent[] = [
   intent(
     'quit-or-continue',
     `
+    is my thing dead
+    is my idea dead
+    is my startup dead
+    is this thing dead
     should I quit my startup
     should I shut down my company
     how do I know when to give up

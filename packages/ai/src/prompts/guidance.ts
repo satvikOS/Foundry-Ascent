@@ -28,8 +28,15 @@ export interface PromptGuidance {
    * stand, what is on record. The model goes on from it and never says it again. `voice`: the same on a call. Additive.
    */
   readonly lead?: { readonly text: string; readonly voice: string };
-  /** Sums of their own numbers, worked out by code: the model says them as they are and does no arithmetic. Additive. */
+  /**
+   * What the server answers with when the program has no answer and the model gave too little of one: the step's parts, or,
+   * when the conversation already listed them, the next of them. Additive; absent: the step's parts.
+   */
+  readonly fallback?: { readonly text: string; readonly voice: string };
+  /** Sums of their own numbers, worked out by code: the model says them as they are, and any other as a marker. Additive. */
   readonly calc?: readonly string[];
+  /** They ask for a sum that code could not read one way: the model writes it as a marker (validators/sums.ts). Additive. */
+  readonly asksSum?: boolean;
   /** The one number a sum lacks, as the reply's one question (the server asks it). Additive. */
   readonly askBack?: string;
   /** The one thing on record that bears on this ask, and the server's sentence for a typed reply that left it out. Additive. */
@@ -67,7 +74,22 @@ export interface PromptGuidance {
     readonly dueOn: string | null;
     readonly overdue: boolean;
   } | null;
-  readonly referral: { readonly who: string; readonly bring: string } | null;
+  readonly referral: {
+    readonly who: string;
+    readonly bring: string;
+    /** The conversation already said who and what to bring: who is enough. Additive. */
+    readonly told?: boolean;
+  } | null;
+  /** What came of the work they report, in their own words: the model says what it means. Additive. */
+  readonly finding?: string;
+  /**
+   * The choice they ask to have made, with the options as they said them ([]: they named none): the reply's first sentence
+   * is the pick. Additive.
+   */
+  readonly choice?: {
+    readonly kind: 'either' | 'which' | 'yes_no';
+    readonly options: readonly string[];
+  } | null;
   /** The message brings an idea the venture's record does not hold. */
   readonly newIdea: { readonly ventureName: string; readonly fact: string | null } | null;
   /**
@@ -78,8 +100,8 @@ export interface PromptGuidance {
   readonly matched?: 'phrase' | 'semantic' | 'none';
   /**
    * What the step is to this reply: absent, what to do about it; `standing`, the path's own and not about what they asked,
-   * said once as that ("On your path, next is: …"); `quiet`, the same, said a moment ago and not said again (the card under
-   * the reply has it). Additive.
+   * said as that ("On your path, next is: …"); `quiet`, the same, said in the reply before, and not said again on a call (a
+   * typed reply always has it). Additive.
    */
   readonly stepRole?: 'standing' | 'quiet';
   /**
@@ -93,7 +115,8 @@ export interface PromptGuidance {
  * `missing_referral`: a qualified person must decide and the reply does not say who, or what to bring; `wrong_date`: another
  * day than the step's; `step_talk`: the model wrote a step, a deadline or what done means itself (the server writes the one
  * step line), or said again what the server opened with; `missing_lead`, `missing_prior`: what the server says first, or the
- * thing on record the answer builds on, is not in the reply.
+ * thing on record the answer builds on, is not in the reply; `missing_pick`: they ask to have one of two things chosen, and
+ * the first sentence chooses none.
  */
 export type ReplyContractFinding =
   | 'question_only'
@@ -106,7 +129,8 @@ export type ReplyContractFinding =
   | 'wrong_date'
   | 'step_talk'
   | 'missing_lead'
-  | 'missing_prior';
+  | 'missing_prior'
+  | 'missing_pick';
 
 /** What the reply-contract check found (`validators/reply-contract.ts`). */
 export interface ReplyContractResult {
@@ -161,6 +185,14 @@ const KIND_LINES: Readonly<Record<PromptGuidance['kind'], string>> = {
     "They bring an idea this venture's record does not hold. Answer what they ask about it; which venture it is, both ways on and its first step are added.",
 };
 
+/** What the first sentence must do when they ask to have a choice made. */
+const PICK_LINES: Readonly<Record<'either' | 'which' | 'yes_no', string>> = {
+  either:
+    'They ask you to choose. Your first sentence names your pick of these, or both in an order; then why, from their own facts:',
+  which: 'They ask which one. Your first sentence names the one you pick; then why, from their own facts.',
+  yes_no: 'They ask a yes-or-no question. Your first word is Yes, No or Not yet; then why.',
+};
+
 /** A way out of an answer that was found by meaning. */
 const SEMANTIC_LINE =
   'Found by what they seem to mean: if it is not about what they asked, leave it and its citation out, and answer them from the evidence and your judgement.';
@@ -172,8 +204,31 @@ const UNANSWERED_LINE =
 const NO_STEP_LINE =
   'Never write a next step, a deadline, "Next:", "Done when", "Do it by" or a list of sub-steps: they are added under your reply.';
 
+/** They ask for a number, and code did not work it out. */
+const SUM_LINE =
+  'They ask for a number: open with it, from their own numbers, as a sum like [[8017 - 46 dollars]] or [[46 / 8017 percent]], never solved (code does it); if one of them is missing, say which.';
+
 const TEMPLATE_LINE =
   'give it when it answers them, with only what they told you; keep the [brackets] of everything else';
+
+/** Whether what opens the reply already shows the template. */
+function shownIn(lead: PromptGuidance['lead'] | null, body: string): boolean {
+  const lines = body.split('\n').map((l) => l.trim().slice(0, 12));
+  return (
+    lead != null && lines.length >= 2 && lines.slice(0, 2).every((l) => l !== '' && lead.text.includes(l))
+  );
+}
+
+/** Whether the answer itself says who decides: the model is not told it a second time. */
+function answersWho(g: PromptGuidance): boolean {
+  const who = (g.referral?.who ?? '').split(/[,;]/u)[0]?.trim().toLowerCase() ?? '';
+  const answer = g.ask?.answer.toLowerCase() ?? '';
+  return (
+    who !== '' &&
+    answer.includes(who.replace(/^(?:a|an|the) /, '')) &&
+    (g.referral?.told === true || answer.includes('bring '))
+  );
+}
 
 /**
  * The path's decision as the `<path>` block of the turn's part of the system prompt: what the model explains, never
@@ -233,11 +288,24 @@ export function renderGuidance(
       '</answer>',
     );
   }
+  const choice = full && lead === null ? (g.choice ?? null) : null;
+  if (choice !== null)
+    lines.push(
+      choice.options.length === 0 || choice.kind === 'yes_no'
+        ? PICK_LINES[choice.kind]
+        : `${PICK_LINES.either} <options>${choice.options.map((o) => line(o, 80)).join(' | ')}</options>`,
+    );
+  if (full && (g.finding ?? '').trim() !== '')
+    lines.push(
+      `<finding>${line(g.finding ?? '', 260)}</finding>`,
+      'What they found, in their words: say what it means for the venture, what it does not show yet and what it changes. Never skip it.',
+    );
   if (full && (g.calc ?? []).length > 0)
     lines.push(
       `<sums>${(g.calc ?? []).map((c) => line(c, 240)).join(' ')}</sums>`,
-      'Their numbers, worked out: say them as they are. Do no arithmetic of your own.',
+      'Their numbers, worked out: say them as they are. Any other sum: in [[ ]], never solved.',
     );
+  if (full && g.asksSum === true) lines.push(SUM_LINE);
   if (full && g.prior)
     lines.push(`<prior>${line(g.prior.fact, 240)}</prior>`, 'Build the answer on that, in a few words.');
   if (g.step !== null && g.kind !== 'rehearsal') {
@@ -247,7 +315,7 @@ export function renderGuidance(
       lines.push(
         `They ask how to do it. Explain its first part only: ${line(first.do, 160)}${first.how.trim() === '' ? '' : `: ${line(first.how, 320)}`}${first.minutes === null ? '' : ` (${String(first.minutes)} min)`}.`,
       );
-    if (full && g.step.template !== null && g.stepRole === undefined)
+    if (full && g.step.template !== null && g.stepRole === undefined && !shownIn(lead, g.step.template.body))
       lines.push(
         ...(voice
           ? [`They have "${line(g.step.template.title, 80)}" on their screen.`]
@@ -281,7 +349,8 @@ export function renderGuidance(
       `<check_in>They were on: ${line(g.checkIn.title, 160)}${state}. Ask once, kindly, how it went, after the answer; a miss is never judged.</check_in>`,
     );
   }
-  if (g.referral !== null) {
+  // A push is answered with who decides already: said once.
+  if (g.referral !== null && !answersWho(g)) {
     lines.push(
       `<referral>A qualified person decides this. Say who, and what to bring, once: ${line(g.referral.who, 160)}. Bring: ${line(g.referral.bring, 240)}. Then help them prepare; never decide it yourself.</referral>`,
     );
@@ -336,6 +405,9 @@ export function guidanceText(guidance: PromptGuidance, today?: string | null): s
     g.prior?.sentence ?? '',
     g.prior?.spoken ?? '',
     g.ask?.block ?? '',
+    g.fallback?.text ?? '',
+    g.finding ?? '',
+    ...(g.choice?.options ?? []),
   ]
     .filter((t) => t.trim() !== '')
     .join('\n');

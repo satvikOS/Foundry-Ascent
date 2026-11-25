@@ -76,6 +76,56 @@ def search() -> dict[str, Any]:
     }
 
 
+def shown(answer: float = 0.5) -> dict[str, Any]:
+    return {
+        "answerShown": answer,
+        "precision": 0.6,
+        "perQuestion": 1.4,
+        "answerableEmpty": 0.2,
+        "noAnswerEmpty": 0.83,
+        "perNoAnswer": 0.2,
+        "families": dict.fromkeys(models_bench.FAMILIES, 0.35),
+    }
+
+
+def admission_row(answer: float = 0.5, **numbers: float) -> dict[str, Any]:
+    return {**numbers, "notes": shown(answer), "evidence": shown(answer + 0.1)}
+
+
+def admission() -> dict[str, Any]:
+    """The script's measure of semantic admission (lab-admission.ts)."""
+    play = {
+        "off": admission_row(0.21),
+        "current": admission_row(0.52),
+        "grid": [
+            admission_row(0.5, floor=f, relative=r, limit=n)
+            for f in (0.22, 0.34)
+            for r in (0.6, 0.85)
+            for n in (1, 2)
+        ],
+    }
+    return {
+        "id": TITAN,
+        "dimensions": 1024,
+        "questions": 350,
+        "asks": {"answerable": {"ask": 170, "guarded": 50}, "noAnswer": {"ask": 60, "guarded": 4}},
+        "current": {"floor": 0.25, "relative": 0.85, "limit": 2},
+        "plays": dict.fromkeys(models_bench.PLAY_CHOICES, play),
+        "rerank": {
+            "id": COHERE_RERANK,
+            "code": None,
+            "sample": 100,
+            "requests": 92,
+            "ms": {"p50": 380, "p95": 480},
+            "related": [0.05, 0.4, 0.9],
+            "unrelated": [0.001, 0.01, 0.06],
+            "off": admission_row(0.2),
+            "current": admission_row(0.5),
+            "rows": {name: admission_row(0.57, threshold=0.0123) for name in models_bench.RERANK_KEEPS},
+        },
+    }
+
+
 def matching_score(right: float = 0.7) -> dict[str, Any]:
     share = {"messages": 10, "right": right, "wrong": 0.1}
     none = {"messages": 10, "matched": 0.05}
@@ -177,6 +227,7 @@ def report(**overrides: Any) -> dict[str, Any]:
             },
         ],
         "search": [search()],
+        "admission": [admission()],
         "playMatching": [play_matching()],
         "rerank": {
             "base": {"id": TITAN, "dimensions": 1024, "by": "search"},
@@ -286,6 +337,12 @@ def test_public_result_keeps_numbers_candidate_ids_and_codes_only() -> None:
     assert found["production"]["pack"]["precision"] == 0.55
     assert found["production"]["families"]["play"] == {"questions": 10, "found": 0.5}
     assert found["calibration"]["curve"][1] == {"floor": 0.3, "answered": 0.8, "caught": 0.5}
+    notes = result["admission"][0]
+    assert notes["plays"]["meaning"]["current"]["notes"]["answer_shown"] == 0.52
+    assert notes["plays"]["phrase"]["grid"][7]["limit"] == 2
+    assert notes["plays"]["meaning"]["off"]["evidence"]["families"]["knowledge_base"] == 0.35
+    assert notes["rerank"]["rows"]["keep_90"]["threshold"] == 0.0123
+    assert notes["asks"]["no_answer"] == {"ask": 60, "guarded": 4}
     plays = result["play_matching"][0]
     assert plays["suggested"] == {"floor": 0.425, "margin": 0.05, "referral_floor": 0.58, "guard": 0.05}
     assert plays["scores"]["suggested"]["asks"]["blind"] == {"messages": 10, "right": 0.71, "wrong": 0.1}
@@ -326,6 +383,19 @@ def test_public_result_keeps_numbers_candidate_ids_and_codes_only() -> None:
     plays["scores"][secret] = secret
     plays["scores"]["fallback"] = secret
     hostile["playMatching"].append({"id": secret})
+    notes = hostile["admission"][0]
+    notes.update(current=secret, asks={"answerable": secret, secret: 1}, questions=secret, dimensions=secret)
+    notes["plays"] = {
+        secret: secret,
+        "phrase": secret,
+        "meaning": {"off": secret, "grid": [{"floor": secret}]},
+    }
+    notes["rerank"].update(code=secret, ms=secret, related=[secret], rows={secret: secret, "keep_95": secret})
+    notes["rerank"]["off"] = {"notes": {"families": {secret: secret, "corpus": secret}, "precision": secret}}
+    hostile["admission"].append({"id": secret})
+    other = admission()
+    other["rerank"]["id"] = secret
+    hostile["admission"].append(other)
     hostile["refusals"] = [{"id": LUNA, "message": secret}]
     text = json.dumps(models_bench.public_result(hostile, exit_code=0))
     assert secret not in text
@@ -357,6 +427,13 @@ def test_the_summary_renders_the_numbers() -> None:
         "| a turn's evidence with its play | 0.61 | 0.78 | 0.71 | 0.6 | 0.55 | 1.9 | 0.1 | 0.7 | 0.5 |"
         in text
     )
+    assert f"Semantic admission with {TITAN} (1024) over 350 questions" in text
+    assert "Code: floor 0.25, relative 0.85, limit 2." in text
+    assert "With the play by phrase or meaning (production):" in text
+    assert "| gates alone | 0.21 | 0.6 | 1.4 | 0.83 | 0.2 | 0.35 |" in text
+    assert "| floor 0.34, relative 0.85, limit 2 | 0.5 | 0.6 | 1.4 |" in text
+    assert f"Chosen by {COHERE_RERANK} among the nearest eight, on 100 of the questions, 92 requests" in text
+    assert "| keep_75 (score at least 0.0123) | 0.57 |" in text
     assert f"| {COHERE_RERANK}, only when ambiguous (0.4 of questions) | 130 / 260 | 0.8 |" in text
     assert "| no-answer caught | 0 | 0.5 |" in text
     assert f"Plays by meaning with {TITAN} (1024) over 1100 messages" in text

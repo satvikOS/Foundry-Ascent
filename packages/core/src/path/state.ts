@@ -80,7 +80,7 @@ const EVIDENCE_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 const REACHED =
-  /\b(?:signed|sold|launched|won|finished|completed|reached|hit|got|raised|held|ran|shipped|opened|joined|hired)\b/;
+  /\b(?:signed|sold|launched|won|finished|completed|reached|hit|got|raised|held|ran|shipped|opened|joined|hired|pays?|paid|paying|uses?|renewed)\b/;
 
 /**
  * A milestone that happened. One still open, with a date ahead of it, or kept from what they said they want (a goal is

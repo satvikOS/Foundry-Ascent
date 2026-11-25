@@ -55,7 +55,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'first-100-users',
-    title: 'Get your first 100 users on a student budget',
+    title: 'Win 100 users from three places, one place at a time',
     stage: 'commercialization',
     intents: ['first-100-users'],
     criteria: ['sales-channel'],
@@ -104,7 +104,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'channel-choice',
-    title: 'Choose one marketing channel',
+    title: 'Try three ways to reach customers and keep one',
     stage: 'commercialization',
     intents: ['channel-choice'],
     criteria: ['sales-channel'],
@@ -146,7 +146,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'cold-outreach',
-    title: 'Write a cold email that gets a reply',
+    title: 'Send 10 short emails, each with its own first line',
     stage: 'commercialization',
     intents: ['cold-outreach'],
     criteria: ['discovery-ten-conversations', 'sales-ten-customers'],
@@ -180,7 +180,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'sales-conversation',
-    title: 'Run a first sales conversation',
+    title: 'Hold 3 sales talks and ask each for the order',
     stage: 'commercialization',
     intents: ['sales-conversation'],
     criteria: ['sales-ten-customers'],
@@ -222,7 +222,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'stalled-deal',
-    title: 'Win back a customer who went quiet',
+    title: 'Send one message that asks for a yes or a no',
     stage: 'commercialization',
     intents: ['stalled-deal'],
     criteria: ['sales-ten-customers'],
@@ -256,7 +256,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'b2b-selling',
-    title: 'Sell to a company',
+    title: 'Name who decides in 2 companies and offer one a pilot',
     stage: 'commercialization',
     intents: ['b2b-selling'],
     criteria: ['sales-ten-customers', 'idea-who-pays'],
@@ -306,7 +306,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'marketplace',
-    title: 'Start a marketplace with two sides',
+    title: 'Match 5 on one side with 15 on the other by hand',
     stage: 'commercialization',
     intents: ['marketplace'],
     criteria: ['sales-channel'],
@@ -353,7 +353,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'one-metric',
-    title: 'Choose the one number to watch',
+    title: 'Choose one number and write its last 4 weeks',
     stage: 'commercialization',
     intents: ['one-metric'],
     criteria: ['sales-metric'],
@@ -391,7 +391,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'launch',
-    title: 'Plan a first launch',
+    title: 'Launch once to one group and count the sales',
     stage: 'commercialization',
     intents: ['launch'],
     criteria: ['sales-channel'],
@@ -432,7 +432,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'elevator-pitch',
-    title: 'Write a 30-second pitch',
+    title: 'Write a 30-second pitch and say it to 3 people',
     stage: 'commercialization',
     intents: ['elevator-pitch'],
     criteria: ['sales-pitch'],
@@ -465,7 +465,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'pitch-deck',
-    title: 'Build a pitch deck',
+    title: 'Write 12 slide titles and build the deck on them',
     stage: 'commercialization',
     intents: ['pitch-deck'],
     criteria: ['sales-pitch'],
@@ -490,7 +490,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
       ),
       step('Rehearse it 3 times with a timer', 'Cut a slide if you are over time.', 60),
     ],
-    doneWhen: 'A deck of 12 slides or fewer exists, and 2 strangers understood it from the titles alone.',
+    doneWhen: 'You have a deck of 12 slides or fewer, and 2 strangers understood it from the titles alone.',
     days: 7,
     template: {
       title: 'Twelve titles',
@@ -507,7 +507,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'pitch-competition',
-    title: 'Prepare a pitch competition',
+    title: 'Match your slides to the judging points and rehearse twice',
     stage: 'commercialization',
     intents: ['pitch-competition'],
     criteria: ['sales-pitch'],
@@ -562,7 +562,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'demo',
-    title: 'Give a demo that works',
+    title: 'Build a two-minute demo and run it 5 times',
     stage: 'commercialization',
     intents: ['demo'],
     criteria: ['sales-pitch'],
@@ -592,7 +592,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'qa-prep',
-    title: 'Prepare for hard questions',
+    title: 'Write answers to the 10 hardest questions',
     stage: 'commercialization',
     intents: ['qa-prep'],
     criteria: ['sales-pitch'],
@@ -630,7 +630,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'investor-meeting',
-    title: 'Prepare a first investor meeting',
+    title: 'Write four lines of proof and 4 questions for the investor',
     stage: 'commercialization',
     intents: ['investor-meeting'],
     criteria: ['sales-pitch'],
@@ -681,7 +681,7 @@ export const COMMERCIALIZATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'find-investors',
-    title: 'Find investors who fit',
+    title: 'List 10 investors who fit, each with a way in',
     stage: 'commercialization',
     intents: ['find-investors'],
     criteria: [],

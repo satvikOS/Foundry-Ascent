@@ -351,3 +351,24 @@ describe('matter and the size of a step are not the founder’s state (founder p
     expect(inDistress(message)).toBe(true);
   });
 });
+
+describe('a thing that is dead is no distress of theirs', () => {
+  it.each([
+    'is my thing dead or nah',
+    'Is my idea dead?',
+    'my startup is dying',
+    'the project looks basically dead',
+    'is this market dead',
+  ])('%s', (message) => {
+    expect(inDistress(message)).toBe(false);
+  });
+  it.each([
+    'I feel dead inside',
+    'I want to die',
+    'I wish I was dead',
+    'my friend is dying',
+    'everything is dead and I cannot go on',
+  ])('%s is', (message) => {
+    expect(inDistress(message)).toBe(true);
+  });
+});

@@ -1065,7 +1065,7 @@ const SELF_STATE =
  * word of the message, is read as before.
  */
 const DEAD_MATTER =
-  /\b(?:dead|dying) (?:(?:skin|muscle|nerve|plant|brain|tumou?r|cancer|heart|bone|coral) )?(?:tissues?|cells?|skin|bacteria|microbes?|batter(?:y|ies)|pixels?|zones?|links?|stock|inventory|code|leads?|plants?|crops?|trees?|leaves|fish|wood|coral|sensors?|nerves?|muscles?)\b|\bdie[- ](?:cut|cutting|cast|casting|size)\b/g;
+  /\b(?:dead|dying) (?:(?:skin|muscle|nerve|plant|brain|tumou?r|cancer|heart|bone|coral) )?(?:tissues?|cells?|skin|bacteria|microbes?|batter(?:y|ies)|pixels?|zones?|links?|stock|inventory|code|leads?|plants?|crops?|trees?|leaves|fish|wood|coral|sensors?|nerves?|muscles?)\b|\bdie[- ](?:cut|cutting|cast|casting|size)\b|\b(?:my|our|the|this|that) (?:\w+ )?(?:thing|idea|startup|start-up|venture|business|company|project|app|product|page|website|market|deal|pitch|plan|pilot|campaign) (?:(?:is|was|looks|seems|feels) )?(?:already |basically |really |just |kind of |pretty much )?(?:dead|dying)\b/g;
 
 /** The step or the work is too big ("that's too much before the exam"), never "it's all too much". */
 const TOO_MUCH_WORK =
@@ -2587,8 +2587,8 @@ export function renderConversationState(
   }
   if (state.asksForNumber === true && guided) {
     lines.push(
-      '- They asked for a number: give one only from their own, the sums and the evidence; else say which number to find',
-      '  and where, first.',
+      '- They asked for a number: give one only from their own (a sum in [[ ]]), the sums given and the evidence; else say',
+      '  which number to find and where, first.',
     );
   } else if (state.asksForNumber === true) {
     lines.push(

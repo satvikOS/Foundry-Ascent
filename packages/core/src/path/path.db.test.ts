@@ -287,7 +287,7 @@ describe('a conversation like the client’s (synthetic wording)', () => {
     // Which venture it is, and both ways on, are the program's sentence, not the model's to word.
     expect(run.turn.response?.answer).toMatch(/BenchTally/);
     expect(run.turn.response?.answer).toMatch(/change of direction/);
-    expect(prompt).toContain('choose between: service business | consulting | some of each');
+    expect(prompt).toContain('<options>service business | consulting | some of each</options>');
     expect(prompt).toContain('Start as a service');
     expect(run.turn.guidance).toMatchObject({
       intent: 'service-or-product',
@@ -540,7 +540,11 @@ describe('an ask, a smaller step, and what they say they will do', () => {
     expect((await rows()).find((s) => s.origin === 'founder')).toMatchObject({
       title: 'A step you set',
       items: [],
+      status: 'skipped',
     });
+    // Nothing to do is never the next step: the path goes on from its own.
+    const next = await say(core, jonah, await newSession(jonah, venture(), core), 'What next?');
+    expect(next.turn.guidance?.step).toMatchObject({ id: own?.id, origin: 'path' });
   });
 });
 
@@ -581,6 +585,19 @@ describe('work reported, the idea and a change of it', () => {
     const more = await say(core, amara, session, 'I interviewed 2 more runners today.');
     expect(more.turn.guidance?.step?.playId).toBe('choose-segment');
     expect(await audits('path.criterion_progress', venture().id)).toBe(1);
+
+    // A number taken back opens what it had reached; told again, it is reached again.
+    await say(core, amara, session, 'Correction: I interviewed 7 runners in all, not 10.');
+    const fixed = await reads(amara, venture().id);
+    expect(fixed.criteria.find((c) => c.criterionId === 'discovery-interviews')).toMatchObject({
+      status: 'open',
+      evidence: expect.stringMatching(/^7 of 10: /) as string,
+    });
+    await say(core, amara, session, 'I interviewed 3 more runners today.');
+    expect(
+      (await reads(amara, venture().id)).criteria.find((c) => c.criterionId === 'discovery-interviews')
+        ?.status,
+    ).toBe('claimed');
   });
 
   it('the idea is kept once, word for word, and leads the prompt; a change of it is dated and opens what it must', async () => {
@@ -617,10 +634,37 @@ describe('work reported, the idea and a change of it', () => {
     );
     expect(await audits('path.direction_changed', venture().id)).toBe(1);
 
+    // Back to the first idea: what it had shown counts again, and a step of theirs about the other one ends.
+    await say(core, amara, session, "I'll call two nurses by Friday.");
+    const back = await say(
+      core,
+      amara,
+      session,
+      "I'm going back to the first idea. A gym lends us its treadmill now.",
+    );
+    expect(back.turn.guidance?.intent).toBe('pivot');
+    const home = await reads(amara, venture().id);
+    expect(home.path?.intake?.idea).toBe('an insole that shows runners where the pressure is');
+    expect(home.path?.pivots.at(-1)).toMatchObject({
+      from: 'soles for nurses on long shifts',
+      to: 'back to the first idea. A gym lends us its treadmill now',
+    });
+    const again = home.criteria.find((c) => c.criterionId === 'discovery-interviews');
+    expect([again?.status, again?.evidence]).toEqual([
+      'claimed',
+      expect.not.stringMatching(/^Before /) as string,
+    ]);
+    expect(home.steps.find((s) => s.title === 'Call two nurses')?.status).toBe('skipped');
+    expect(home.steps.filter((s) => s.status === 'now')).toHaveLength(1);
+    expect(await audits('path.direction_changed', venture().id)).toBe(2);
+
     await h.core.sessions.remove(amara, session);
     const erased = await reads(amara, venture().id);
     expect(erased.path?.intake?.idea).toBe('');
-    expect(erased.path?.pivots).toMatchObject([{ from: '', to: '', sessionId: null }]);
+    expect(erased.path?.pivots).toMatchObject([
+      { from: '', to: '', sessionId: null },
+      { from: '', to: '', sessionId: null },
+    ]);
     expect(JSON.stringify(await h.core.path.arc(amara, venture().id))).not.toContain('insole that shows');
   });
 

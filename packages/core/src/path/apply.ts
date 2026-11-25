@@ -250,6 +250,31 @@ export async function keepDecided(
       const kept = pivot.kept.find((c) => c.criterionId === criterion.id);
       if (kept !== undefined) await reopen(criterion.id, kept.evidence);
     }
+    // What the idea they go back to had shown counts again, in their words.
+    for (const r of pivot.restored) {
+      await reopen(r.criterion.id, null);
+      await pathRepo.setCriterion(tx, {
+        tenantId: ids.tenantId,
+        ventureId,
+        criterionId: r.criterion.id,
+        status: r.status,
+        evidence: r.evidence,
+        stepId: null,
+        sourceSessionId: r.sourceSessionId,
+        principalId: ids.principalId,
+      });
+    }
+    // A step in their own words was about the old direction.
+    for (const ended of pivot.ends)
+      await pathRepo.updateStep(tx, {
+        id: ended.id,
+        expectedVersion: ended.version,
+        change: {
+          status: 'skipped',
+          reason: 'The direction changed.',
+          sourceSessionId: null,
+        },
+      });
     await pathRepo.keepPivot(tx, {
       tenantId: ids.tenantId,
       ventureId,
@@ -257,6 +282,7 @@ export async function keepDecided(
       stage: pivot.stage,
       playbookVersion: playbook.version,
       pivot: { on: args.today, from: pivot.from.slice(0, 400), to: pivot.to, sessionId },
+      idea: pivot.idea.slice(0, 400),
       sessionId,
     });
     await audit(scope, {
@@ -265,7 +291,12 @@ export async function keepDecided(
       ventureId,
       objectType: 'venture_path',
       objectId: ventureId,
-      metadata: { stage: pivot.stage, reopened: pivot.reopened.length },
+      metadata: {
+        stage: pivot.stage,
+        reopened: pivot.reopened.length,
+        restored: pivot.restored.length,
+        back: pivot.back !== null,
+      },
     });
   }
   if (decision.idea !== null) {
@@ -304,6 +335,17 @@ export async function keepDecided(
     playbookVersion: playbook.version,
   });
   for (const row of applied?.rows ?? []) {
+    if (row.reopens === true)
+      await pathRepo.setCriterion(tx, {
+        tenantId: ids.tenantId,
+        ventureId,
+        criterionId: row.criterionId,
+        status: 'open',
+        evidence: null,
+        stepId: null,
+        sourceSessionId: null,
+        principalId: ids.principalId,
+      });
     await pathRepo.setCriterion(tx, {
       tenantId: ids.tenantId,
       ventureId,

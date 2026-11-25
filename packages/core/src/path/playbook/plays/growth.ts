@@ -5,7 +5,7 @@ import { AIN, REFERRALS, ain, cite, step } from '../make.js';
 export const GROWTH_PLAYS: readonly Play[] = [
   {
     id: 'retention',
-    title: 'Find out why customers leave',
+    title: 'Call 8 customers and count who stayed',
     stage: 'growth',
     intents: ['retention'],
     criteria: ['growth-customers-stay'],
@@ -51,7 +51,7 @@ export const GROWTH_PLAYS: readonly Play[] = [
   },
   {
     id: 'scaling-readiness',
-    title: 'Check if you are ready to scale',
+    title: 'Answer five scaling questions with evidence',
     stage: 'growth',
     intents: ['scaling-readiness'],
     criteria: ['growth-repeatable'],
@@ -101,7 +101,7 @@ export const GROWTH_PLAYS: readonly Play[] = [
   },
   {
     id: 'hiring',
-    title: 'Make your first hire',
+    title: 'Write the 90-day result and try 2 people on paid work',
     stage: 'growth',
     intents: ['hiring'],
     criteria: ['growth-repeatable'],
@@ -145,7 +145,7 @@ export const GROWTH_PLAYS: readonly Play[] = [
   },
   {
     id: 'second-group',
-    title: 'Expand to a second group',
+    title: 'Make 10 offers in a second group',
     stage: 'growth',
     intents: ['second-group'],
     criteria: ['growth-repeatable'],
@@ -191,7 +191,7 @@ export const GROWTH_PLAYS: readonly Play[] = [
   },
   {
     id: 'runway',
-    title: 'Know how many months you can run',
+    title: 'Write down how many months your cash lasts',
     stage: 'growth',
     intents: ['runway'],
     criteria: ['model-money-needed'],
@@ -220,7 +220,7 @@ export const GROWTH_PLAYS: readonly Play[] = [
   },
   {
     id: 'raise-or-grow',
-    title: 'Decide to raise money or grow on sales',
+    title: 'Write a one-year plan with investors and one without',
     stage: 'growth',
     intents: ['raise-or-grow'],
     criteria: ['growth-plan'],
@@ -265,7 +265,7 @@ export const GROWTH_PLAYS: readonly Play[] = [
   },
   {
     id: 'ain-plan-capstone',
-    title: 'Write the plan for the Module 3 capstone',
+    title: 'Write and submit the plan for the Module 3 capstone',
     stage: 'growth',
     intents: ['ain-plan-capstone'],
     criteria: ['growth-plan'],

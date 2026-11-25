@@ -266,6 +266,17 @@ export interface ModelGateway {
    * paid a new TLS connection after idle gaps). Never rejects; absent where there is no network (the mock).
    */
   prewarm?(): Promise<void>;
+  /** The reranker the gateway was configured with; absent: none (the default). */
+  readonly reranker?: Reranker;
+}
+
+/** A model that reads a query with each passage and says how relevant the passage is. */
+export interface Reranker {
+  readonly modelId: string;
+  /** What one request over `documents` passages is billed. */
+  costUsd(documents: number): number;
+  /** One relevance score per document, in the order given (higher is better). */
+  rerank(query: string, documents: readonly string[], signal: AbortSignal): Promise<readonly number[]>;
 }
 
 /** Structured-log sink. Fields are identifiers, counts and timings only, never content. */

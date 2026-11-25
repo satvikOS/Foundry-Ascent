@@ -190,7 +190,8 @@ separate; this is the common pool's `public` scope.
   - **one item per turn**, unless the founder asks for several (examples, cases, frameworks, a comparison; "in some
     cases" is not asking) or names several themselves (a subject asked for as an example is not naming one); then at
     most two on a typed turn, never more than one on a call;
-  - with a query embedding, a passage less similar than 0.2 is vetoed; similarity never admits one;
+  - with a query embedding, a passage less similar than 0.2 is vetoed; similarity admits one only through semantic
+    admission (§3.7);
   - an item **already cited in the conversation** (`turn_evidence` with source scope `public`) is never shown again;
   - one passage per item (a documented account before editorial guidance), in slots of their own beside the shared
     budget; authority 0.7 keeps them below the program's guidance (0.9) and the vEIR's library (1.0).
@@ -234,8 +235,8 @@ licence, an attribution and the day it was read, so an answer can show exactly w
   books under copyright are cited by the playbook and never stored.
 - **Asked for, not pushed** (C1 still holds). A note is a candidate only when the founder's own message asks for something,
   and then (a) the message names one of its source's topics (`knowledge-pack/topics.ts`), (b) the caller names the topic
-  or the play the path chose cites the source, or (c) for a question in words no table foresees, its vector is at the
-  model's floor and near the closest (or it covers most of the message's words). Two notes a typed turn, one on a call,
+  or the play the path chose cites the source, or (c) for a question in words no table foresees, it covers most of the
+  message's words, or semantic admission (§3.7) admits it. Two notes a typed turn, one on a call,
   one per source, in slots of their own beside the persona's library and the handbook.
 - **The play as evidence.** `retrieveEvidence({play, topics})` puts the turn's play first (`E1`, kind `doctrine`, its
   published sources in `citation.sources`) and always includes the best note of each corpus source it cites;
@@ -243,6 +244,24 @@ licence, an attribution and the day it was read, so an answer can show exactly w
   (`Module 2, Unit 1`); a government one, the page its locator names.
 - **Citations.** `EvidenceItem.citation` carries locator, url, licence, attribution; `turn_evidence.citation` keeps what a
   play or a shared passage showed when it was cited (never the venture's own record or a persona's library).
+
+### 3.7 Semantic admission of shared notes
+
+Students rarely name a topic or a term: over 350 paraphrased questions the gates of §3.5 and §3.6 showed the answer for 15
+to 24 %, and for none of the 63 the reference library answers (models benchmark, 2026-11-24). So a coaching turn that asks
+something also reads the shared notes nearest to the founder's own words (`SharedChunkQuery.semantic`, `admitSemantic`;
+constants and how they are chosen: docs/runbooks/embedding-model.md).
+
+- **Beside the gates, never instead of them**: at most two more notes (one on a call), within a total, and none when nothing
+  is near enough. "No evidence" stays a valid result.
+- **The founder's own words only**: never the composed query's vector (the vEIR's last question and the goal are the coach's
+  words; C1). Nothing on a social, crisis, rehearsal or recall turn, on news, or on "get me organized".
+- **Not again**: a source that was evidence in the conversation comes back only as the best answer of all; one
+  reference-library item a turn, the gate's counted; none on a question about the program itself.
+- **Isolation**: the tenant's program and public sources, active or stale, within the assignment's data class; never a
+  venture's documents, another tenant's copy or a persona's library (which has its own slots).
+- **Cited like any passage**: the marker stays only when the note supports the sentence (`citation-support.ts`); a turn
+  without that check (the path off, the EIR studio's bench) has no semantic admission.
 
 ## 4. Specific pool
 

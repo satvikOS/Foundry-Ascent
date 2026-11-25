@@ -216,9 +216,10 @@ describe('the model writes the answer, the server the one step line', () => {
     }
   });
 
-  it('with no answer of the program’s, what is left too short is said with where they are and the step’s parts', () => {
+  it('with no answer of the program’s, what is left too short is said with the step’s parts, and no stage nobody asked for', () => {
     const out = check('Okay.', STEP_ONLY, 'text', 'ok so').repaired ?? '';
-    expect(out).toContain('You are at ');
+    expect(out).toContain('Here is how the step goes:');
+    expect(out).not.toContain('You are at ');
     expect(out).toContain('\n\n1. Write 20 names');
     expect(out.endsWith(NEXT)).toBe(true);
     expect(subSteps(STEP, 'voice')).toMatch(/^First write 20 names[^.]*, then [^.]*\.$/);
@@ -397,8 +398,8 @@ describe('a reply that does not help is repaired from the path (the client’s l
     const out = check('What have you built so far? And who is it for?', STEP_ONLY);
     expect(out.findings).toContain('question_only');
     expect(out.findings).toContain('stacked_questions');
-    // Where they are and the step lead; the last question may stay, after it.
-    expect(out.repaired?.startsWith('You are at ')).toBe(true);
+    // The step's parts lead; the last question may stay, after them.
+    expect(out.repaired?.startsWith('Here is how the step goes:')).toBe(true);
     expect(out.repaired?.endsWith('And who is it for?')).toBe(true);
   });
 
@@ -943,10 +944,13 @@ describe('a step that is not about what they asked', () => {
     expect(out.repaired).toBe(`${OWN}\n\n${STANDS}`);
   });
 
-  it('is not said again a moment later, even where the reply says it', () => {
-    expect(check(OWN, QUIET, 'text', asked)).toEqual({ ok: true, findings: [], repaired: null });
-    expect(tail(QUIET, 'text')).toEqual({ before: '', step: '', findings: [] });
-    expect(check(`${OWN}\n\n${OWN_NEXT}`, QUIET, 'text', asked).repaired).toBe(OWN);
+  it('said in the reply before, a call does not say it again; a typed reply always has it', () => {
+    const line = tail(STANDING, 'text').step;
+    expect(line).toMatch(/^\*\*On your path, next is:\*\* /);
+    expect(check(OWN, QUIET, 'text', asked).repaired).toBe(`${OWN}\n\n${line}`);
+    expect(check(`${OWN}\n\n${line}`, QUIET, 'text', asked).ok).toBe(true);
+    expect(tail(QUIET, 'voice')).toEqual({ before: '', step: '', findings: [] });
+    expect(check(OWN, QUIET, 'voice', asked)).toEqual({ ok: true, findings: [], repaired: null });
     expect(spokenReserve(QUIET, '', TODAY)).toBe(0);
     expect(spokenReserve(STANDING, '', TODAY)).toBeGreaterThan(5);
   });
@@ -956,5 +960,100 @@ describe('a step that is not about what they asked', () => {
       const once = check(`${OWN}\n\n${OWN_NEXT}`, guidance, 'text', asked).repaired ?? '';
       expect(check(once, guidance, 'text', asked).repaired).toBeNull();
     }
+  });
+});
+
+describe('a choice they ask to have made', () => {
+  const choosing = (options: string[], kind: 'either' | 'yes_no' | 'which' = 'either'): PromptGuidance => ({
+    ...STEP_ONLY,
+    matched: 'none',
+    choice: { kind, options },
+  });
+  const finds = (reply: string, guidance: PromptGuidance): boolean =>
+    checkReplyContract({ reply, guidance, channel: 'text', today: TODAY }).findings.includes('missing_pick');
+
+  it.each<[string, boolean]>([
+    ['Sell to the museum first. Visitors use it, and the museum pays for it every month.', false],
+    ['Both, in this order: the museum pays, and the visitors show that it works for them.', false],
+    ['Neither: nobody has paid yet, so ask five of each group for a deposit this week first.', false],
+    ['There are good reasons on each side, and it all comes down to who has the money here.', true],
+    ['People pay for what saves them time, so look at who loses the most of it in a week.', true],
+  ])('%s', (reply, missing) => {
+    expect(finds(reply, choosing(['to the museum', 'to visitors']))).toBe(missing);
+  });
+
+  it.each<[string, boolean]>([
+    ['Yes, your cousin can do the list, and you do the talks, because the talks are the work.', false],
+    ['Not yet: a pilot counts as a sale only when it is paid, and this one is free so far.', false],
+    ['A pilot that could prove you wrong can be smaller than founders expect it to be at first.', true],
+  ])('yes or no: %s', (reply, missing) => {
+    expect(finds(reply, choosing(['yes', 'no'], 'yes_no'))).toBe(missing);
+  });
+
+  it('is not asked of a reply that opens with the pick, or where no option is known', () => {
+    const lead = { text: 'East: 6 of 20 (30%), against 11 of 60 (18%) for the other.', voice: 'East.' };
+    expect(
+      finds('People there buy more often than anyone else does, so stay there.', {
+        ...choosing(['east', 'west']),
+        lead,
+      }),
+    ).toBe(false);
+    expect(
+      finds('Look at who loses the most time in a week, and stay with them.', choosing([], 'which')),
+    ).toBe(false);
+  });
+});
+
+describe('who decides is said once', () => {
+  it('a second time in one reply goes, and stays out', () => {
+    const who = 'Ask the university technology transfer office, and a lawyer before you sign anything.';
+    const bring = 'Bring the invention history page, the lab agreement and any grant terms.';
+    const again =
+      'That one is for the university technology transfer office, and a lawyer before you sign anything. Bring the invention history page, the lab agreement and any grant terms.';
+    const reply = `${IP_REFERRAL.ask?.answer ?? ''} ${who} ${bring}\n\n${again}`;
+    const out = check(reply, IP_REFERRAL).repaired ?? '';
+    expect(out.match(/a lawyer before you sign anything/g)).toHaveLength(1);
+    expect(out.match(/invention history page/g)).toHaveLength(1);
+    expect(check(out, IP_REFERRAL).repaired).toBeNull();
+  });
+
+  it('told before, the office alone is enough', () => {
+    const told: PromptGuidance = {
+      ...IP_REFERRAL,
+      ask: {
+        ...IP_REFERRAL.ask,
+        title: 'x',
+        answer:
+          'Only the university technology transfer office can say, and a yes or no from me would be a guess.',
+        why: '',
+        traps: [],
+        evidenceKeys: [],
+      },
+      referral: { ...(IP_REFERRAL.referral ?? { who: '', bring: '' }), told: true },
+    };
+    const reply =
+      'Only the university technology transfer office can say, and a yes or no from me would be a guess today.';
+    expect(check(reply, told).repaired).not.toContain('Bring');
+    expect(check(reply, told).repaired).not.toContain('A qualified person decides');
+  });
+});
+
+describe('what the server says in place of too little', () => {
+  it('is what the path gives for it, never the list of a moment ago', () => {
+    const guidance: PromptGuidance = {
+      ...STEP_ONLY,
+      fallback: {
+        text: 'One part, then: Book two calls. Offer two times this week.',
+        voice: 'Book two calls.',
+      },
+    };
+    const out = check('Okay.', guidance, 'text', 'again').repaired ?? '';
+    expect(out).toContain('One part, then: Book two calls.');
+    expect(out).not.toContain('Here is how the step goes');
+  });
+
+  it('a step cut to parts is done when those are, without saying each again', () => {
+    const step = { ...STEP, doneWhen: 'These 3 parts are done: write it; mark it; choose one.' };
+    expect(stepLine(step, 'text', TODAY)).toMatch(/Done when these 3 parts are done\.$/);
   });
 });

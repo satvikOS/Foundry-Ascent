@@ -4,6 +4,7 @@ import { contentWords } from '../prompts/conversation-state.js';
 import { PATH_TAG } from '../prompts/guidance.js';
 import { shortAnswer, withKey } from '../validators/reply-contract.js';
 import { coverage, sharedCount, stemsOf } from '../validators/stems.js';
+import { spelledAsDigits } from '../validators/sums.js';
 import { unitsOf, wordsIn } from '../validators/units.js';
 
 /**
@@ -36,6 +37,8 @@ export interface PathBlock {
   /** The one prior fact to build on, and the sums given. */
   readonly prior: string | null;
   readonly sums: string | null;
+  /** They ask for a sum code did not work out: the reply writes one in a marker. */
+  readonly asksSum: boolean;
   readonly referral: { readonly who: string; readonly bring: string } | null;
   readonly newIdea: { readonly venture: string; readonly fact: string | null } | null;
   readonly social: boolean;
@@ -85,6 +88,7 @@ export function pathBlockIn(system: string): PathBlock | null {
     opens: of(/^<opens>(.*)<\/opens>$/m),
     prior: of(/^<prior>(.*)<\/prior>$/m),
     sums: of(/^<sums>(.*)<\/sums>$/m),
+    asksSum: block.includes('They ask for a number:'),
     referral:
       referral === null
         ? null
@@ -232,6 +236,57 @@ export interface PathReplyOptions {
   readonly question?: string;
 }
 
+const ASKS_NUMBER =
+  /\b(?:how (?:much|many)|what(?:'s| is| do| did| would| am)?\b[^?]*\b(?:share|percent|rate|left|make|keep|cost|earn|fee)|is the (?:fee|price) right|price)\b/iu;
+const ANY_NUMBER =
+  /\d|\b(?:two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|hundred)\b/giu;
+const NUM = String.raw`(\d+(?:\.\d+)?)`;
+
+/** The numbers of one text that a sum of one sale takes, as a model would find them. */
+function saleIn(text: string): { readonly price: string; readonly costs: readonly string[] } | null {
+  const price = new RegExp(
+    String.raw`(?:sells? (?:it |them |one )?for|charge|price (?:is|of)|go(?:es)? for|pays? me|^an? \p{L}+ is) \$?${NUM}`,
+    'iu',
+  ).exec(text)?.[1];
+  if (price === undefined) return null;
+  const costs = [
+    ...text.matchAll(
+      new RegExp(
+        String.raw`(?:costs?(?: me)?|gets|takes|fee is|(?:,|;|and) (?:the )?\p{L}+ (?:is|are)) \$?${NUM}(?! ?(?:%|percent|hours?|minutes?))( cents)?`,
+        'giu',
+      ),
+    ),
+  ].map((m) => (m[2] === undefined ? (m[1] ?? '') : String(Number(m[1]) / 100)));
+  return { price, costs };
+}
+
+/** A sum a model would write for a numeric ask, in a marker and never worked out; null when it finds none. */
+export function markedSum(asks: string, sources: readonly string[]): string | null {
+  const ask = spelledAsDigits(asks);
+  const texts = [ask, ...sources.map(spelledAsDigits)];
+  if (/\b(?:share|percent|percentage)\b/iu.test(ask)) {
+    for (const t of texts) {
+      const m = new RegExp(String.raw`(?<![\d.$])${NUM} (?:out )?of (?:the |my )?${NUM}\b`, 'iu').exec(t);
+      if (m?.[1] !== undefined && m[2] !== undefined) return `[[${m[1]} / ${m[2]} percent]]`;
+    }
+    return null;
+  }
+  const n = /\b(?:sell|do|make|from|on|with) (\d+)\b/iu.exec(ask)?.[1];
+  for (const t of texts) {
+    const sale = saleIn(t);
+    if (sale === null) continue;
+    const hours = new RegExp(String.raw`${NUM} hours?\b`, 'iu').exec(t)?.[1];
+    if (sale.costs.length === 0) {
+      if (hours !== undefined) return `[[${sale.price} / ${hours} dollars an hour]]`;
+      if (n !== undefined && n !== '1') return `[[${n} * ${sale.price} dollars]]`;
+      continue;
+    }
+    const one = [sale.price, ...sale.costs].join(' - ');
+    return n === undefined || n === '1' ? `[[${one} dollars]]` : `[[${n} * (${one}) dollars]]`;
+  }
+  return null;
+}
+
 /** Words of a spoken reply (the prompt asks for 45). */
 const SPOKEN_WORDS = 46;
 
@@ -255,6 +310,7 @@ export function mockPathReply(
   const voice = channel === 'voice';
   const recall = path.kind === 'recall';
   const record = path.answer ?? (recall && path.opens === null ? recalled(path, options.told ?? []) : '');
+  const asks = options.founderText ?? '';
   const told = [recall ? (options.lastTime ?? '') : '', record]
     .filter((t) => t !== '')
     .join(' ')
@@ -268,10 +324,31 @@ export function mockPathReply(
         : key === undefined
           ? told
           : withKey(told, key);
-  const asks = options.founderText ?? '';
   const held = recall ? null : (path.prior ?? factIn(path, asks, options.told, options.said));
   const nearest =
     recall || voice ? null : quoteIn(options.evidence ?? [], asks, `${options.said ?? ''} ${helps}`);
+  // A number they ask for: the sum given, or one of the mock's own, in a marker.
+  const opened = path.opens !== null && /\d/.test(path.opens);
+  const numeric =
+    !recall &&
+    !opened &&
+    (path.asksSum ||
+      ASKS_NUMBER.test(asks) ||
+      // "So if I sell 40 at 3, is that it?"
+      (asks.includes('?') && (asks.match(ANY_NUMBER) ?? []).length > 1));
+  const marked = numeric
+    ? markedSum(asks, [
+        ...[...(options.told ?? [])].reverse(),
+        ...path.brief.map((l) => l.replace(/^[^:]{0,40}: /u, '')),
+        ...(options.evidence ?? []).filter((e) => e.kind === 'memory').map((e) => e.text),
+      ])
+    : null;
+  const sum =
+    marked !== null
+      ? `That comes to ${marked}.`
+      : numeric && path.sums !== null && unsaid(path.sums, options.said ?? '')
+        ? (unitsOf(path.sums)[0]?.text ?? '')
+        : '';
   // The shown sentence, when it is nearer what they ask than what the brief holds.
   const quote =
     nearest !== null && nearest.shared > sharedCount(stemsOf(held ?? ''), stemsOf(asks)) ? nearest : null;
@@ -288,9 +365,10 @@ export function mockPathReply(
         ));
   const parts = {
     opening: path.opens === null ? (options.opening ?? '') : '',
+    sum,
     helps,
     body:
-      helps !== ''
+      helps !== '' || sum !== ''
         ? ''
         : path.opens === null
           ? (options.body ?? '')

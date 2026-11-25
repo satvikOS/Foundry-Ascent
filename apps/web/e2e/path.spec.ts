@@ -100,6 +100,13 @@ test.describe('the founder path', () => {
     const step = exchange.locator('[data-slot="step-card"]');
     await expect(step).toContainText('Done when: Five people described the last time it happened');
     await expect(exchange.getByRole('region', { name: 'Suggested next steps' })).toHaveCount(0);
+    // The answer is read before its step, however tall the step is: its first words stay under the header.
+    const words = exchange.locator('[data-slot="markdown"]').first();
+    for (const size of [page.viewportSize() ?? { width: 1440, height: 900 }, { width: 1280, height: 640 }]) {
+      await page.setViewportSize(size);
+      await expect.poll(async () => (await words.boundingBox())?.y ?? 0).toBeGreaterThan(60);
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
     await expectNoSeriousA11yViolations(page, 'a reply with its step');
     await shot(page, 'conversation');
 

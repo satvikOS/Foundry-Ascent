@@ -271,7 +271,7 @@ export function StoredExchange({
     <article
       id={`turn-${turn.id}`}
       aria-label={`Exchange ${turn.ordinal}`}
-      className="grid scroll-mt-24 gap-6"
+      className="grid scroll-mt-24 grid-cols-[minmax(0,1fr)] gap-6"
     >
       <FounderMessage
         text={turn.founderText}
@@ -322,7 +322,11 @@ export function LiveExchange({
   if (!state.pendingText) return null;
   const streaming = state.status === 'streaming';
   return (
-    <article aria-label="Current exchange" aria-busy={streaming} className="grid scroll-mt-24 gap-6">
+    <article
+      aria-label="Current exchange"
+      aria-busy={streaming}
+      className="grid scroll-mt-24 grid-cols-[minmax(0,1fr)] gap-6"
+    >
       <FounderMessage text={state.pendingText} author={author} at={null} />
       <VeirMessage personaName={personaName} portraitUrl={portraitUrl}>
         {state.streamedText ? (

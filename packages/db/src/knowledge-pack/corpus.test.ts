@@ -168,7 +168,7 @@ describe('the note a play’s citation pins', () => {
   it('is the one note most about the play itself', () => {
     expect(
       pinnedNote({
-        title: 'Write a cold email that gets a reply',
+        title: 'Send 10 short emails, each with its own first line',
         text: 'One line on why them, one on the problem, one ask for 15 minutes. Keep the email short; nobody reads a long paragraph.',
         citations: [{ sourceId: 'ain-foundry', locator: 'Module 3, Unit 2: Networking II' }],
       }),
@@ -189,7 +189,7 @@ describe('the note a play’s citation pins', () => {
     // A client's run: a Networking note was pinned, and cited, for "Tell me my idea is great".
     expect(
       pinnedNote({
-        title: 'Get an honest read of the idea',
+        title: 'Write how many strangers must pay, then test it',
         text: 'I will not call it great, because neither of us knows yet. Great is what strangers show with their money. Its strength is whatever you have seen people do about the problem so far. Prove it with 10 sales to strangers this month.',
         citations: networking,
       }),

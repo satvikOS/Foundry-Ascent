@@ -178,13 +178,26 @@ function inventedMoney(unit: string, guidance: PromptGuidance, known: string): n
   const counts = knownNumbersIn(said);
   const ok = (v: number): boolean =>
     v === 0 || given.some((g) => Math.abs(g - v) < 0.005) || derived(v, given, counts);
+  const onTheWay: number[] = [];
   const bare = [...unit.matchAll(BARE_PRICE)].map((m) => Number(m[1]));
   if (bare.length > 0)
     for (const m of unit.matchAll(
       /\b(?:and|or|then|versus|vs\.?) (\d{1,6}(?:\.\d+)?)(?= (?:to|next|for|instead|at)\b|[.,;!?]|$)/giu,
     ))
       bare.push(Number(m[1]));
-  return [...moneyValues(unit), ...bare].filter((v) => !ok(v));
+  // A sum shown on the way counts for the next one ("13 a lamp, so 20 lamps bring 260, and 165 after the stall").
+  const shown = numbersIn(unit);
+  return [...moneyValues(unit), ...bare].filter((v) => {
+    const fine = ok(v) || onTheWay.some((s) => shown.some((n) => stepOf(v, s, n)));
+    if (fine && !given.some((g) => Math.abs(g - v) < 0.005)) onTheWay.push(v);
+    return !fine;
+  });
+}
+
+/** Whether a value is one step of arithmetic on two shown ones. */
+function stepOf(value: number, a: number, b: number): boolean {
+  const near = (r: number): boolean => Math.abs(r - value) <= Math.max(0.005, Math.abs(value) * 0.005);
+  return b > 1 && (near(a * b) || near(a / b) || near(a - b) || near(a + b));
 }
 
 /** A sum worked out from their money: of two amounts, or of an amount and a count of theirs. */

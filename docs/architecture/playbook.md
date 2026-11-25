@@ -9,7 +9,7 @@ explains what was picked and never invents a step, a figure or a source.
 | `index.ts`         | `PLAYBOOK: Playbook` and `PLAYBOOK_VERSION` (raise it with any change; it is kept with each venture path)  |
 | `stages.ts`        | the seven `VentureStage`s with a title and goal in a student's words                                       |
 | `criteria.ts`      | 2 to 4 criteria per stage, each tied to one play of its stage; the three Ain capstones are criteria        |
-| `plays/<stage>.ts` | 114 plays: answer, why, 3 to 5 steps, done when, days, template, traps, referral, citations, next          |
+| `plays/<stage>.ts` | 115 plays: answer, why, 3 to 5 steps, done when, days, template, traps, referral, citations, next          |
 | `intents.ts`       | one intent per play, 8 to 40 phrases; `referral` wins, `note` only brings who decides, `overview`, `holds` |
 | `sources.ts`       | the reading list the citations resolve to                                                                  |
 | `make.ts`          | small helpers (`step`, `cite`, `ain`, `REFERRALS`)                                                         |

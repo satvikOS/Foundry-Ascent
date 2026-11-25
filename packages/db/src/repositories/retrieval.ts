@@ -13,6 +13,8 @@
  * - **Floor** ({@link RETRIEVAL_FLOORS}): a row nothing in the message points at is not returned, however few rows the
  *   store has. "No evidence" is a valid result. The vector floor is the embedding model's own ({@link
  *   EMBEDDING_PROFILES}): cosine similarities of two models are not comparable. Pinned memory is always a candidate.
+ * - **Semantic admission** ({@link SEMANTIC_ADMISSION}): shared notes near the founder's own words come beside what the
+ *   gates bring, as candidates (`lane` `semantic`) that {@link admitSemantic} chooses from.
  * - **Diversity**: near-identical passages are returned once, and one source gives at most {@link PER_SOURCE_LIMIT}.
  * - recency = 0.5 ^ (age_days / half_life_days) (default half-life 90 days); authority is store-specific (memory:
  *   status, confidence, pin; chunks: source status). Both only order rows of about the same rank.
@@ -56,7 +58,7 @@ import {
 } from '../knowledge-pack/gate.js';
 import { notAnAskSql, PLAY_ASK_LOCATOR, PLAY_ASKS_URI } from '../knowledge-pack/play-asks.js';
 import { namedTermGroups, queryTermGroups, subjectTermGroups } from '../knowledge-pack/query-terms.js';
-import { DOCUMENTED_ACCOUNT_HEADING } from '../knowledge-pack/render.js';
+import { DOCUMENTED_ACCOUNT_HEADING, PACK_URI_PREFIX } from '../knowledge-pack/render.js';
 import { isCorpusTopic, seeksHelp, type CorpusTopic } from '../knowledge-pack/topics.js';
 import { type KnowledgeClassification } from './knowledge.js';
 import { ACTIVE_MEMORY_STATUSES, type MemoryStatusValue, type MemoryTypeValue } from './memory.js';
@@ -121,6 +123,34 @@ export const RETRIEVAL_FLOORS = {
   openTerms: 3,
 } as const;
 
+/**
+ * Semantic admission of shared notes (the programme's notes and curriculum, the cited library, the reference library) to
+ * a coaching turn that asks something, in whatever words ({@link admitSemantic}): beside what the gates bring, never
+ * instead of it. The similarity is of the founder's OWN words, never of what the retrieval query adds to them (the
+ * vEIR's last question, the venture goal), and its floor is the embedding model's (`EmbeddingProfile.admit`).
+ *
+ * The gates alone (topics, vocabulary, strong word coverage) showed the answer for 15 to 24 % of paraphrased questions,
+ * and none of 63 the reference library answers, while the whole corpus held it for 67 % (models benchmark, 2026-11-24).
+ * These are starting values, strict on purpose; the benchmark's "admission" rows measure others in one run.
+ */
+export const SEMANTIC_ADMISSION = {
+  /** Added to the floor for a message that only may ask (a statement, a few words). */
+  guard: 0.06,
+  /** A note must be this close to the closest one. */
+  relative: 0.85,
+  /** Most notes it adds to a typed turn, and to a call's. */
+  limit: 2,
+  voiceLimit: 1,
+  /** It adds none past this many notes in all (the gates' and the play's counted), on a typed turn and on a call. */
+  room: 4,
+  voiceRoom: 3,
+  /** Most reference-library notes it may leave a turn with, the gate's counted. */
+  references: 1,
+  /** Notes read when a reranker chooses among them, and the score from which one is admitted then. */
+  rerankCandidates: 8,
+  rerankScore: 0.5,
+} as const;
+
 type Weights<T> = { readonly [K in keyof T]: number };
 
 /**
@@ -131,6 +161,8 @@ export interface RetrievalTuning {
   readonly fusion?: Partial<Weights<typeof RETRIEVAL_FUSION>>;
   readonly floors?: Partial<Weights<typeof RETRIEVAL_FLOORS>>;
   readonly profile?: EmbeddingProfile;
+  /** Semantic admission's, `floor` instead of the model's `admit`. */
+  readonly semantic?: Partial<Weights<typeof SEMANTIC_ADMISSION>> & { readonly floor?: number };
 }
 
 export interface EmbeddingProfile {
@@ -138,6 +170,8 @@ export interface EmbeddingProfile {
   readonly floor: number;
   /** From which it is, together with shared words. */
   readonly weak: number;
+  /** From which a shared note no gate brings is admitted ({@link SEMANTIC_ADMISSION}); absent: none is. */
+  readonly admit?: number;
 }
 
 /**
@@ -148,13 +182,13 @@ export interface EmbeddingProfile {
 export const EMBEDDING_PROFILES: Readonly<Record<string, EmbeddingProfile>> = {
   // Models benchmark, 2026-11-24 (272 questions with an answer, 82 without): the answer among the first three for 67 % of
   // them, 50 % with the starting floors (0.3, 0.2); nothing shown for 66 % of those without one (72 %).
-  'amazon.titan-embed-text-v2:0': { floor: 0.22, weak: 0.16 },
-  'cohere.embed-v4:0': { floor: 0.4, weak: 0.28 },
+  'amazon.titan-embed-text-v2:0': { floor: 0.22, weak: 0.16, admit: 0.25 },
+  'cohere.embed-v4:0': { floor: 0.4, weak: 0.28, admit: 0.44 },
   // Its similarity does not tell a question with an answer from one without (no-answer AUC 0.26, 2026-11-24): the vector
   // orders, and never admits.
   'amazon.nova-2-multimodal-embeddings-v1:0': { floor: 1.01, weak: 1.01 },
   // The deterministic hash embedding of tests and local development: only shared words make texts similar.
-  // Function words weigh as much as any in it, so its similarity alone admits nothing.
+  // Function words weigh as much as any in it, so its similarity alone admits nothing (and no note: `admit` is absent).
   'mock-embeddings': { floor: 0.6, weak: 0.4 },
 };
 export const DEFAULT_EMBEDDING_PROFILE: EmbeddingProfile = { floor: 0.35, weak: 0.24 };
@@ -198,7 +232,7 @@ export const DEFAULT_HALF_LIFE_DAYS = 90;
 type EvidenceKindValue = z.infer<typeof EvidenceKind>;
 type EvidenceSourceScopeValue = z.infer<typeof EvidenceSourceScope>;
 
-export const SHARED_LANES = ['core', 'reference', 'corpus', 'pinned'] as const;
+export const SHARED_LANES = ['core', 'reference', 'corpus', 'pinned', 'semantic'] as const;
 export type SharedLane = (typeof SHARED_LANES)[number];
 
 /** Where a passage comes from, as its source records it. */
@@ -208,6 +242,19 @@ export interface PassageCitation {
   readonly url: string | null;
   readonly licence: string | null;
   readonly attribution: string | null;
+}
+
+/** Kinds of shared notes semantic admission reads. */
+export const NOTE_FAMILIES = ['note', 'reference', 'curriculum'] as const;
+export type NoteFamily = (typeof NOTE_FAMILIES)[number];
+
+/** How near a shared note is to the founder's own words. */
+export interface NearNote {
+  readonly similarity: number;
+  /** A course or library note, an item of the reference library, or a passage about the course itself. */
+  readonly family: NoteFamily;
+  /** A passage of its source is already evidence in this conversation. */
+  readonly shownBefore: boolean;
 }
 
 /** A scored candidate; core assigns evidence keys (E1…En) and builds `EvidenceItem`s from these. */
@@ -233,8 +280,13 @@ export interface RetrievedItem {
   readonly visibility: z.infer<typeof Visibility> | null;
   /** Where a passage can be checked (migration 0034); absent or null: not a passage, or its source records nothing. */
   readonly citation?: PassageCitation | null;
-  /** Why a shared passage is here: relevance, the reference gate, the message's topic, or the play's citation. */
+  /**
+   * Why a shared passage is here: relevance, the reference gate, the message's topic, the play's citation, or its nearness
+   * to the founder's own words alone (`semantic`: a candidate, shown only when {@link admitSemantic} admits it).
+   */
   readonly lane?: SharedLane;
+  /** A shared note near the founder's own words (with {@link SharedChunkQuery.semantic}), whatever its lane. */
+  readonly near?: NearNote;
   readonly components: {
     /** Cosine similarity (0 without a comparable vector). */
     readonly vector: number;
@@ -279,17 +331,24 @@ function withModel<Q extends BaseQuery>(q: Q): Q {
 }
 
 /** Cosine similarity of `column` with the query embedded by the row's own model; NULL when they cannot be compared. */
-function vecSql(column: string, modelColumn: string, q: BaseQuery): string {
-  const primary = `1 - (${column} <=> :embedding)`;
+function vecSql(
+  column: string,
+  modelColumn: string,
+  q: Pick<BaseQuery, 'embeddingModel' | 'alternate'>,
+  /** The parameter of each part, when the query has another vector besides its own. */
+  name: (part: string) => string = (part) => part,
+): string {
+  const embedding = `:${name('embedding')}`;
+  const primary = `1 - (${column} <=> ${embedding})`;
   if (q.embeddingModel == null) {
-    return `CASE WHEN ${column} IS NULL OR :embedding IS NULL THEN NULL ELSE ${primary} END`;
+    return `CASE WHEN ${column} IS NULL OR ${embedding} IS NULL THEN NULL ELSE ${primary} END`;
   }
   const alternate =
     q.alternate == null
       ? ''
-      : `WHEN ${modelColumn} = :alternateModel THEN 1 - (${column} <=> :alternateEmbedding)`;
-  return `CASE WHEN ${column} IS NULL OR :embedding IS NULL THEN NULL
-               WHEN ${modelColumn} IS NULL OR ${modelColumn} = :embeddingModel THEN ${primary}
+      : `WHEN ${modelColumn} = :${name('alternateModel')} THEN 1 - (${column} <=> :${name('alternateEmbedding')})`;
+  return `CASE WHEN ${column} IS NULL OR ${embedding} IS NULL THEN NULL
+               WHEN ${modelColumn} IS NULL OR ${modelColumn} = :${name('embeddingModel')} THEN ${primary}
                ${alternate} ELSE NULL END`;
 }
 
@@ -506,6 +565,15 @@ function decodeItem(kind: EvidenceKindValue | 'from_row', r: RawRow): RetrievedI
     memoryType: col.enum(MemoryType.options).nullable.decode(r.memory_type, 'memory_type'),
     visibility: col.enum(Visibility.options).nullable.decode(r.visibility, 'visibility'),
     ...(r.lane === undefined ? {} : { lane: col.enum(SHARED_LANES).decode(r.lane, 'lane') }),
+    ...(r.near_family === undefined || r.near_family === null
+      ? {}
+      : {
+          near: {
+            similarity: col.num.decode(r.near_similarity, 'near_similarity'),
+            family: col.enum(NOTE_FAMILIES).decode(r.near_family, 'near_family'),
+            shownBefore: col.bool.decode(r.near_shown, 'near_shown'),
+          },
+        }),
     citation: citation.locator === null && citation.url === null ? null : citation,
     components: {
       vector: col.num.decode(r.vec_shown, 'vec_shown'),
@@ -673,14 +741,115 @@ export interface SharedChunkQuery extends BaseQuery {
   readonly candidates?: number;
   /**
    * The reference library (scope `public`, the startup knowledge base) for this turn; absent: none of it is
-   * returned. Its passages are never candidates by vector proximity or by the lexical query.
+   * returned by the gate. Its passages are never candidates by the lexical query, nor by vector proximity but for
+   * `semantic`.
    */
   readonly reference?: ReferenceQuery;
   /**
    * The cited corpus (the programme's course notes and the open library) for this turn; absent: none of it is
-   * returned, whatever is close to the query.
+   * returned, whatever is close to the query (`semantic` aside).
    */
   readonly corpus?: CorpusQuery;
+  /**
+   * Shared notes near the founder's own words, when they ask (none when `asks` is null); absent (semantic admission is
+   * off): the cited corpus admits a note by the query's vector itself, as before it.
+   */
+  readonly semantic?: SemanticQuery;
+}
+
+/** What a turn asks of semantic admission ({@link SEMANTIC_ADMISSION}). */
+export interface SemanticQuery {
+  /** The message plainly asks something (`ask`), or only may (`guarded`); null: it does not, and none is read. */
+  readonly asks: 'ask' | 'guarded' | null;
+  /** The founder's own words, embedded: the query's vector when it adds nothing to them. Null: no note is read. */
+  readonly embedding: readonly number[] | null;
+  readonly channel: 'text' | 'voice';
+  /** A reranker will choose: more notes are read, by the model's `weak` floor. */
+  readonly reranked?: boolean;
+  /** The conversation; null or absent: no note was shown before. */
+  readonly sessionId?: string | null;
+}
+
+/** The numbers one turn's semantic admission uses. */
+export interface SemanticRule {
+  readonly floor: number;
+  readonly relative: number;
+  readonly limit: number;
+  readonly room: number;
+  readonly references: number;
+  readonly rerankCandidates: number;
+  readonly rerankScore: number;
+}
+
+export function semanticRule(
+  q: Pick<SemanticQuery, 'asks' | 'channel'> & { readonly embedding?: readonly number[] | null },
+  tuning: RetrievalTuning = {},
+): SemanticRule {
+  const C = { ...SEMANTIC_ADMISSION, ...tuning.semantic };
+  const admit = tuning.semantic?.floor ?? embeddingProfile(embeddingModelOf(q.embedding ?? null)).admit;
+  const text = q.channel === 'text';
+  return {
+    // No similarity reaches it.
+    floor: admit === undefined ? 2 : admit + (q.asks === 'guarded' ? C.guard : 0),
+    relative: C.relative,
+    limit: text ? C.limit : C.voiceLimit,
+    room: text ? C.room : C.voiceRoom,
+    references: C.references,
+    rerankCandidates: C.rerankCandidates,
+    rerankScore: C.rerankScore,
+  };
+}
+
+/**
+ * Which of the shared notes a search found are shown: those the gates brought, as they are, and at most `rule.limit` of
+ * the `semantic` candidates, the closest first. One is admitted when
+ *
+ * - it is near the founder's words (`floor`) and not far behind the closest note (`relative`); with a reranker's `scores`
+ *   (by `refId`), when its score is at least `rerankScore`;
+ * - there is room: the gates' notes and the play's count;
+ * - it is the closest note of all, or its source was not evidence in this conversation, gives no other note of this turn,
+ *   and is not about the course itself (a curriculum passage answers a question about the course, and nothing else);
+ * - the turn would not have more than `references` reference-library items.
+ *
+ * Pure: the same candidates always give the same notes, in the order they came.
+ */
+export function admitSemantic(
+  items: readonly RetrievedItem[],
+  rule: SemanticRule,
+  scores: ReadonlyMap<string, number> | null = null,
+): RetrievedItem[] {
+  const value = (i: RetrievedItem): number =>
+    scores === null ? (i.near?.similarity ?? -1) : (scores.get(i.refId) ?? -1);
+  // With scores, only what was scored competes: the gates' notes were not read by the reranker.
+  const ranked = items
+    .filter((i) => i.near !== undefined && (scores === null || scores.has(i.refId)))
+    .sort((a, b) => value(b) - value(a) || (a.refId < b.refId ? -1 : 1));
+  const best = ranked[0];
+  const taken = items.filter((i) => i.lane === 'reference' || i.lane === 'corpus' || i.lane === 'pinned');
+  const sources = new Set(taken.map((i) => i.sourceId));
+  let room = Math.min(rule.limit, rule.room - taken.length);
+  let references = taken.filter((i) => i.lane === 'reference').length;
+  const admitted = new Set<string>();
+  for (const item of ranked) {
+    if (item.lane !== 'semantic' || item.near === undefined || best === undefined) continue;
+    if (room <= 0) break;
+    const near =
+      scores === null
+        ? value(item) >= rule.floor && value(item) >= rule.relative * value(best)
+        : value(item) >= rule.rerankScore;
+    if (!near) break;
+    const first = item === best;
+    if (!first && (item.near.shownBefore || sources.has(item.sourceId) || item.near.family === 'curriculum'))
+      continue;
+    if (item.near.family === 'reference') {
+      if (references >= rule.references) continue;
+      references += 1;
+    }
+    admitted.add(item.refId);
+    sources.add(item.sourceId);
+    room -= 1;
+  }
+  return items.filter((i) => i.lane !== 'semantic' || admitted.has(i.refId));
 }
 
 /**
@@ -748,7 +917,8 @@ export interface ReferenceQuery {
  *   a framework or stage only in a sentence that asks about it, a case by its company's full name in an
  *   entrepreneurship context); one item per turn unless the founder asks for several;
  * - **the vector floor**: with a query embedding, a passage whose own embedding is less similar than `minVector` is
- *   vetoed (the words may coincide while the meaning differs). Similarity never admits a passage;
+ *   vetoed (the words may coincide while the meaning differs). Similarity admits none here: an item near the founder's
+ *   own words comes by {@link SEMANTIC_ADMISSION}, one a turn at most, when they ask;
  * - **never twice in a conversation**: an item already cited in the conversation (`turn_evidence` with source scope
  *   `public`) is not shown again; the history already holds what was said about it;
  * - one passage per item: a case's documented account before its editorial guidance, else the item's first
@@ -812,7 +982,8 @@ function sharedSearch(query: SharedChunkQuery): StoreSearch {
   const scopeFilter = `c.venture_id IS NULL AND c.tenant_id = :tenantId AND c.scope = ANY (:scopes)
     AND (c.scope <> 'persona' OR c.persona_id = :personaId) AND ${notAnAskSql('c')}`;
   const refLimit = q.reference ? Math.max(0, Math.min(q.reference.limit ?? REFERENCE_GATE.limit, 10)) : 0;
-  const admitted = q.reference ? selectReferences(q.reference.founderText, { limit: refLimit }).matches : [];
+  const gate = q.reference ? selectReferences(q.reference.founderText, { limit: refLimit }) : null;
+  const admitted = gate?.matches ?? [];
   // Nothing asked for: what the conversation is about may bring one item, rate-limited in SQL (`recent_ref`).
   const contextual =
     admitted.length === 0 && refLimit > 0 && q.reference?.context !== undefined
@@ -824,6 +995,9 @@ function sharedSearch(query: SharedChunkQuery): StoreSearch {
     ...corpusUrisForTopics((q.corpus?.topics ?? []).filter(isCorpusTopic)),
   ]);
   const pin = q.corpus?.play == null ? null : pinnedNote(q.corpus.play);
+  // The corpus's own vector rule: semantic admission takes its place (its founder's own words, its floor, its slots).
+  const byVector = q.semantic === undefined;
+  const meaning = semanticOf(q, gate?.reason === 'program');
   const stageTopics = q.corpus?.stage == null ? [] : (STAGE_TOPICS[q.corpus.stage] ?? []);
   // The persona's and the programme's own passages: curriculum ones only when the founder's message is about the
   // programme, the course notes never (they come as corpus notes).
@@ -898,9 +1072,12 @@ function sharedSearch(query: SharedChunkQuery): StoreSearch {
        WHERE :corpusOpen AND ${scopeFilter} AND s.scope IN ('program', 'public')
          AND (starts_with(s.uri, :notesPrefix) OR starts_with(s.uri, :libraryPrefix))
          AND (c.id IN (SELECT id FROM strong)
-              OR coalesce(${vecSql('c.embedding', 'c.embedding_model', q)} >= :vecFloor, false)))
-     , cand AS (SELECT id FROM ann UNION SELECT id FROM lexical UNION SELECT id FROM reference UNION SELECT id FROM corpus
-               UNION SELECT id FROM open_notes)
+              OR (${byVector ? 'true' : 'false'}
+                  AND coalesce(${vecSql('c.embedding', 'c.embedding_model', q)} >= :vecFloor, false))))
+     , near_notes AS MATERIALIZED (${meaning?.sql(scopeFilter) ?? NO_NEAR_NOTES})
+     , core_cand AS MATERIALIZED (SELECT id FROM ann UNION SELECT id FROM lexical)
+     , cand AS (SELECT id FROM core_cand UNION SELECT id FROM reference UNION SELECT id FROM corpus
+               UNION SELECT id FROM open_notes UNION SELECT id FROM near_notes)
      , cand_coverage AS MATERIALIZED (SELECT v.* FROM coverage v WHERE v.id IN (SELECT id FROM cand))
      , store AS (
        SELECT c.id, c.ordinal, NULL::uuid AS venture_id, c.source_id, c.scope AS source_scope, NULL::text AS memory_type,
@@ -922,8 +1099,11 @@ function sharedSearch(query: SharedChunkQuery): StoreSearch {
                 + 0.35 * coalesce(h.cov, 0) AS lex,
               coalesce(h.cov, 0) AS heading_cov, coalesce(h.named, false) AS rescued,
               re.id IS NOT NULL AS is_reference, coalesce(co.is_pin, false) AS is_pin, coalesce(co.topical, false) AS topical,
-              co.id IS NULL AND op.id IS NULL AND c.scope <> 'public' AS is_core,
+              co.id IS NULL AND op.id IS NULL AND cc.id IS NOT NULL AS is_core,
               op.id IS NOT NULL AS is_open,
+              ne.family AS near_family, ne.similarity AS near_similarity, ne.shown AS near_shown,
+              -- Only its nearness brings it: the other lanes' floors are measured without it.
+              co.id IS NULL AND op.id IS NULL AND cc.id IS NULL AND re.id IS NULL AND ne.family <> 'note' AS only_near,
               s.uri = ANY (:stageUris) AS of_stage,
               ${dedupeSql('c.content')} AS dedupe
        FROM cand
@@ -934,19 +1114,21 @@ function sharedSearch(query: SharedChunkQuery): StoreSearch {
        LEFT JOIN reference re ON re.id = c.id
        LEFT JOIN corpus co ON co.id = c.id
        LEFT JOIN open_notes op ON op.id = c.id
+       LEFT JOIN near_notes ne ON ne.id = c.id
+       LEFT JOIN core_cand cc ON cc.id = c.id
        LEFT JOIN LATERAL (
          SELECT least(1, sum(i.idf) / max(tt.total)) AS cov, bool_or(t.named) AS named
          FROM terms t JOIN idf i ON i.ord = t.ord CROSS JOIN total tt
          WHERE to_tsvector('english', s.title || ' ' || coalesce(c.heading, '')) @@ t.tsq) h ON true
        WHERE ${scopeFilter} AND s.status IN ('active', 'stale')
          AND (:classifications IS NULL OR s.classification = ANY (:classifications)))
-     , scored AS (SELECT x.*, max(x.vec) OVER () AS top_vec FROM store x)
+     , scored AS (SELECT x.*, max(x.vec) FILTER (WHERE NOT coalesce(x.only_near, false)) OVER () AS top_vec FROM store x)
      , ranked AS (
        SELECT k.*, ${RANKS_SQL}
        FROM (SELECT s.*, ${floorSql(c, 'shared')} AS about,
                     greatest(s.cov, s.heading_cov) >= ${L.topicCoverage} OR coalesce(s.vec >= :vecWeak, false) AS touches,
                     (s.cov >= ${L.openCoverage} AND s.matched >= ${L.openTerms})
-                      OR coalesce(s.vec >= :vecFloor AND s.vec >= ${L.openRelative} * s.top_vec, false) AS open_about
+                      OR ${byVector ? `coalesce(s.vec >= :vecFloor AND s.vec >= ${L.openRelative} * s.top_vec, false)` : 'false'} AS open_about
              FROM scored s) k)
      , fused AS (
        SELECT r.*, ${fusedSql(c)} + CASE WHEN r.of_stage THEN 0.02 ELSE 0 END
@@ -957,22 +1139,27 @@ function sharedSearch(query: SharedChunkQuery): StoreSearch {
                         WHEN b.is_reference THEN 'reference'
                         WHEN b.topical AND b.touches THEN 'corpus'
                         WHEN b.is_open AND b.open_about THEN 'corpus'
-                        WHEN b.is_core AND b.about THEN 'core' END AS lane
+                        WHEN b.is_core AND b.about THEN 'core'
+                        WHEN b.near_family IS NOT NULL THEN 'semantic' END AS came_by
        FROM fused b)
      , one AS (
-       SELECT l.*, row_number() OVER (PARTITION BY l.lane, l.source_id ORDER BY l.score DESC, l.id) AS of_source,
-              row_number() OVER (PARTITION BY l.dedupe ORDER BY (l.lane = 'pinned') DESC, l.score DESC, l.id) AS copy
+       SELECT l.*, row_number() OVER (PARTITION BY l.came_by, l.source_id ORDER BY l.score DESC, l.id) AS of_source,
+              row_number() OVER (PARTITION BY l.dedupe ORDER BY (l.came_by = 'pinned') DESC, (l.came_by = 'semantic'), l.score DESC, l.id) AS copy
        FROM laned l
-       WHERE l.lane IS NOT NULL AND (l.lane = 'pinned' OR l.score >= :minScore))
+       WHERE l.came_by IS NOT NULL AND (l.came_by IN ('pinned', 'semantic') OR l.score >= :minScore))
      , numbered AS (
-       SELECT o.*, row_number() OVER (PARTITION BY o.lane ORDER BY o.score DESC, o.id) AS lane_rank
+       SELECT o.*, row_number() OVER (PARTITION BY o.came_by ORDER BY o.score DESC, o.id) AS lane_rank
        FROM one o
        WHERE o.copy = 1
-         AND o.of_source <= CASE o.lane WHEN 'corpus' THEN 1 WHEN 'core' THEN ${PER_SOURCE_LIMIT} ELSE 1000 END)
-     SELECT n.*, coalesce(greatest(n.vec, 0), 0) AS vec_shown
-     FROM numbered n
-     WHERE n.lane_rank <= CASE n.lane WHEN 'core' THEN :limit WHEN 'corpus' THEN :corpusLimit ELSE 1000 END
-     ORDER BY n.score DESC, n.id`,
+         AND o.of_source <= CASE o.came_by WHEN 'corpus' THEN 1 WHEN 'core' THEN ${PER_SOURCE_LIMIT} ELSE 1000 END)
+     , placed AS (
+       SELECT n.id, n.came_by AS lane FROM numbered n
+       WHERE n.lane_rank <= CASE n.came_by WHEN 'core' THEN :limit WHEN 'corpus' THEN :corpusLimit ELSE 1000 END)
+     -- A near note the gates had no slot for is a candidate still.
+     SELECT o.*, coalesce(pl.lane, 'semantic') AS lane, coalesce(greatest(o.vec, 0), 0) AS vec_shown
+     FROM one o LEFT JOIN placed pl ON pl.id = o.id
+     WHERE o.copy = 1 AND (pl.id IS NOT NULL OR o.near_family IS NOT NULL)
+     ORDER BY o.score DESC, o.id`,
     params: {
       ...baseParams(q, 4, 'shared'),
       scopes: p.textArray(q.scopes ?? ['program', 'public', 'persona']),
@@ -1000,8 +1187,81 @@ function sharedSearch(query: SharedChunkQuery): StoreSearch {
         q.corpus === undefined ? 0 : Math.max(0, Math.min(q.corpus.limit ?? CORPUS_LIMIT, 10)),
       ),
       stageUris: p.textArray(corpusUrisForTopics(stageTopics)),
+      ...meaning?.params,
     },
     decode: (r) => decodeItem('from_row', r),
+  };
+}
+
+const NO_NEAR_NOTES = `SELECT NULL::uuid AS id, NULL::text AS family, NULL::double precision AS similarity,
+       NULL::boolean AS shown WHERE false`;
+
+/**
+ * The notes near the founder's own words: an exact scan of the tenant's few hundred shared notes (no index: a filtered ANN
+ * scan drops rows), the closest passage of each source, the closest sources first. Null: the turn reads none.
+ */
+function semanticOf(
+  q: SharedChunkQuery,
+  /** They ask about the programme itself: its own guidance answers, never the reference library. */
+  programme: boolean,
+): { readonly sql: (scopeFilter: string) => string; readonly params: Record<string, SqlParam> } | null {
+  const semantic = q.semantic;
+  if (semantic?.embedding == null || semantic.asks === null) return null;
+  // The query's own vector is sent once.
+  const same = semantic.embedding === q.embedding;
+  const model = same ? q.embeddingModel : embeddingModelOf(semantic.embedding);
+  const alternate = same ? q.alternate : model == null ? null : alternateOf(semantic.embedding);
+  const rule = semanticRule(semantic, q.tuning);
+  const profile = q.tuning?.profile ?? embeddingProfile(model);
+  const floor = semantic.reranked === true ? profile.weak : rule.floor;
+  const name = (n: string): string => (same ? n : `near${n.charAt(0).toUpperCase()}${n.slice(1)}`);
+  const similarity = vecSql(
+    'c.embedding',
+    'c.embedding_model',
+    { embeddingModel: model, alternate: alternate ?? null },
+    name,
+  );
+  return {
+    sql: (scopeFilter) => `SELECT y.id, y.family, y.similarity,
+              EXISTS (SELECT 1 FROM turn_evidence te JOIN turns t ON t.id = te.turn_id
+                      WHERE :nearSessionId IS NOT NULL AND t.session_id = :nearSessionId
+                        AND te.source_id = y.source_id) AS shown
+       FROM (
+       SELECT z.* FROM (
+         SELECT n.*, row_number() OVER (PARTITION BY n.source_id ORDER BY n.similarity DESC, n.id) AS of_source
+         FROM (
+           SELECT c.id, c.source_id, ${similarity} AS similarity,
+                  CASE WHEN starts_with(s.uri, :packPrefix) THEN 'reference'
+                       WHEN starts_with(s.uri, :curriculumPrefix) AND NOT starts_with(s.uri, :notesPrefix) THEN 'curriculum'
+                       ELSE 'note' END AS family
+           FROM knowledge_sources s JOIN knowledge_chunks c ON c.source_id = s.id
+           WHERE s.tenant_id = :tenantId AND s.scope IN ('program', 'public') AND s.status IN ('active', 'stale')
+             AND (:classifications IS NULL OR s.classification = ANY (:classifications))
+             AND ((starts_with(s.uri, :packPrefix) AND ${String(!programme)}) OR starts_with(s.uri, :curriculumPrefix)
+                  OR starts_with(s.uri, :libraryPrefix))
+             AND ${scopeFilter}) n
+         WHERE n.similarity >= :nearFloor) z
+       WHERE z.of_source = 1
+       ORDER BY z.similarity DESC, z.id
+       LIMIT :nearLimit) y`,
+    params: {
+      packPrefix: p.text(PACK_URI_PREFIX),
+      nearSessionId: p.nullable.uuid(semantic.sessionId ?? null),
+      nearFloor: p.num(floor),
+      nearLimit: p.int(clampLimit(rule.rerankCandidates, SEMANTIC_ADMISSION.rerankCandidates, 50)),
+      ...(same
+        ? {}
+        : {
+            [name('embedding')]: p.vector(semantic.embedding),
+            ...(model == null ? {} : { [name('embeddingModel')]: p.text(model) }),
+            ...(model == null || alternate == null
+              ? {}
+              : {
+                  [name('alternateModel')]: p.text(alternate.modelId),
+                  [name('alternateEmbedding')]: p.vector(alternate.embedding),
+                }),
+          }),
+    },
   };
 }
 

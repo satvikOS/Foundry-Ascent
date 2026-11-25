@@ -27,9 +27,9 @@ export type ReplyShape = 'prose' | 'json' | 'labelled';
 
 /** Characters of the opening needed to tell prose from structured output (as the sentence gate reads it). */
 const OPENING_CHARS = 20;
-/** An opening like structured output: a code fence, JSON, a tag, a field label. */
+/** An opening like structured output: a code fence, JSON, a tag, a field label (never a sum's marker, "[["). */
 const STRUCTURED_OPENING =
-  /^(?:```|\{|\[\s*[{[]|<\/?(?:answer|reply|response)\b|[*_]{0,2}"?(?:answer|spoken|reply|response|mode|claims|next_actions)"?[*_]{0,2}\s*:)/i;
+  /^(?:```|\{|\[\s*(?:\{|\[\s*["{[])|<\/?(?:answer|reply|response)\b|[*_]{0,2}"?(?:answer|spoken|reply|response|mode|claims|next_actions)"?[*_]{0,2}\s*:)/i;
 const JSON_OPENING = /^(?:```|\{|\[)/;
 const TAG_OPENING = /^<(answer|reply|response)\b[^>]*>/i;
 /** The JSON key whose string value is the reply, up to the string's opening quote. */

@@ -5,7 +5,7 @@ import { AIN, REFERRALS, ain, cite, step } from '../make.js';
 export const DISCOVERY_PLAYS: readonly Play[] = [
   {
     id: 'find-ten-people',
-    title: 'Find your customer and 10 of them this month',
+    title: 'Find 10 people who had the problem and talk to them',
     stage: 'discovery',
     intents: ['find-ten-people'],
     criteria: ['discovery-ten-conversations', 'discovery-first-group'],
@@ -55,7 +55,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'interview-script',
-    title: 'Run a problem interview',
+    title: 'Write five interview questions and start the talks',
     stage: 'discovery',
     intents: ['interview-script'],
     criteria: ['discovery-ten-conversations'],
@@ -108,7 +108,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'interview-mistakes',
-    title: 'Fix the questions you ask in interviews',
+    title: 'Rewrite your interview questions to ask about the past',
     stage: 'discovery',
     intents: ['interview-mistakes'],
     criteria: ['discovery-ten-conversations'],
@@ -149,7 +149,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'interview-debrief',
-    title: 'Debrief after an interview',
+    title: 'Write three lines after each interview',
     stage: 'discovery',
     intents: ['interview-debrief'],
     criteria: ['discovery-pattern'],
@@ -187,7 +187,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'synthesize-interviews',
-    title: 'Find the pattern across interviews',
+    title: 'Put your interviews in one table and name the pattern',
     stage: 'discovery',
     intents: ['synthesize-interviews'],
     criteria: ['discovery-pattern', 'discovery-first-group'],
@@ -237,7 +237,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'fake-compliments',
-    title: 'Tell real interest from kind words',
+    title: 'Ask everyone who said yes for one real step',
     stage: 'discovery',
     intents: ['fake-compliments'],
     criteria: ['validation-commitment'],
@@ -274,7 +274,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'survey-or-talk',
-    title: 'Hold talks before you send a survey',
+    title: 'Hold 5 talks in place of the survey',
     stage: 'discovery',
     intents: ['survey-or-talk'],
     criteria: ['discovery-ten-conversations'],
@@ -318,7 +318,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'beachhead',
-    title: 'Choose the first group to serve',
+    title: 'Choose one group to serve first and list 20 of them',
     stage: 'discovery',
     intents: ['beachhead'],
     criteria: ['discovery-first-group'],
@@ -367,7 +367,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'persona',
-    title: 'Write one useful persona',
+    title: 'Write one page about one real customer',
     stage: 'discovery',
     intents: ['persona'],
     criteria: ['discovery-first-group'],
@@ -399,7 +399,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'jobs-to-be-done',
-    title: 'Find the job your customer hires for',
+    title: 'Write down three stories of how people bought',
     stage: 'discovery',
     intents: ['jobs-to-be-done'],
     criteria: ['discovery-pattern'],
@@ -446,7 +446,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'competitors',
-    title: 'Map competitors and alternatives',
+    title: 'Make a table of five things people use today',
     stage: 'discovery',
     intents: ['competitors'],
     criteria: ['discovery-alternatives'],
@@ -492,7 +492,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'market-size',
-    title: 'Size the market from the bottom up',
+    title: 'Count your market in three numbers with their sources',
     stage: 'discovery',
     intents: ['market-size'],
     criteria: ['discovery-first-group'],
@@ -517,7 +517,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
       ),
       step('Show low, middle and high', 'Change only the number you are least sure of.', 15),
     ],
-    doneWhen: 'Three numbers exist, each with its source or the word guess next to it.',
+    doneWhen: 'You have three numbers, each with its source or the word guess next to it.',
     days: 5,
     template: {
       title: 'Bottom-up market size',
@@ -540,7 +540,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'no-replies',
-    title: 'Get answers when nobody replies',
+    title: 'Send 10 rewritten messages and ask for 3 introductions',
     stage: 'discovery',
     intents: ['no-replies'],
     criteria: ['discovery-ten-conversations'],
@@ -578,7 +578,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'networking',
-    title: 'Network as a student founder',
+    title: 'Meet 3 new people and thank each within a day',
     stage: 'discovery',
     intents: ['networking'],
     criteria: [],
@@ -624,7 +624,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'find-mentor',
-    title: 'Find a mentor',
+    title: 'Book one mentor session with one clear question',
     stage: 'discovery',
     intents: ['find-mentor'],
     criteria: [],
@@ -666,7 +666,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'mentor-prep',
-    title: 'Prepare a mentor or EIR session',
+    title: 'Send your mentor one page for the session',
     stage: 'discovery',
     intents: ['mentor-prep'],
     criteria: [],
@@ -704,7 +704,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'find-cofounder',
-    title: 'Find the right cofounder',
+    title: 'Start a four-week trial with one possible cofounder',
     stage: 'discovery',
     intents: ['find-cofounder'],
     criteria: [],
@@ -753,7 +753,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
   },
   {
     id: 'team-conflict',
-    title: 'Handle a conflict in the team',
+    title: 'Have the talk and write three lines you both keep',
     stage: 'discovery',
     intents: ['team-conflict'],
     criteria: [],

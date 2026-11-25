@@ -49,7 +49,8 @@ maintenance checks again.
 ## How retrieval is tuned
 
 Every constant is in `packages/db/src/repositories/retrieval.ts`, and nowhere else: `RETRIEVAL_FUSION` (the order),
-`RETRIEVAL_FLOORS` and `EMBEDDING_PROFILES` (what is about the message at all). The pin of a play's cited note is
+`RETRIEVAL_FLOORS` and `EMBEDDING_PROFILES` (what is about the message at all), `SEMANTIC_ADMISSION` (which shared notes no
+gate names a turn is shown). The pin of a play's cited note is
 `PIN_FLOOR` (`knowledge-pack/corpus.ts`); how much of each kind a turn shows is `DEFAULT_CORE_CONFIG.retrieval` and
 `EXCERPT_WINDOW_CHARS` in `packages/core`.
 
@@ -67,6 +68,30 @@ Every constant is in `packages/db/src/repositories/retrieval.ts`, and nowhere el
    word in its title or tags.
 4. **What a play brings.** Its method is the first item; of the sources it cites, the one note that is about the play itself
    (or none: a cited unit is not evidence for a sentence it does not support).
+
+5. **Semantic admission** (`SEMANTIC_ADMISSION`, `EmbeddingProfile.admit`, `admitSemantic`). The gates (topics, vocabulary,
+   strong word coverage) showed the answer for 15 to 24 % of paraphrased questions where the whole corpus held it for 67 %.
+   So a coaching turn that asks something (core `asksOf`: never a social, crisis, rehearsal or recall turn, never "get me
+   organized") also reads the shared notes near the founder's **own words**: an exact scan of the tenant's course notes,
+   curriculum, open library and reference library, in the search's own statement. A note is shown when its similarity is
+   at least the model's `admit` (plus `guard` for a message that only may ask) and `relative` of the nearest note's, at most
+   `limit` a turn (`voiceLimit` on a call) and while the turn has fewer than `room` notes in all; one reference-library
+   item a turn, a passage about the course only as the nearest of all, a source that was evidence in the conversation or
+   gives another note of the turn only as the nearest. The gates' notes are unchanged but for one rule: the corpus's own
+   vector rule (the search query's vector at `floor`, `openRelative` of the nearest) is replaced by this one. A model
+   without `admit` admits none. Nothing is embedded for it: the search's vector is the founder's own words' unless the
+   query added to them, then the vector the plays were compared with, else no note is read.
+   **Choosing the constants**: the benchmark's "admission" rows (conversation lab runbook). Take the highest "answer
+   shown" among the rows whose "no answer, nothing shown" is at least the gates' alone and whose precision is not below it
+   by more than you would show a founder; prefer a lower limit at equal recall. Set `admit`, `relative`, `limit`, and the
+   next run's "code's constants" row must say the same. `CORE_SEMANTIC_NOTES=off` turns it off (the gates alone, exactly
+   as before).
+6. **The reranker** (optional, off). `MODEL_RERANK_ID` (`amazon.rerank-v1:0`) and `MODEL_RERANK_REGION` (default
+   `us-west-2`) give the gateway one, and `CORE_RERANK=on` uses it on typed turns, never on calls: it reads the nearest
+   eight notes (from `weak`) and admits by its own score (`rerankScore`, from the benchmark's `keep_…` rows) instead of by
+   similarity. It is waited for 600 ms (`RERANK_TIMEOUT_MS`), then the similarity decides; it is billed USD 0.001 a turn and
+   metered under `embedding`, so the daily caps count it. Before turning it on, the API's role needs
+   `bedrock:InvokeModel` on the model in that Region (only the lab's role has it).
 
 Not tuned on: `retrieval-eval.db.test.ts`. Its embedding is a hash of words, so it measures how words are read and is
 biased against a ranking led by the vector; it guards admission, precision and "no evidence", not the weights.

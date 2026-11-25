@@ -80,7 +80,9 @@ function passageCitation(r: retrievalRepo.RetrievedItem): EvidenceCitation | nul
 
 /** What of an item a turn shows ({@link excerptWindow}). */
 function shownExcerpt(r: retrievalRepo.RetrievedItem, options: EvidencePackOptions): string {
-  if (r.lane === 'reference') return excerptOpening(r.excerpt);
+  // An item of the reference library opens with its evidence limits, however it came.
+  if (r.lane === 'reference' || (r.lane === 'semantic' && r.near?.family === 'reference'))
+    return excerptOpening(r.excerpt);
   const about =
     // A note the play cites is read for the play, whatever the founder's words are.
     r.lane === 'pinned' && options.play != null

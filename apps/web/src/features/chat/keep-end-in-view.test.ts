@@ -5,7 +5,9 @@ import {
   AT_END_SLACK_PX,
   followsAfterScroll,
   hiddenBelowDock,
+  revealBy,
   useKeepEndInView,
+  WORDS_MARGIN_PX,
   type KeepEndInView,
 } from './keep-end-in-view';
 
@@ -91,6 +93,15 @@ describe('hiddenBelowDock', () => {
     expect(hiddenBelowDock(900, 800, 200)).toBe(300);
     expect(hiddenBelowDock(600, 800, 200)).toBe(0);
     expect(hiddenBelowDock(500, 800, 120)).toBe(-180);
+  });
+});
+
+describe('revealBy', () => {
+  it('goes down to the end, and never takes the first words of a reply out of view', () => {
+    expect(revealBy(300, null)).toBe(300);
+    expect(revealBy(300, 700)).toBe(300);
+    expect(revealBy(300, WORDS_MARGIN_PX + 120)).toBe(120);
+    expect(revealBy(300, WORDS_MARGIN_PX - 40)).toBe(0);
   });
 });
 

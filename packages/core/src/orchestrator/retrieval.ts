@@ -1,16 +1,17 @@
 import { type TurnChannel } from '@foundry/contracts';
 import {
   embeddingModelOf,
+  knowledgePack,
   retrievalRepo,
   tagAlternate,
   tagEmbedding,
   type AppExecutor,
-  type knowledgePack,
 } from '@foundry/db';
 
 import { type CoreConfig } from '../config.js';
 import { type RequestContext } from '../context.js';
 import { type Kit } from '../internal/kit.js';
+import { type Decision } from '../path/engine.js';
 import { buildEvidencePack, classificationsFor, type EvidencePack, type PlayEvidence } from './evidence.js';
 import { type GenerationMeter } from './generate.js';
 import { isSocialMessage, MAX_CACHED_QUERY_CHARS, queryEmbeddingCache } from './query-embeddings.js';
@@ -76,15 +77,44 @@ export interface RetrievalArgs {
    * ignored), besides what the message itself asks. Absent: the message alone.
    */
   readonly topics?: readonly string[];
+  /**
+   * Shared notes near the founder's own words, whatever the topics and the vocabulary say of them
+   * (`retrievalRepo.SEMANTIC_ADMISSION`), for a turn that asks something. Null or absent: semantic admission is off.
+   */
+  readonly semantic?: SemanticArgs | null;
   /** Other ranking constants, for measurement only (the models benchmark); a turn never passes any. */
   readonly tuning?: retrievalRepo.RetrievalTuning;
-  /** Reorders what the shared corpora and the documents returned. Absent (the default): the fused order stands. */
-  readonly reranker?: EvidenceReranker | null;
+}
+
+export interface SemanticArgs {
+  /** {@link asksOf}; null: the turn reads none. */
+  readonly asks: 'ask' | 'guarded' | null;
+  /** The founder's own words, embedded; null: no note is read (the retrieval query may say more than they did). */
+  readonly embedding: readonly number[] | null;
+  /** A reranker will choose among the candidates ({@link rerankScores}). */
+  readonly reranked?: boolean;
+}
+
+/**
+ * Whether a turn asks something a shared note may answer, and how plainly; null: it reads none. Nothing on a social, a
+ * crisis, a rehearsal or a recall turn, on news, on an idea the venture does not hold, or on "get me organized" (the
+ * path itself is the answer). A report asks only beside what it reports.
+ */
+export function asksOf(
+  decision: Pick<Decision, 'kind' | 'open' | 'intent' | 'overview'>,
+  founderText: string,
+): SemanticArgs['asks'] {
+  const seeks = knowledgePack.seeksHelp(founderText);
+  if ((decision.kind !== 'coaching' && decision.kind !== 'report') || decision.overview) return null;
+  if (decision.kind === 'report') return seeks || decision.open !== null ? 'guarded' : null;
+  if (seeks || decision.open === 'ask' || decision.intent !== null) return 'ask';
+  return decision.open;
 }
 
 /**
  * A model that reads the query with each passage and says how relevant it is (a cross-encoder). Off unless a host
- * passes one; it never adds a passage, and any failure or slowness leaves the fused order.
+ * passes one; it only chooses among the notes near the founder's words, and any failure or slowness leaves the choice to
+ * the similarity.
  */
 export interface EvidenceReranker {
   readonly id: string;
@@ -98,16 +128,17 @@ export interface EvidenceReranker {
   ): Promise<readonly number[]>;
 }
 
-/** Rows read beyond a store's limit when a reranker chooses among them. */
-const RERANK_SPARE = 6;
-
-/** `items` in the reranker's order; as they were when it fails, is late, or answers for another number of items. */
-export async function rerankItems(
+/**
+ * What the reranker says of the notes near the founder's words (by `refId`); null when there is nothing to choose, or when
+ * it fails, is late, or answers for another number of texts: the similarity then chooses.
+ */
+export async function rerankScores(
   reranker: EvidenceReranker,
-  query: string,
-  items: readonly retrievalRepo.RetrievedItem[],
-): Promise<readonly retrievalRepo.RetrievedItem[]> {
-  if (items.length < 2) return items;
+  founderText: string,
+  found: Pick<retrievalRepo.EvidenceResults, 'shared'>,
+): Promise<ReadonlyMap<string, number> | null> {
+  const items = found.shared.filter((i) => i.near !== undefined);
+  if (!items.some((i) => i.lane === 'semantic')) return null;
   const abort = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -118,31 +149,79 @@ export async function rerankItems(
       }, reranker.timeoutMs);
     });
     const scores = await Promise.race([
-      reranker.rerank(
-        query,
-        items.map((i) => `${i.title}\n${i.excerpt}`),
-        { signal: abort.signal },
-      ),
+      reranker.rerank(founderText, items.map(rerankText), { signal: abort.signal }),
       late,
     ]);
-    if (scores?.length !== items.length || scores.some((s) => !Number.isFinite(s))) return items;
-    return (
-      items
-        .map((item, i) => ({ item, i, score: scores[i] ?? 0 }))
-        // What the play cites stays first, whatever a model thinks of it.
-        .sort(
-          (a, b) =>
-            Number(b.item.lane === 'pinned') - Number(a.item.lane === 'pinned') ||
-            b.score - a.score ||
-            a.i - b.i,
-        )
-        .map((x) => x.item)
-    );
+    if (scores?.length !== items.length || scores.some((s) => !Number.isFinite(s))) return null;
+    return new Map(items.map((item, i) => [item.refId, scores[i] ?? 0]));
   } catch {
-    return items;
+    return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Longest wait for the reranker, in milliseconds: a later answer leaves the choice to the similarity. */
+export const RERANK_TIMEOUT_MS = 600;
+
+/**
+ * The gateway's reranker for one turn, metered as the turn's embedding is (the daily caps count it); null when the gateway
+ * has none. A request is billed whether or not its answer is waited for, so it is recorded when it is made.
+ */
+export function turnReranker(
+  kit: Kit,
+  ctx: RequestContext,
+  meter: GenerationMeter,
+  tails: Promise<void>[],
+): EvidenceReranker | null {
+  const { gateway, logger } = kit.deps;
+  const { reranker } = gateway;
+  if (reranker === undefined) return null;
+  return {
+    id: reranker.modelId,
+    timeoutMs: RERANK_TIMEOUT_MS,
+    rerank: async (query, texts, { signal }) => {
+      tails.push(
+        kit.later(
+          kit.recordUsage({
+            ctx,
+            ventureId: meter.ventureId,
+            purpose: meter.purpose === 'turn' ? 'embedding' : meter.purpose,
+            attempts: [
+              {
+                modelId: reranker.modelId,
+                usage: { inputTokens: 0, outputTokens: 0 },
+                costUsd: reranker.costUsd(texts.length),
+              },
+            ],
+          }),
+        ),
+      );
+      const started = performance.now();
+      try {
+        const scores = await reranker.rerank(query, texts, signal);
+        logger.info('turn.reranked', {
+          requestId: ctx.requestId,
+          count: texts.length,
+          latencyMs: Math.round(performance.now() - started),
+        });
+        return scores;
+      } catch (err) {
+        logger.warn('turn.rerank_failed', {
+          requestId: ctx.requestId,
+          count: texts.length,
+          latencyMs: Math.round(performance.now() - started),
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+        throw err;
+      }
+    },
+  };
+}
+
+/** What a reranker reads of a note. */
+export function rerankText(item: retrievalRepo.RetrievedItem): string {
+  return `${item.title}\n${item.excerpt}`;
 }
 
 /**
@@ -201,6 +280,29 @@ export function privateRetrievalOwner(
   return null;
 }
 
+/** The slots a turn's shared notes have. */
+function noteLimits(args: RetrievalArgs, budgets: CoreConfig['retrieval']) {
+  // The reference library: only what the founder's own message names, one item (two on a typed turn when they ask
+  // for several, never more than one on a call), never an item already cited in this conversation, in slots of its
+  // own (`retrievalRepo.REFERENCE_GATE`).
+  // With a play, which is evidence itself and brings the note it cites, each gives one at most.
+  const single = (args.channel ?? 'text') !== 'text' || args.play != null;
+  return {
+    reference: budgets.doctrine > 0 ? (single ? 1 : retrievalRepo.REFERENCE_GATE.limit) : 0,
+    corpus: budgets.doctrine > 0 ? (single ? SINGLE_CORPUS_LIMIT : retrievalRepo.CORPUS_LIMIT) : 0,
+  };
+}
+
+/** Semantic admission as the store reads it; null: the turn reads none. */
+function semanticQuery(args: RetrievalArgs): retrievalRepo.SemanticQuery | null {
+  if (args.semantic == null) return null;
+  return {
+    ...args.semantic,
+    channel: (args.channel ?? 'text') === 'text' ? 'text' : 'voice',
+    sessionId: args.sessionId ?? null,
+  };
+}
+
 /**
  * Authorized, scoped hybrid retrieval (system design §7 step 3). Runs under the request's RLS
  * transaction (an application executor is required by type), every venture store filters tenant +
@@ -208,6 +310,14 @@ export function privateRetrievalOwner(
  * statement (`retrievalRepo.searchEvidenceStores`): one Data API round trip instead of five.
  */
 export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Promise<EvidencePack> {
+  return packEvidence(await searchEvidence(tx, args), args);
+}
+
+/** What the stores hold for a turn: the candidates {@link packEvidence} chooses from. One statement. */
+export async function searchEvidence(
+  tx: AppExecutor,
+  args: RetrievalArgs,
+): Promise<retrievalRepo.EvidenceResults> {
   const base = {
     tenantId: args.tenantId,
     query: args.query,
@@ -215,17 +325,10 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
   };
   const { ventureId } = args;
   const budgets = retrievalBudgets(args.budgets, args.channel ?? 'text');
-  // The reference library: only what the founder's own message names, one item (two on a typed turn when they ask
-  // for several, never more than one on a call), never an item already cited in this conversation, in slots of its
-  // own (`retrievalRepo.REFERENCE_GATE`).
-  // With a play, which is evidence itself and brings the note it cites, each gives one at most.
-  const single = (args.channel ?? 'text') !== 'text' || args.play != null;
-  const referenceLimit = budgets.doctrine > 0 ? (single ? 1 : retrievalRepo.REFERENCE_GATE.limit) : 0;
-  const corpusLimit = budgets.doctrine > 0 ? (single ? SINGLE_CORPUS_LIMIT : retrievalRepo.CORPUS_LIMIT) : 0;
-  const reranker = args.reranker ?? null;
-  const spare = reranker === null ? 0 : RERANK_SPARE;
+  const { reference: referenceLimit, corpus: corpusLimit } = noteLimits(args, budgets);
+  const semantic = semanticQuery(args);
   const classifications = classificationsFor(args.dataClassCeiling);
-  const found = await retrievalRepo.searchEvidenceStores(tx, {
+  return retrievalRepo.searchEvidenceStores(tx, {
     ...(ventureId !== null && budgets.memory > 0
       ? {
           memory: {
@@ -240,7 +343,7 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
         }
       : {}),
     ...(ventureId !== null && budgets.chunks > 0
-      ? { chunks: { ...base, ventureId, embedding: args.embedding, limit: budgets.chunks + spare } }
+      ? { chunks: { ...base, ventureId, embedding: args.embedding, limit: budgets.chunks } }
       : {}),
     ...(budgets.doctrine > 0
       ? {
@@ -249,7 +352,7 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
             embedding: args.embedding,
             personaId: args.personaId,
             ...(classifications === null ? {} : { classifications }),
-            limit: budgets.doctrine + SHARED_SPARE + spare,
+            limit: budgets.doctrine + SHARED_SPARE,
             corpus: {
               founderText: args.founderText,
               limit: corpusLimit,
@@ -267,6 +370,7 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
                   },
                 }
               : {}),
+            ...(semantic === null ? {} : { semantic }),
           },
         }
       : {}),
@@ -275,24 +379,36 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
       ? { patterns: { ...base, personaId: args.personaId, limit: budgets.patterns } }
       : {}),
   });
-  const groups =
-    reranker === null
-      ? found
-      : {
-          ...found,
-          chunks: await rerankItems(reranker, args.query, found.chunks),
-          shared: await rerankItems(reranker, args.query, found.shared),
-        };
-  return buildEvidencePack(groups, args.ventureId, {
+}
+
+/**
+ * The turn's evidence from what the stores hold: which notes near the founder's words are admitted
+ * (`retrievalRepo.admitSemantic`; `scores`: a reranker's), then the isolation filter, the duplicates and the limits
+ * ({@link buildEvidencePack}). Pure.
+ */
+export function packEvidence(
+  found: retrievalRepo.EvidenceResults,
+  args: RetrievalArgs,
+  scores: ReadonlyMap<string, number> | null = null,
+): EvidencePack {
+  const budgets = retrievalBudgets(args.budgets, args.channel ?? 'text');
+  const notes = noteLimits(args, budgets);
+  const semantic = semanticQuery(args);
+  const shared =
+    semantic === null
+      ? found.shared
+      : retrievalRepo.admitSemantic(found.shared, retrievalRepo.semanticRule(semantic, args.tuning), scores);
+  return buildEvidencePack({ ...found, shared }, args.ventureId, {
     allowPrivateMemory: args.privateOwnerId !== null,
     limits: {
       memory: budgets.memory,
       chunks: budgets.chunks,
       shared:
         budgets.doctrine +
-        referenceLimit +
-        corpusLimit +
-        (args.play == null ? 0 : retrievalRepo.CORPUS_PIN_LIMIT),
+        notes.reference +
+        notes.corpus +
+        (args.play == null ? 0 : retrievalRepo.CORPUS_PIN_LIMIT) +
+        shared.filter((i) => i.lane === 'semantic').length,
       resources: budgets.resources,
       patterns: budgets.patterns,
     },

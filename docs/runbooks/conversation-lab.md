@@ -428,10 +428,21 @@ gh workflow run ops-conversation-lab.yml -f suite=models -f budget_usd=0.5 -f pu
      answers among the first three; "Precision" the share of shown passages that answer (a lower bound: labels are not
      complete); "nothing shown" the share of answerable questions that got nothing, and of unanswerable ones (there,
      higher is better).
-   - _A turn's retrieval_: `retrieveEvidence` as a founder's turn calls it, in the home tenant (row-level security, the
-     lanes, gates and budgets), without and with the play a turn chooses for the message. The startup
-     knowledge base is admitted by its gate alone, so a question only it answers is found there only when the founder
-     names the thing: "Found by family" shows it.
+   - _A turn's retrieval_: the search and the evidence as a founder's turn has them, in the home tenant (row-level security,
+     the lanes, gates and budgets): what the gates alone retrieve, without a play, and the evidence with its play and
+     semantic admission as the code ships them, also by family ("Found by family").
+   - _Semantic admission_ (`lab-admission.ts`, production's embedding model): which shared notes a turn is shown by
+     meaning (`SEMANTIC_ADMISSION`, docs/runbooks/embedding-model.md), with the play a phrase names and with the play
+     production chooses (a phrase or meaning): **gates alone** (as before it), **code's constants**, and every floor (0.22 to
+     0.34), closeness to the nearest note (0.6, 0.75, 0.85) and limit (1 to 3). "Notes shown" counts the notes without the
+     play: answer shown, precision of what is shown, items a question, and, for questions nothing answers, the share shown
+     nothing and the items shown; then the share of each family's questions that got a passage of it that answers.
+     "Evidence" is the play and the notes: what the founder's answer can cite. Every row is the same search with
+     production's own rule at other constants, so the rows compare; about 3 points either way are noise. **Chosen by a
+     reranker**: the cheapest reranker that answered reads the nearest eight notes of 100 of the questions (`--admission-reranks`,
+     USD 0.10) and admits by score, at the thresholds that keep 95, 90 and 75 % of the answers it was given (`keep_…`; the
+     value is in the row), beside the same questions by the gates alone and by the code's constants. The no-answer columns
+     were not used to choose the thresholds.
    - The vector floor table: for each floor, the share of questions whose best answering passage reaches it, and of
      unanswerable questions whose closest passage does not.
      **Plays by meaning** (`lab-plays.ts`), for each model at 1024 dimensions, no database: the play a message gets in a
@@ -485,8 +496,8 @@ about 3 points on either side of a recall: do not choose between models closer t
 
 Budget: each call is made only when its worst case (for a reasoning model: its input at the cache-write rate, the whole
 output bound, a repair and a second call) still fits beside what was spent. Retrieval runs first and is cheap (about
-USD 0.05 when every embedding model answers); the run's price is mostly the rerankers (USD 2 and 1 per 1,000 queries, 60
-each) and Claude Haiku.
+USD 0.05 when every embedding model answers); the run's price is mostly the rerankers (USD 2 and 1 per 1,000 queries: 60
+each, and 100 of the cheapest that answers for semantic admission) and Claude Haiku.
 
 The public summary holds numbers, the candidates' ids and codes (`public_result` reads the report key by key). Locally,
 free, on the mock gateway and hashed embeddings (without `DATABASE_URL` the models alone; with a local database that

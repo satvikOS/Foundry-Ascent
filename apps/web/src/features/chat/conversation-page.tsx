@@ -388,7 +388,7 @@ function Conversation() {
         className="mx-auto w-full max-w-(--content-width) flex-1 px-4 pt-8 pb-10 sm:px-6"
       >
         <DisclosureBanner variant="print" text={session.disclosure} className="mb-8 hidden print:block" />
-        <section aria-label="Transcript" className="grid gap-12">
+        <section aria-label="Transcript" className="grid grid-cols-[minmax(0,1fr)] gap-12">
           {session.opener ? (
             <OpenerMessage text={session.opener} personaName={personaName} portraitUrl={veir?.portraitUrl} />
           ) : null}

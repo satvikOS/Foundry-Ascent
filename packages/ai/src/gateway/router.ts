@@ -15,6 +15,7 @@ import { MockModelGateway, type MockModelGatewayOptions } from './mock.js';
 import { CONVERSE_REASONING_EFFORTS, NovaProvider, type ConverseReasoningEffort } from './nova.js';
 import type { ProviderStreamResult, StructuredProvider } from './provider.js';
 import type { AwsCredentialProvider, AwsCredentials, FetchFn } from './sigv4-fetch.js';
+import { createBedrockReranker, type RerankerConfig } from './rerank.js';
 import { TitanEmbedder } from './titan.js';
 import {
   MODEL_PURPOSES,
@@ -31,6 +32,7 @@ import {
   type ModelLogger,
   type ModelUsage,
   type RawModelAttempt,
+  type Reranker,
   type StreamTextRequest,
   type StreamTextResult,
   type TextChunkHandler,
@@ -92,12 +94,15 @@ export interface BedrockGatewayConfig {
    * its unchanging prefix ends. Default true (docs/runbooks/latency.md).
    */
   promptCache?: boolean;
+  /** A reranker (`MODEL_RERANK_ID`); absent (the default): the gateway has none. */
+  reranker?: RerankerConfig;
   /** Test seams: replace the network transports. */
   transports?: {
     mantleFetch?: FetchFn;
     converse?: ConverseFn;
     converseStream?: ConverseStreamFn;
     invokeModel?: InvokeModelFn;
+    rerank?: InvokeModelFn;
   };
   /** Test seams: replace whole providers. */
   providers?: { primary?: StructuredProvider; fallback?: StructuredProvider; embedder?: TitanEmbedder };
@@ -176,6 +181,7 @@ class BedrockModelGateway implements ModelGateway {
   readonly #coachTemperature: number;
   /** Opens the Bedrock runtime connection without a billed call (null when the transports are injected). */
   readonly #prewarm: (() => Promise<void>) | null;
+  readonly reranker?: Reranker;
 
   constructor(config: BedrockGatewayConfig) {
     this.#pricing = createPricingTable(config.pricing);
@@ -184,6 +190,13 @@ class BedrockModelGateway implements ModelGateway {
     this.#fallbackTimeoutMs = config.fallbackTimeoutMs ?? DEFAULT_FALLBACK_TIMEOUT_MS;
     this.#coachTemperature = config.coachTemperature ?? DEFAULT_COACH_TEMPERATURE;
     const credentials = config.credentials ? { credentials: config.credentials } : {};
+
+    if (config.reranker) {
+      this.reranker = createBedrockReranker(config.reranker, {
+        ...credentials,
+        ...(config.transports?.rerank ? { invokeModel: config.transports.rerank } : {}),
+      });
+    }
 
     const usesConverse =
       (!config.providers?.primary && reasoningAdapterFor(config.primaryModelId) === 'converse') ||
@@ -570,6 +583,9 @@ const EnvSchema = z.object({
   // Empty is unset (the deployed functions always receive the three; empty when there is no background route).
   MODEL_BACKGROUND_PRIMARY_ID: z.string().optional(),
   MODEL_BACKGROUND_FALLBACK_ID: z.string().optional(),
+  /** A reranker and the Region that serves it (docs/runbooks/embedding-model.md); empty or unset: none. */
+  MODEL_RERANK_ID: z.string().optional(),
+  MODEL_RERANK_REGION: z.union([z.literal(''), z.string().regex(/^us-(?:east|west)-\d$/)]).optional(),
   /** Comma-separated purposes (`MODEL_PURPOSES` but `embedding`, always Titan, and `speech`). */
   MODEL_BACKGROUND_PURPOSES: z.string().optional(),
 });
@@ -613,7 +629,8 @@ function backgroundFromEnv(e: z.infer<typeof EnvSchema>): BackgroundModels | nul
  * Reads gateway configuration from the runtime contract's environment variables
  * (`MODEL_PROVIDER`, `MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`, `MODEL_EMBEDDINGS_ID`, `BEDROCK_REGION`), the
  * optional `MODEL_PROMPT_CACHE` (`on` by default, `off` sends no cache checkpoints; the mock ignores it),
- * `MODEL_REASONING_EFFORT` and `MODEL_COACH_TEMPERATURE` (empty is the default), and the
+ * `MODEL_REASONING_EFFORT` and `MODEL_COACH_TEMPERATURE` (empty is the default), a reranker (`MODEL_RERANK_ID`,
+ * `MODEL_RERANK_REGION`; empty is none), and the
  * optional background route (`MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID`,
  * `MODEL_BACKGROUND_PURPOSES`: all three or none).
  * `MODEL_PROVIDER` defaults to `mock` outside production and is mandatory in production.
@@ -632,12 +649,15 @@ export function modelGatewayConfigFromEnv(
   if (provider === null) throw new Error('MODEL_PROVIDER must be set in production');
   const background = backgroundFromEnv(e);
   if (provider === 'mock') return { provider: 'mock' };
+  const rerankId = e.MODEL_RERANK_ID?.trim() ?? '';
+  const rerankRegion = (e.MODEL_RERANK_REGION ?? '') === '' ? 'us-west-2' : (e.MODEL_RERANK_REGION ?? '');
   return {
     provider: 'bedrock',
     region: e.BEDROCK_REGION,
     primaryModelId: e.MODEL_PRIMARY_ID,
     fallbackModelId: e.MODEL_FALLBACK_ID,
     ...(background === null ? {} : { background }),
+    ...(rerankId === '' ? {} : { reranker: { modelId: rerankId, region: rerankRegion } }),
     embeddingsModelId: e.MODEL_EMBEDDINGS_ID,
     promptCache: e.MODEL_PROMPT_CACHE === 'on',
     ...(e.MODEL_REASONING_EFFORT ? { reasoningEffort: e.MODEL_REASONING_EFFORT } : {}),

@@ -131,7 +131,12 @@ def without_dates(text: str) -> str:
     out = _LIST_MARK.sub("\n", plain(text))
     for form in _DATE_FORMS:
         out = form.sub(" ", out)
-    return _YEAR.sub(" ", _TIME.sub(" ", out))
+    out = _YEAR.sub(" ", _TIME.sub(" ", out))
+    # "50 cents" and "$0.50" are one amount.
+    return _CENTS.sub(lambda m: f"${int(m.group(1)) / 100:.2f}", out)
+
+
+_CENTS = re.compile(r"(?<![\d.,$])(\d{1,2}) cents\b", re.IGNORECASE)
 
 
 def figure_list(text: str) -> list[Figure]:
@@ -178,10 +183,12 @@ def derivable(
     given: Iterable[float] = (),
     percent: bool = False,
     period: bool = False,
+    shares: Iterable[float] = (),
 ) -> bool:
     """Whether ``value`` is arithmetic, to within its own rounding: a sum, difference, product or ratio of two different
     numbers the reply shows or the founder's message gave; or, of shown numbers only, a chain of three, or a product
-    carried over a period when the reply speaks of one."""
+    carried over a period when the reply speaks of one. ``shares``: the percentages among them; a shown number may be
+    divided by one, or by what is left of one ("a price that keeps 40 percent")."""
     pool = sorted({o for o in shown if o})
     wide = sorted({*pool, *(o for o in given if o)})
     for i, a in enumerate(wide):
@@ -190,6 +197,9 @@ def derivable(
                 return True
     if percent:
         return False
+    parts = {p / 100 for p in shares if 0 < p < 100} | {1 - p / 100 for p in shares if 0 < p < 100}
+    if any(_near(r, value) for p in parts for r in (p, *(a / p for a in wide))):
+        return True
     for i, a in enumerate(pool):
         if period and any(_near(a * f, value) for f in _PERIODS):
             return True

@@ -2,11 +2,20 @@
 import { hashEmbedding } from '@foundry/ai';
 import { PLAYBOOK } from '@foundry/core';
 import { retrievalRepo } from '@foundry/db';
-import { benchmarkPassages, benchmarkQueries } from '@foundry/db/retrieval-benchmark';
+import { benchmarkPassages, benchmarkQueries, lexicalOverlap } from '@foundry/db/retrieval-benchmark';
 import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import {
+  ADMISSION_FLOORS,
+  ADMISSION_LIMITS,
+  ADMISSION_RELATIVES,
+  benchAdmission,
+  PLAY_CHOICES,
+  RERANK_KEEP_NAMES,
+} from './lab-admission.js';
 import { mockClients, runModelsBenchmark } from './lab-models.js';
+import { productionTurn } from './lab-plays.js';
 import {
   askable,
   benchSearch,
@@ -75,15 +84,116 @@ describe('production’s search, measured', () => {
         embeddings: [{ id: TITAN, dimensions: [256, 1024] }],
         rerankers: [{ id: 'amazon.rerank-v1:0', region: 'us-west-2', usdPerThousandQueries: 1 }],
       },
-      { region: 'us-east-1', budgetUsd: 1, requests: 0, structured: 0, rerankQueries: 12, queries },
+      {
+        region: 'us-east-1',
+        budgetUsd: 1,
+        requests: 0,
+        structured: 0,
+        rerankQueries: 12,
+        admissionReranks: 6,
+        queries,
+      },
       { db: t.db, tenantSlug: 'ain' },
     );
     expect(report.search.map((s) => [s.id, s.dimensions])).toEqual([[TITAN, 1024]]);
+    expect(report.admission.map((a) => [a.id, a.dimensions, a.rerank?.sample])).toEqual([[TITAN, 1024, 6]]);
     expect(report.rerank.base).toEqual({ id: TITAN, dimensions: 1024, by: 'search' });
     const only = report.rerank.models[0]?.ambiguousOnly;
     expect(only?.share).toBeGreaterThan(0);
     expect(only?.usdPerThousandQuestions).toBeCloseTo(only?.share ?? 0, 6);
   }, 240_000);
+});
+
+describe('semantic admission, measured', () => {
+  /** A play by its phrase alone, and one for every question, so the two ways of choosing differ. */
+  const choices = {
+    phrase: productionTurn(null, false),
+    meaning: (message: string) => ({
+      ...productionTurn(null, false)(message),
+      playId: PLAYBOOK.plays[0]?.id ?? null,
+      asks: 'ask' as const,
+    }),
+  };
+  const overlap = (query: string, texts: readonly string[]) =>
+    Promise.resolve(texts.map((t) => lexicalOverlap(query, t)));
+  const reranker = { id: 'amazon.rerank-v1:0', sample: 20, score: overlap, failed: () => 'Refused' };
+
+  beforeAll(async () => {
+    const extras = new Map(extraTexts(store).map((x) => [x.id, hashEmbedding(x.text, 256)]));
+    await benchSearch(store, embedded, extras);
+  }, 180_000);
+
+  it('measures every floor, closeness, limit and way of choosing the play in one run, in numbers and names only', async () => {
+    const { result, kept } = await benchAdmission(store, embedded, choices, reranker);
+    expect(result.questions).toBe(askable(store).length);
+    for (const choice of PLAY_CHOICES) {
+      const { grid, off, current } = result.plays[choice];
+      expect(grid).toHaveLength(
+        ADMISSION_FLOORS.length * ADMISSION_RELATIVES.length * ADMISSION_LIMITS.length,
+      );
+      const at = (floor: number, relative: number, limit: number) => {
+        const point = grid.find((g) => g.floor === floor && g.relative === relative && g.limit === limit);
+        if (point === undefined) throw new Error('no such point');
+        return point.notes;
+      };
+      // A looser rule shows as much or more, and what it shows differs.
+      expect(at(0.22, 0.6, 3).perQuestion).toBeGreaterThan(at(0.34, 0.85, 1).perQuestion);
+      expect(at(0.22, 0.6, 3).answerShown).toBeGreaterThanOrEqual(at(0.34, 0.85, 1).answerShown);
+      expect(at(0.22, 0.6, 1).perNoAnswer).toBeLessThanOrEqual(at(0.22, 0.6, 3).perNoAnswer);
+      for (const floor of ADMISSION_FLOORS)
+        expect(at(floor, 0.6, 3).perQuestion).toBeGreaterThanOrEqual(off.notes.perQuestion - 1);
+      // The code's constants are one of the points.
+      const { floor, relative, limit } = result.current;
+      expect(current).toEqual({ notes: at(floor, relative, limit), evidence: current.evidence });
+      expect(current.notes.perQuestion).toBeGreaterThan(0);
+      for (const row of [off, current])
+        expect(row.evidence.answerShown).toBeGreaterThanOrEqual(row.notes.answerShown);
+    }
+    // The play is evidence, and not a note.
+    expect(result.plays.meaning.off.notes.families.play).toBe(0);
+    expect(result.plays.meaning.off.evidence.perQuestion).toBeCloseTo(
+      result.plays.meaning.off.notes.perQuestion + 1,
+      2,
+    );
+    const printed = JSON.stringify(result);
+    for (const q of queries) expect(printed).not.toContain(q.query);
+    expect(printed).not.toMatch(/skb\/|RB-/);
+    expect(Object.keys(kept)).toHaveLength(result.questions);
+  }, 180_000);
+
+  it('asks the reranker a sample only, and a threshold that keeps more answers admits more', async () => {
+    let asked = 0;
+    const { result } = await benchAdmission(store, embedded, choices, {
+      ...reranker,
+      score: (query, texts) => {
+        asked += 1;
+        expect(texts.length).toBeLessThanOrEqual(8);
+        return overlap(query, texts);
+      },
+    });
+    const r = result.rerank;
+    expect(r?.code).toBeNull();
+    expect(asked).toBeLessThanOrEqual(20);
+    expect(r?.requests).toBe(asked);
+    expect(Object.keys(r?.rows ?? {})).toEqual(RERANK_KEEP_NAMES);
+    const rows = r?.rows;
+    expect(rows?.keep_95.threshold).toBeLessThanOrEqual(rows?.keep_75.threshold ?? 0);
+    expect(rows?.keep_95.notes.perQuestion).toBeGreaterThanOrEqual(rows?.keep_75.notes.perQuestion ?? 9);
+  }, 180_000);
+
+  it('reports why a reranker could not be asked, and measures the rest', async () => {
+    const refused = await benchAdmission(store, embedded, choices, {
+      ...reranker,
+      score: () => Promise.reject(new Error('no')),
+    });
+    expect(refused.result.rerank).toMatchObject({ code: 'Refused', requests: 0 });
+    const broke = await benchAdmission(store, embedded, choices, {
+      ...reranker,
+      score: () => Promise.resolve(null),
+    });
+    expect(broke.result.rerank?.code).toBe('BudgetReached');
+    expect((await benchAdmission(store, embedded, choices, null)).result.rerank).toBeNull();
+  }, 180_000);
 });
 
 describe('calibration', () => {

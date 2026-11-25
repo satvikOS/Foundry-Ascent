@@ -80,6 +80,20 @@ MATCHINGS = {
     "held": "held-out half, suggested constants",
     "heldPhrases": "held-out half, phrases and rules alone",
 }
+#: What lab-admission.ts measures: how the play is chosen, and a reranker's thresholds, by the names the summary may print.
+PLAY_CHOICES = {
+    "phrase": "play by phrase alone",
+    "meaning": "play by phrase or meaning (production)",
+}
+RERANK_KEEPS = ("keep_95", "keep_90", "keep_75")
+SHOWN = {
+    "answerShown": "answer_shown",
+    "precision": "precision",
+    "perQuestion": "per_question",
+    "answerableEmpty": "answerable_empty",
+    "noAnswerEmpty": "no_answer_empty",
+    "perNoAnswer": "per_no_answer",
+}
 #: Floors and margins a grid may hold, at most.
 GRID_POINTS = 200
 #: Variables of the job the script does not need: the app's access code is not its to hold.
@@ -242,6 +256,67 @@ def _search(row: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _shown(source: Any) -> dict[str, Any] | None:
+    if not isinstance(source, Mapping):
+        return None
+    families = _map(source.get("families"))
+    return {
+        **{name: _num(source.get(key)) for key, name in SHOWN.items()},
+        "families": {name: _num(families.get(name)) for name in FAMILIES},
+    }
+
+
+def _admission_row(source: Any, *numbers: str) -> dict[str, Any]:
+    data = _map(source)
+    return {
+        **{name: _num(data.get(name)) for name in numbers},
+        "notes": _shown(data.get("notes")),
+        "evidence": _shown(data.get("evidence")),
+    }
+
+
+def _admission(row: Mapping[str, Any], known: frozenset[str]) -> dict[str, Any]:
+    asks, current, plays = _map(row.get("asks")), _map(row.get("current")), _map(row.get("plays"))
+    rerank = row.get("rerank")
+    reranked = None
+    if isinstance(rerank, Mapping) and rerank.get("id") in known:
+        rows = _map(rerank.get("rows"))
+        reranked = {
+            "id": rerank["id"],
+            "code": _code(rerank.get("code")),
+            "sample": _num(rerank.get("sample")),
+            "requests": _num(rerank.get("requests")),
+            "ms": _ms(rerank.get("ms")),
+            "related": _nums(rerank.get("related"), 3),
+            "unrelated": _nums(rerank.get("unrelated"), 3),
+            "off": _admission_row(rerank.get("off")),
+            "current": _admission_row(rerank.get("current")),
+            "rows": {name: _admission_row(rows.get(name), "threshold") for name in RERANK_KEEPS},
+        }
+    return {
+        "id": row["id"],
+        "dimensions": _num(row.get("dimensions")),
+        "questions": _num(row.get("questions")),
+        "asks": {
+            kind: {key: _num(_map(asks.get(key_in)).get(key)) for key in ("ask", "guarded")}
+            for key_in, kind in (("answerable", "answerable"), ("noAnswer", "no_answer"))
+        },
+        "current": {key: _num(current.get(key)) for key in ("floor", "relative", "limit")},
+        "plays": {
+            name: {
+                "off": _admission_row(_map(plays.get(name)).get("off")),
+                "current": _admission_row(_map(plays.get(name)).get("current")),
+                "grid": [
+                    _admission_row(point, "floor", "relative", "limit")
+                    for point in _rows(_map(plays.get(name)).get("grid"))[:GRID_POINTS]
+                ],
+            }
+            for name in PLAY_CHOICES
+        },
+        "rerank": reranked,
+    }
+
+
 def _match_profile(source: Any) -> dict[str, int | float | None] | None:
     if not isinstance(source, Mapping):
         return None
@@ -383,6 +458,7 @@ def public_result(
             for r in listed(report.get("embeddings"))
         ],
         "search": [_search(r) for r in listed(report.get("search"))],
+        "admission": [_admission(r, known) for r in listed(report.get("admission"))],
         "play_matching": [_play_matching(r) for r in listed(report.get("playMatching"))],
         "rerank": {
             "base": (
@@ -509,6 +585,81 @@ def search_tables(rows: list[Mapping[str, Any]]) -> list[str]:
     return out
 
 
+def _shown_cells(row: Mapping[str, Any]) -> str:
+    notes, evidence = row.get("notes") or {}, row.get("evidence") or {}
+    families = notes.get("families") or {}
+    cells = [
+        notes.get("answer_shown"),
+        notes.get("precision"),
+        notes.get("per_question"),
+        notes.get("no_answer_empty"),
+        notes.get("per_no_answer"),
+        *(families.get(name) for name in FAMILIES if name != "play"),
+        evidence.get("answer_shown"),
+        evidence.get("precision"),
+        evidence.get("no_answer_empty"),
+        (evidence.get("families") or {}).get("play"),
+    ]
+    return " | ".join(_cell(c) for c in cells)
+
+
+ADMISSION_HEAD = [
+    "| Notes shown | Answer shown | Precision | Items | No answer, nothing shown | Items when no answer | "
+    + " | ".join(name for name in FAMILIES if name != "play")
+    + " | Evidence (play and notes): answer shown | Precision | No answer, nothing shown | play |",
+    "| --- |" + " --- |" * (5 + len(FAMILIES) - 1 + 4),
+]
+
+
+def admission_tables(rows: list[Mapping[str, Any]]) -> list[str]:
+    """Which shared notes a turn is shown by meaning, at each constant, and what its answer can cite in all."""
+    out: list[str] = []
+    for r in rows:
+        asks, current = r["asks"], r["current"]
+        out += [
+            "",
+            f"Semantic admission with {r['id']} ({_cell(r['dimensions'])}) over {_cell(r['questions'])} questions; "
+            f"{_cell(asks['answerable']['ask'])} with an answer and {_cell(asks['no_answer']['ask'])} without read as plain "
+            f"asks, {_cell(asks['answerable']['guarded'])} and {_cell(asks['no_answer']['guarded'])} as guarded ones. Code: "
+            f"floor {_cell(current['floor'])}, relative {_cell(current['relative'])}, limit {_cell(current['limit'])}.",
+        ]
+        for name, label in PLAY_CHOICES.items():
+            play = r["plays"][name]
+            out += [
+                "",
+                f"With the {label}:",
+                "",
+                *ADMISSION_HEAD,
+                f"| gates alone | {_shown_cells(play['off'])} |",
+                f"| code's constants | {_shown_cells(play['current'])} |",
+            ]
+            out += [
+                f"| floor {_cell(p['floor'])}, relative {_cell(p['relative'])}, limit {_cell(p['limit'])} | "
+                f"{_shown_cells(p)} |"
+                for p in play["grid"]
+            ]
+        rerank = r["rerank"]
+        if rerank is None:
+            continue
+        state = "" if rerank["code"] is None else f" ({rerank['code']}: not all of them were asked)"
+        out += [
+            "",
+            f"Chosen by {rerank['id']} among the nearest eight, on {_cell(rerank['sample'])} of the questions"
+            f"{state}, {_cell(rerank['requests'])} requests, {_spread(rerank['ms'])} ms. Score p10 / p50 / p90: an answer "
+            f"{' / '.join(_cell(v) for v in rerank['related'])}, the best of no answer "
+            f"{' / '.join(_cell(v) for v in rerank['unrelated'])}.",
+            "",
+            *ADMISSION_HEAD,
+            f"| gates alone | {_shown_cells(rerank['off'])} |",
+            f"| code's constants, no reranker | {_shown_cells(rerank['current'])} |",
+        ]
+        out += [
+            f"| {name} (score at least {_cell(rerank['rows'][name]['threshold'])}) | {_shown_cells(rerank['rows'][name])} |"
+            for name in RERANK_KEEPS
+        ]
+    return out
+
+
 def _profile_text(p: Mapping[str, Any] | None) -> str:
     if p is None:
         return "none"
@@ -625,6 +776,7 @@ def tables(result: Mapping[str, Any]) -> list[str]:
                 f"{_cell(e['usd_per_million_tokens'])} | {_quality_cells(e[label])} |"
             )
     out += search_tables(result.get("search") or [])
+    out += admission_tables(result.get("admission") or [])
     out += matching_tables(result.get("play_matching") or [])
     rerank = result.get("rerank") or {}
     base = rerank.get("base") or {}

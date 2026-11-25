@@ -5,7 +5,7 @@ import { AIN, REFERRALS, ain, cite, step } from '../make.js';
 export const VALIDATION_PLAYS: readonly Play[] = [
   {
     id: 'will-anyone-pay',
-    title: 'Find out if anyone will pay',
+    title: 'Ask 20 people to pay and count who does',
     stage: 'validation',
     intents: ['will-anyone-pay'],
     criteria: ['validation-commitment', 'model-price'],
@@ -54,21 +54,21 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'value-proposition',
-    title: 'Write the value proposition',
+    title: 'Write your promise in one sentence and try it on 5 people',
     stage: 'validation',
     intents: ['value-proposition'],
     criteria: ['validation-promise'],
     answer:
-      'Write it in this order: for this person, when this happens, we do this, so they get this result instead of what they do now. Take the job, the worst pain and the most wanted gain from your interviews, not from your head. Then match each to one thing you offer and cross out the rest. Say the sentence to five people in the group and ask them to repeat it. Keep the words they use.',
+      'Write it in this order: for this person, when this happens, we do this, so they get this result instead of what they do now. Take what they try to get done, what hurts most and what they want most from your interviews, not from your head. Then match each to one thing you offer and cross out the rest. Say the sentence to five people in the group and ask them to repeat it. Keep the words they use.',
     why: 'A promise people can repeat is one they can pass on. Anything you offer that meets no pain is cost without value.',
     steps: [
       step(
-        'List jobs, pains and gains from your interview notes',
+        'List what they try to do, what hurts and what they hope for, from your notes',
         'Three of each at most, ordered by how often people acted on them.',
         30,
       ),
       step(
-        'Match each top item to one thing you offer',
+        'Match the top one of each to one thing you offer',
         'If an offer matches nothing, take it out of the first version.',
         20,
       ),
@@ -79,11 +79,11 @@ export const VALIDATION_PLAYS: readonly Play[] = [
       ),
       step('Rewrite it with their words', 'Stop when 4 of 5 can say it back.', 15),
     ],
-    doneWhen: 'One sentence exists that 4 of 5 people in the group could say back in their own words.',
+    doneWhen: 'You have one sentence that 4 of 5 people in the group said back in their own words.',
     days: 7,
     template: {
       title: 'Value proposition canvas, short form',
-      body: 'Customer side\nJobs: [ ], [ ], [ ]\nPains: [ ], [ ], [ ]\nGains: [ ], [ ], [ ]\nOffer side\nFor [job] we give: [ ]\nAgainst [pain] we do: [ ]\nFor [gain] we create: [ ]\nSentence: For [person], when [moment], we [offer], so they [result], instead of [what they do now].',
+      body: 'Who: [type of person]\nJobs, what they try to get done: [job 1], [job 2], [job 3]\nPains, what annoys or costs them: [pain 1], [pain 2], [pain 3]\nGains, what they hope for: [gain 1], [gain 2], [gain 3]\nFor the top job we give: [what you offer]\nAgainst the worst pain we do: [what you do about it]\nFor the biggest gain we add: [what you add]\nSentence: For [person], when [moment], we [offer], so they [result], instead of [what they do now].',
     },
     traps: [
       'Words such as innovative, smart or easy. Say what changes.',
@@ -99,7 +99,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'positioning',
-    title: 'Write a positioning statement',
+    title: 'Write your positioning statement and try it on 3 strangers',
     stage: 'validation',
     intents: ['positioning'],
     criteria: ['validation-promise'],
@@ -129,12 +129,12 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'smallest-test',
-    title: 'Choose the smallest test of the idea',
+    title: 'Run one small test with 10 people who are not friends',
     stage: 'validation',
     intents: ['smallest-test'],
     criteria: ['validation-test-card'],
     answer:
-      'Pick the test by the question. Do they want the result? Do it by hand for five people. Will they pay? Sell it before it exists. Will they come? Put up one page with one button. Will a company buy? Ask for a letter of intent. Can they use it? Show a paper or clickable version. A minimum viable product, or MVP, is the least you must make to get that one answer. Choose one test, one week, one number.',
+      'Pick the test by the one thing you most need to know. To see if they want the result, do it by hand for five people. To see if they pay, sell it first and make it after. To see if they come, put up one page with one button. To see if a company buys, ask for a letter of intent. To see if they can use it, show a paper version. A minimum viable product, or MVP, is the least you must make to get that one answer. Choose one test, one week, one number.',
     why: 'Building answers the question you already know. The right small test answers the one you are afraid of, and it costs days instead of months.',
     steps: [
       step('Write the one question you most need answered', 'Want, pay, come, buy as a company, or use.', 10),
@@ -167,7 +167,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'build-first',
-    title: 'Test by hand before you build',
+    title: 'Give 5 people the result by hand, with nothing built',
     stage: 'validation',
     intents: ['build-first'],
     criteria: ['validation-test-card'],
@@ -210,7 +210,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'concierge-test',
-    title: 'Run a concierge test',
+    title: 'Serve 5 people by hand and ask each to pay',
     stage: 'validation',
     intents: ['concierge-test'],
     criteria: ['validation-commitment'],
@@ -255,7 +255,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'wizard-of-oz',
-    title: 'Run a Wizard of Oz test',
+    title: 'Put a simple front on it and run it by hand for 10 people',
     stage: 'validation',
     intents: ['wizard-of-oz'],
     criteria: ['validation-test-card'],
@@ -301,7 +301,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'landing-page',
-    title: 'Make a landing page that tests demand',
+    title: 'Make one page with a price and show it to 50 people',
     stage: 'validation',
     intents: ['landing-page'],
     criteria: ['validation-test-card'],
@@ -348,7 +348,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'pre-sale',
-    title: 'Sell it before you make it',
+    title: 'Ask 25 people to pay for the first batch',
     stage: 'validation',
     intents: ['pre-sale'],
     criteria: ['validation-commitment'],
@@ -394,7 +394,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'letter-of-intent',
-    title: 'Get a letter of intent',
+    title: 'Get one letter of intent signed by who holds the budget',
     stage: 'validation',
     intents: ['letter-of-intent'],
     criteria: ['validation-commitment'],
@@ -441,7 +441,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'prototype',
-    title: 'Make the right prototype',
+    title: 'Make a prototype and watch two rounds of 5 people use it',
     stage: 'validation',
     intents: ['prototype'],
     criteria: ['validation-test-card'],
@@ -478,7 +478,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'experiment-design',
-    title: 'Design an experiment with a pass line',
+    title: 'Write a test card with the number that means it worked',
     stage: 'validation',
     intents: ['experiment-design'],
     criteria: ['validation-test-card'],
@@ -523,7 +523,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'read-results',
-    title: 'Read a test result and decide',
+    title: 'Write the result next to your line and decide',
     stage: 'validation',
     intents: ['read-results'],
     criteria: ['validation-decision'],
@@ -564,7 +564,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'pivot-or-persevere',
-    title: 'Decide to pivot or keep going',
+    title: 'List your last tests and choose to pivot or go on',
     stage: 'validation',
     intents: ['pivot-or-persevere'],
     criteria: ['validation-decision'],
@@ -613,7 +613,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'after-a-pivot',
-    title: 'Reset the plan after a pivot',
+    title: 'Write the pivot in two sentences and plan its first test',
     stage: 'validation',
     intents: ['after-a-pivot'],
     criteria: ['validation-decision'],
@@ -660,7 +660,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'patent-now-or-wait',
-    title: 'Ask when to file a patent',
+    title: 'List what you have shown and book UR Ventures about a patent',
     stage: 'validation',
     intents: ['patent-now-or-wait', 'going-public-said'],
     criteria: [],
@@ -708,7 +708,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'regulated-data',
-    title: 'Plan for health, student or private data',
+    title: 'List the data you touch and ask the right office',
     stage: 'validation',
     intents: ['regulated-data'],
     criteria: [],
@@ -734,7 +734,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
       ),
     ],
     doneWhen:
-      'A data list exists, the first test runs on invented records, and the right office has your question.',
+      'You have a data list, the first test runs on invented records, and the right office has your question.',
     days: 7,
     template: {
       title: 'Data list for the specialist',
@@ -756,7 +756,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'medical-rules',
-    title: 'Find the regulatory path',
+    title: 'Write the intended use and book a regulatory specialist',
     stage: 'validation',
     intents: ['medical-rules'],
     criteria: [],
@@ -801,7 +801,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'pilot-agreement',
-    title: 'Set up a pilot',
+    title: 'Get a one-page pilot signed, with a price and an end date',
     stage: 'validation',
     intents: ['pilot-agreement'],
     criteria: ['validation-commitment', 'sales-ten-customers'],
@@ -853,7 +853,7 @@ export const VALIDATION_PLAYS: readonly Play[] = [
   },
   {
     id: 'hardware-first-units',
-    title: 'Make the first units of a physical product',
+    title: 'Sell the first batch and make 5 units with a cost log',
     stage: 'validation',
     intents: ['hardware-first-units'],
     criteria: ['validation-commitment'],

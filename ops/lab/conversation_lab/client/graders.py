@@ -542,6 +542,7 @@ def grounded_figures(t: ReplyTurn) -> Grade:
         v for v in reading.spelled_values(t.reply) if v in allowed
     }
     period = reading.says_period(t.text)
+    shares = {f.value for f in [*stated, *reading.figure_list(t.founder)] if "percent" in f.classes}
     # Derived figures may build on each other ("40 x $3 is $120, less $80 is $40"), so read until nothing changes.
     open_ = [(f.value, "percent" in f.classes) for f in stated if f.value not in allowed]
     open_ += [(v, False) for v in spoken if v not in allowed]
@@ -549,7 +550,7 @@ def grounded_figures(t: ReplyTurn) -> Grade:
     while changed:
         changed = False
         for value, percent in list(open_):
-            if reading.derivable(value, operands, given=given, percent=percent, period=period):
+            if reading.derivable(value, operands, given=given, percent=percent, period=period, shares=shares):
                 open_.remove((value, percent))
                 operands = operands | {value}
                 changed = True

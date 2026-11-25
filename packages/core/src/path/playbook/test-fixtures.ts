@@ -155,6 +155,7 @@ export const PARAPHRASES: readonly Ask[] = [
   ['looking for a technical cofounder, where do I find one', 'find-cofounder'],
   ['is it bad to be a solo founder', 'find-cofounder'],
   ['my cofounder is not doing his part of the work', 'team-conflict'],
+  ['my cofounder quit and everything is on her laptop', 'cofounder-left'],
   ['we keep arguing on the team', 'team-conflict'],
   // Validation
   ['how can I tell whether people will pay for it', 'will-anyone-pay'],

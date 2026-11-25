@@ -16,22 +16,22 @@ describe('what news means', () => {
   });
 
   it.each([
-    ['13 of 25 sold on Saturday.', 13, 25, '52%'],
-    ['I sold 13 of 25 boxes at 5 dollars each.', 13, 25, '52%'],
-    ['We offered the kit to 25 gyms and 13 of them said yes.', 13, 25, '52%'],
-    ['I asked eight cooks to pre-order, and only two signed.', 2, 8, '25%'],
+    ['13 of 25 sold on Saturday.', 13, 25, 'sold, which is 52%'],
+    ['I sold 13 of 25 boxes at 5 dollars each.', 13, 25, 'sold, which is 52%'],
+    ['We offered the kit to 25 gyms and 13 of them paid.', 13, 25, 'paid, which is 52%'],
+    ['I asked eight cooks to pre-order, and only two signed.', 2, 8, 'signed, which is 25%'],
   ])('%s: the rate, and what would make it good', (message, part, whole, rate) => {
     const news = of(message);
     expect(news?.kind).toBe('sold');
     expect(news?.ratio).toEqual({ part, whole });
-    expect(news?.means).toContain(`${String(part)} of ${String(whole)} is ${rate}.`);
+    expect(news?.means).toContain(`${String(part)} of ${String(whole)} ${rate}.`);
     expect(news?.means).toContain('No pass line (the number that means it worked) was set first');
     expect(news?.means).toContain('It is good if strangers repeat it and one sale leaves money over.');
   });
 
   it('is read against the pass line they set, wherever they said it', () => {
     expect(of('13 of 25 sold on Saturday.', ['My pass line is 12 of 25.'])?.means).toBe(
-      '13 of 25 is 52%. The number to beat was 12 of 25, so it passed: the next question is whether one sale leaves money over.',
+      '13 of 25 sold, which is 52%. The number to beat was 12 of 25, so it passed: the next question is whether one sale leaves money over.',
     );
     expect(of('13 of 25 sold on Saturday.', ['ok', 'The target is 18 of 25', 'sure'])?.means).toContain(
       'it did not pass: change one thing, the customer, the offer or the price, and run it once more.',
@@ -49,7 +49,7 @@ describe('what news means', () => {
       expect(of(message)?.kind, message).toBe('interest');
       expect(of(message)?.means, message).toContain('raised a hand, and none of that is money yet');
     }
-    expect(of('Only 2 of 30 shops signed up')?.means).toMatch(/^2 of 30 raised/);
+    expect(of('Only 2 of 30 shops signed up')?.means).toMatch(/^2 of 30 \(6\.7%\) raised/);
   });
 
   it('what people said: a pattern from half on, with what it does not show', () => {

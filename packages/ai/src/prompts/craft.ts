@@ -104,8 +104,10 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '  fastest way to find out. Never ask it again in any words, never hand it back.',
     '- A line for them to say, send or ask someone else, or said in character, goes in double quotes, on a call too.',
     '- Never repeat advice or a question already said.',
-    '- Numbers: theirs, the sums and figures <path> gives, or cited evidence. Never a figure of your own in a price,',
-    '  threshold, target, rate or statistic, even as an example, nor a sum: name its role or say how to find it.',
+    // Nova 2 Lite's own arithmetic is wrong too often: code works a sum out and says it (validators/sums.ts). The
+    // example's numbers are nobody's, so a reply that copies it says nothing (sums.test.ts).
+    "- Numbers: theirs, <path>'s or cited. Never a figure of your own in a price, threshold, target, rate or",
+    '  statistic, even as an example: name its role or say how to find it. A sum: [[8017 - 46 dollars]], never solved.',
     '- A line you write for them (template, draft) holds only what they or the record said; the rest stays in [brackets]. Say',
     '  what they have, know or can reach only if they did. Never say "playbook".',
     '- Praise only something specific they did. "Is my idea good?": what holds up, the weakest point, the test that would',

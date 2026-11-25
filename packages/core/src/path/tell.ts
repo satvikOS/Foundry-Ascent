@@ -5,7 +5,7 @@ import { isReference, standingDecisions, dayOf } from './brief.js';
 import { monthDay } from './dates.js';
 import { asksFor, ownSentences } from './kinds.js';
 import { milestoneReached, wordsOfEvidence } from './state.js';
-import { contentStems, countsIn, plain } from './words.js';
+import { contentStems, countsIn, plain, VENTURE_WORDS } from './words.js';
 
 /**
  * What the record holds, as a mentor says it: in the second person, without the memory's own label, each thing once. The
@@ -27,10 +27,12 @@ export function lowerFirst(text: string): string {
 }
 export const upperFirst = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
-/** "a", "a and b", "a, b and c". */
+/** "a", "a and b", "a, b and c"; "a, b and b, and c" when a part holds an "and" of its own. */
 export function listed(items: readonly string[]): string {
   const all = items.filter((i) => i.trim() !== '');
   if (all.length <= 1) return all[0] ?? '';
+  if (all.slice(0, -1).some((i) => i.includes(' and ')))
+    return `${all.slice(0, -1).join(', ')}, and ${all.at(-1) ?? ''}`;
   return `${all.slice(0, -1).join(', ')} and ${all.at(-1) ?? ''}`;
 }
 
@@ -58,6 +60,19 @@ export function toYou(text: string): string {
   return out.replace(/\s+/g, ' ').trim();
 }
 
+/** A new direction without what it ends ("No more lunches, I'll rent jars" → "I'll rent jars"). */
+export const startsNew = (to: string): string =>
+  to.replace(
+    /^(?:no (?:more |longer )?|not |stop\w*(?: \w+ing)? )[^,.;:]{2,60}[,.;:]\s*(?:but |and |now |instead )?/i,
+    '',
+  );
+
+/** The idea as it is said in a sentence: without the "instead" that says what it ends, when it is a thing. */
+export const ideaSaid = (idea: string): string => {
+  const to = toYou(bare(startsNew(bare(idea))));
+  return /^you\b/i.test(to) ? to : to.replace(/[, ]+instead$/i, '');
+};
+
 /** Words an instruction or a decision opens with ("Charge 300 dollars…"). */
 const DOES =
   /^(?:charge|sell|focus|start|stop|run|build|offer|ask|target|use|keep|launch|test|price|raise|drop|move|pick|choose|work|go|make|send|talk|interview|partner|hire|pivot|switch|rent|pause|wait|apply|join|bring|take|set|do|give|put|pay|serve|open|close|find|get|begin|limit|replace|change)\b/i;
@@ -83,7 +98,7 @@ function firstClause(text: string): string {
 }
 
 /** What they reported: its first sentence, with the next when that is what it found ("I did eight talks; six of them said…"). */
-function told(text: string): string {
+export function told(text: string): string {
   const [first = '', second = ''] = text
     .replace(/\s+/g, ' ')
     .trim()
@@ -91,7 +106,8 @@ function told(text: string): string {
     .map(bare);
   const both = `${first}; ${lowerFirst(second)}`;
   return second !== '' &&
-    /\b(?:said|told|bought|paid|signed|asked)\b/i.test(second) &&
+    (/\b(?:said|told|bought|paid|signed|asked|love|like|want|need|because|cannot|no|not)\b/i.test(second) ||
+      hasFigure(second)) &&
     both.length <= CLAUSE_CHARS
     ? both
     : firstClause(text);
@@ -179,6 +195,7 @@ interface Candidate {
   readonly kind: 'record' | 'said' | 'idea';
   readonly weight: number;
   readonly on: string;
+  readonly decision?: boolean;
 }
 
 const PRIOR_TYPES: Readonly<Record<string, number>> = {
@@ -191,6 +208,10 @@ const PRIOR_TYPES: Readonly<Record<string, number>> = {
   risk: 1,
 };
 
+/** Advice to founders in general, as a course or a book gives it: no fact of this one's. */
+const ADVICE =
+  /\b(?:you (?:need|should|must|have to|want to)|founders? (?:should|need|must|often|always)|a good (?:pitch|founder|startup|interview)|the (?:worst|best) (?:answer|way|thing|time)|always|module \d|unit \d|the (?:course|lecture|video|programme|program|playbook|curriculum) (?:says|teaches|asks))\b/i;
+
 /** The record's facts, their own words of this conversation and, last, the idea. */
 function candidatesOf(s: PriorSource): Candidate[] {
   const out: Candidate[] = [];
@@ -198,12 +219,19 @@ function candidatesOf(s: PriorSource): Candidate[] {
   for (const m of s.reads.memory) {
     const weight = PRIOR_TYPES[m.type];
     if (weight === undefined || m.status !== 'confirmed' || isReference(m)) continue;
+    if (ADVICE.test(`${m.title}. ${m.content}`)) continue;
     if (m.type === 'milestone' && !milestoneReached(m)) continue;
     if (m.type === 'decision' && !decisions.has(m.id)) continue;
     const result = typeof m.attributes.result === 'string' ? m.attributes.result : '';
     if (m.type === 'experiment' && result === '') continue;
     const fact = result === '' ? toldAs(m) : `${lowerFirst(bare(m.title))}: ${lowerFirst(bare(result))}`;
-    out.push({ fact, kind: 'record', weight, on: dayOf(m, 'collected_on', 'decided_on', 'completed_on') });
+    out.push({
+      fact,
+      kind: 'record',
+      weight,
+      on: dayOf(m, 'collected_on', 'decided_on', 'completed_on'),
+      ...(m.type === 'decision' ? { decision: true } : {}),
+    });
   }
   for (const c of s.reads.criteria) {
     if (c.evidence === null || c.sourceSessionId === null) continue;
@@ -260,60 +288,135 @@ const ORDER =
 
 const PRIOR_SAID = 0.7;
 
-/** The one thing on record that bears most on what they ask: by the words they share, then by what it shows. */
+/** What they mean to do, or only did, with nothing it showed: nothing to build on. */
+const PLANNED =
+  /\b(?:plans? to|planning to|wants? to|hopes? to|is going to|are going to|going to|will|would like to)\b/i;
+const ONLY_DID =
+  /^you (?:(?:have|just|already|also) )*(?:did|held|ran|asked|emailed|messaged|called|phoned|contacted|visited|wrote|made|posted|sent|talked|spoke|met|interviewed|showed|offered)\b/i;
+const CAME_OF_IT =
+  /[;:]|\b(?:said|told|found|paid|bought|sold|signed|because|want(?:ed)?|love[ds]?|like[ds]?|need(?:ed)?|answered|replied|dollars?|percent|nobody|none|no one)\b|\$/i;
+/** A name inside a sentence. */
+const NAMED = /\S\s+\p{Lu}[\p{Ll}\d]{2,}/u;
+const OUTCOME =
+  /\b(?:decided|chose|agreed|paid|pays?|sold|sells|signed|won|lost|launched|kept|costs?|saves?|takes|said|asked|found|renewed|left|bought|ordered|charges?|told|counts?|compare[sd]?|booked|returned|came back)\b/i;
+
+/** Whether a fact tells something to build on: a number, a name, a decision, an outcome; never a label or a plan. */
+export function informative(fact: string): boolean {
+  if (PLANNED.test(fact)) return false;
+  if (ONLY_DID.test(fact) && !CAME_OF_IT.test(fact)) return false;
+  const words = contentStems(fact);
+  if (words.length < 2) return false;
+  return (
+    hasFigure(fact) || OUTCOME.test(fact) || (NAMED.test(fact) && words.length >= 4) || words.length >= 5
+  );
+}
+
+/** What an ask and a fact may both be about, beside the words they share. */
+const SUBJECTS: readonly RegExp[] = [
+  /\b(?:pay|pays|paid|paying|price|prices|priced|pricing|charge[sd]?|fee|cost|costs|sell|sells|sold|sale|sales|buy|buys|buyer|buyers|bought|money|dollars?|revenue|profit|margin|economics|budget|order|orders|ordered|free)\b|\$/i,
+  /\b(?:learn(?:ed|t)?|mean|means|meant|found|findings?|results?|interview\w*|talk|talks|talked|talking|said|customers?|users?|people|asked|told|who|group)\b/i,
+  /\b(?:lab|labs|grant|advisor|adviser|patent\w*|invent\w*|licen[cs]e\w*|thesis|university|professor|ownership|owns?)\b/i,
+  /\b(?:co-?founders?|team|partner|roommate|hire|hiring|equity|shares?|split)\b/i,
+  /\b(?:pitch\w*|judges?|investors?|angel|deck|slides?|competition|raise|raising|demo)\b/i,
+  /\b(?:channel|flyers?|posts?|ads?|captains?|referr\w*|marketing|reach|find them|found (?:us|you))\b/i,
+];
+
+const aboutThe = (text: string): boolean[] => SUBJECTS.map((r) => r.test(text));
+
+/** The same every time for the same words, another for others. */
+function pick<T>(forms: readonly T[], seed: string): T | undefined {
+  let hash = 0;
+  for (const ch of seed) hash = (hash * 31 + (ch.codePointAt(0) ?? 0)) % 1_000_003;
+  return forms[hash % forms.length];
+}
+
+/** "Two paid pilots at 40 dollars": something they have, never something that was done. */
+const THINGS_HAD =
+  /^(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|several|a few) (?:paid|signed|used|booked) (?!(?:me|us|you|for|in|it|a|an|the|their|his|her|by|to|up|and|but)\b)[a-z]+/i;
+
+/** A fact as a mentor brings it up. */
+export function broughtUp(fact: string, seed: string, decision = false): string {
+  const up = upperFirst(fact);
+  if (decision || /^you (?:have )?(?:decided|agreed|chose)\b/i.test(fact))
+    return pick([`${up}, so keep to that.`, `Remember that ${fact}.`, `${up}, and that stands.`], seed) ?? up;
+  if (/^you\b(?!r)/i.test(fact))
+    return (
+      pick([`${up}, so start from there.`, `Remember that ${fact}.`, `${up}, and that counts here.`], seed) ??
+      up
+    );
+  if ((!SAYS.test(fact) || THINGS_HAD.test(fact)) && !fact.includes(':'))
+    return pick([`You already have ${fact}.`, `You have ${fact} to build on.`], seed) ?? up;
+  return (
+    pick([`Remember that ${fact}.`, `Keep in mind that ${fact}.`, `You already know that ${fact}.`], seed) ??
+    up
+  );
+}
+
+/**
+ * The one thing of theirs that bears most on what they ask: their own, told with a number, a name, a decision or an outcome,
+ * and about the same thing as the ask. Null: nothing on record qualifies, and nothing is said.
+ */
 export function priorFact(s: PriorSource): PriorFact | null {
-  const asked = new Set(contentStems(`${s.message} ${s.about}`));
-  const said = new Set(contentStems(s.said));
   const own = new Set(contentStems(s.message));
+  const ask = new Set([...own].filter((w) => !VENTURE_WORDS.has(w) && !/^\d+$/.test(w)));
+  const about = new Set(contentStems(s.about).filter((w) => !VENTURE_WORDS.has(w)));
+  const said = new Set(contentStems(s.said));
   const gone = takenBack(s.message);
+  const subjects = aboutThe(`${s.message} ${s.about}`);
   const ofTheIdea = /\bmy (?:own )?(?:startup |business )?(?:idea|startup|venture|business)\b/i.test(
     s.message,
   );
   const ranked = distinct(candidatesOf(s), (c) => c.fact)
     .filter((c) => {
       const words = contentStems(c.fact);
-      // "You are pivoting" tells nothing to build on.
-      if (words.length < 2 || (words.length < 3 && !hasFigure(c.fact) && c.kind !== 'idea')) return false;
+      if (c.kind !== 'idea' && !informative(c.fact)) return false;
+      if (words.length < 2) return false;
       // Nor is what this message takes back.
       if ([...digitsOf(c.fact)].some((d) => gone.has(d))) return false;
       // What they just said is no prior fact.
       return words.filter((w) => own.has(w)).length < words.length * 0.6;
     })
-    .map((c) => ({
-      ...c,
-      shared: contentStems(c.fact).filter((w) => asked.has(w)).length,
-      figure: Number(hasFigure(c.fact)),
-    }))
+    .map((c) => {
+      const words = contentStems(c.fact);
+      const of = aboutThe(c.fact);
+      return {
+        ...c,
+        shared: words.filter((w) => ask.has(w)).length,
+        near: words.filter((w) => about.has(w)).length,
+        bears: subjects.filter((x, i) => x && of[i] === true).length,
+        figure: Number(hasFigure(c.fact)),
+      };
+    })
     .sort(
       (a, b) =>
         Number(b.kind !== 'idea') - Number(a.kind !== 'idea') ||
-        b.shared + b.weight - (a.shared + a.weight) ||
+        b.shared * 2 + b.bears + b.near + b.weight / 2 - (a.shared * 2 + a.bears + a.near + a.weight / 2) ||
         b.figure - a.figure ||
-        b.on.localeCompare(a.on),
+        b.on.localeCompare(a.on) ||
+        a.fact.localeCompare(b.fact),
     );
-  // The server says one only when it is the record's, theirs and near what they ask, or the idea the answer is for.
+  // The server says one only when it is theirs and near what they ask, or the idea the answer is for.
   const tells = (c: (typeof ranked)[number]): boolean =>
-    c.kind === 'record' ||
-    (c.kind === 'idea' && s.applies === true) ||
-    (c.kind === 'said' &&
-      ((c.shared > 1 && /^you(?:r|['’]|\b)/i.test(c.fact)) || (c.shared > 0 && MONEY_SAID.test(c.fact))));
+    c.kind === 'idea'
+      ? s.applies === true || c.shared > 0
+      : c.kind === 'record'
+        ? c.shared + c.near + c.bears > 0
+        : (c.shared > 0 && /^you(?:r|['’]|\b)/i.test(c.fact)) ||
+          (c.shared + c.bears > 0 && MONEY_SAID.test(c.fact));
   const justSaid = (c: (typeof ranked)[number]): boolean => {
     // Asked about the idea itself, the answer names it.
     if (c.kind === 'idea' && ofTheIdea) return false;
     const words = contentStems(c.fact);
     return words.filter((w) => said.has(w)).length >= words.length * PRIOR_SAID;
   };
-  const near = ranked.slice(0, PRIOR_NEAR);
+  const near = ranked.filter((c) => tells(c) || c.kind === 'idea').slice(0, PRIOR_NEAR);
   const best = near.find((c) => tells(c) && !justSaid(c));
   if (best === undefined) return near[0] === undefined ? null : { fact: near[0].fact, sentence: '' };
+  const seed = `${s.message} ${best.fact}`;
   const sentence =
     best.kind === 'idea'
-      ? `Apply it to your idea: ${best.fact}.`
-      : /^you\b/i.test(best.fact)
-        ? `Build on this: ${best.fact}.`
-        : best.kind === 'said'
-          ? `You told me this: ${best.fact}.`
-          : `Build on what you have: ${best.fact}.`;
+      ? (pick([`For you that means ${best.fact}.`, `In your case that is ${best.fact}.`], seed) ?? '')
+      : broughtUp(best.fact, seed, best.decision === true);
   return best.kind === 'idea' && ofTheIdea
     ? { fact: best.fact, sentence, spoken: `That is for your idea: ${shortIdea(best.fact)}.` }
     : { fact: best.fact, sentence };
@@ -361,9 +464,17 @@ function entrySaid(e: ArcEntry): string {
   const title = bare(e.title.replace(/…$/u, ''));
   if (e.kind === 'pivot') {
     const to = /^Changed direction: (.+)$/u.exec(title)?.[1];
-    if (to !== undefined) return `you changed direction to this: ${lowerFirst(toYou(bare(to)))}`;
+    if (to !== undefined) return pivotSaid(to);
   }
-  if (e.kind === 'step_done') return `you finished: ${lowerFirst(title)}`;
+  if (e.kind === 'step_done') {
+    // What came of it, in their words, tells more than its name.
+    const words = e.detail === null ? '' : bare(e.detail.replace(/…$/u, ''));
+    return words.split(/\s+/).length >= 4
+      ? lowerFirst(toYou(told(words)))
+      : `you finished: ${lowerFirst(title)}`;
+  }
+  // What they reported in a conversation, with what came of it.
+  if (e.source.kind === 'session') return lowerFirst(toYou(told(title)));
   return toldAs({
     type: e.kind === 'decision' ? 'decision' : 'fact',
     title,
@@ -371,13 +482,24 @@ function entrySaid(e: ArcEntry): string {
   });
 }
 
+/** A change of direction in their own words: to a new idea, or back to one they had. */
+export function pivotSaid(to: string): string {
+  const back = /^back\b(?: to|:)? ?(.*)$/isu.exec(to.trim())?.[1];
+  if (back === undefined) return `you changed direction to this: ${lowerFirst(ideaSaid(to))}`;
+  const [idea = '', ...why] = back.split(/(?<=[.!?])\s+/u).map(bare);
+  const reason = why.filter((w) => w !== '').join('. ');
+  return `you went back to ${lowerFirst(toYou(idea))}${reason === '' ? '' : `, because of this: ${lowerFirst(toYou(reason))}`}`;
+}
+
 /**
  * How they got here, as dated lines, oldest first: each day once, each thing once (a day's copies of it, a pivot told as a
- * decision and as a note, are one), at most {@link STORY_LINES}.
+ * decision and as a note, are one), at most {@link STORY_LINES}. A change of direction says what brought it: the reason
+ * they gave with it, else what they had last found.
  */
 export function storyLines(arc: readonly ArcEntry[]): { readonly on: string; readonly said: string }[] {
   const days = new Map<string, ArcEntry[]>();
   for (const e of arc) if (STORY_KINDS.has(e.kind)) days.set(e.on, [...(days.get(e.on) ?? []), e]);
+  let found = '';
   const lines = [...days.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([on, entries]) => {
@@ -385,21 +507,28 @@ export function storyLines(arc: readonly ArcEntry[]): { readonly on: string; rea
       const pivots = entries.filter((e) => e.kind === 'pivot' || /\bpivot/i.test(e.title));
       const pivot = pivots.find((e) => e.id.startsWith('pivot:')) ?? pivots.at(-1);
       const rest = entries.filter((e) => !pivots.includes(e));
-      const said = distinct(
-        [...rest, ...(pivot === undefined ? [] : [pivot])].map(entrySaid),
-        (t) => t,
-        0.5,
-      ).slice(0, 3);
-      return { on, said: said.join('; ') };
+      const tells = distinct(rest.map(entrySaid), (t) => t, 0.5);
+      const before = found;
+      found = tells.at(-1) ?? found;
+      let turned = pivot === undefined ? '' : entrySaid(pivot);
+      const why = (tells.length > 0 ? (tells.at(-1) ?? '') : before).trim();
+      // What it came from was told just before it: the line, or the one above.
+      if (turned !== '' && !/\b(?:because|since)\b/.test(turned) && why !== '')
+        turned = `because of that, ${turned}`;
+      const said = distinct([...tells, ...(turned === '' ? [] : [turned])], (t) => t, 0.5).slice(0, 3);
+      return { on, said: (turned !== '' && !said.includes(turned) ? [turned] : said).join('; ') };
     })
     .filter((l) => l.said !== '');
   const told: { on: string; said: string }[] = [];
-  for (const line of lines) if (!told.some((t) => sameThing(t.said, line.said, 0.8))) told.push(line);
+  for (const line of lines)
+    if (TURNED.test(line.said) || !told.some((t) => sameThing(t.said, line.said, 0.8))) told.push(line);
   // A change of direction is never left out: the oldest of the rest is.
   const over = told.length - STORY_LINES;
-  const left = new Set(told.filter((l) => !/\bchanged direction\b/.test(l.said)).slice(0, Math.max(0, over)));
+  const left = new Set(told.filter((l) => !TURNED.test(l.said)).slice(0, Math.max(0, over)));
   return told.filter((l) => !left.has(l)).slice(-STORY_LINES);
 }
+
+const TURNED = /\byou (?:changed direction|went back to)\b/;
 
 export const dated = (line: { readonly on: string; readonly said: string }): string =>
   `${monthDay(line.on)}: ${line.said}.`;

@@ -229,7 +229,7 @@ describe('drawing on the corpus', () => {
     expect(worded.filter((i) => i.lane === 'pinned').map((i) => i.title)).toEqual(pinned);
     const honest = await ask('Tell me my idea is great', {
       play: {
-        title: 'Get an honest read of the idea',
+        title: 'Write how many strangers must pay, then test it',
         text: 'I will not call it great, because neither of us knows yet. Great is what strangers show with their money.',
         citations: [{ sourceId: 'ain-foundry', locator: 'Module 3, Unit 2: Networking I' }],
       },

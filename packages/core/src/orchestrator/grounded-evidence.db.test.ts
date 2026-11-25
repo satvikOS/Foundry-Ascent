@@ -91,7 +91,7 @@ describe('the evidence of a turn with a play', () => {
       play: {
         play: {
           id: 'honest-read',
-          title: 'Get an honest read of the idea',
+          title: 'Write how many strangers must pay, then test it',
           answer:
             'I will not call it great, because neither of us knows yet. Great is what strangers show with their money. Its strength is whatever you have seen people do about the problem so far.',
           why: 'Praise feels good and tells you nothing.',

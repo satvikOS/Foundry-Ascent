@@ -27,6 +27,21 @@ const CONTRACTIONS: readonly (readonly [RegExp, string])[] = [
   [/\bgotta\b/g, 'got to'],
   [/\bgimme\b/g, 'give me'],
   [/\bpls\b|\bplz\b/g, 'please'],
+  // As it is typed on a phone.
+  [/\bu\b/g, 'you'],
+  [/\bur\b/g, 'your'],
+  [/\brn\b/g, 'right now'],
+  [/\b(?:idk|dunno)\b/g, 'i do not know'],
+  [/\bdk\b/g, 'do not know'],
+  [/\b(?:wut|wat|wht)\b/g, 'what'],
+  [/\b(?:bc|cuz|coz|cos)\b/g, 'because'],
+  [/\bppl\b/g, 'people'],
+  [/\babt\b/g, 'about'],
+  [/\bw\/ ?/g, 'with '],
+  [/\b(?:lemme)\b/g, 'let me'],
+  [/\bkinda\b/g, 'kind of'],
+  [/\bsorta\b/g, 'sort of'],
+  [/\bnxt\b/g, 'next'],
 ];
 
 const ISE =

@@ -85,6 +85,17 @@ export const CoreConfig = z.object({
      * on by default): off, the rules alone choose a play.
      */
     semanticPlays: z.boolean(),
+    /**
+     * Shared notes near the founder's own words are evidence of a turn that asks something, whatever the topics and the
+     * vocabulary say of it (`retrievalRepo.SEMANTIC_ADMISSION`; `CORE_SEMANTIC_NOTES=on|off`, on by default): off, the
+     * gates alone bring notes.
+     */
+    semanticNotes: z.boolean(),
+    /**
+     * A typed turn's notes are chosen by a reranker when the gateway has one (`MODEL_RERANK_ID`; `CORE_RERANK=on|off`,
+     * off by default), within 600 ms (`RERANK_TIMEOUT_MS`); never a call's.
+     */
+    rerank: z.boolean(),
   }),
   retrieval: z.object({
     memory: z.number().int().min(0).max(50),
@@ -178,6 +189,8 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
     safetyScreen: false,
     founderPath: true,
     semanticPlays: true,
+    semanticNotes: true,
+    rerank: false,
   },
   // The persona's library gives two items, not four (live pilot 42099643194: its method notes were injected on almost
   // every turn, whatever the topic, and replies on grants, leases and tutoring cited the interview guide). The path's
@@ -239,7 +252,7 @@ function intFrom(env: EnvLike, name: string, fallback: number): number {
  * The single place where packages/core reads environment variables (runtime contract): APP_ENV,
  * APP_VERSION, HOME_TENANT_SLUG, SITE_ORIGIN, plus optional tuning knobs
  * (CORE_TURN_RATE_LIMIT, CORE_REVIEW_SAMPLE_RATE_PCT, CORE_SESSION_CACHE_SECONDS, CORE_SAFETY_SCREEN=on|off,
- * CORE_FOUNDER_PATH=on|off, CORE_SEMANTIC_PLAYS=on|off, and
+ * CORE_FOUNDER_PATH=on|off, CORE_SEMANTIC_PLAYS=on|off, CORE_SEMANTIC_NOTES=on|off, CORE_RERANK=on|off, and
  * for local demos CORE_DISTILL_DELAY_SECONDS / CORE_DISTILL_ACTIVE_SECONDS).
  */
 export function loadConfig(env: EnvLike): CoreConfig {
@@ -265,6 +278,8 @@ export function loadConfig(env: EnvLike): CoreConfig {
       safetyScreen: switchFrom(env, 'CORE_SAFETY_SCREEN', DEFAULT_CORE_CONFIG.turns.safetyScreen),
       founderPath: switchFrom(env, 'CORE_FOUNDER_PATH', DEFAULT_CORE_CONFIG.turns.founderPath),
       semanticPlays: switchFrom(env, 'CORE_SEMANTIC_PLAYS', DEFAULT_CORE_CONFIG.turns.semanticPlays),
+      semanticNotes: switchFrom(env, 'CORE_SEMANTIC_NOTES', DEFAULT_CORE_CONFIG.turns.semanticNotes),
+      rerank: switchFrom(env, 'CORE_RERANK', DEFAULT_CORE_CONFIG.turns.rerank),
     },
     distillation: {
       turnDelaySeconds: intFrom(

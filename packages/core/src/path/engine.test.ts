@@ -305,9 +305,9 @@ describe('the ask', () => {
     expect(choiceOf('Should I go for grants, angel money or VC?')).toEqual(['grants', 'angel money', 'VC']);
     expect(choiceOf('Should I incorporate or not?')).toEqual([]);
     expect(choiceOf('We sell to labs or clinics.')).toEqual([]);
-    expect(decide(input('A fixed service, consulting, or some of each?', withHistory())).choice).toHaveLength(
-      3,
-    );
+    expect(
+      decide(input('A fixed service, consulting, or some of each?', withHistory())).choice?.options,
+    ).toHaveLength(3);
   });
 
   it('get me organized, what next, where do I start: the whole path', () => {
@@ -703,7 +703,7 @@ describe('an idea the record does not hold', () => {
       ),
     );
     expect(d.kind).toBe('new_idea');
-    expect(d.choice).toHaveLength(3);
+    expect(d.choice?.options).toHaveLength(3);
     expect(d.intent).toBe('service-or-product');
     expect(d.step).not.toBeNull();
   });

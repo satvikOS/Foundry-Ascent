@@ -1,22 +1,34 @@
 import { type PathCriterion } from '@foundry/contracts';
 import { type pathRepo } from '@foundry/db';
 
+import {
+  askedIn,
+  correctionOf,
+  talliesIn,
+  tallyOf,
+  type Act,
+  type Correction,
+  type Tally,
+} from './counts.js';
 import { asksFor, ownSentences, statesItHappened } from './kinds.js';
 import {
   neededFor,
   progressEvidence,
   stageOrder,
   topicOf,
+  wordsOfEvidence,
+  type CriterionState,
   type PathSource,
   type PathState,
   type Progress,
 } from './state.js';
 import { type Playbook } from './types.js';
-import { contentStems, numberOf, plain } from './words.js';
+import { contentStems, countsIn, plain } from './words.js';
 
 /**
  * Work a founder reports beyond their step ("I did eight interviews, six said the same thing" on a path still at the
- * idea): which criterion it counts for, how far it gets there, and the stage it belongs to. By rule, in their words.
+ * idea): which criterion it counts for, how far it gets there, and the stage it belongs to. By rule, in their words, with
+ * the number that did it (counts.ts) or none at all.
  */
 export interface ReportedWork {
   readonly criterion: PathCriterion;
@@ -25,6 +37,8 @@ export interface ReportedWork {
   readonly status: 'claimed' | 'open';
   /** The founder's own words for it, with the finding they gave beside it. */
   readonly words: string;
+  /** They took an earlier number back: what it was. */
+  readonly corrects?: number;
 }
 
 /** One subject of reported work: how a founder says it, and which criteria (by their own topic) it counts for. */
@@ -33,60 +47,34 @@ interface WorkTopic {
   /** The criterion's subject, read in its title and what counts as shown. */
   readonly criterion: RegExp;
   readonly inEvidence?: boolean;
-  /** Wins over the topics after it in the same sentence. */
-  readonly alone?: boolean;
+  /** What is counted of it; absent: how many it was offered to. */
+  readonly acts?: readonly Act[];
 }
 
-const MONEY_WORK =
-  /\b(?:sold|bought|paid|pre-?ordered|ordered|purchased|signed(?! up\b| in\b| off\b)|said yes|put down (?:a )?deposits?|became customers?)\b/;
 const TOPICS: readonly WorkTopic[] = [
   {
-    said: /\b(?:price|pricing) (?:test|experiment)s?\b|\b(?:offered|tried|tested) (?:it |them |\w+ ){0,3}(?:at|for) \$?\d/,
+    said: /\b(?:price|pricing) (?:test|experiment)s?\b|\b(?:offered|tried|tested) (?:it |them |\w+ ){0,3}(?:at|for) \$?\d|\boffered at \$?\d/,
     criterion: /\b(?:price|pricing)\b/,
   },
   {
-    said: MONEY_WORK,
+    said: /./,
     criterion: /\b(?:paying|paid|payment|signed|pre-?order(?:s|ed)?|committed|deposits?)\b/,
     inEvidence: true,
-    alone: true,
+    // A spoken yes is none: it counts when it is paid or signed.
+    acts: ['paid', 'signed'],
   },
   {
-    said: /\b(?:interview(?:ed|s)?|talked (?:to|with)|spoke (?:to|with)|spoken (?:to|with)|chatted with|sat down with|met with|conversations? with|had \w+ conversations?)\b/,
+    said: /./,
     criterion:
       /\b(?:interviews?|talk(?:ed)? to|conversations?|people (?:described|told|said)|last time (?:it|this|they))/,
+    acts: ['talked'],
   },
 ];
-/** A sentence whose count is of something else ("in 12 days", "6 dollars", "40 percent"). */
-const UNIT_AFTER =
-  /^(?:dollar|buck|cent|percent|pct|minute|min|hour|hr|day|week|month|year|am|pm|o'clock|am\.|pm\.|st|nd|rd|th)s?$/;
-const ACTED_BY_OTHERS =
-  /\b(?:of (?:them|these|those)|people|students|customers?|schools?|labs?|clinics?|shops?|teams?)\b/;
 
-const ACTED_SENTENCE =
-  /\b(?:i|we|my cofounder|my co-founder|my team|our team)\b|\b(?:of (?:them|these|those|us))\b|^\W*(?:\d+|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/;
-
-/** The count said nearest to `match` in the sentence (its own words only, no money, dates or percentages). */
-function countNear(sentence: string, said: RegExp): number | null {
-  const s = plain(sentence);
-  const found = said.exec(s);
-  if (found === null) return null;
-  const words = [...s.matchAll(/[\p{L}\p{N}$€£%.,'-]+/gu)].map((m) => ({ text: m[0], at: m.index }));
-  const at = words.findIndex((w) => w.at + w.text.length > found.index);
-  let best: { n: number; distance: number } | null = null;
-  words.forEach((w, i) => {
-    const bare = w.text.replace(/^[.,'-]+|[.,'-]+$/g, '');
-    if (/[$€£%]/.test(bare)) return;
-    const n = numberOf(bare);
-    if (n === null || n > 100_000) return;
-    const next = words[i + 1]?.text.replace(/[.,]+$/g, '') ?? '';
-    if (UNIT_AFTER.test(next)) return;
-    const distance = Math.abs(i - at);
-    if (best === null || distance < best.distance) best = { n, distance };
-  });
-  return (best as { n: number; distance: number } | null)?.n ?? null;
-}
-
-const MORE = /\b(?:more|another|additional|extra)\b/;
+/** The topic a criterion is of, by its title (or what counts as shown). */
+const isOf = (topic: WorkTopic, c: PathCriterion): boolean =>
+  topic.criterion.test(plain(c.title)) ||
+  (topic.inEvidence === true && topic.criterion.test(plain(c.evidence)));
 
 /** The founder's words for a claim: the sentence that says it and what they found, as they wrote them. */
 function wordsFor(own: readonly string[], index: number): string {
@@ -94,7 +82,12 @@ function wordsFor(own: readonly string[], index: number): string {
     .slice(index + 1, index + 3)
     .filter((s) => !s.trim().endsWith('?') && !asksFor(s))
     .join(' ');
-  return `${own[index] ?? ''} ${finding}`.replace(/\s+/g, ' ').trim().slice(0, 600);
+  // "2 paid." tells nothing without the sentence before it.
+  const said = own[index] ?? '';
+  const before = own[index - 1] ?? '';
+  const lead =
+    contentStems(said).length < 3 && before !== '' && !before.trim().endsWith('?') ? `${before} ` : '';
+  return `${lead}${said} ${finding}`.replace(/\s+/g, ' ').trim().slice(0, 600);
 }
 
 /**
@@ -104,43 +97,44 @@ function wordsFor(own: readonly string[], index: number): string {
 export function reportedWork(state: PathState, text: string): ReportedWork[] {
   const own = ownSentences(text);
   const out: ReportedWork[] = [];
-  own.forEach((sentence, i) => {
-    if (!statesItHappened(sentence)) return;
-    const s = plain(sentence);
-    if (!ACTED_SENTENCE.test(s) && !ACTED_BY_OTHERS.test(s)) return;
-    for (const topic of TOPICS) {
-      if (!topic.said.test(s)) continue;
-      const target = state.criteria.find((c) => {
-        if (c.status !== 'open' || out.some((o) => o.criterion.id === c.criterion.id)) return false;
-        if (topic.criterion.test(plain(c.criterion.title))) return true;
-        return topic.inEvidence === true && topic.criterion.test(plain(c.criterion.evidence));
-      });
-      if (target === undefined) continue;
-      const needed = neededFor(target.criterion);
-      const said = countNear(sentence, topic.said);
-      const words = wordsFor(own, i);
-      if (needed <= 1) {
-        out.push({ criterion: target.criterion, progress: null, status: 'claimed', words });
-      } else if (said !== null) {
-        const before = target.progress?.done ?? 0;
-        // "Two more" adds; a smaller number than was reported is new work; the same or a larger one is the total so far.
-        const done = MORE.test(s) || said < before ? before + said : said;
-        out.push(
-          done >= needed
-            ? { criterion: target.criterion, progress: null, status: 'claimed', words }
-            : done > before
-              ? { criterion: target.criterion, progress: { done, of: needed }, status: 'open', words }
-              : {
-                  criterion: target.criterion,
-                  progress: { done: before, of: needed },
-                  status: 'open',
-                  words,
-                },
-        );
-      }
-      if (topic.alone === true) break;
+  const correction = correctionOf(text);
+  if (correction !== null) {
+    const corrected = corrects(state, correction, own);
+    if (corrected !== null) return [corrected];
+  }
+  const tallies = talliesIn(text);
+  for (const topic of TOPICS) {
+    const found = countedBy(topic, own, tallies);
+    if (found === null) continue;
+    const target = state.criteria.find(
+      (c) =>
+        c.status === 'open' &&
+        !out.some((o) => o.criterion.id === c.criterion.id) &&
+        isOf(topic, c.criterion),
+    );
+    if (target === undefined) continue;
+    const words = wordsFor(own, found.at);
+    const needed = neededFor(target.criterion);
+    if (needed <= 1) {
+      out.push({ criterion: target.criterion, progress: null, status: 'claimed', words });
+      continue;
     }
-  });
+    if (found.count === null || found.count === 0) continue;
+    const before = target.progress?.done ?? 0;
+    // "Two more" adds; "in all" is the total; a smaller number than was reported is new work; the same or a larger one is
+    // the total so far.
+    const done = found.more || (!found.total && found.count < before) ? before + found.count : found.count;
+    out.push(
+      done >= needed
+        ? { criterion: target.criterion, progress: null, status: 'claimed', words }
+        : {
+            criterion: target.criterion,
+            progress: { done: found.total ? done : Math.max(done, before), of: needed },
+            status: 'open',
+            words,
+          },
+    );
+  }
   if (out.length > 0) return out;
   // No subject of its own: a finished thing that holds most of a criterion's words ("I submitted the canvas").
   for (const [i, sentence] of own.entries()) {
@@ -165,13 +159,63 @@ export function reportedWork(state: PathState, text: string): ReportedWork[] {
   return [];
 }
 
+interface Counted {
+  readonly count: number | null;
+  readonly more: boolean;
+  readonly total: boolean;
+  readonly at: number;
+}
+
+/** What the message counts of a topic: the number that did it, or how many it was offered to. */
+function countedBy(topic: WorkTopic, own: readonly string[], tallies: readonly Tally[]): Counted | null {
+  if (topic.acts !== undefined) return tallyOf(tallies, topic.acts);
+  const at = own.findIndex(
+    (s) => topic.said.test(plain(s)) && !s.trim().endsWith('?') && statesItHappened(s),
+  );
+  if (at < 0) return null;
+  const asked = own.map(askedIn).find((n) => n !== null) ?? null;
+  return { count: asked, more: false, total: false, at };
+}
+
+/** The criterion whose number they take back, at the number it is. */
+function corrects(state: PathState, c: Correction, own: readonly string[]): ReportedWork | null {
+  // What was told of it: how far they are, or, reached, the number it took (said at once, or added up).
+  const counted = (x: CriterionState): number[] =>
+    x.progress !== null
+      ? [x.progress.done]
+      : x.by === 'path' && x.status !== 'open' && neededFor(x.criterion) > 1
+        ? [...countsIn(wordsOfEvidence(x.evidence ?? '')), neededFor(x.criterion)]
+        : [];
+  const target = state.criteria.find((x) => {
+    const said = counted(x);
+    if (said.length === 0 || (c.was !== null && !said.includes(c.was))) return false;
+    if (c.act === null) return c.was !== null;
+    const act = c.act;
+    return TOPICS.some((t) => t.acts?.includes(act) === true && isOf(t, x.criterion));
+  });
+  if (target === undefined) return null;
+  const was = c.was ?? counted(target).at(-1) ?? c.is;
+  if (was === c.is) return null;
+  const needed = neededFor(target.criterion);
+  const words = wordsFor(own, c.at);
+  return c.is >= needed
+    ? { criterion: target.criterion, progress: null, status: 'claimed', words, corrects: was }
+    : {
+        criterion: target.criterion,
+        progress: { done: c.is, of: needed },
+        status: 'open',
+        words,
+        corrects: was,
+      };
+}
+
 /** Whether a criterion the playbook reads by a count is short of it in `words` (a claim of it is not one yet). */
 export function shortOfCount(criterion: PathCriterion, words: string): boolean {
   const needed = neededFor(criterion);
   if (needed <= 1 || topicOf(criterion)?.counted !== true) return false;
-  const topic = TOPICS.find((t) => t.criterion.test(plain(criterion.title)) && t.said.test(plain(words)));
-  const said = topic === undefined ? null : countNear(words, topic.said);
-  return said !== null && said < needed;
+  const topic = TOPICS.find((t) => t.acts !== undefined && t.criterion.test(plain(criterion.title)));
+  const said = topic?.acts === undefined ? null : tallyOf(talliesIn(words), topic.acts);
+  return said !== null && said.count < needed;
 }
 
 export interface AppliedWork {
@@ -183,6 +227,8 @@ export interface AppliedWork {
     readonly criterionId: string;
     readonly status: 'claimed' | 'open';
     readonly evidence: string;
+    /** A number taken back: the criterion is open again if it was reached. */
+    readonly reopens?: boolean;
   }[];
 }
 
@@ -201,14 +247,21 @@ export function withWork(
   const order = stageOrder(playbook);
   const furthest = Math.max(
     -1,
-    ...work.map((w) => order.indexOf(w.criterion.stage)),
+    // A number taken back moves nothing on.
+    ...work.map((w) => (w.corrects === undefined ? order.indexOf(w.criterion.stage) : -1)),
     finished === null ? -1 : order.indexOf(finished.criterion.stage),
   );
   const stage = furthest > state.stageIndex ? (order[furthest] ?? null) : null;
-  const rows: { criterionId: string; status: 'claimed' | 'open'; evidence: string }[] = work.map((w) => ({
+  const rows: {
+    criterionId: string;
+    status: 'claimed' | 'open';
+    evidence: string;
+    reopens?: boolean;
+  }[] = work.map((w) => ({
     criterionId: w.criterion.id,
     status: w.status,
     evidence: w.progress === null ? w.words.slice(0, 1000) : progressEvidence(w.progress, w.words),
+    ...(w.corrects !== undefined && w.status === 'open' ? { reopens: true } : {}),
   }));
   if (stage !== null) {
     const words =

@@ -446,6 +446,8 @@ export async function keepPivot(
     stage: Stage;
     playbookVersion: string;
     pivot: PathPivot;
+    /** The idea alone, when the pivot's words say more than it ("back to the jars. A shop lends us its sink"). */
+    idea?: string;
     sessionId: string;
   },
 ): Promise<void> {
@@ -464,8 +466,8 @@ export async function keepPivot(
       tenantId: p.uuid(args.tenantId),
       stage: p.text(args.stage),
       playbook: p.text(args.playbookVersion),
-      intake: p.json({ ...EMPTY_INTAKE, idea: args.pivot.to }),
-      idea: p.text(args.pivot.to),
+      intake: p.json({ ...EMPTY_INTAKE, idea: args.idea ?? args.pivot.to }),
+      idea: p.text(args.idea ?? args.pivot.to),
       by: p.uuid(args.principalId),
       session: p.uuid(args.sessionId),
       pivots: p.json([args.pivot]),

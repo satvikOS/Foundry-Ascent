@@ -280,7 +280,8 @@ interface CoreLogger { info/warn/error(event: string, fields: CoreLogFields): vo
 ## 7. Configuration (`CoreConfig`)
 
 `loadConfig(env)` reads `APP_ENV`, `APP_VERSION`, `HOME_TENANT_SLUG`, `SITE_ORIGIN` and optional
-`CORE_TURN_RATE_LIMIT`, `CORE_REVIEW_SAMPLE_RATE_PCT`, `CORE_SESSION_CACHE_SECONDS` and `CORE_SAFETY_SCREEN`
+`CORE_TURN_RATE_LIMIT`, `CORE_REVIEW_SAMPLE_RATE_PCT`, `CORE_SESSION_CACHE_SECONDS`, `CORE_SEMANTIC_NOTES` (`on` by
+default) and `CORE_RERANK` (`off`; both docs/runbooks/embedding-model.md), and `CORE_SAFETY_SCREEN`
 (`on`/`off`, default `off`: the model-based safety screen, `turns.safetyScreen`; any other value is refused at
 start-up; the conversation lab runs with it on, docs/runbooks/conversation-lab.md). Defaults match the
 system design: session 12 h / 60 s cache; sign-in 10 failures / 15 min; turns 20 / 10 min, 30 %

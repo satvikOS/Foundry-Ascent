@@ -294,6 +294,7 @@ export const BLIND_ASKS: readonly BlindAsk[] = [
     'My business partner stopped showing up and gets snippy when I bring it up',
     'team-conflict',
   ),
+  ask('blunt', 'The guy who coded it all bailed on me, what now', 'cofounder-left'),
   // Validation
   ask('student', 'They nod, but would they open their wallets?', 'will-anyone-pay'),
   ask(

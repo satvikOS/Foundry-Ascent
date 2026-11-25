@@ -14,6 +14,11 @@ const TERMS: readonly Term[] = [
     said: /\bvalue prop(?:osition)?s?\b/iu,
     means: 'one sentence on who you help and how',
   },
+  {
+    id: 'jobs pains gains',
+    said: /\bjobs?, (?:the )?(?:\w+ )?pains? and (?:the )?(?:\w+ )?gains?\b/iu,
+    means: 'what they try to do, what hurts, what they want',
+  },
   { id: 'unit economics', said: /\bunit economics\b/iu, means: 'what one sale leaves after its costs' },
   {
     id: 'canvas',

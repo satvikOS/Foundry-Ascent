@@ -16,9 +16,9 @@ import { feedLongAnswers, LONG_FOLLOW_UPS, LONG_PARAGRAPHS } from './support/lon
 /*
  * The conversation page around its composer: the latest answer's actions and the follow-up chips above the
  * composer never cover each other, and a chip never wipes what the founder was typing. With a real model's
- * answer (four paragraphs) and its long follow-up questions (LAB-U1), the end of the answer and its actions are
- * kept in view above the composer area as it finishes, the chips stay on one line, and a reader who scrolled up
- * while it streamed is left where they are. The conversation's header stays legible over the prose under it.
+ * answer (four paragraphs) and its long follow-up questions (LAB-U1), the answer is read from its start as it comes in,
+ * its end and its actions are clear of the composer area, the chips stay on one line, and a reader who scrolled up while
+ * it streamed is left where they are. The conversation's header stays legible over the prose under it.
  */
 
 /** Room kept between the latest answer's actions and the glass composer area below them. */
@@ -133,6 +133,22 @@ async function askFirstQuestion(page: Page): Promise<void> {
   await expect(page.getByRole('list', { name: 'Follow-up questions' })).toBeVisible();
 }
 
+/**
+ * As an answer finished: with a step under it, its first words are still under the header (the answer is read before
+ * its step); then the page is taken to the end.
+ */
+async function expectWordsThenGoToEnd(page: Page, where: string): Promise<void> {
+  const words = await page.evaluate(() => {
+    const answer = [...document.querySelectorAll('article')].at(-1);
+    return answer?.querySelector('[data-slot="markdown"]')?.getBoundingClientRect().top ?? null;
+  });
+  if (words === null) throw new Error(`${where}: no answer`);
+  expect(words, `${where}: the answer's first words are on screen`).toBeGreaterThan(40);
+  await page.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  });
+}
+
 /** The latest answer's action row (copy, thumbs) lies wholly above the chips and the composer area. */
 async function expectActionsClearOfChips(page: Page, where: string): Promise<void> {
   const box = await page.evaluate(() => {
@@ -170,8 +186,8 @@ test.describe('conversation composer', () => {
     await expect(page.locator('[data-slot="composer-dock"]')).not.toHaveClass(/(^|\s)glass(\s|$)/);
     await expect(page.locator('[data-slot="composer"]')).toHaveClass(/(^|\s)glass(\s|$)/);
     await expect(page.getByRole('main').locator('header').first()).toHaveClass(/(^|\s)glass-bar(\s|$)/);
-    // The first answer fit until it finished: the page keeps its end in view, actions and chips together.
-    await expectActionsClearOfChips(page, 'the first answer as it finished, 1440×900');
+    await expectWordsThenGoToEnd(page, 'the first answer as it finished, 1440×900');
+    await expectActionsClearOfChips(page, 'the first answer at its end, 1440×900');
 
     for (const size of [
       { width: 1440, height: 900 },
@@ -192,7 +208,7 @@ test.describe('conversation composer', () => {
     }
   });
 
-  test('a long real-model answer with long chips ends in view above the composer, and the chips stay on one line (LAB-U1)', async ({
+  test('a long real-model answer with long chips is read from its start, its end is clear of the composer, and the chips stay on one line (LAB-U1)', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -205,10 +221,11 @@ test.describe('conversation composer', () => {
     await expect(first.getByRole('button', { name: 'Copy answer' })).toBeVisible({ timeout: 30_000 });
     await expect(first).toContainText(LONG_PARAGRAPHS.at(-1)?.slice(0, 60) ?? '');
     await expectLongChips(page);
-    // The answer is taller than the screen: it could not have fit, so the page kept its end in view as it grew.
+    // The answer is taller than the screen: it starts where it is read from.
     const tall = await first.evaluate((article) => article.getBoundingClientRect().height);
     expect(tall, 'the answer is taller than the viewport').toBeGreaterThan(DESKTOP.height);
-    await expectActionsClearOfChips(page, 'a long answer as it finished, 1440×900');
+    await expectWordsThenGoToEnd(page, 'a long answer as it finished, 1440×900');
+    await expectActionsClearOfChips(page, 'a long answer at its end, 1440×900');
     await expectChipsOnOneLine(page, '1440×900');
     await expectDockMeasured(page, '1440×900');
 
@@ -222,7 +239,8 @@ test.describe('conversation composer', () => {
       await useTheme(page, scheme);
       await askNext(page, `And what should the deposit be? ${runToken()}`, ordinal);
       await expectLongChips(page);
-      await expectActionsClearOfChips(page, `a long answer as it finished, 390×844 ${scheme}`);
+      await expectWordsThenGoToEnd(page, `a long answer as it finished, 390×844 ${scheme}`);
+      await expectActionsClearOfChips(page, `a long answer at its end, 390×844 ${scheme}`);
       await expectChipsOnOneLine(page, `390×844 ${scheme}`);
       await expectDockMeasured(page, `390×844 ${scheme}`);
     }
@@ -254,13 +272,23 @@ test.describe('conversation composer', () => {
     await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 5_000 }).toBeGreaterThan(0);
     // Let the wheel scroll settle, then remember where the reader is.
     await page.waitForTimeout(300);
-    const before = await page.evaluate(() => window.scrollY);
+    // Where the words they read are, and how far the page is scrolled: the first reply's saved line may land meanwhile,
+    // above what they read (the browser moves the page for it) or in view (it moves what is below it). Both: we moved it.
+    const reading = LONG_PARAGRAPHS[0]?.slice(0, 60) ?? '';
+    const place = async () => ({
+      words: (await page.getByText(reading).last().boundingBox())?.y ?? Number.NaN,
+      scroll: await page.evaluate(() => window.scrollY),
+    });
+    const before = await place();
     const second = page.getByRole('article', { name: 'Exchange 2' });
     await expect(second.getByRole('button', { name: 'Copy answer' })).toBeVisible({ timeout: 30_000 });
     await expectLongChips(page);
     await page.waitForTimeout(300);
-    const after = await page.evaluate(() => window.scrollY);
-    expect(Math.abs(after - before), 'the page did not move after the reader scrolled away').toBeLessThan(2);
+    const after = await place();
+    expect(
+      Math.min(Math.abs(after.words - before.words), Math.abs(after.scroll - before.scroll)),
+      'the page did not move after the reader scrolled away',
+    ).toBeLessThan(2);
     // So the end of the answer is still below, out of view, for them to read down to.
     await expect(second.getByRole('button', { name: 'Copy answer' })).not.toBeInViewport();
   });
