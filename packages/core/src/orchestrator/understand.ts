@@ -1,4 +1,5 @@
 import {
+  betterSums,
   JUDGE_SYSTEM_PROMPT,
   JUDGE_VOICE_SYSTEM_PROMPT,
   SUMS_SYSTEM_PROMPT,
@@ -15,6 +16,7 @@ import {
   readSums,
   routeSystemPrompt,
   sumsAgain,
+  sumsDoubt,
   sumsDue,
   understandCacheHint,
   understandMessages,
@@ -29,6 +31,7 @@ import {
   type UnderstandForm,
   type UnderstandPart,
   type UnderstandPlay,
+  type SumsDoubt,
   type UnderstandReadings,
 } from '@foundry/ai';
 import { type CoachMode, type TurnChannel } from '@foundry/contracts';
@@ -246,7 +249,7 @@ export async function understandTurn(
     const readings: { -readonly [P in keyof UnderstandReadings]: UnderstandReadings[P] } = {};
     const outcomes: Record<UnderstandPart, PartOutcome | null> = { route: null, sums: null, judge: null };
     const recorded: Promise<void>[] = [];
-    let askedAgain = false;
+    let askedAgain: SumsDoubt['code'] | null = null;
     /** One part: its reading is there when it resolves. Never rejects. */
     const ask = async (name: UnderstandPart, prepared: PreparedPart | null): Promise<void> => {
       if (prepared === null) {
@@ -300,12 +303,17 @@ export async function understandTurn(
         const result = await call(prepared.messages, budget);
         if (over()) return;
         held(result);
-        // A plan and no sum: asked for once more, while there is time.
-        const again = name === 'sums' && readings.sums ? sumsAgain(prepared.messages, readings.sums) : null;
-        if (again === null || budget - took() < SUMS_AGAIN_MS) return;
-        askedAgain = true;
-        const second = await call(again, budget - took()).catch(() => null);
-        if (second !== null && !over()) held(second);
+        // A cheap check disagrees with the sum: it is asked for once more, while there is time.
+        const first = name === 'sums' ? (readings.sums ?? null) : null;
+        const doubt = first === null ? null : sumsDoubt(first, context);
+        if (first === null || doubt === null || budget - took() < SUMS_AGAIN_MS) return;
+        askedAgain = doubt.code;
+        const second = await call(sumsAgain(prepared.messages, first, doubt), budget - took()).catch(
+          () => null,
+        );
+        if (second === null || over()) return;
+        held(second);
+        readings.sums = betterSums(first, readSums(second.value), doubt, context);
       } catch (err) {
         // Cut off by its own deadline, which is the turn's: late, as by the turn.
         if (over() || options.signal?.aborted === true || took() >= budget) return;
@@ -348,7 +356,7 @@ export async function understandTurn(
       sumsMs: ended('sums').ms,
       judgeCode: ended('judge').code,
       judgeMs: ended('judge').ms,
-      // SUMS wrote a plan and no sum, and was asked once more.
+      // Why SUMS was asked once more (understand/again.ts); null: it was not.
       sumsAgain: askedAgain,
     };
     if (understanding === null) {
@@ -369,6 +377,7 @@ export async function understandTurn(
       records: context.record.length,
       sums: understanding.sums.length,
       sumDrops: report.sumDrops.join(','),
+      sumMends: report.sumMends.join(','),
       textDrops: report.textDrops.join(','),
       inputs: `${String(report.inputs.anywhere)}/${String(report.inputs.named)}`,
       // Given from another place than the model said: theirs all the same.

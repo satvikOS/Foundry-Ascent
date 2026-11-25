@@ -281,14 +281,14 @@ describe('on', () => {
     const run = await say(coreWith(true), 'how much comes in if 13 labs pay $24 each?');
     const sums = gateway.requests.filter((r) => r.schemaName === UNDERSTAND_SCHEMA_NAMES.sums);
     expect(sums).toHaveLength(2);
-    expect(sums[1]?.messages[0]?.content).toContain('write the sum in s');
+    expect(sums[1]?.messages[0]?.content).toContain('Write the sum in s');
     expect(sums[1]?.timeoutMs).toBeLessThan(UNDERSTAND_TIMEOUT_MS.text);
-    expect(run.read).toMatchObject({ code: 'ok', sumsAgain: true, sums: 0 });
+    expect(run.read).toMatchObject({ code: 'ok', sumsAgain: 'plan', sums: 0 });
     const turns = (r: Run) => r.ledger.filter((x) => x.purpose === 'turn').length;
     expect(turns(run)).toBe(turns(off) + 4);
     gateway = new ReadingGateway({ streamDelayMs: 0 });
     const plain = await say(coreWith(true), 'how much comes in if 13 labs pay $24 each?');
-    expect(plain.read).toMatchObject({ sumsAgain: false, sums: 1 });
+    expect(plain.read).toMatchObject({ sumsAgain: null, sums: 1 });
     expect(gateway.requests).toHaveLength(3);
   });
 

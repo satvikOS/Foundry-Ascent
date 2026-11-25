@@ -140,6 +140,7 @@ def run_suite(
     from conversation_lab.client.report import aggregate, render, write_private
     from conversation_lab.client.runner import ClientRunner
     from conversation_lab.live.lab import code_sha
+    from conversation_lab.report import purpose_delta
     from conversation_lab.simulator import LlmSimulator, TemplateSimulator
     from conversation_lab.stack import PNPM
 
@@ -167,7 +168,9 @@ def run_suite(
         concurrency=ctx.concurrency,
         deadline_seconds=DEADLINE_SECONDS,
     )
+    usage_before = admin.usage() if live else {}
     results = runner.run(state["scenarios"], state["seeded"])
+    spent = purpose_delta(usage_before, admin.usage()) if live else []
     summary = aggregate(
         results,
         {
@@ -188,6 +191,7 @@ def run_suite(
             "groups": list(parse_groups(ctx.client_groups)) or "all",
             "plan": state.get("plan"),
             "calibration": calibration,
+            "turns_usd": next((row["usd"] for row in spent if row["purpose"] == "turn"), None),
             "judge": judge_model if live else None,
             "judge_independent": live
             and judge_model is not None

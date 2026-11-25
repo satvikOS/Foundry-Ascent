@@ -175,6 +175,7 @@ export {
   type UnderstandPlay,
   type UnderstandReport,
 } from './understand/check.js';
+export { betterSums, sumsAgain, sumsDoubt, type SumsDoubt } from './understand/again.js';
 export { mergeReadings } from './understand/merge.js';
 export { readJudge, readRoute, readSums, salvaged } from './understand/salvage.js';
 export {
@@ -184,7 +185,6 @@ export {
   UNDERSTAND_EXAMPLES,
   exchangesInView,
   routeSystemPrompt,
-  sumsAgain,
   sumsDue,
   understandCacheHint,
   understandMessages,

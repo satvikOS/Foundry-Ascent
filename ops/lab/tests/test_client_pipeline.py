@@ -474,7 +474,7 @@ def test_the_public_summary_holds_no_words_of_anyone(tmp_path: Path) -> None:
 
 def test_the_gates_read_the_run() -> None:
     results = run(GuidedApp(replies=lambda _t: REPLY), "RP-01", judge=OneJudge())
-    live = {g["gate"]: g for g in aggregate(results, {"evidence": "live"})["gates"]}
+    live = {g["gate"]: g for g in aggregate(results, {"evidence": "live", "turns_usd": 0.015})["gates"]}
     assert live["next step named on every coaching reply"] == {
         "gate": "next step named on every coaching reply",
         "value": "3/3",
@@ -486,7 +486,14 @@ def test_the_gates_read_the_run() -> None:
         "value": 900,
         "passed": True,
     }
-    assert live["cost per typed turn (USD)"]["value"] == 0.002
+    # The ledger's, every call in a turn: the reply's own (0.002) would pass.
+    assert live["cost per turn, every call in it (USD)"] == {
+        "gate": "cost per turn, every call in it (USD)",
+        "value": 0.005,
+        "passed": False,
+    }
+    unread = {g["gate"]: g for g in aggregate(results, {"evidence": "live"})["gates"]}
+    assert unread["cost per turn, every call in it (USD)"]["passed"] is None
     assert live["client score at least 4.5, no criterion under 4"]["passed"] is None
     # A mock model's speed and cost are no evidence.
     local = {g["gate"]: g for g in aggregate(results, {"evidence": "local"})["gates"]}

@@ -122,13 +122,12 @@ export function mockJudge(prompt: string): JudgeReading {
             v: 'too_early',
             s: `You told what happened: ${message.slice(0, 60).replace(/[<>{}[\]|\\*_`#]/gu, ' ')}`,
             n: 'Whether the same people would pay for it.',
-            e: 'Asking them for something that costs them.',
+            e: 'Ask 10 of them to pay: 4 or more, go on; fewer, change it.',
           }
         : null,
     g: bearingOn(prompt, message)
       .slice(0, 2)
       .map((l) => l.text),
-    d: null,
   };
 }
 

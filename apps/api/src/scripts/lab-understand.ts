@@ -34,12 +34,15 @@ import {
   readParts,
   readRoute,
   readSums,
+  betterSums,
   sumsAgain,
+  sumsDoubt,
   thinksOnRequest,
   type ChatMessage,
   type GenerateStructuredResult,
   type ModelGateway,
   type Understanding,
+  type UnderstandContext,
   type UnderstandPart,
   type UnderstandReadings,
   type UnderstandReport,
@@ -78,8 +81,8 @@ export const Case = z.object({
   /** What the founder told in earlier conversations. */
   said: z.array(z.object({ text: z.string(), daysAgo: z.number().int() })),
   intake: PathIntake.partial().nullable(),
-  /** The founder's earlier lines of this conversation (no reply exists: nothing was answered). */
-  history: z.array(z.string()),
+  /** The founder's earlier lines of this conversation, with the reply where the case has one. */
+  history: z.array(z.union([z.string(), z.object({ founder: z.string(), reply: z.string() })])),
   message: z.string().min(1),
 });
 export type Case = z.infer<typeof Case>;
@@ -114,8 +117,8 @@ export interface PartRow {
   readonly outputTokens: number;
   readonly costUsd: number;
   readonly raw: unknown;
-  /** SUMS was asked once more (a plan and no sum). */
-  readonly again?: true;
+  /** Why SUMS was asked once more. */
+  readonly again?: string;
 }
 
 export interface Row {
@@ -197,7 +200,9 @@ export function prepareCase(c: Case): PreparedUnderstand {
     continuity: { founderFirstName: c.founder.split(' ')[0] ?? null },
     today: c.day,
     message: c.message,
-    history: c.history.map((founderText) => ({ founderText, answer: null })),
+    history: c.history.map((h) =>
+      typeof h === 'string' ? { founderText: h, answer: null } : { founderText: h.founder, answer: h.reply },
+    ),
     opener: null,
     channel: c.channel,
   });
@@ -245,6 +250,7 @@ async function readPart(
   arm: Arm,
   name: UnderstandPart,
   prepared: PreparedPart | null,
+  context: UnderstandContext,
 ): Promise<PartRow> {
   if (prepared === null) return NOT_ASKED;
   const started = performance.now();
@@ -268,9 +274,13 @@ async function readPart(
     });
   try {
     const first = await call(prepared.messages);
-    // As a turn does: a plan and no sum is asked for once more.
-    const again = name === 'sums' ? sumsAgain(prepared.messages, readSums(first.value)) : null;
-    const second = again === null ? null : await call(again).catch(() => null);
+    // As a turn does: a sum a cheap check disagrees with is asked for once more.
+    const sums = name === 'sums' ? readSums(first.value) : null;
+    const doubt = sums === null ? null : sumsDoubt(sums, context);
+    const second =
+      sums === null || doubt === null
+        ? null
+        : await call(sumsAgain(prepared.messages, sums, doubt)).catch(() => null);
     const made = second === null ? [first] : [first, second];
     const total = (of: (x: GenerateStructuredResult<unknown>) => number): number =>
       made.reduce((n, x) => n + of(x), 0);
@@ -281,8 +291,11 @@ async function readPart(
       cachedInputTokens: total((x) => x.usage.cacheReadInputTokens ?? 0),
       outputTokens: total((x) => x.usage.outputTokens),
       costUsd: total((x) => x.costUsd),
-      raw: (second ?? first).value,
-      ...(again === null ? {} : { again: true as const }),
+      raw:
+        second === null || sums === null || doubt === null
+          ? first.value
+          : betterSums(sums, readSums(second.value), doubt, context),
+      ...(doubt === null ? {} : { again: doubt.code }),
     };
   } catch (err) {
     const attempts = isModelGatewayError(err) ? err.attempts : [];
@@ -338,9 +351,9 @@ async function readOnce(gateway: ModelGateway, arm: Arm, c: Case, caps: Caps): P
   const prepared = prepareCase(c);
   const phrasePlay = phraseIntent(PLAYBOOK, c.message)?.intent.playId ?? null;
   const [route, sums, judge] = await Promise.all([
-    readPart(gateway, arm, 'route', prepared.parts.route),
-    readPart(gateway, arm, 'sums', prepared.parts.sums),
-    readPart(gateway, arm, 'judge', prepared.parts.judge),
+    readPart(gateway, arm, 'route', prepared.parts.route, prepared.context),
+    readPart(gateway, arm, 'sums', prepared.parts.sums, prepared.context),
+    readPart(gateway, arm, 'judge', prepared.parts.judge, prepared.context),
   ]);
   const late = (p: PartRow): PartRow & { late: boolean } => ({ ...p, late: p.ms > caps[c.channel] });
   const parts = { route: late(route), sums: late(sums), judge: late(judge) };

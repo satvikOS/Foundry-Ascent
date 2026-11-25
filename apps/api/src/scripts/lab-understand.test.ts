@@ -200,7 +200,7 @@ describe('a run', () => {
       gatewayFor: () => gateway,
     });
     expect(gateway.requests).toHaveLength(4);
-    expect(run.rows[0]?.parts.sums).toMatchObject({ again: true, costUsd: 0.002 });
+    expect(run.rows[0]?.parts.sums).toMatchObject({ again: 'plan', costUsd: 0.002 });
     expect(run.rows[0]?.parts.route).not.toHaveProperty('again');
   });
 

@@ -1,0 +1,257 @@
+# What a message shows, who must decide it, what else it asks and which option to take: the understand suite's own cases
+# (conversation_lab/understand_own.py), invented here. `half: held` is never looked at while the reading is being changed.
+#
+# no_result: nothing happened, so there is no verdict. settles: what would settle it is a number with both sides. shows: one of
+# these words is in what it shows. referral: who decides (any of). no_referral: nobody does. second: a word of the second
+# thing asked. pick / not_pick: the option. first: a word of the first point (the most urgent of several things told).
+cases:
+  # Feelings and questions are no result ------------------------------------------------------------------------------
+  - id: UR-01
+    half: open
+    tag: feelings
+    record: ['You will visit six beekeepers and have not gone yet.']
+    say: i keep opening the list and closing it again, i get shaky just thinking of ringing a stranger
+    no_result: true
+    kind: [feelings]
+  - id: UR-02
+    half: held
+    tag: feelings
+    say: everybody else in the program looks so far ahead of me and i cant sleep
+    no_result: true
+    kind: [feelings]
+  - id: UR-03
+    half: open
+    tag: question
+    record: ['Nine offices pay 30 dollars a month.']
+    say: what if an office says it is nice and never writes back, what do i take from that
+    no_result: true
+  - id: UR-04
+    half: held
+    tag: question
+    say: would it count as proof if the museum put my name on their wall
+    no_result: true
+  - id: UR-05
+    half: open
+    tag: plan
+    say: Im gonna ring twelve piano owners before the weekend
+    no_result: true
+    kind: [update]
+  - id: UR-06
+    half: held
+    tag: plan
+    record: ['A tandem tour is 40 dollars a couple.']
+    say: thinking about dropping the tours and doing repairs all winter
+    no_result: true
+  - id: UR-07
+    half: open
+    tag: words
+    say: whats the very first line i type to a shop owner i never met
+    no_result: true
+  - id: UR-08
+    half: held
+    tag: feelings
+    say: my partner is mad that i spend sundays on this and honestly i feel bad about it too
+    no_result: true
+    kind: [feelings]
+  # Results: read against their own earlier numbers, with what settles it --------------------------------------------
+  - id: UR-09
+    half: open
+    tag: result
+    record: ['In April 30 people saw the frost alarm and 2 left a deposit of 15 dollars.']
+    say: this saturday 26 saw it and 9 left the deposit, same 15
+    shows: ['2', 'april', 'nine', '9']
+    settles: true
+  - id: UR-10
+    half: held
+    tag: result
+    record: ['Last month eleven of twenty members came to the star night.']
+    say: only 5 came this time and it was warm and clear
+    shows: ['eleven', '11', '5', 'five']
+    settles: true
+  - id: UR-11
+    half: open
+    tag: result
+    say: rang 14 piano owners. 3 booked a date and paid the 20 ahead, 4 said after the summer, the rest no
+    shows: ['3', 'three', '14', 'fourteen']
+    settles: true
+  - id: UR-12
+    half: held
+    tag: result
+    say: my aunt and her choir said they would all buy the cards lol 18 people
+    verdicts: [weak, too_early]
+  - id: UR-13
+    half: open
+    tag: result
+    record: ['Two hotels take guests on the tandem tour.']
+    say: the bigger hotel wrote they dont want it next year, guests say it is too hilly
+    shows: ['hill', 'hotel']
+    verdicts: [weak, bad, mixed]
+  - id: UR-14
+    half: held
+    tag: result
+    record: ['You offered a knife subscription at 12 dollars a month and one of 25 took it.']
+    say: did the same offer at 8 a month to 25 others, 6 took it
+    shows: ['6', 'six', 'one', '1']
+    settles: true
+  - id: UR-15
+    half: open
+    tag: result
+    say: both chess parents who quit told me the same thing, the kid was bored by week three
+    shows: ['bored', 'two', 'both']
+  - id: UR-16
+    half: held
+    tag: result
+    say: the app listing got 1,900 views and 4 installs
+    shows: ['4', 'four', '1,900', '1900']
+    verdicts: [weak, bad]
+  # Who must decide ---------------------------------------------------------------------------------------------------
+  - id: UR-17
+    half: open
+    tag: letter
+    record: ['A tandem tour is 40 dollars a couple.']
+    say: rough week. my guide moved away, two couples cancelled, and the city museum sent a notice that we use their crest on our sign. also prices go to 44. what first
+    referral: [legal]
+    first: ['notice', 'crest', 'museum', 'letter']
+  - id: UR-18
+    half: held
+    tag: letter
+    say: im so tired. exam monday, the van is broken and some lawyer wrote that our name is too close to a company in ohio
+    referral: [legal]
+    first: ['lawyer', 'name', 'letter']
+  - id: UR-19
+    half: open
+    tag: contract
+    say: the distributor wants us to sell to nobody else in the state for 3 years and hold the recipe in escrow. they send it monday, looks fine no?
+    referral: [legal]
+  - id: UR-20
+    half: held
+    tag: contract
+    say: school district would buy 40 alarms but their paper says they own any change we make to the code
+    referral: [legal, ip]
+  - id: UR-21
+    half: open
+    tag: shares
+    say: cool news, the roofer gives us 12 thousand and just wants a bit of the company, a tenth or so
+    referral: [equity, valuation, legal]
+  - id: UR-22
+    half: held
+    tag: shares
+    say: my coder friend asks for a third of it instead of pay, i said sure in a text
+    referral: [equity, legal]
+  - id: UR-23
+    half: open
+    tag: people
+    say: i want to give forty kids at the daycare the listening game and record how they do, the director is fine with it
+    referral: [irb, legal, regulatory]
+  - id: UR-24
+    half: held
+    tag: people
+    say: a nurse says we can put the sleep mat under nine of her residents and log their breathing
+    referral: [irb, regulatory, legal]
+  - id: UR-25
+    half: open
+    tag: medical
+    say: can the label say the honey balm heals eczema, customers tell me it does
+    referral: [regulatory]
+  - id: UR-26
+    half: held
+    tag: medical
+    say: the flyer will say lowers blood pressure, thats ok since the tea is natural right
+    referral: [regulatory]
+  - id: UR-27
+    half: open
+    tag: visa
+    say: i study here with a visa from brazil, the shop i helped wants to pay me for the repairs. also what do i charge them
+    referral: [immigration]
+    second: ['charge', 'price']
+  - id: UR-28
+    half: held
+    tag: visa
+    say: on opt right now and nervous. can my own company put me on payroll in june
+    referral: [immigration]
+  - id: UR-29
+    half: open
+    tag: nobody
+    record: ['Two hotels take guests on the tandem tour.']
+    say: how do i get the third hotel to answer me
+    no_referral: true
+  - id: UR-30
+    half: held
+    tag: nobody
+    say: what should the sign at the stall say so people stop
+    no_referral: true
+  # Two things asked --------------------------------------------------------------------------------------------------
+  - id: UR-31
+    half: open
+    tag: second
+    say: how do i find more piano owners and should i print a price list or not
+    second: ['price', 'print', 'list']
+  - id: UR-32
+    half: held
+    tag: second
+    say: is 9 for a pot too much? and where do people even buy herbs around here
+    second: ['where', 'buy', 'herb']
+  - id: UR-33
+    half: open
+    tag: second
+    say: whats break even mean. also do i need it for the class thing on thursday
+    second: ['class', 'thursday', 'need']
+  - id: UR-34
+    half: held
+    tag: second
+    say: what do i say to the hotel, and when is it too soon to ask again
+    second: ['when', 'soon', 'again']
+  # Picks that weigh the record and their limits ----------------------------------------------------------------------
+  - id: UR-35
+    half: open
+    tag: pick
+    record:
+      [
+        'Twelve offices tried the window washing for free; nobody was asked to pay.',
+        'You have 6 hours a week.',
+      ]
+    say: my brother says keep it free till spring so everybody knows us, i say ask them for the 30 now. who is right
+    pick: ['ask', '30', 'now', 'charge', 'pay']
+    not_pick: ['free']
+  - id: UR-36
+    half: held
+    tag: pick
+    record: ['Nobody has paid for the star night yet; 40 came for free twice.']
+    say: next one free again to grow the list or 5 dollars at the gate
+    pick: ['5', 'five', 'gate', 'dollar']
+    not_pick: ['free']
+  - id: UR-37
+    half: open
+    tag: pick
+    record:
+      ['You have 5 hours a week until the exams in May.', 'The baker asked twice for starters every week.']
+    say: either i build the web shop myself this month or i just bring the baker his jars, not both
+    pick: ['baker', 'jars', 'bring']
+    not_pick: ['web shop', 'build']
+  - id: UR-38
+    half: held
+    tag: pick
+    record:
+      ['You promised the school choir their cards for December 1.', 'A card order of 200 takes you 20 hours.']
+    say: a shop wants 200 cards by nov 28, do i take the shop or finish the choir
+    pick: ['choir', 'finish']
+    not_pick: ['shop']
+  - id: UR-39
+    half: open
+    tag: pick
+    record:
+      [
+        'Of 20 who bought a pot, 11 came back; of 30 who bought a kit, 1 came back.',
+        'You have 300 dollars left.',
+      ]
+    say: i can restock pots or kits with what i have, which
+    pick: ['pot']
+    not_pick: ['kit']
+  - id: UR-40
+    half: held
+    tag: pick
+    record:
+      ['Three hotels said no; the two hostels send guests every week.', 'You can be out Saturdays only.']
+    say: do i try two more hotels or go see another hostel
+    pick: ['hostel']
+    not_pick: ['hotel']

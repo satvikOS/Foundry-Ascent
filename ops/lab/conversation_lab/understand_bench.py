@@ -32,6 +32,14 @@ from conversation_lab.client.plan import in_groups
 from conversation_lab.client.scenarios import GROUPS, HELD_OUT, Expect, FounderTurn, Scenario, load
 from conversation_lab.client.turns import fact_named
 from conversation_lab.config import REPO, LabModels, UnderstandCaps, foundation_model_id
+from conversation_lab.understand_own import (
+    OWN_GROUPS,
+    OWN_MEASURES,
+    OwnCase,
+    load_own,
+    own_case_json,
+    own_grade,
+)
 
 SCRIPT = "src/scripts/lab-understand.ts"
 #: The script's output under the folder given as ``--out`` (it writes ``<out>/private/understand-bench.json``).
@@ -369,7 +377,7 @@ def part_result(rows: Sequence[Mapping[str, Any]], part: str) -> dict[str, Any]:
     return {
         "calls": len(calls),
         "skipped": len(all_calls) - len(calls),
-        "again": sum(1 for c in calls if c.get("again") is True),
+        "again": sum(1 for c in calls if c.get("again")),
         "ok": sum(1 for c in calls if c.get("code") == "ok"),
         "failures": _codes(c.get("code") for c in calls if c.get("code") != "ok"),
         "ms": {"p50": _percentile(ms, 50), "p95": _percentile(ms, 95)},
@@ -482,6 +490,28 @@ def public_result(
 # Running -----------------------------------------------------------------------------------------------------
 
 
+def own_result(rows: Sequence[Mapping[str, Any]], own: Mapping[str, OwnCase]) -> dict[str, Any]:
+    """One candidate's numbers over the suite's own cases, all of them and by shape of sum."""
+
+    def counted(field: str) -> dict[str, dict[str, int]]:
+        graded: dict[str, list[bool]] = defaultdict(list)
+        for r in rows:
+            for name, ok in own_grade(own[r["caseId"]], r.get(field)).items():
+                graded[name].append(ok)
+        return {m: {"n": len(graded[m]), "right": sum(graded[m])} for m in OWN_MEASURES if graded[m]}
+
+    tags: dict[str, list[bool]] = defaultdict(list)
+    for r in rows:
+        case = own[r["caseId"]]
+        tags[case.tag].append(all(own_grade(case, r.get("understanding")).values()))
+    return {
+        "cases": len(rows),
+        "measures": counted("understanding"),
+        "in_time": counted("inTime"),
+        "tags": {t: {"n": len(v), "right": sum(v)} for t, v in sorted(tags.items())},
+    }
+
+
 def understand_command(
     *, pnpm: str, budget_usd: float, cases: Path, out: Path, model: str, caps: UnderstandCaps | None = None
 ) -> list[str]:
@@ -525,18 +555,21 @@ def run_understand(
     every = load(day).scenarios
     # Every client group and the held-out one; the unseen one only where it is named, by group or by scenario.
     scenarios = [s for s in every if (s.id in set(scenario_ids) if scenario_ids else True)]
-    scenarios = in_groups(scenarios, groups, named=True)
+    client = tuple(g for g in groups if g not in OWN_GROUPS)
+    scenarios = [] if groups and not client else in_groups(scenarios, client, named=True)
     if not groups and not scenario_ids:
         scenarios = [s for s in scenarios if s.group not in UNSEEN]
     available = cases_of(scenarios)
     names = arms(lab, model)
-    cases = chosen_cases(available, affordable(lab, names, budget_usd))
+    own = own_cases(groups, scenario_ids)
+    cases = chosen_cases(available, max(0, affordable(lab, names, budget_usd) - len(own)))
     private = out / "private"
     logs = private / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     path = private / CASES_FILE
-    path.write_text(json.dumps({"version": 1, "cases": [case_json(c, day) for c in cases]}), encoding="utf-8")
-    if not cases:
+    told = [*(own_case_json(c, day) for c in own), *(case_json(c, day) for c in cases)]
+    path.write_text(json.dumps({"version": 1, "cases": told}), encoding="utf-8")
+    if not told:
         return {"script_exit": 0, "report": False, "cases_available": 0}, 2
     cmd = understand_command(pnpm=pnpm, budget_usd=budget_usd, cases=path, out=out, model=model, caps=caps)
     try:
@@ -551,6 +584,15 @@ def run_understand(
     doc = json.loads(raw.read_text(encoding="utf-8"))
     rows = [r for r in doc.get("rows") or [] if isinstance(r, dict)]
     by_id = {c.id: c for c in cases}
+    # The held-back half is counted and kept nowhere.
+    held = {c.case_id for c in own if c.held}
+    path.write_text(
+        json.dumps({"version": 1, "cases": [c for c in told if c["id"] not in held]}), encoding="utf-8"
+    )
+    raw.write_text(
+        json.dumps({**doc, "rows": [r for r in rows if r.get("caseId") not in held]}), encoding="utf-8"
+    )
+    open_own = {c.case_id: c for c in own if not c.held}
     (private / GRADES_FILE).write_text(
         json.dumps(
             [
@@ -564,17 +606,50 @@ def run_understand(
                 }
                 for r in rows
                 if r.get("caseId") in by_id
+            ]
+            + [
+                {
+                    "arm": r.get("arm"),
+                    "case": r["caseId"],
+                    "code": r.get("code"),
+                    "grades": own_grade(open_own[r["caseId"]], r.get("understanding")),
+                }
+                for r in rows
+                if r.get("caseId") in open_own
             ],
             indent=1,
         ),
         encoding="utf-8",
     )
-    return (
-        public_result(
-            doc.get("report") or {}, rows, cases, exit_code=code, available=len(available), known=names
-        ),
-        code,
+    result = public_result(
+        doc.get("report") or {}, rows, cases, exit_code=code, available=len(available), known=names
     )
+    result["own"] = own_arms(rows, own, names)
+    return result, code
+
+
+def own_cases(groups: Sequence[str], scenario_ids: Sequence[str]) -> list[OwnCase]:
+    """The suite's own cases a run reads: both halves, or those that are named by group or id."""
+    every = load_own()
+    if scenario_ids:
+        return [c for c in every if c.id in set(scenario_ids)]
+    return [c for c in every if not groups or c.group in groups]
+
+
+def own_arms(
+    rows: Sequence[Mapping[str, Any]], own: Sequence[OwnCase], names: Sequence[str]
+) -> list[dict[str, Any]]:
+    by_id = {c.case_id: c for c in own}
+    out = []
+    for arm in names:
+        mine = [r for r in rows if r.get("arm") == arm and r.get("caseId") in by_id]
+        halves = {
+            "open": [r for r in mine if not by_id[r["caseId"]].held],
+            "held": [r for r in mine if by_id[r["caseId"]].held],
+        }
+        if mine:
+            out.append({"arm": arm, **{k: own_result(found, by_id) for k, found in halves.items() if found}})
+    return out
 
 
 # Report ------------------------------------------------------------------------------------------------------
@@ -666,6 +741,38 @@ def tables(result: Mapping[str, Any]) -> list[str]:
             f"{t['input']} ({t['cached']}) / {t['output']} |"
         )
     out.append("")
+    out += own_tables(result.get("own") or [])
+    return out
+
+
+def own_tables(own: Sequence[Mapping[str, Any]]) -> list[str]:
+    """The suite's own cases, each half by measure and by shape."""
+    out: list[str] = []
+    for half, title in (("open", "Own cases, the open half"), ("held", "Own cases, the held-back half")):
+        found = [a for a in own if half in a]
+        if not found:
+            continue
+        out += [
+            f"**{title}** ({found[0][half]['cases']} cases; in time at the caps after the slash)",
+            "",
+            "| Candidate | " + " | ".join(OWN_MEASURES) + " |",
+            "| --- |" + " --- |" * len(OWN_MEASURES),
+        ]
+        for a in found:
+            r = a[half]
+            cells = [
+                f"{_rate(r['measures'].get(m))}{' / ' + _rate(r['in_time'].get(m)) if r['measures'].get(m) else ''}"
+                for m in OWN_MEASURES
+            ]
+            out.append(f"| {a['arm']} | {' | '.join(cells)} |")
+        out += [
+            "",
+            *(
+                f"{a['arm']}: " + ", ".join(f"{t} {_rate(n)}" for t, n in a[half]["tags"].items())
+                for a in found
+            ),
+            "",
+        ]
     return out
 
 

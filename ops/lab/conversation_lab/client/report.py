@@ -92,9 +92,11 @@ def gates(
     *,
     timed: bool = True,
     calibration: Mapping[str, Any] | None = None,
+    turns_usd: float | None = None,
 ) -> list[dict[str, Any]]:
     """The release's acceptance, one line each. ``timed``: whether the run's latency and cost are evidence (a mock
-    model's are not). ``calibration``: how the judge agreed with the hand-graded replies."""
+    model's are not). ``calibration``: how the judge agreed with the hand-graded replies. ``turns_usd``: what the app's
+    ledger says the turns cost, every call in them (a turn's own usage is its reply's only)."""
     rates = grader_rates(results)
     turns = all_turns(results)
     typed = [t for t in turns if t.channel == "chat" and t.kind != "error"] if timed else []
@@ -185,11 +187,10 @@ def gates(
             whole["p50"] <= TURN_P50_SECONDS if whole else None,
         )
     )
-    costs = [t.cost_usd for t in typed if t.cost_usd]
-    average = sum(costs) / len(costs) if costs else None
+    average = turns_usd / answered if timed and turns_usd is not None and answered else None
     out.append(
         _gate(
-            "cost per typed turn (USD)",
+            "cost per turn, every call in it (USD)",
             None if average is None else round(average, 5),
             None if average is None else average <= TURN_COST_USD,
         )
@@ -262,6 +263,7 @@ def aggregate(results: Sequence[ScenarioResult], meta: Mapping[str, Any]) -> dic
             summary,
             timed=meta.get("evidence") == "live",
             calibration=meta.get("calibration"),
+            turns_usd=meta.get("turns_usd"),
         ),
         "results": [r.public() for r in results],
     }
@@ -331,7 +333,7 @@ def render(summary: Mapping[str, Any]) -> str:
             out.append(
                 f"| {qid} | {q['replies']} | {_cell(q['weighted'])} | {', '.join(q['failed']) or '-'} |"
             )
-    out += ["", "| Channel | Turns | Errors | Whole turn s | First token ms | USD a turn |"]
+    out += ["", "| Channel | Turns | Errors | Whole turn s | First token ms | USD a reply |"]
     out.append("| --- | --- | --- | --- | --- | --- |")
     for name, c in summary["channels"].items():
         out.append(

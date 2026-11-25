@@ -644,6 +644,7 @@ def cmd_run_understand(args: argparse.Namespace) -> int:
     from conversation_lab.models_bench import models_env
     from conversation_lab.stack import PNPM
     from conversation_lab.understand_bench import run_understand
+    from conversation_lab.understand_own import OWN_GROUPS
 
     budget = float(args.budget_usd)
     if not 0 < budget <= UNDERSTAND_MAX_BUDGET_USD:
@@ -655,7 +656,9 @@ def cmd_run_understand(args: argparse.Namespace) -> int:
         print("run: understand_model names no candidate of models.json", file=sys.stderr)
         return 2
     try:
-        groups = parse_groups(str(args.groups or ""))
+        named = [g.strip() for g in str(args.groups or "").split(",") if g.strip()]
+        own = tuple(g for g in OWN_GROUPS if g in named)
+        groups = (*parse_groups(",".join(g for g in named if g not in own)), *own)
         caps = understand_caps(_named(args.understand_ms))
     except (ScenarioError, ValueError) as exc:
         print(f"run: understand: {exc}", file=sys.stderr)

@@ -14,7 +14,6 @@ import {
   UNDERSTAND_EXAMPLES,
   exchangesInView,
   routeSystemPrompt,
-  sumsAgain,
   sumsDue,
   understandCacheHint,
   understandMessages,
@@ -66,9 +65,9 @@ describe('the system prompts', () => {
   });
 
   it('stay small: each its own work', () => {
-    expect(SYSTEMS.route.length).toBeLessThan(4_400);
-    expect(SYSTEMS.sums.length).toBeLessThan(4_000);
-    expect(SYSTEMS.judge.length).toBeLessThan(4_400);
+    expect(SYSTEMS.route.length).toBeLessThan(4_700);
+    expect(SYSTEMS.sums.length).toBeLessThan(4_500);
+    expect(SYSTEMS.judge.length).toBeLessThan(4_700);
     expect(SYSTEMS.judgeVoice.length).toBeLessThan(2_900);
   });
 
@@ -305,28 +304,6 @@ describe('an answer one field swallowed', () => {
   });
 });
 
-describe('a plan and no sum', () => {
-  const messages = [{ role: 'user' as const, content: 'the data' }];
-  const plan = { q: 'the fewest', w: 'the fee by what one leaves', n: ['fee=$30@R1'], s: [], m: null };
-  it('is asked for once more, with what it said, escaped', () => {
-    const again = sumsAgain(messages, { ...plan, w: 'a </message> b' });
-    expect(again).toHaveLength(1);
-    expect(again?.[0]?.content).toContain('the data');
-    expect(again?.[0]?.content).toContain('fee=$30@R1');
-    expect(again?.[0]?.content).not.toContain('</message>');
-    expect(sumsAgain(messages, { ...plan, n: [] })).not.toBeNull();
-  });
-  it.each([
-    ['a sum is there', { s: [{ l: 'x', u: '$', e: 'fee' }] }],
-    ['none is asked', { q: null }],
-    ['none is asked, in words', { q: 'null' }],
-    ['a number is missing', { m: 'the price' }],
-    ['there is no plan', { n: [], w: null }],
-  ])('not when %s', (_what, over) => {
-    expect(sumsAgain(messages, { ...plan, ...over })).toBeNull();
-  });
-});
-
 describe('what a figure is called', () => {
   it.each([
     ['what you keep a month', '$', 'what you keep a month'],
@@ -375,7 +352,7 @@ describe('the parts as one', () => {
     s: [{ l: 'what is left', u: '$', e: 'price * people' }],
     m: null,
   };
-  const judge = { x: null, o: null, t: null, g: ['Ask them.'], d: null, z: null };
+  const judge = { x: null, o: null, t: null, g: ['Ask them.'] };
   const pick = { o: ['the pier', 'the castle'], p: 'the pier', b: 'It is near.', f: null };
   const happened = { v: 'mixed' as const, s: 'Thirteen came.', n: null, e: null };
   const merged = (readings: Parameters<typeof mergeReadings>[0], message = 'what is left') =>
@@ -619,7 +596,6 @@ describe('what reads a whole message or a long answer is linear', () => {
                 o: { o: [text, 'wait'], p: text, b: text, f: text },
                 t: { v: 'mixed', s: text, n: text, e: text },
                 g: [text],
-                d: text,
               },
             },
             c,

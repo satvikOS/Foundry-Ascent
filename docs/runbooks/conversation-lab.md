@@ -527,6 +527,9 @@ gh workflow run ops-conversation-lab.yml -f suite=understand -f understand_model
   told in earlier ones (as dated facts) and the scenario's record; no reply exists, so follow-ups that lean on the mentor's words are
   harder here than in a turn. `groups` and `scenario_ids` narrow them (empty: all, the first held-out group too; `heldoutb`, which
   nobody has looked at, only where it is named).
+- **Own cases.** `ops/lab/scenarios/understand/*.yaml` holds 90 cases invented for the suite (50 of sums, 40 of results, referrals, second
+  questions and picks), in two halves of the same shapes. They are read first; `groups=own` or `ownheld` names a half. The held-back
+  half is counted and kept nowhere: its messages, readings and grades are taken out of the sealed files, and its totals alone are public.
 - **What fits the budget.** Cases are chosen, the same ones on every run of one budget, so that all candidates fit: the rarest
   expectations first, the held-out before the others (about 130 cases for the seven candidates at USD 2; one model alone reads them
   all). Each case is read by every candidate before the next one begins, and is begun only when its worst case fits, so a run its

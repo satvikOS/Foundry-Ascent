@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from conversation_lab import cli, config
+from conversation_lab import cli, config, understand_own
 from conversation_lab import understand_bench as bench
 from conversation_lab.client.scenarios import CLIENT_DIR, HELD_OUT, Expect, FounderTurn, load
 
@@ -415,6 +415,104 @@ def test_the_caps_reach_the_script_and_the_api_process(tmp_path: Path) -> None:
             config.understand_caps(wrong)
     with pytest.raises(ValueError, match="understand_ms"):
         config.understand_env("off", "", LAB, caps)
+
+
+def test_own_cases_are_the_suites_own_in_two_halves() -> None:
+    own = understand_own.load_own()
+    sums = [c for c in own if c.id.startswith("US-")]
+    assert len(sums) >= 48
+    assert len(own) - len(sums) >= 38
+    for some in (sums, own):
+        assert abs(sum(c.held for c in some) - sum(not c.held for c in some)) <= 4
+    for c in own:
+        assert json.dumps(understand_own.own_case_json(c, DAY))
+        assert c.expect
+    # Every shape of sum stands in both halves, so that the held one tells of the same work.
+    for half in (True, False):
+        assert {"commission", "break-even", "price", "same-but", "total", "hours", "runway", "costs"} <= {
+            c.tag for c in sums if c.held is half
+        }
+
+
+def test_own_cases_are_in_no_scenarios_words() -> None:
+    told = " ".join(
+        " ".join(re.findall(r"[a-z0-9']+", text.lower()))
+        for c in understand_own.load_own()
+        for text in (c.say, *c.record, *(x for pair in c.talk for x in pair))
+    )
+    for path in sorted(CLIENT_DIR.glob("*.yaml")):
+        for s in yaml.safe_load(path.read_text(encoding="utf-8"))["scenarios"]:
+            for turn in (t for session in s["sessions"] for t in session["turns"]):
+                words = re.findall(r"[a-z0-9']+", turn["say"].lower())
+                shared = sum(1 for i in range(len(words) - 5) if " ".join(words[i : i + 6]) in told)
+                assert shared == 0, s["id"]
+
+
+def test_own_grades() -> None:
+    def own(**expect: object) -> understand_own.OwnCase:
+        return understand_own.OwnCase("US-99", False, "x", "say", expect=expect)
+
+    grade = understand_own.own_grade
+    asked = {"sums": [{"value": 12.0, "asked": True}]}
+    assert grade(own(number=("12", "12.5")), asked) == {"number": True}
+    assert grade(own(number=("13",)), asked) == {"number": False}
+    assert grade(own(number=("12",)), {"sums": [{"value": 12.0, "asked": False}]}) == {"number": False}
+    assert grade(own(none=True), asked) == {"no_figure": False}
+    assert grade(own(missing=True), {"sums": [], "missing": "what one costs"}) == {"missing": True}
+    assert grade(own(no_result=True), {"result": None, "kind": "feelings"}) == {"no_result": True}
+    assert grade(own(no_result=True), None) == {"no_result": False}
+    shown = {"result": {"verdict": "weak", "shows": "Two of nine paid.", "settles": "Ask ten."}}
+    assert grade(own(shows=("nine",), verdicts=("weak",), settles=True), shown) == {
+        "shows": True,
+        "settles": False,
+        "verdict": True,
+    }
+    assert understand_own.testable("Ask 10 to pay: 4 or more, keep it; fewer, change it.")
+    assert understand_own.testable("If five of ten come back, go on; if fewer, stop.")
+    assert not understand_own.testable("Ask 10 of them to pay and count who does.")
+    assert grade(own(referral=("legal",)), {"referral": "equity"}) == {"referral": False}
+    assert grade(own(no_referral=True), {"referral": None}) == {"no_referral": True}
+    assert grade(own(second=("price",)), {"ask": "x", "secondAsk": "what to price it"}) == {"second": True}
+    assert grade(own(second=("price",)), {"ask": "the price", "secondAsk": None}) == {"second": False}
+    pick = {"choice": {"pick": "the five dollars"}}
+    assert grade(own(pick=("five",), not_pick=("free",)), pick) == {"pick": True}
+    assert grade(own(first=("letter",)), {"points": ["Answer the letter first."]}) == {"first": True}
+    assert grade(own(kind=("feelings",)), {"kind": "question", "also": ["feelings"]}) == {"kind": True}
+
+
+def test_the_held_back_half_is_counted_and_kept_nowhere(tmp_path: Path) -> None:
+    held = {c.case_id for c in understand_own.load_own() if c.held}
+
+    def runner(cmd: list[str], **_: object) -> subprocess.CompletedProcess[bytes]:
+        out = Path(cmd[cmd.index("--out") + 1])
+        cases = json.loads(Path(cmd[cmd.index("--cases") + 1]).read_text(encoding="utf-8"))["cases"]
+        rows = [row(a, c["id"]) for a in bench.arms(LAB, NOVA) for c in cases]
+        (out / "private" / bench.REPORT_FILE).write_text(
+            json.dumps({"report": {}, "rows": rows}), encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(cmd, 0, b"{}", b"")
+
+    result, code = bench.run_understand(
+        tmp_path,
+        env={},
+        budget_usd=2.0,
+        pnpm="pnpm",
+        lab=LAB,
+        groups=("own", "ownheld"),
+        model=NOVA,
+        today=DAY,
+        runner=runner,
+    )
+    assert code == 0
+    assert held
+    assert result["own"][0]["held"]["cases"] == len(held)
+    kept = "".join(p.read_text(encoding="utf-8") for p in (tmp_path / "private").glob("*.json"))
+    assert not [i for i in held if i in kept]
+    assert "Own cases, the held-back half" in "\n".join(bench.tables(result))
+    # One half alone, and none where client groups alone are named.
+    assert {c.group for c in bench.own_cases(("own",), ())} == {"own"}
+    assert bench.own_cases(("numbers",), ()) == []
+    assert [c.id for c in bench.own_cases((), ("US-01",))] == ["US-01"]
 
 
 def test_a_script_that_wrote_nothing_is_no_result(tmp_path: Path) -> None:

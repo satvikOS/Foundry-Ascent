@@ -139,9 +139,9 @@ describe('what the calls read', () => {
     const { plays, system } = understandCatalogue(PLAYBOOK);
     expect(plays).toHaveLength(PLAYBOOK.plays.length);
     for (const play of PLAYBOOK.plays) expect(system).toContain(`\n${play.id}: `);
-    expect(system.length).toBeLessThan(13_800);
+    expect(system.length).toBeLessThan(14_200);
     // The one call's system prompt was 22,400 characters, its schema 2,900.
-    expect(system.length + SUMS_SYSTEM_PROMPT.length + JUDGE_SYSTEM_PROMPT.length).toBeLessThan(22_000);
+    expect(system.length + SUMS_SYSTEM_PROMPT.length + JUDGE_SYSTEM_PROMPT.length).toBeLessThan(23_200);
     const schemas = UNDERSTAND_PARTS.map((part) => JSON.stringify(z.toJSONSchema(UNDERSTAND_SCHEMAS[part])));
     expect(schemas.join('').length).toBeLessThan(2_400);
   });

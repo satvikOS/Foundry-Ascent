@@ -1,0 +1,340 @@
+# Figures founders ask for, in their own spelling and at their own speed: the understand suite's own cases
+# (conversation_lab/understand_own.py). Every venture is invented here; nothing is taken from a client scenario. `half: held`
+# is never looked at while the reading is being changed: only its totals are.
+#
+# record: lines of the record. talk: [founder, reply] pairs before the message. number: any of these is right. none: true:
+# the message asks for no figure. tag: the shape of the sum.
+cases:
+  # Commission, cut, skim -------------------------------------------------------------------------------------------
+  - id: US-01
+    half: open
+    tag: commission
+    record: ['A parrot sitter books through the page at 45 dollars a stay.']
+    say: our cut is 10% of each stay, how many stays before we made 900
+    number: ['200']
+  - id: US-02
+    half: held
+    tag: commission
+    record: ['Window washers on the board charge about 60 dollars a house.']
+    say: we take fifteen percent from the washer. what do we make on forty houses
+    number: ['360']
+  - id: US-03
+    half: open
+    tag: commission-from-them
+    record: ['A letterpress card sells for 8 dollars and the paper is 1.50.']
+    say: the gallery shop keeps 40% of the price. whats mine on one card after paper
+    number: ['3.3', '3.30']
+  - id: US-04
+    half: held
+    tag: commission-from-them
+    record: ['A clock repair is 120 dollars; parts are about 20.']
+    say: if the mall guy takes a quarter of the 120 and i still pay parts, whats left over for one clock
+    number: ['70']
+  - id: US-05
+    half: open
+    tag: commission
+    record: ['Eleven chess coaches teach about 30 hours a week between them at 25 dollars an hour.']
+    say: say we charge the coaches 12 percent. what would land with us in a week
+    number: ['90']
+  # Break-even and earning back --------------------------------------------------------------------------------------
+  - id: US-06
+    half: open
+    tag: break-even
+    record: ['A goat yoga class is 18 dollars a head; the farm wants 4 a head and 70 for the field.']
+    say: whats the min number of ppl so the field isnt coming out of my own pocket
+    number: ['5']
+  - id: US-07
+    half: held
+    tag: break-even
+    record: ['A herb pot sells for 9 dollars, the pot is 2 and the soil and seeds 1.']
+    say: market stall wants 54 for the morning. at how many pots am i even
+    number: ['9']
+  - id: US-08
+    half: open
+    tag: break-even
+    record: ['Knife sharpening is 6 dollars a knife and a stone lasts about 100 knives and costs 80.']
+    say: the new grinder is 312 and with it the stone cost goes away. how many knives till its paid
+    number: ['52']
+  - id: US-09
+    half: held
+    tag: earn-back
+    record: ['A roof photo job pays 85 dollars, gas is 10 and the editing app is 5 a job.']
+    say: drone broke, new one is 910. how many jobs for get it back
+    number: ['13']
+  - id: US-10
+    half: open
+    tag: target
+    record: ['A tandem tour is 40 dollars a couple and the guide gets 16 of it.']
+    say: I want clear 600 a month after the 120 for storage, how many couples is that
+    number: ['30']
+  - id: US-11
+    half: held
+    tag: target
+    record: ['Sourdough starters go for 12 dollars, jar and flour are 4.']
+    say: rent on the kitchen is 160 a month and id like to take home 400 on top. how many jars a month
+    number: ['70']
+  # Solving for a price ----------------------------------------------------------------------------------------------
+  - id: US-12
+    half: open
+    tag: price
+    record: ['A moth trap costs 14 dollars to build.']
+    say: what should the sticker say if i wanna keep 30% of it
+    number: ['20']
+  - id: US-13
+    half: held
+    tag: price
+    record: ['A puppet show costs 90 dollars in driver and stage hand.']
+    say: the booker wants one number. if half of what they pay has to stay with me what do i ask
+    number: ['180']
+  - id: US-14
+    half: open
+    tag: price
+    record: ['A mushroom box costs 11 dollars all in.']
+    say: i want fifty percent on top of what it cost me, what price is that
+    number: ['16.5', '16.50']
+  - id: US-15
+    half: held
+    tag: price
+    record: ['The radio repair bench costs 240 dollars a month and the student does 30 radios a month.']
+    say: parts are like 7 a radio. whats the lowest i can charge and not lose on it
+    number: ['15']
+  # The same sum with one number changed -----------------------------------------------------------------------------
+  - id: US-16
+    half: open
+    tag: same-but
+    record: ['A seaweed snack bag sells for 5 dollars; seaweed is 1.20 and the bag 30 cents.']
+    talk:
+      - ['what do i keep on 80 bags', 'On 80 bags you keep $280: 80 × ($5 − $1.20 − $0.30).']
+    say: ok and at 4.50 instead
+    number: ['240']
+  - id: US-17
+    half: held
+    tag: same-but
+    record: ['A telescope night is 22 dollars a ticket and the hill costs 150 a night.']
+    talk:
+      - ['what stays from a night of 20', 'A night of 20 leaves $290: 20 × $22 − $150.']
+    say: and if only twelve show up bc of clouds
+    number: ['114']
+  - id: US-18
+    half: open
+    tag: same-but
+    record: ['A beehive rental is 55 dollars a season and the keeper visit costs 15.']
+    talk:
+      - ['what do 12 hives leave me', 'Twelve hives leave you $480: 12 × ($55 − $15).']
+    say: same thing but we'd do two visits each not one
+    number: ['300']
+  - id: US-19
+    half: held
+    tag: same-but
+    record: ['Ferry snacks: a tray sells for 7 dollars and costs 3.']
+    talk:
+      - [
+          'how many trays to cover the 200 for the cart',
+          'You need 50 trays to cover the $200: $200 ÷ ($7 − $3).',
+        ]
+    say: and if the cart goes up to 260?
+    number: ['65']
+  # Totals told across turns -----------------------------------------------------------------------------------------
+  - id: US-20
+    half: open
+    tag: total
+    talk:
+      - ['the sign was 48 and the two tables were 35 each', 'Noted.']
+      - ['oh and 22 for the permit copy', 'Noted.']
+    say: so what am i into this for so far
+    number: ['140']
+  - id: US-21
+    half: held
+    tag: total
+    talk:
+      - ['friday we did 14 lessons', 'Good to know.']
+      - ['saturday was 23', 'Good to know.']
+    record: ['A chess lesson is 9 dollars.']
+    say: sunday was 8. so all weekend what came in
+    number: ['405']
+  - id: US-22
+    half: open
+    tag: total
+    record: ['Tickets are 11 dollars; the hall takes 130 a show.']
+    talk:
+      - ['first show 31 ppl', 'Noted.']
+    say: second one was 24. after the hall for both whats the total
+    number: ['345']
+  # Share of a share, how often --------------------------------------------------------------------------------------
+  - id: US-23
+    half: open
+    tag: share-of-share
+    say: 400 ppl got the postcard, 15% came by the stand and a third of those bought. how many bought
+    number: ['20']
+  - id: US-24
+    half: held
+    tag: share-of-share
+    say: 250 scanned the code, 40 percent left a number, of those 20% picked up when i rang. how many did i actually talk to
+    number: ['20']
+  - id: US-25
+    half: open
+    tag: how-often
+    record: ['The frost alarm rang on 18 mornings and there was frost on 12 of them.']
+    say: how accurate is it realy, as a percent
+    number: ['66.7', '67']
+  - id: US-26
+    half: held
+    tag: how-often
+    record: ['Forty clocks were fixed; six came back within a month.']
+    say: what percent come back broken again
+    number: ['15']
+  - id: US-27
+    half: open
+    tag: change
+    record: ['Sharpening took 12 minutes a knife in June and takes 9 now.']
+    say: how much quicker did i get, percentage wise
+    number: ['25']
+  - id: US-28
+    half: held
+    tag: change
+    record: ['The letterpress order took 20 days last spring; this spring it took 14.']
+    say: by how much did we cut the wait in percent
+    number: ['30']
+  # Hours and rates --------------------------------------------------------------------------------------------------
+  - id: US-29
+    half: open
+    tag: hours
+    record: ['A piano move pays 150 dollars; the helper gets 18 an hour and the van is 30.']
+    say: it took us 3 hours both of us. whats left of the 150 for me
+    number: ['66']
+  - id: US-30
+    half: held
+    tag: hours
+    record: ['A clock takes about 2 hours and I get 120 dollars, parts are 20.']
+    say: so what do I make in one hour of sitting there
+    number: ['50']
+  - id: US-31
+    half: open
+    tag: hours
+    record: ['Six families pay 60 dollars a month for parrot care, and it takes 5 hours a week.']
+    say: what's that an hour if you work it out
+    number: ['16.62', '16.6', '17', '18']
+  - id: US-32
+    half: held
+    tag: hours
+    record: ['Fourteen gardens pay 25 dollars a month each; weeding all of them is 4 hours every week.']
+    say: um so per hour what do i like actually get from the gardens
+    number: ['20.19', '20.2', '20', '21.88', '21.9']
+  # Months of money left ---------------------------------------------------------------------------------------------
+  - id: US-33
+    half: open
+    tag: runway
+    say: we got 5,400 in the bank, rent and the freezer is 700 a month and about 250 comes in. how many months is that
+    number: ['12']
+  - id: US-34
+    half: held
+    tag: runway
+    record: ['The club account holds 2,100 dollars.']
+    say: hosting 60, insurance 110, a month. nothing comes in yet. when is it empty
+    number: ['12.4', '12', '12.35']
+  - id: US-35
+    half: open
+    tag: runway
+    record: ['Cash is 9,000 dollars.']
+    say: "we spend 350 every week, how long until we're out, in months"
+    number: ['5.9', '6', '5.93', '6.4', '6.43']
+  # Per week against per month ---------------------------------------------------------------------------------------
+  - id: US-36
+    half: open
+    tag: periods
+    record: ['The stall costs 45 dollars a week; about 60 herb pots sell a month at 4 dollars left on each.']
+    say: after the stall whats the month look like
+    number: ['45', '60']
+  - id: US-37
+    half: held
+    tag: periods
+    record: ['A van is 520 dollars a month. A move leaves 65 before the van.']
+    say: how many moves a week pays the van
+    number: ['2']
+  # Costs that are easy to forget ------------------------------------------------------------------------------------
+  - id: US-38
+    half: open
+    tag: costs
+    record:
+      [
+        'Nine offices pay 30 dollars a month; each gets three visits a month and the washer is paid 7 a visit.',
+      ]
+    say: what stays with us monthly
+    number: ['81']
+  - id: US-39
+    half: held
+    tag: costs
+    record:
+      [
+        'Twenty members pay 24 dollars a month. Each sends two letters a month and a stamp and envelope is 3 a letter.',
+      ]
+    say: how much of it is ours every month when the stamps are paid
+    number: ['360']
+  - id: US-40
+    half: open
+    tag: costs
+    record: ['A puppet kit sells for 34 dollars; wood is 9, paint 2 and the box 3.']
+    say: postage is 5 more. so what do i earn when one ships
+    number: ['15']
+  - id: US-41
+    half: held
+    tag: costs
+    record: ['Ferry tours: 28 dollars a seat, the captain gets 8 a seat and the pier 40 a trip.']
+    say: with 9 seats full, do i earn or do i lose and how much
+    number: ['140']
+  - id: US-42
+    half: open
+    tag: loss
+    record: ['A lamp shade sells for 20 dollars, cloth is 14 and the frame 9.']
+    say: am i actually making anything on one of these or
+    number: ['-3', '3']
+  - id: US-43
+    half: held
+    tag: loss
+    record: ['Star night: 12 tickets at 15 dollars, the bus is 210.']
+    say: did we make money that night yes or no and how much
+    number: ['-30', '30']
+  # What an offer says -----------------------------------------------------------------------------------------------
+  - id: US-44
+    half: open
+    tag: worth
+    say: my aunt wants 8% for 20k. dont tell me if its good just what does that say the whole thing is
+    number: ['250000', '250,000']
+  - id: US-45
+    half: held
+    tag: on-top
+    say: the prize is 46,000 total and the school adds 15 percent on top of what the project costs. whats left for the project
+    number: ['40000', '40,000']
+  - id: US-46
+    half: open
+    tag: missing
+    record: ['A parrot stay is 45 dollars.']
+    say: what do i keep on a stay once the sitter is paid
+    missing: true
+  - id: US-47
+    half: held
+    tag: missing
+    say: how many boxes do i have to sell to pay for the stall thing
+    missing: true
+  # Nothing asked ----------------------------------------------------------------------------------------------------
+  - id: US-48
+    half: open
+    tag: none
+    record: ['A herb pot sells for 9 dollars, the pot is 2 and the soil and seeds 1.']
+    say: the garden center said they'd put 20 pots by the till if i bring them friday
+    none: true
+  - id: US-49
+    half: held
+    tag: none
+    record: ['A tandem tour is 40 dollars a couple and the guide gets 16 of it.']
+    say: should i ask the hotel first or the bike shop, i have 4 hrs this week
+    none: true
+  - id: US-50
+    half: open
+    tag: none
+    record:
+      [
+        'Nine offices pay 30 dollars a month; each gets three visits a month and the washer is paid 7 a visit.',
+      ]
+    say: can you tell me again what we said about the visits
+    none: true

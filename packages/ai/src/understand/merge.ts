@@ -8,6 +8,7 @@ import type {
   SumsReading,
   UnderstandReadings,
 } from './schema.js';
+import { decidedBy, secondQuestion, tellsUpdate, verdictStands } from './told.js';
 import { UNDERSTOOD_KINDS, type SumUnit, type UnderstoodKind } from './types.js';
 
 /**
@@ -33,19 +34,6 @@ const QUESTION_PUT =
 /** They put options side by side. */
 const OPTIONS_PUT =
   /\b(?:or|vs|versus|which|either|between|one of|both|pick|choose|rather|instead|should (?:i|we)|shld (?:i|we))\b/iu;
-/** Something is offered as a sign: what it is worth has to be said. */
-const OFFERS_PROOF =
-  /\b(?:loves?|likes?|proof|proves?|validat\w+|traction|good sign|bad sign|interested)\b/iu;
-/** Told, not asked and not told to do. */
-const STATES = (message: string): boolean =>
-  !message.includes('?') &&
-  !/^\W*(?:please |just |ok(?:ay)? |so |and |now )*(?:tell|give|write|make|show|help|explain|draft|pick|choose|remind|change|list|say|let|can|could|what|how|why|which|who|should|do)\b/iu.test(
-    message,
-  );
-/** Something happened, and they tell it. */
-const TELLS =
-  /\b(?:said|says|told|asked|sold|bought|got|did|tried|had|lost|showed|paid|emailed|wrote|left|quit|offered|ran|met|talked|spoke|came|signed|refused|agreed|called|phoned|booked|returned|went|gave|sent|heard|launched|interviewed|happened|dropped|joined|cancel+ed|replied|answered|changed|stopped|started|tested|used|moved|won|failed)\b/iu;
-
 const asks = (
   figure: string | null,
   route: boolean,
@@ -61,7 +49,12 @@ const PRIVACY_PLAY = 'other-teams-privacy';
 /** The parts as one reading; null when what came says nothing that can stand alone. */
 export function mergeReadings(
   readings: UnderstandReadings,
-  shown: { readonly message: string; readonly keys: ReadonlySet<string> },
+  shown: {
+    readonly message: string;
+    readonly keys: ReadonlySet<string>;
+    /** What the founder said before, oldest first. */
+    readonly earlier?: readonly string[];
+  },
 ): RawUnderstanding | null {
   const route = readings.route ?? null;
   const sums = readings.sums ?? null;
@@ -73,26 +66,29 @@ export function mergeReadings(
   const missing = asked ? text(sums?.m) : null;
   const worked = sums === null ? [] : sums.s.map((s) => sumOf(s, asked));
   const choice = judge?.o != null && (kinds.includes('choice') || OPTIONS_PUT.test(message)) ? judge.o : null;
+  const pushed = kinds.includes('pushback');
   const result =
     judge?.t != null &&
-    (kinds.some((k) => k === 'result' || k === 'update' || k === 'pushback') ||
-      TELLS.test(message) ||
-      OFFERS_PROOF.test(message) ||
-      STATES(message))
+    (pushed ||
+      verdictStands(message, shown.earlier ?? [], kinds.includes('result') || kinds.includes('update')))
       ? judge.t
       : null;
   const found: UnderstoodKind[] = [
     ...(asked && (worked.length > 0 || missing !== null) ? (['sum'] as const) : []),
     ...(choice === null ? [] : (['choice'] as const)),
-    ...(result === null || kinds.includes('pushback') ? [] : (['result'] as const)),
+    ...(result === null || pushed ? [] : (['result'] as const)),
+    ...(tellsUpdate(message) ? (['update'] as const) : []),
     ...(route?.p?.trim().toLowerCase() === PRIVACY_PLAY ? (['privacy'] as const) : []),
   ];
   const kind = kinds[0] ?? (route === null ? found[0] : 'question');
   if (kind === undefined) return null;
   const also = [...found, ...kinds].filter((k, i, all) => k !== kind && all.indexOf(k) === i).slice(0, 2);
+  const ask = text(route?.a) ?? askOf(figure, asked, choice, route === null ? null : message);
+  const decides = decidedBy(message);
+  const read = route?.f ?? null;
   return {
-    ask: text(route?.a) ?? askOf(figure, asked, choice, route === null ? null : message),
-    second_ask: text(route?.b),
+    ask,
+    second_ask: text(route?.b) ?? (route === null ? null : secondQuestion(message, ask)),
     kind,
     also,
     record: route?.r ?? [],
@@ -108,13 +104,14 @@ export function mergeReadings(
       result === null
         ? null
         : { verdict: result.v, shows: result.s, does_not_show: text(result.n), settles: text(result.e) },
-    referral: route?.f ?? null,
+    // Named beside a feeling or a grant's rules, and wherever the words leave no doubt of it.
+    referral: read === null || read === 'wellbeing' || read === 'grants' ? (decides ?? read) : read,
     play: text(route?.p),
     step_play: text(route?.s),
     sure: route?.h === true ? 'high' : 'low',
     points: judge?.g ?? [],
-    first_action: text(judge?.d),
-    // Nothing asks for it: kept for what reads it (types.ts).
+    // Nothing asks for these: kept for what reads them (types.ts).
+    first_action: null,
     avoid: null,
   };
 }

@@ -18,6 +18,7 @@ import {
   type Period,
 } from './figures.js';
 import { lossLabel, phraseOf, withPeriod } from './labels.js';
+import { meant, turnedShare, type SumMend } from './meaning.js';
 import type { RawInput, RawSum, RawUnderstanding } from './schema.js';
 import { type RecordLine, type SumUnit, type UnderstoodSum } from './types.js';
 
@@ -38,6 +39,8 @@ export interface CheckedSums {
   /** An input nobody gave, as it is named, of a sum that was left out for it. */
   readonly invented: string | null;
   readonly drops: readonly SumDrop[];
+  /** What was put right where their words mean it the other way round (meaning.ts). */
+  readonly mends: readonly SumMend[];
   /** Inputs that were found where the model says they are (or in the message), and anywhere of theirs, of all it named. */
   readonly inputs: { readonly named: number; readonly found: number; readonly anywhere: number };
 }
@@ -56,10 +59,19 @@ const ADDS = [1, 100];
 const MAX_NODES = 80;
 const isStandard = (n: number): boolean => STANDARD.some((v) => sameNumber(v, n));
 
-interface Found extends Pick<Figure, 'time' | 'onTop' | 'counts'> {
+interface Found extends Pick<Figure, 'time' | 'onTop' | 'counts' | 'takes' | 'ofPrice'> {
   readonly value: number;
   /** `said`: an amount in a word ("half"). */
   readonly mark: FigureMark | 'unmarked' | 'said';
+}
+
+/** Who a share goes to and what it is of, where every place that holds it says the same. */
+function sharesOf(figures: readonly Figure[]): Pick<Figure, 'takes' | 'ofPrice'> {
+  const [takes, ...others] = [...new Set(figures.map((f) => f.takes))];
+  return {
+    ...(takes === undefined || others.length > 0 ? {} : { takes }),
+    ...(figures.every((f) => f.ofPrice === true) ? { ofPrice: true as const } : {}),
+  };
 }
 
 /**
@@ -83,6 +95,7 @@ export function foundIn(value: number, text: string): Found | null {
       ...(times.size === 1 && first?.time !== undefined ? { time: first.time } : {}),
       ...(exact.every((f) => f.onTop === true) ? { onTop: true as const } : {}),
       ...(exact.some((f) => f.counts === true) ? { counts: true as const } : {}),
+      ...sharesOf(exact),
     };
   }
   if (wanted > 0 && wanted < 1) {
@@ -92,10 +105,12 @@ export function foundIn(value: number, text: string): Found | null {
         value: Math.sign(value) * percent.value,
         mark: '%',
         ...(percent.onTop === true ? { onTop: true as const } : {}),
+        ...sharesOf([percent]),
       };
   }
   const said = saidAmounts(text);
-  if (said.some((s) => sameNumber(s, wanted))) return { value, mark: 'said' };
+  const word = said.find((s) => sameNumber(s, wanted) || (s < 1 && Math.abs(s - wanted) < 0.004));
+  if (word !== undefined) return { value: Math.sign(value) * word, mark: 'said' };
   return said.some((s) => s > 0 && s < 1 && sameNumber(s * 100, wanted)) ? { value, mark: '%' } : null;
 }
 
@@ -114,7 +129,7 @@ function textOf(from: string, s: SumSources): string | null {
 
 const everywhere = (s: SumSources): string => [s.message, s.history, ...s.record.map(recordText)].join('\n');
 
-interface Input extends Pick<Figure, 'time' | 'onTop'> {
+interface Input extends Pick<Figure, 'time' | 'onTop' | 'takes' | 'ofPrice'> {
   readonly value: number;
   readonly unit: RawInput['unit'];
   readonly foreign: boolean;
@@ -154,6 +169,8 @@ function inputOf(raw: RawInput, s: SumSources, strict: boolean): Input | null {
       : {}),
     ...(found.time === undefined ? {} : { time: found.time }),
     ...(found.onTop === true ? { onTop: true as const } : {}),
+    ...(found.takes === undefined ? {} : { takes: found.takes }),
+    ...(found.ofPrice === true ? { ofPrice: true as const } : {}),
   };
 }
 
@@ -426,7 +443,9 @@ interface SumContext {
   readonly askText: string;
 }
 
-type Summed = { readonly sum: UnderstoodSum } | { readonly drop: SumDrop; readonly invented?: string };
+type Summed =
+  | { readonly sum: UnderstoodSum; readonly mends: readonly SumMend[] }
+  | { readonly drop: SumDrop; readonly invented?: string };
 
 function sumOf(raw: RawSum, c: SumContext): Summed {
   const names = new Set([...c.inputs.keys(), ...c.unknown, ...c.earlier.keys()]);
@@ -443,19 +462,37 @@ function sumOf(raw: RawSum, c: SumContext): Summed {
     return c.unknown.has(leaf.name) ? leaf : (c.earlier.get(leaf.name) ?? leaf);
   });
   if (nodesOf(whole).length > MAX_NODES) return { drop: 'expr' };
-  c.earlier.set(nameKey(raw.label), whole);
   if (!nodesOf(whole).some((n) => n.t === 'bin')) return { drop: 'trivial' };
   for (const n of nodesOf(whole))
     if (n.t === 'name' && c.unknown.has(n.name)) return { drop: 'input', invented: n.name };
   const inputOfName = (name: string): Input =>
     c.inputs.get(name) ?? { value: NaN, unit: 'count', foreign: false };
+  const facts = (leaf: Expr & { t: 'num' | 'name' }) => {
+    const own = leaf.t === 'name' ? inputOfName(leaf.name) : foundIn(leaf.v, text);
+    return {
+      percent:
+        leaf.t === 'name'
+          ? inputOfName(leaf.name).unit === '%'
+          : own !== null && 'mark' in own && own.mark === '%',
+      standard: leaf.t === 'num' && isStandard(leaf.v) && own === null,
+      ...(own?.takes === undefined ? {} : { takes: own.takes }),
+      ...(own?.ofPrice === true ? { ofPrice: true as const } : {}),
+      ...(own?.onTop === true ? { onTop: true as const } : {}),
+      ...(own?.time === undefined || (leaf.t === 'num' && isStandard(leaf.v)) ? {} : { time: own.time }),
+    };
+  };
+  const put = meant(whole, { label: raw.label, asked: c.askText, unit: raw.unit, of: facts });
+  c.earlier.set(nameKey(raw.label), put.expr);
+  const mends = [...put.mends];
   const shown = withOnTop(
-    whole,
+    put.expr,
     (leaf) =>
       (leaf.t === 'name' && inputOfName(leaf.name).onTop === true) ||
       (leaf.t === 'num' && leaf.v !== 100 && foundIn(leaf.v, text)?.onTop === true),
   );
-  const { expr, period } = inOnePeriod(shown, raw.unit, inputOfName, text);
+  const told = inOnePeriod(shown, raw.unit, inputOfName, text);
+  const { period } = told;
+  let { expr } = told;
   const nodes = nodesOf(expr);
   // Numbers written into it: theirs, or a plain constant where a constant may stand (what it is of is then open).
   const literals = new Map<Expr, Literal>();
@@ -511,7 +548,16 @@ function sumOf(raw: RawSum, c: SumContext): Summed {
     const input = inputOfName(n.name);
     return { value, money: input.open === true ? null : input.unit === '$' ? 1 : 0 };
   };
-  const found = evaluate(expr, leafOf);
+  let found = evaluate(expr, leafOf);
+  if (raw.unit === '%' && typeof found !== 'string' && (asShare ? found.value * 100 : found.value) > 100) {
+    const turned = turnedShare(expr, `${raw.label}. ${c.askText}`);
+    const again = turned === null ? null : evaluate(turned, leafOf);
+    if (turned !== null && again !== null && typeof again !== 'string') {
+      expr = turned;
+      found = again;
+      mends.push('share');
+    }
+  }
   const beside = moneyBeside(expr, leafOf);
   if (typeof found === 'string') return { drop: found };
   const wants = raw.unit === '$' ? 1 : 0;
@@ -549,6 +595,7 @@ function sumOf(raw: RawSum, c: SumContext): Summed {
       working,
       asked: raw.asked,
     },
+    mends,
   };
 }
 
@@ -631,6 +678,7 @@ export function checkSums(
   }
   const sums: UnderstoodSum[] = [];
   const drops: SumDrop[] = [];
+  const mends: SumMend[] = [];
   let invented: string | null = null;
   const earlier = new Map<string, Expr>();
   for (const raws of raw.sums.slice(0, MAX_READ)) {
@@ -645,10 +693,12 @@ export function checkSums(
     if ('drop' in summed) {
       drops.push(summed.drop);
       if (summed.invented !== undefined && raws.asked) invented ??= summed.invented.replace(/_/g, ' ');
-    } else if (!sums.some((s) => s.said === summed.sum.said && s.working === summed.sum.working))
+    } else if (!sums.some((s) => s.said === summed.sum.said && s.working === summed.sum.working)) {
       sums.push(summed.sum);
+      mends.push(...summed.mends);
+    }
   }
   // What they asked for first, as it was written.
   const kept = [...sums.filter((x) => x.asked), ...sums.filter((x) => !x.asked)].slice(0, MAX_SUMS);
-  return { sums: kept, invented, drops, inputs: { named, found, anywhere } };
+  return { sums: kept, invented, drops, mends, inputs: { named, found, anywhere } };
 }

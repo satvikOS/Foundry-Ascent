@@ -6,9 +6,12 @@ import { claimNumbers, daysIn, figuresIn, pricesIn, sameNumber } from './figures
 import { toThem } from './labels.js';
 import { mergeReadings } from './merge.js';
 import type { RawUnderstanding, UnderstandReadings } from './schema.js';
+import type { SumMend } from './meaning.js';
+import { gaveSomething, onlyPraise } from './told.js';
 import { checkSums, type CheckedSums, type SumDrop } from './sums.js';
 import {
   type RecordLine,
+  type ResultVerdict,
   type Understanding,
   type UnderstoodChoice,
   type UnderstoodReferral,
@@ -49,6 +52,8 @@ export interface UnderstandContext {
 /** What the checks left out, as codes and counts (logs and the bench; never words). */
 export interface UnderstandReport {
   readonly sumDrops: readonly SumDrop[];
+  /** What a sum was put right for (meaning.ts). */
+  readonly sumMends: readonly SumMend[];
   readonly inputs: CheckedSums['inputs'];
   /** Fields whose text was left out (`points`, `first_action`, …), with why. */
   readonly textDrops: readonly string[];
@@ -151,7 +156,8 @@ const OF_THEM = /\bthe (?:mentor|founder|opening|user|coach|assistant)\b/iu;
 const FREE = /\b(?:(?:for )?free|for nothing|no charge|without (?:charging|paying)|at no cost)\b/iu;
 const FREE_UNTIL =
   /\b(?:for )?free (?:for now|at first|to (?:start|begin) with|(?:un)?til+ |(?:for )?(?:the |your )?first \d)/iu;
-const CHARGES = /\b(?:charg\w+|pays?|paid|paying|price\w*|sell\w*|fee|deposit)\b/iu;
+const CHARGES =
+  /\$ ?\d|\b(?:dollars?|bucks?|ask (?:them |people )?(?:for|to pay)|charg\w+|pays?|paid|paying|price\w*|sell\w*|fee|deposit)\b/iu;
 
 /** Said to them where that only takes the words for it; else as it is, and left out. */
 function spokenTo(text: string, message: string): string {
@@ -345,7 +351,12 @@ export function readUnderstanding(raw: RawUnderstanding, context: UnderstandCont
       askText: `${context.message} ${askText ?? ''}`,
     },
   );
-  const report = (): UnderstandReport => ({ sumDrops: checked.drops, inputs: checked.inputs, textDrops });
+  const report = (): UnderstandReport => ({
+    sumDrops: checked.drops,
+    sumMends: checked.mends,
+    inputs: checked.inputs,
+    textDrops,
+  });
   // Nothing asked that can be said: the reading says nothing.
   if (askText === null) return { understanding: null, report: report() };
 
@@ -451,8 +462,15 @@ export function readUnderstanding(raw: RawUnderstanding, context: UnderstandCont
         counts,
         theirs,
         referral: raw.referral,
+        unasked: context.record.find((r) => UNASKED.test(r.text))?.text ?? null,
       }),
-      result: resultOf(raw.result, { claim: (field, text) => claim(field, text, after), counts, shows }),
+      result: resultOf(raw.result, {
+        claim: (field, text) => claim(field, text, after),
+        counts,
+        shows,
+        told: latest,
+        message: context.message,
+      }),
       referral: raw.referral,
       playId,
       stepPlayId,
@@ -510,6 +528,8 @@ function choiceOf(
     /** Stems of their own words and record: an option is one of theirs. */
     readonly theirs: ReadonlySet<string>;
     readonly referral: UnderstoodReferral | null;
+    /** The record line that says nobody was asked to pay. */
+    readonly unasked: string | null;
   },
 ): UnderstoodChoice | null {
   if (raw === null) return null;
@@ -519,16 +539,22 @@ function choiceOf(
   if (referral !== null && NEVER_PICKED.has(referral)) return null;
   if (said.some((o) => PERSONAL_OPTION.test(o) || splits(o))) return null;
   if ((referral === 'legal' || referral === 'irb') && said.some((o) => BINDS.test(o))) return null;
-  // Asking for money shows more than giving it away.
-  if (FREE.test(raw.pick) && raw.options.some((o) => CHARGES.test(o) && !FREE.test(o))) return null;
+  // Asking for money shows more than giving it away: where the record says nobody was asked, that is the reason.
+  const paid = FREE.test(raw.pick) ? raw.options.find((o) => CHARGES.test(o) && !FREE.test(o)) : undefined;
+  if (paid !== undefined && c.unasked === null) return null;
   const options = raw.options
     .slice(0, MAX_OPTIONS)
     .flatMap((o) => c.claim('choice.option', o, 'plain') ?? []);
   const named = (o: string): boolean => [...stemsOf(o)].some((w) => c.theirs.has(w));
   if (options.length < 2 || !options.some(named) || !options.every((o) => named(o) || HOLDS.test(o)))
     return null;
-  const pick = c.claim('choice.pick', raw.pick);
-  const because = c.claim('choice.because', raw.because);
+  const pick = c.claim('choice.pick', paid ?? raw.pick);
+  const because = c.claim(
+    'choice.because',
+    paid === undefined || c.unasked === null
+      ? raw.because
+      : `${c.unasked.replace(/[\s.;]+$/u, '')}, so what they would pay is not known until you ask.`,
+  );
   if (pick === null || because === null) return null;
   // The pick is one of them, some of them, or none: never a third thing.
   const stems = stemsOf(pick);
@@ -537,7 +563,23 @@ function choiceOf(
       (o) => o.toLowerCase() === pick.toLowerCase() || [...stemsOf(o)].some((w) => stems.has(w)),
     ) || /\b(?:both|neither|none|first|second)\b/iu.test(pick);
   if (!one) return null;
-  return { options, pick, because, flipsIf: c.counts('choice.flips_if', raw.flips_if) };
+  return {
+    options,
+    pick,
+    because,
+    flipsIf: paid === undefined ? c.counts('choice.flips_if', raw.flips_if) : null,
+  };
+}
+
+/** Nobody has been asked for money yet. */
+const UNASKED =
+  /\b(?:nobody|no one|none|not one|no (?:customer|buyer|user|visitor)s?)\b[^.;]{0,48}\b(?:asked|pays?|paid|charged)\b|\bnever (?:asked|charged)\b/iu;
+
+/** A verdict no better than what was given: kind words of people close by are weak, strong is money or coming back. */
+function soundVerdict(verdict: ResultVerdict, message: string, told: string): ResultVerdict {
+  if (verdict !== 'strong' && verdict !== 'promising') return verdict;
+  if (onlyPraise(message)) return 'weak';
+  return verdict === 'strong' && !gaveSomething(told) ? 'promising' : verdict;
 }
 
 function resultOf(
@@ -546,13 +588,16 @@ function resultOf(
     readonly claim: Claim;
     readonly counts: (field: string, text: string | null) => string | null;
     readonly shows: (text: string) => string | null;
+    /** What they said of it, and before. */
+    readonly told: string;
+    readonly message: string;
   },
 ): UnderstoodResult | null {
   if (raw === null) return null;
   const shows = c.shows(raw.shows);
   if (shows === null) return null;
   return {
-    verdict: raw.verdict,
+    verdict: soundVerdict(raw.verdict, c.message, `${c.told}\n${shows}`),
     shows,
     doesNotShow: c.claim('result.does_not_show', raw.does_not_show),
     settles: c.counts('result.settles', raw.settles),
@@ -573,11 +618,12 @@ export function readParts(readings: UnderstandReadings, context: UnderstandConte
   const raw = mergeReadings(readings, {
     message: context.message,
     keys: new Set(context.record.map((r) => r.key.toUpperCase())),
+    earlier: context.history.map((h) => h.founder),
   });
   return raw === null
     ? {
         understanding: null,
-        report: { sumDrops: [], inputs: { named: 0, found: 0, anywhere: 0 }, textDrops: [] },
+        report: { sumDrops: [], sumMends: [], inputs: { named: 0, found: 0, anywhere: 0 }, textDrops: [] },
       }
     : readUnderstanding(raw, context);
 }

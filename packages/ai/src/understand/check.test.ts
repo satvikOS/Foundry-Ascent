@@ -654,6 +654,31 @@ describe('choices', () => {
     expect(choice({ options, pick: options[1] ?? '' })).toBeNull();
     expect(choice({ options, pick: options[0] ?? '' })).not.toBeNull();
   });
+  it('takes the paying option where the record says nobody was asked, and says so', () => {
+    const picked = (record: RecordLine[]) =>
+      checkUnderstanding(
+        raw({
+          kind: 'choice',
+          choice: {
+            options: ['free until summer', 'ask for $5 at the gate'],
+            pick: 'free until summer',
+            because: 'More people come.',
+            flips_if: 'If 40 come.',
+          },
+        }),
+        context('free until summer or ask for $5 at the gate', { record }),
+      )?.choice;
+    expect(
+      picked([line('R1', 'Forty came to the harbour for free; nobody was asked to pay.', 'evidence')]),
+    ).toEqual({
+      options: ['free until summer', 'ask for $5 at the gate'],
+      pick: 'ask for $5 at the gate',
+      because:
+        'Forty came to the harbour for free; nobody was asked to pay, so what they would pay is not known until you ask.',
+      flipsIf: null,
+    });
+    expect(picked([line('R1', 'Forty came to the harbour.', 'evidence')])).toBeNull();
+  });
   it('never picks what a person decides', () => {
     const of = (options: string[], referral: RawUnderstanding['referral'], pick = options[0] ?? '') =>
       choice({ options, pick, because: 'Your 40 visitors came to it.' }, referral);
@@ -1296,6 +1321,37 @@ describe('the size of something to do', () => {
   });
 });
 
+describe('a verdict', () => {
+  const of = (verdict: 'strong' | 'promising' | 'weak', shows: string, message: string) =>
+    checkUnderstanding(
+      raw({ kind: 'result', result: { verdict, shows, does_not_show: null, settles: null } }),
+      context(message),
+    )?.result?.verdict;
+  it('is no better than what was given', () => {
+    expect(of('strong', 'Nine of 13 people liked it.', '9 of 13 people liked it')).toBe('promising');
+    expect(of('strong', 'Nine of 13 people paid.', '9 of 13 people paid')).toBe('strong');
+    expect(of('promising', 'Nine friends like it.', '9 of my friends like it')).toBe('weak');
+    expect(of('weak', 'Nine of 13 people liked it.', '9 of 13 people liked it')).toBe('weak');
+  });
+  it('is none over a fear, a plan or a question', () => {
+    const judge = {
+      x: null,
+      o: null,
+      t: { v: 'weak' as const, s: 'You fear the 13 people.', n: null, e: null },
+      g: ['You are afraid of it.'],
+    };
+    const route = { a: 'x', b: null, k: ['feelings'], r: [], c: null, f: null, p: null, s: null, h: false };
+    for (const message of [
+      'im scared to ask the 13 people',
+      'we will ask 13 people',
+      'what if the 13 people say no?',
+    ]) {
+      const { understanding: u } = readParts({ route, judge }, context(message));
+      expect([u?.result, u?.kind], message).toEqual([null, 'feelings']);
+    }
+  });
+});
+
 describe('what turns a pick or settles a result', () => {
   it.each([
     ['8 of the 40 come back', true],
@@ -1389,7 +1445,7 @@ describe('every worked example', () => {
       expect(u?.choice?.flipsIf ?? null).toBe(e.answer.o?.f ?? null);
       expect(u?.result?.settles ?? null).toBe(e.answer.t?.e ?? null);
       expect(u?.contradicts?.why ?? null).toBe(e.answer.x?.w ?? null);
-      expect(u?.firstAction).toBe(e.answer.d);
+      expect(u?.firstAction).toBeNull();
       expect(u?.avoid).toBeNull();
     }
     expect(

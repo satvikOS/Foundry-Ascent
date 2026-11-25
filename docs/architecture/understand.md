@@ -27,7 +27,7 @@ without it. What each part writes is what its decision needs, so a reading takes
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- | ------------------------------------------------------------------------------------------- |
 | ROUTE | what they ask, a second ask, the kinds (main first), the record lines, the line the message denies, who must decide, the play, the step's play, whether it is sure | about 60       | the plays (the only part that needs them), the open step, short record lines, two exchanges |
 | SUMS  | the figure this message asks for, how it is worked out in words, the numbers (`price=$70@R1`), the sums as expressions, the number that is missing                 | 60 to 100      | the lines and replies that hold a figure, the founder's own words, three exchanges          |
-| JUDGE | what the record says instead, the pick with its reason and what would turn it, what a result shows and what settles it, the points, the first action               | about 150      | the record, three exchanges                                                                 |
+| JUDGE | what the record says instead, the pick with its reason and what would turn it, what a result shows and what settles it, the points                                 | about 150      | the record, three exchanges                                                                 |
 
 - **When.** Once the turn is admitted, beside the query's embedding (a refused request buys no call). Never for a crisis, a
   rehearsal or a message that is only social (`understandDue`); a message the safety screen reads first waits for its verdict.
@@ -47,9 +47,10 @@ without it. What each part writes is what its decision needs, so a reading takes
 - **A part that is late or failed** leaves its fields empty. Without ROUTE the others say what the message is: a figure they asked
   for is a `sum`, a pick a `choice`, a verdict a `result`; nothing of those is no reading, and the turn goes on by its rules. ROUTE
   and JUDGE each name a line the message denies; without either there is no contradiction.
-- **SUMS again.** An answer that names the figure and its numbers or its plan and writes no sum is asked once more, in what is left of
-  the budget (`sumsAgain`); the first one stands where the second does not come. A field that swallowed the rest of its object is
-  read back (`salvage.ts`).
+- **SUMS again.** A cheap check that disagrees with the sum asks for it once more, in what is left of the budget (`again.ts`): a plan
+  with no sum, a sum code could not work out (with the reason), or a figure of what is kept, reached or charged that leaves out an
+  amount, a share or a count told in the line it takes a number from. The second stands only where it answers the doubt. A field that
+  swallowed the rest of its object is read back (`salvage.ts`). `sumsAgain` in the log says which check it was.
 - **Their price.** Metered like every call (purpose `turn`, one usage-ledger row per attempt), so the daily caps count them. An
   attempt that was cut off is metered by an estimate of its prompt (`estimateCut`).
 - **What is logged.** `turn.understand`: the code (`ok`, `partial`, `nothing_held`, `late`, `cancelled` or the gateway's),
@@ -82,15 +83,19 @@ Everything a reading says is of the message, the conversation in view, the recor
 - **A figure they asked for** is one SUMS says they ask for and ROUTE or the message says so too.
 - **A choice** stands where options are put; its options are theirs (or one's plain no), and it picks one of them, or both or neither,
   with a reason that holds. None where the referral is equity, an invention, immigration, a valuation or a regulation, none on signing,
-  agreeing or a company form beside a lawyer's, none on a split, shares, a visa or a patent whatever the referral, and none for free
-  where the other option asks for money.
-- **A result** stands where something happened, they offer something as a sign or push back, and shows a figure or words of theirs, of
-  what they say now or just said.
+  agreeing or a company form beside a lawyer's, none on a split, shares, a visa or a patent whatever the referral, and where the
+  other option asks for money, free is never the pick: the paying one is, if the record says nobody was asked.
+- **A result** stands over an outcome alone (`told.ts`): what somebody did, said or paid, or a count of it, told now or just before and
+  asked about, or where they push back. A fear, a plan, a question or a what-if has none. It shows a figure or words of theirs, against
+  their own earlier ones where there are some; what settles it is a thing to do with a number and what each side means. Kind words of
+  people close by are never more than weak, and strong is money, a signature or coming back.
+- **A second question** the call left out is read from the message's own words, where it asks two.
 - **What turns a pick or settles a result** holds a number, a person or an act they could see, else it is left out. There, and in the
   first action, a small or round size of something to do ("ask 10 of them", "for 2 weeks") is a test and no invented fact; an amount,
   a share, and whatever is told as having happened, never. An amount somebody is to pay in it is a price they charge or were told
   (`pricesIn`): the clause with their budget, savings or a cost goes. What would turn a pick has somebody who does it.
-- **A referral** is the reading's to add. The rules' own (`referrals.ts`, the risk classifier) stay whatever it says.
+- **A referral** is the reading's to add, and `told.ts` adds one where the words leave no doubt (a letter about a name or a seal,
+  exclusivity or code rights in a paper, shares for money, a trial on patients or children, a claim to heal, pay on a visa). The rules' own (`referrals.ts`, the risk classifier) stay whatever it says.
 
 ### Sums
 
@@ -115,6 +120,11 @@ a share has one decimal; a count that is to be reached (break-even, "how many mu
 - **Periods.** A figure carries the time its own words give it ("$85 a month", "20 hours a week", "6 weeks"). An expression that mixes
   them is worked out in one of them, shown as it is (`20 × 52 ÷ 12`), unless it already holds a constant of time. The label says the
   period the result has ("what you keep that day" of monthly numbers is "what you keep a month").
+- **Meaning** (`meaning.ts`). A share says who it goes to by the words around it ("we skim 8%", "the gallery keeps 35%") and what it is of
+  ("a third of the price"). What they take is that share and never its complement, what is taken from them the reverse; a share of the
+  price solves for the price (cost ÷ (1 − share)); a constant of time among numbers of one period goes, unless another period is asked;
+  a share above 100% of a whole was divided the wrong way round. Each rewrites the expression over the same inputs (`sumMends` in the
+  log).
 - **On top.** A share that is put on top of a base never comes off the whole: "whole × (1 − 8%)" is whole ÷ (1 + 8%).
 - **Labels.** A label that cannot stand before "is" becomes one that can, or the unit's plain one; money under zero is said as lost.
 - **Built on each other.** A sum may name the sum before it ("income − costs"); the one they asked for comes first.

@@ -39,7 +39,7 @@ export const UNDERSTAND_JUDGE_WAIT_MS = { text: 700, voice: 250 } as const;
 export const UNDERSTAND_MAX_OUTPUT_TOKENS: Readonly<Record<UnderstandForm, number>> = {
   route: 220,
   sums: 320,
-  judge: 360,
+  judge: 380,
   judgeVoice: 200,
 };
 
@@ -100,8 +100,6 @@ export const JudgeReading = z.object({
     .catch(null),
   /** What the answer must say. */
   g: z.array(z.string()).catch([]),
-  /** First action, where nothing that happened has its own test. */
-  d: z.string().nullable().catch(null),
 });
 export type JudgeReading = z.infer<typeof JudgeReading>;
 
