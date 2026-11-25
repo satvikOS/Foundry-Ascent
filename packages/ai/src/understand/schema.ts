@@ -1,78 +1,161 @@
 import { z } from 'zod';
 
-import { RESULT_VERDICTS, SUM_UNITS, UNDERSTOOD_KINDS, UNDERSTOOD_REFERRALS } from './types.js';
-
-/** Name of the structured output schema sent to the model. */
-export const UNDERSTAND_SCHEMA_NAME = 'Understanding';
-
-/** The whole budget of the call, by channel: a later answer is no answer (the turn goes on by its rules). */
-export const UNDERSTAND_TIMEOUT_MS = { text: 2_500, voice: 1_200 } as const;
-
-/** Output bound: about 450 tokens are asked for; more is room for a long sum, never for prose. */
-export const UNDERSTAND_MAX_OUTPUT_TOKENS = 800;
+import {
+  RESULT_VERDICTS,
+  UNDERSTOOD_REFERRALS,
+  type ResultVerdict,
+  type SumUnit,
+  type UnderstoodKind,
+  type UnderstoodReferral,
+} from './types.js';
 
 /**
- * What the model fills. The fields that reason come first, so they carry the rest; nested one level, every field
- * required, lengths held afterwards (`checkUnderstanding`): a long string is cut or left out there, never a failed call.
- * A list the model got wrong, or a kind it has no word for, costs that field alone.
+ * The reading is three small calls made at once, each with its own prompt and answer, so that it takes as long as its
+ * longest part and a late part costs only itself: ROUTE (what is asked, which kind, which play, who decides), SUMS (the
+ * figure they ask for, over named numbers) and JUDGE (what it shows, which option, what the answer must say).
  */
-export const RawUnderstanding = z.object({
-  ask: z.string(),
-  second_ask: z.string().nullable(),
-  kind: z.enum(UNDERSTOOD_KINDS).catch('question'),
-  also: z.array(z.enum(UNDERSTOOD_KINDS)).catch([]),
-  /** Keys of the record lines that bear on it. */
-  record: z.array(z.string()).catch([]),
-  contradicts: z.object({ record: z.string(), why: z.string() }).nullable().catch(null),
-  /** The numbers the sums below work with. */
-  inputs: z
-    .array(
-      z.object({
-        name: z.string(),
-        value: z.number(),
-        unit: z.enum(['$', '%', 'count', 'time']).catch('count'),
-        /** `message`, `history`, `standard` or a record key. */
-        from: z.string(),
-      }),
-    )
-    .catch([]),
-  sums: z
-    .array(
-      z.object({
-        label: z.string(),
-        unit: z.enum(SUM_UNITS).catch('units'),
-        noun: z.string().nullable(),
-        expr: z.string(),
-        round: z.enum(['none', 'up', 'down']).catch('none'),
-        asked: z.boolean(),
-      }),
-    )
-    .catch([]),
-  missing: z.string().nullable(),
-  choice: z
-    .object({
-      options: z.array(z.string()),
-      pick: z.string(),
-      because: z.string(),
-      flips_if: z.string().nullable(),
-    })
-    .nullable()
-    .catch(null),
-  result: z
-    .object({
-      verdict: z.enum(RESULT_VERDICTS),
-      shows: z.string(),
-      does_not_show: z.string().nullable(),
-      settles: z.string().nullable(),
-    })
-    .nullable()
-    .catch(null),
-  referral: z.enum(UNDERSTOOD_REFERRALS).nullable().catch(null),
-  play: z.string().nullable(),
-  step_play: z.string().nullable(),
-  sure: z.enum(['high', 'low']).catch('low'),
-  points: z.array(z.object({ text: z.string(), basis: z.string() })).catch([]),
-  first_action: z.string().nullable(),
-  avoid: z.string().nullable(),
+export const UNDERSTAND_PARTS = ['route', 'sums', 'judge'] as const;
+export type UnderstandPart = (typeof UNDERSTAND_PARTS)[number];
+
+/** Names of the structured output schemas sent to the model. */
+export const UNDERSTAND_SCHEMA_NAMES: Readonly<Record<UnderstandPart, string>> = {
+  route: 'UnderstandRoute',
+  sums: 'UnderstandSums',
+  judge: 'UnderstandJudge',
+};
+
+/** The whole budget of a reading, by channel (`CORE_UNDERSTAND_TYPED_MS`, `CORE_UNDERSTAND_VOICE_MS`): what is late then is left. */
+export const UNDERSTAND_TIMEOUT_MS = { text: 3_000, voice: 1_400 } as const;
+
+/** How long JUDGE is waited for once ROUTE and SUMS are in, where the reply does not open on what it says. */
+export const UNDERSTAND_JUDGE_WAIT_MS = { text: 700, voice: 250 } as const;
+
+/** Output bounds: 60 to 150 tokens are asked for; more is room for a long sum, never for prose. */
+export const UNDERSTAND_MAX_OUTPUT_TOKENS: Readonly<Record<UnderstandPart, number>> = {
+  route: 220,
+  sums: 320,
+  judge: 420,
+};
+
+/**
+ * What the model fills: short keys, reasoning first, every field required (a null is a token), lengths held afterwards
+ * (`readUnderstanding`). A field of the wrong form costs that field alone.
+ */
+export const RouteReading = z.object({
+  /** What they ask; a second thing asked. */
+  a: z.string(),
+  b: z.string().nullable().catch(null),
+  /** Kinds, the main one first; a word that is none is left out (merge.ts). */
+  k: z.array(z.string()).catch([]),
+  /** Keys of the record lines the answer needs. */
+  r: z.array(z.string()).catch([]),
+  /** The record line the message denies or changes. */
+  c: z.string().nullable().catch(null),
+  /** Who must decide it. */
+  f: z.enum(UNDERSTOOD_REFERRALS).nullable().catch(null),
+  /** The play that answers; the play whose step serves the ask; whether the first one plainly answers. */
+  p: z.string().nullable().catch(null),
+  s: z.string().nullable().catch(null),
+  h: z.boolean().catch(false),
 });
-export type RawUnderstanding = z.infer<typeof RawUnderstanding>;
+export type RouteReading = z.infer<typeof RouteReading>;
+
+export const SumsReading = z.object({
+  /** The figure this message asks for, in words. */
+  q: z.string().nullable().catch(null),
+  /** How it is worked out, in words: the plan the sum is written from, never shown. */
+  w: z.string().nullable().catch(null),
+  /** The numbers, `name=value@where`. */
+  n: z.array(z.string()).catch([]),
+  /** The sums: label, unit (or what is counted), expression. */
+  s: z.array(z.object({ l: z.string(), u: z.string().catch('units'), e: z.string() })).catch([]),
+  /** The number that is nowhere. */
+  m: z.string().nullable().catch(null),
+});
+export type SumsReading = z.infer<typeof SumsReading>;
+
+export const JudgeReading = z.object({
+  /** What the record says instead of a claim of the message: its line, and in words. */
+  x: z.object({ r: z.string(), w: z.string() }).nullable().catch(null),
+  /** The choice: options, pick, because, what would change it. */
+  o: z
+    .object({ o: z.array(z.string()), p: z.string(), b: z.string(), f: z.string().nullable().catch(null) })
+    .nullable()
+    .catch(null),
+  /** What happened: verdict, shows, does not show, what settles it. */
+  t: z
+    .object({
+      v: z.enum(RESULT_VERDICTS),
+      s: z.string(),
+      n: z.string().nullable().catch(null),
+      e: z.string().nullable().catch(null),
+    })
+    .nullable()
+    .catch(null),
+  /** What the answer must say. */
+  g: z.array(z.string()).catch([]),
+  /** First action; what not to say. */
+  d: z.string().nullable().catch(null),
+  z: z.string().nullable().catch(null),
+});
+export type JudgeReading = z.infer<typeof JudgeReading>;
+
+/** The answer each part is asked for. */
+export const UNDERSTAND_SCHEMAS = { route: RouteReading, sums: SumsReading, judge: JudgeReading } as const;
+
+/** What came back in time, by part; an absent part was late, failed or not asked. */
+export interface UnderstandReadings {
+  readonly route?: RouteReading | null;
+  readonly sums?: SumsReading | null;
+  readonly judge?: JudgeReading | null;
+}
+
+/** A number a sum works with, as a reading gives it. */
+export interface RawInput {
+  readonly name: string;
+  readonly value: number;
+  readonly unit: '$' | '%' | 'count' | 'time';
+  /** `message`, `history`, `standard` or a record key. */
+  readonly from: string;
+}
+
+export interface RawSum {
+  readonly label: string;
+  readonly unit: SumUnit;
+  readonly noun: string | null;
+  readonly expr: string;
+  readonly round: 'none' | 'up' | 'down';
+  readonly asked: boolean;
+}
+
+/** The parts as one reading (`mergeReadings`), not checked yet. */
+export interface RawUnderstanding {
+  readonly ask: string;
+  readonly second_ask: string | null;
+  readonly kind: UnderstoodKind;
+  readonly also: readonly UnderstoodKind[];
+  readonly record: readonly string[];
+  readonly contradicts: { readonly record: string; readonly why: string | null } | null;
+  readonly inputs: readonly RawInput[];
+  readonly sums: readonly RawSum[];
+  readonly missing: string | null;
+  readonly choice: {
+    readonly options: readonly string[];
+    readonly pick: string;
+    readonly because: string;
+    readonly flips_if: string | null;
+  } | null;
+  readonly result: {
+    readonly verdict: ResultVerdict;
+    readonly shows: string;
+    readonly does_not_show: string | null;
+    readonly settles: string | null;
+  } | null;
+  readonly referral: UnderstoodReferral | null;
+  readonly play: string | null;
+  readonly step_play: string | null;
+  readonly sure: 'high' | 'low';
+  readonly points: readonly string[];
+  readonly first_action: string | null;
+  readonly avoid: string | null;
+}

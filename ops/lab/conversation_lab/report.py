@@ -131,6 +131,12 @@ def _log_tables(logs: Mapping[str, Any] | None) -> list[str]:
             + ", ".join(f"{code} x{n}" for code, n in understand["codes"].items())
             + f"; chat {_ms_cell(times.get('text'))} ms, voice {_ms_cell(times.get('voice'))} ms."
         )
+        for part, found in (understand.get("parts") or {}).items():
+            out.append(
+                f"Understand {part}: "
+                + ", ".join(f"{code} x{n}" for code, n in found["codes"].items())
+                + f"; {_ms_cell(found.get('ms'))} ms."
+            )
     if logs.get("face_approval_ms"):
         out.append(
             f"FULL face pre-approval, per spoken unit before it is sent: {_ms_cell(logs.get('face_approval_ms'))} ms "

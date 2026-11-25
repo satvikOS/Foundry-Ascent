@@ -7,9 +7,17 @@ import { spelledAsDigits } from '../validators/sums.js';
  */
 export type FigureMark = '$' | '%' | 'foreign' | null;
 
+/** Calendar periods a figure may be of, shortest first. */
+export const PERIODS = ['day', 'week', 'month', 'year'] as const;
+export type Period = (typeof PERIODS)[number];
+
 export interface Figure {
   readonly value: number;
   readonly mark: FigureMark;
+  /** What its own words say of time: "$85 a month" (`by` −1), "6 weeks" (`by` 1). */
+  readonly time?: { readonly period: Period; readonly by: 1 | -1 };
+  /** A share put on top of a base ("8% on top"): it never comes off the whole. */
+  readonly onTop?: true;
 }
 
 const MONTHS =
@@ -77,13 +85,36 @@ const WORD_SCALE: Readonly<Record<string, number>> = {
   billion: 1e9,
 };
 
+/** What stands right after a figure: "a month", "hours a week", "per seat per year", "monthly", "/mo". */
+const PER =
+  /^\s?(?:[\p{L}'’-]{1,16} )?(?:(?:per|an?|each) [\p{L}-]{1,16} )?(?:(?:an? |per |each |every |\/ ?)(day|week|month|year|mo|wk|yr)\b|(daily|weekly|monthly|yearly|annually)\b)/iu;
+const LASTS = /^\s?(day|week|month|year)s\b/iu;
+const ON_TOP = /^\s?(?:[\p{L}'’-]{1,16} ){0,3}on top\b/iu;
+const AFTER = 48;
+
+const periodOf = (word: string): Period => {
+  const w = word.toLowerCase();
+  if (w.startsWith('d')) return 'day';
+  if (w.startsWith('w')) return 'week';
+  return w.startsWith('m') ? 'month' : 'year';
+};
+
+function timeAfter(after: string): Figure['time'] | undefined {
+  const per = PER.exec(after);
+  const word = per?.[1] ?? per?.[2];
+  if (word !== undefined) return { period: periodOf(word), by: -1 };
+  const lasts = LASTS.exec(after)?.[1];
+  return lasts === undefined ? undefined : { period: periodOf(lasts), by: 1 };
+}
+
 /** Every figure of a text, in order, spelled or in digits. */
 export function figuresIn(text: string): Figure[] {
   const out: Figure[] = [];
   const joined = withoutDates(text).replace(SCALED, (_whole, digits: string, word: string) =>
     String(Number(digits.replace(/,/g, '')) * (WORD_SCALE[word.toLowerCase()] ?? 1)),
   );
-  for (const m of spelledAsDigits(joined).matchAll(FIGURE)) {
+  const said = spelledAsDigits(joined);
+  for (const m of said.matchAll(FIGURE)) {
     const base = Number((m[3] ?? '').replace(/,/g, ''));
     if (!Number.isFinite(base)) continue;
     const value = base * (SCALE[(m[4] ?? '').toLowerCase()] ?? 1);
@@ -97,8 +128,15 @@ export function figuresIn(text: string): Figure[] {
           : m[5] !== undefined
             ? '%'
             : null;
-    if (m[7] !== undefined && mark === null) out.push({ value: value / 100, mark: '$' });
-    out.push({ value, mark });
+    const end = m.index + m[0].length;
+    const after = said.slice(end, end + AFTER);
+    const time = timeAfter(after);
+    const more = {
+      ...(time === undefined ? {} : { time }),
+      ...(mark === '%' && ON_TOP.test(after) ? { onTop: true as const } : {}),
+    };
+    if (m[7] !== undefined && mark === null) out.push({ value: value / 100, mark: '$', ...more });
+    out.push({ value, mark, ...more });
   }
   return out;
 }

@@ -1,7 +1,9 @@
 import { methodUnit } from '../validators/method.js';
 import { rulesForAPerson } from '../validators/reply-contract.js';
+import { stemsOf } from '../validators/stems.js';
 import { claimNumbers, daysIn, figuresIn, sameNumber } from './figures.js';
-import type { RawUnderstanding } from './schema.js';
+import { mergeReadings } from './merge.js';
+import type { RawUnderstanding, UnderstandReadings } from './schema.js';
 import { checkSums, type CheckedSums, type SumDrop } from './sums.js';
 import {
   type RecordLine,
@@ -55,7 +57,21 @@ export interface ReadUnderstanding {
   readonly report: UnderstandReport;
 }
 
-type TextDrop = 'empty' | 'long' | 'markup' | 'number' | 'date' | 'name' | 'ruling' | 'method' | 'basis';
+type TextDrop =
+  | 'empty'
+  | 'long'
+  | 'markup'
+  | 'number'
+  | 'date'
+  | 'name'
+  | 'ruling'
+  | 'method'
+  /** Said of the founder or the mentor, not to the founder. */
+  | 'voice'
+  /** Nothing they could count or see. */
+  | 'vague'
+  /** Nothing of theirs in it. */
+  | 'generic';
 
 const MAX_ASK_WORDS = 34;
 const MAX_CLAIM_WORDS = 40;
@@ -64,12 +80,21 @@ const MAX_RECORD = 4;
 
 const words = (text: string): number => text.split(/\s+/u).filter((w) => w !== '').length;
 
+/** A model says the data back as it was shown it, escaped: "the buyer&#39;s". */
+const unescaped = (text: string): string =>
+  text
+    .replace(/&(?:#0?39|apos);/giu, "'")
+    .replace(/&quot;/giu, '"')
+    .replace(/&lt;/giu, '<')
+    .replace(/&gt;/giu, '>')
+    .replace(/&amp;/giu, '&');
+
 /** One plain line: no markup, no control characters, no address; else why nothing of it may be used. */
 function plainLine(
   text: string | null | undefined,
   maxWords: number,
 ): { readonly line: string } | { readonly drop: TextDrop } {
-  const line = (text ?? '')
+  const line = unescaped(text ?? '')
     .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
     .replace(/[*_`#]+/gu, '')
     .replace(/\s+/gu, ' ')
@@ -83,7 +108,7 @@ function plainLine(
 
 /** Capitalised words anyone may say: they name nobody's facts. */
 const COMMON_NAMES = new Set(
-  "i i’m i'm i’ll i'll i’d i'd i’ve i've ai ip llc loi nda mvp eir pdf qr us usa ur faq irb fda hipaa sms roi gps id ok tv go-to-market q&a ain foundry thomas english".split(
+  "i i’m i'm i’ll i'll i’d i'd i’ve i've ai ip llc loi nda mvp eir pdf qr us usa ur faq irb fda hipaa sms roi gps id ok tv go-to-market q&a ain foundry thomas english vc vcs b2b b2c saas mvps ceo cto csv kpi kpis okrs llcs url app ads".split(
     ' ',
   ),
 );
@@ -109,6 +134,15 @@ const RULES_WITH_REFERRAL: readonly RegExp[] = [
 /** Said of what to wait for or to ask, never ruled. */
 const HOLDS_OFF =
   /\b(?:before|until|unless|not yet|nothing|whether|ask|who decides|decides?|a person|lawyer|office|official|advis[eo]r)\b/iu;
+
+/** Said of them, or of who answers: a reply speaks to the founder. */
+const OF_THEM = /\bthe (?:mentor|founder|opening|user|coach|assistant)\b/iu;
+
+/** Giving it away until enough people have it, where asking to pay would show more. */
+const FREE = /\b(?:(?:for )?free|for nothing|no charge|without (?:charging|paying)|at no cost)\b/iu;
+const FREE_UNTIL =
+  /\b(?:for )?free (?:for now|at first|to (?:start|begin) with|(?:un)?til+ |(?:for )?(?:the |your )?first \d)/iu;
+const CHARGES = /\b(?:charg\w+|pays?|paid|paying|price\w*|sell\w*|fee|deposit)\b/iu;
 
 function rulesOnIt(text: string, referral: UnderstoodReferral | null): boolean {
   if (rulesForAPerson(text)) return true;
@@ -161,18 +195,18 @@ class Known {
     const low = word.toLowerCase().replace(/’/g, "'");
     const bare = low.replace(/'s$/u, '');
     if (COMMON_NAMES.has(low) || COMMON_NAMES.has(bare)) return true;
-    return (bare.match(/[\p{L}\p{N}]+/gu) ?? []).every((part) => this.#words.has(part));
+    // "Saturday" of "Saturdays".
+    return (bare.match(/[\p{L}\p{N}]+/gu) ?? []).every(
+      (part) =>
+        this.#words.has(part) || this.#words.has(`${part}s`) || this.#words.has(part.replace(/s$/u, '')),
+    );
   }
 }
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /** A model's reading as code lets it stand, with what was left out. */
-export function readUnderstanding(
-  raw: RawUnderstanding,
-  context: UnderstandContext,
-  options: { readonly strictInputs?: boolean } = {},
-): ReadUnderstanding {
+export function readUnderstanding(raw: RawUnderstanding, context: UnderstandContext): ReadUnderstanding {
   const textDrops: string[] = [];
   const lineByKey = new Map(context.record.map((r) => [r.key.toUpperCase(), r]));
   const lineOf = (key: string): RecordLine | null =>
@@ -225,7 +259,9 @@ export function readUnderstanding(
     const { line } = read;
     const beyond = allowed.beyond(line);
     if (beyond !== null) return drop(beyond);
+    if (field !== 'second_ask' && OF_THEM.test(line)) return drop('voice');
     if (lint === 'plain') return line;
+    if (FREE_UNTIL.test(line)) return drop('method');
     if (rulesOnIt(line, raw.referral)) return drop('ruling');
     const method = methodUnit(line, { founderText: context.message }).text.trim();
     return method === '' ? drop('method') : method;
@@ -239,7 +275,6 @@ export function readUnderstanding(
     {
       labelOk: (label) => claim('label', label.replace(/[.:]+$/u, ''), before, 'plain', 16),
       askText: `${context.message} ${askText ?? ''}`,
-      strict: options.strictInputs ?? true,
     },
   );
   const report = (): UnderstandReport => ({ sumDrops: checked.drops, inputs: checked.inputs, textDrops });
@@ -248,8 +283,13 @@ export function readUnderstanding(
 
   const after = known(checked.sums.map((s) => s.value));
   const contradictsLine = raw.contradicts === null ? null : lineOf(raw.contradicts.record);
+  // Found by the part that has no words for it: the line says it itself.
   const contradictsWhy =
-    contradictsLine === null ? null : claim('contradicts', raw.contradicts?.why ?? null, after, 'plain');
+    contradictsLine === null
+      ? null
+      : raw.contradicts?.why == null
+        ? contradictsLine.text
+        : claim('contradicts', raw.contradicts.why, after, 'plain');
   const record = [
     ...(contradictsWhy !== null && contradictsLine !== null ? [contradictsLine] : []),
     ...raw.record.flatMap((k) => lineOf(k) ?? []),
@@ -263,19 +303,27 @@ export function readUnderstanding(
 
   const points = raw.points
     .slice(0, MAX_POINTS + 2)
-    .flatMap((p) => {
-      const basis = p.basis.trim().toLowerCase();
-      const held =
-        /^(?:message|history|common)$/u.test(basis) ||
-        (/^play\b/u.test(basis) ? chosen !== null || stepPlay !== null : lineOf(basis) !== null);
-      if (!held) {
-        textDrops.push('points:basis');
-        return [];
-      }
-      return claim('points', p.text, after) ?? [];
-    })
+    .flatMap((p) => claim('points', p, after) ?? [])
     .filter((p, i, all) => all.indexOf(p) === i)
     .slice(0, MAX_POINTS);
+
+  const theirs = stemsOf(
+    [context.message, conversation, context.shown, ...context.record.map((r) => r.text)].join('\n'),
+  );
+  const counts = (field: string, text: string | null): string | null => {
+    const line = claim(field, text, after);
+    if (line === null || observable(line)) return line;
+    textDrops.push(`${field}:vague`);
+    return null;
+  };
+  const shows = (text: string): string | null => {
+    const line = claim('result.shows', text, after);
+    if (line === null) return null;
+    const shared = [...stemsOf(line)].filter((w) => theirs.has(w)).length;
+    if (shared >= 2 || (shared >= 1 && claimNumbers(line).length > 0)) return line;
+    textDrops.push('result.shows:generic');
+    return null;
+  };
 
   return {
     understanding: {
@@ -290,8 +338,13 @@ export function readUnderstanding(
           : { line: contradictsLine, why: contradictsWhy },
       sums: checked.sums,
       missing,
-      choice: choiceOf(raw.choice, (field, text, lint) => claim(field, text, after, lint), raw.referral),
-      result: resultOf(raw.result, (field, text) => claim(field, text, after)),
+      choice: choiceOf(raw.choice, {
+        claim: (field, text, lint) => claim(field, text, after, lint),
+        counts,
+        theirs,
+        referral: raw.referral,
+      }),
+      result: resultOf(raw.result, { claim: (field, text) => claim(field, text, after), counts, shows }),
       referral: raw.referral,
       playId,
       stepPlayId,
@@ -306,46 +359,93 @@ export function readUnderstanding(
 
 type Claim = (field: string, text: string | null, lint?: 'claim' | 'plain') => string | null;
 
-const SMALL = new Set('the and for our your with now this that then more one'.split(' '));
-const stems = (text: string): Set<string> =>
-  new Set(
-    (text.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? [])
-      .filter((w) => !SMALL.has(w))
-      .map((w) => w.slice(0, 5)),
-  );
+/** Something done that one can see or count, by someone. */
+const ACT =
+  /\b(?:pay\w*|paid|buy\w*|bought|book\w*|sign\w*|order\w*|re-?order\w*|return\w*|com(?:e|es|ing) back|came back|us(?:e|es|ed|ing)\b.{0,24}\b(?:again|week|day|month)|repl(?:y|ies|ied)|answer\w*|send\w*|sent|show(?:s|ed)? up|turn(?:s|ed)? up|refer\w*|renew\w*|cancel\w*|call(?:s|ed)?|write\w*|wrote|ask(?:s|ed|ing)?|sell\w*|sold|deposit\w*|prepa\w*|count\w*|open(?:s|ed)?|switch\w*|bring\w*|brought|sign(?:s|ed)? up|introduc\w*|name[sd]?|tell\w*|told|say\w*|said|quit\w*|leav\w*|left|meet\w*|met|stay(?:s|ed)?|finish\w*|wins?|won|clos(?:e|es|ed)|agree\w*|accept\w*|refus\w*|commit\w*)\b/iu;
+const SOMEONE =
+  /\b(?:customers?|buyers?|clients?|strangers?|people|person|someone|somebody|anyone|nobody|no one|families|parents?|students?|managers?|owners?|members?|visitors?|guests?|shops?|schools?|stores?|users)\b/iu;
+/** "Whether they will keep going": the question said again. */
+const RESTATES = /^(?:whether|if|that|how|when|until)?\s*(?:they|it|he|she|this|that|you|we|the \w+)\b/iu;
+
+/** What settles or turns it: a number, a person or an act they could see, never the question again. */
+export function observable(text: string): boolean {
+  if (claimNumbers(text).length > 0) return true;
+  if (ACT.test(text)) return true;
+  return SOMEONE.test(text) && !RESTATES.test(text);
+}
+
+/** An option that only says no to the other one. */
+const HOLDS =
+  /^(?:no\b|not\b|yes\b|both\b|neither\b|wait|hold|stay|stop|skip|keep|go (?:on|ahead)|carry on|continue|quit|don['’]?t|do not|leave it|stick)/iu;
+/** Splitting it, owning it, a status, what it is worth: never picked, whatever the reading says of who decides. */
+const PERSONAL_OPTION =
+  /\b(?:equity|vesting|cap table|valuation|term sheet|patents?|visas?|salary|ownership|co-?owner\w*)\b|\b(?:shares|stake|percent|%) (?:of|in) (?:the|my|our|your) (?:company|business|startup)\b/iu;
+/** "60/40", "50-50": two parts of one whole; "5-10 people" is none. */
+const splits = (option: string): boolean =>
+  [...option.matchAll(/\b(\d{1,3}) ?[/–-] ?(\d{1,3})\b/gu)].some((m) => Number(m[1]) + Number(m[2]) === 100);
+const NEVER_PICKED: ReadonlySet<UnderstoodReferral> = new Set([
+  'equity',
+  'ip',
+  'immigration',
+  'valuation',
+  'regulatory',
+]);
+/** To bind themselves: a lawyer reads it first. */
+const BINDS =
+  /\b(?:sign\w*|agree\w*|accept\w*|shar(?:e|es|ing)|tick\w*|take (?:the|it|his|her|their)|say yes|offer|hand over|licen[cs]e|percent|%|llc|501\w*|c-?corp\w*|non-?profit|incorporat\w*)(?![\p{L}])/iu;
 
 function choiceOf(
   raw: RawUnderstanding['choice'],
-  claim: Claim,
-  referral: UnderstoodReferral | null,
+  c: {
+    readonly claim: Claim;
+    readonly counts: (field: string, text: string | null) => string | null;
+    /** Stems of their own words and record: an option is one of theirs. */
+    readonly theirs: ReadonlySet<string>;
+    readonly referral: UnderstoodReferral | null;
+  },
 ): UnderstoodChoice | null {
   if (raw === null) return null;
-  const options = raw.options.slice(0, 4).flatMap((o) => claim('choice.option', o, 'plain') ?? []);
-  const pick = claim('choice.pick', raw.pick);
-  const because = claim('choice.because', raw.because);
-  if (options.length < 2 || pick === null || because === null) return null;
-  // The pick is one of them, some of them, or none: never a third thing.
-  const said = stems(pick);
-  const one =
-    options.some((o) => [...stems(o)].some((w) => said.has(w))) ||
-    /\b(?:both|neither|none|first|second)\b/iu.test(pick);
-  // Whether to sign, take or own is a person's to decide: no pick of it.
-  if (!one || (referral !== null && referral !== 'wellbeing' && referral !== 'grants' && PERSONAL.test(pick)))
+  const { referral } = c;
+  const said = [...raw.options, raw.pick];
+  // Whether to sign, take, own or split is a person's to decide: no pick of it.
+  if (referral !== null && NEVER_PICKED.has(referral)) return null;
+  if (said.some((o) => PERSONAL_OPTION.test(o) || splits(o))) return null;
+  if ((referral === 'legal' || referral === 'irb') && said.some((o) => BINDS.test(o))) return null;
+  // Asking for money shows more than giving it away.
+  if (FREE.test(raw.pick) && raw.options.some((o) => CHARGES.test(o) && !FREE.test(o))) return null;
+  const options = raw.options.slice(0, 4).flatMap((o) => c.claim('choice.option', o, 'plain') ?? []);
+  const named = (o: string): boolean => [...stemsOf(o)].some((w) => c.theirs.has(w));
+  if (options.length < 2 || !options.some(named) || !options.every((o) => named(o) || HOLDS.test(o)))
     return null;
-  return { options, pick, because, flipsIf: claim('choice.flips_if', raw.flips_if) };
+  const pick = c.claim('choice.pick', raw.pick);
+  const because = c.claim('choice.because', raw.because);
+  if (pick === null || because === null) return null;
+  // The pick is one of them, some of them, or none: never a third thing.
+  const stems = stemsOf(pick);
+  const one =
+    options.some(
+      (o) => o.toLowerCase() === pick.toLowerCase() || [...stemsOf(o)].some((w) => stems.has(w)),
+    ) || /\b(?:both|neither|none|first|second)\b/iu.test(pick);
+  if (!one) return null;
+  return { options, pick, because, flipsIf: c.counts('choice.flips_if', raw.flips_if) };
 }
-const PERSONAL =
-  /\b(?:sign|accept|take (?:the|it|his|her|their)|offer|equity|shares|patent|visa|salary|percent|%)/iu;
 
-function resultOf(raw: RawUnderstanding['result'], claim: Claim): UnderstoodResult | null {
+function resultOf(
+  raw: RawUnderstanding['result'],
+  c: {
+    readonly claim: Claim;
+    readonly counts: (field: string, text: string | null) => string | null;
+    readonly shows: (text: string) => string | null;
+  },
+): UnderstoodResult | null {
   if (raw === null) return null;
-  const shows = claim('result.shows', raw.shows);
+  const shows = c.shows(raw.shows);
   if (shows === null) return null;
   return {
     verdict: raw.verdict,
     shows,
-    doesNotShow: claim('result.does_not_show', raw.does_not_show),
-    settles: claim('result.settles', raw.settles),
+    doesNotShow: c.claim('result.does_not_show', raw.does_not_show),
+    settles: c.counts('result.settles', raw.settles),
   };
 }
 
@@ -356,4 +456,18 @@ function resultOf(raw: RawUnderstanding['result'], claim: Claim): UnderstoodResu
  */
 export function checkUnderstanding(raw: RawUnderstanding, context: UnderstandContext): Understanding | null {
   return readUnderstanding(raw, context).understanding;
+}
+
+/** The parts of a reading that came in time, as one, checked. */
+export function readParts(readings: UnderstandReadings, context: UnderstandContext): ReadUnderstanding {
+  const raw = mergeReadings(readings, {
+    message: context.message,
+    keys: new Set(context.record.map((r) => r.key.toUpperCase())),
+  });
+  return raw === null
+    ? {
+        understanding: null,
+        report: { sumDrops: [], inputs: { named: 0, found: 0, anywhere: 0 }, textDrops: [] },
+      }
+    : readUnderstanding(raw, context);
 }

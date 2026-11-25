@@ -28,9 +28,9 @@ SIMULATOR_TOKENS = (560, 40)
 #: allows 2,000), and the share of the typed turns that do.
 THINK_TOKENS = 700
 THINK_SHARE = {"judgement": 0.5, "typed": 1.0}
-#: The understand call of a turn, in and out (its prompt is mostly the provider's cached prefix, so fewer tokens are paid
-#: for than it reads; not measured yet, so planned high).
-UNDERSTAND_TOKENS = (5_000, 420)
+#: The understand calls of a turn together, in and out (their prompts are mostly the provider's cached prefix, so fewer
+#: tokens are paid for than they read; planned high).
+UNDERSTAND_TOKENS = (5_000, 400)
 #: The most a run is planned at: what is left to USD 2 is for what an estimate does not see.
 PLAN_LIMIT_USD = 1.8
 

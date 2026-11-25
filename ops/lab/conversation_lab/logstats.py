@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any
 
 #: An issue or note code as the API logs it: a JSON path, a colon and a code, or a bare snake_case code.
+#: The calls of one reading (`turn.understand`'s `routeCode`, `routeMs`, …).
+UNDERSTAND_PARTS = ("route", "sums", "judge")
 SAFE_CODE = re.compile(r"^[A-Za-z0-9_().\[\]: -]{1,80}$")
 
 
@@ -143,6 +145,8 @@ def summarize(lines: Iterable[str]) -> dict[str, Any]:
     face_approved = 0
     understood: Counter[str] = Counter()
     understand_ms: dict[str, list[float]] = {"text": [], "voice": []}
+    understand_parts: dict[str, Counter[str]] = {part: Counter() for part in UNDERSTAND_PARTS}
+    understand_part_ms: dict[str, list[float]] = {part: [] for part in UNDERSTAND_PARTS}
     interrupts = 0
     events = list(_events(lines))
     for e in events:
@@ -181,6 +185,14 @@ def summarize(lines: Iterable[str]) -> dict[str, Any]:
             spent = _ms(e.get("ms"))
             if spent is not None:
                 understand_ms["voice" if e.get("channel") == "voice" else "text"].append(spent)
+            for part in UNDERSTAND_PARTS:
+                ended = str(e.get(f"{part}Code") or "")
+                if not ended:
+                    continue
+                understand_parts[part][ended if SAFE_CODE.match(ended) else "other"] += 1
+                part_ms = _ms(e.get(f"{part}Ms"))
+                if part_ms is not None:
+                    understand_part_ms[part].append(part_ms)
         elif name == "turn.stream_fallback":
             reason = str(e.get("fallback") or e.get("reason") or "unknown")
             fallbacks[reason if SAFE_CODE.match(reason) else "other"] += 1
@@ -208,6 +220,14 @@ def summarize(lines: Iterable[str]) -> dict[str, Any]:
         "understand": {
             "codes": dict(understood),
             "ms": {channel: _percentiles(values) for channel, values in understand_ms.items()},
+            "parts": {
+                part: {
+                    "codes": dict(understand_parts[part]),
+                    "ms": _percentiles(understand_part_ms[part]),
+                }
+                for part in UNDERSTAND_PARTS
+                if understand_parts[part]
+            },
         },
         "stream_fallbacks": dict(fallbacks),
         "interrupt_requests": interrupts,

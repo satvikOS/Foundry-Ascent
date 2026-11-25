@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -249,7 +250,40 @@ DEFAULT_UNDERSTAND = "default"
 UNDERSTAND_CHOICES: tuple[str, ...] = (DEFAULT_UNDERSTAND, "off", "on")
 
 
-def understand_env(choice: str, model: str, lab: LabModels) -> dict[str, str]:
+@dataclass(frozen=True)
+class UnderstandCaps:
+    """How long a turn waits for its reading (``understand_ms``): CORE_UNDERSTAND_TYPED_MS and CORE_UNDERSTAND_VOICE_MS."""
+
+    typed_ms: int
+    voice_ms: int
+
+
+#: What packages/core takes for each (config.ts).
+UNDERSTAND_MS_RANGES: tuple[tuple[int, int], tuple[int, int]] = ((500, 10_000), (500, 5_000))
+
+
+def understand_caps(value: str) -> UnderstandCaps | None:
+    """``typed,voice`` in milliseconds as the input gives them (empty: the app's own); raises ValueError on another form."""
+    text = (value or "").strip()
+    if text in ("", DEFAULT_UNDERSTAND):
+        return None
+    parts = text.split(",")
+    if len(parts) != 2 or not all(re.fullmatch(r"\s*\d{3,5}\s*", p) for p in parts):
+        raise ValueError("understand_ms is two numbers of milliseconds, typed,voice")
+    typed, voice = (int(p) for p in parts)
+    for found, (least, most) in zip((typed, voice), UNDERSTAND_MS_RANGES, strict=True):
+        if not least <= found <= most:
+            raise ValueError(
+                "understand_ms is "
+                + " and ".join(f"{low} to {high}" for low, high in UNDERSTAND_MS_RANGES)
+                + " milliseconds"
+            )
+    return UnderstandCaps(typed, voice)
+
+
+def understand_env(
+    choice: str, model: str, lab: LabModels, caps: UnderstandCaps | None = None
+) -> dict[str, str]:
     """The API process's variables for the client suite's inputs; raises ValueError on one it does not offer."""
     if choice not in UNDERSTAND_CHOICES:
         raise ValueError(f"understand must be one of {', '.join(UNDERSTAND_CHOICES)}")
@@ -260,9 +294,22 @@ def understand_env(choice: str, model: str, lab: LabModels) -> dict[str, str]:
         )
     if named and choice != "on":
         raise ValueError("understand_model is for understand=on")
+    if caps and choice != "on":
+        raise ValueError("understand_ms is for understand=on")
     if choice == DEFAULT_UNDERSTAND:
         return {}
-    return {"CORE_UNDERSTAND": choice, **({"MODEL_UNDERSTAND_ID": named} if named else {})}
+    return {
+        "CORE_UNDERSTAND": choice,
+        **({"MODEL_UNDERSTAND_ID": named} if named else {}),
+        **(
+            {
+                "CORE_UNDERSTAND_TYPED_MS": str(caps.typed_ms),
+                "CORE_UNDERSTAND_VOICE_MS": str(caps.voice_ms),
+            }
+            if caps
+            else {}
+        ),
+    }
 
 
 #: The ``coach_model`` input that keeps the production model configuration.

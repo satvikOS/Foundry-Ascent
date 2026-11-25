@@ -80,6 +80,21 @@ def test_logstats_counts_the_understand_call_by_code_and_channel() -> None:
     assert out["ms"]["text"] == {"p50": 900.0, "p95": 2500.0, "n": 2}
     assert out["ms"]["voice"]["n"] == 1
     assert summarize([])["understand"]["codes"] == {}
+    assert summarize([])["understand"]["parts"] == {}
+
+
+def test_logstats_counts_the_parts_of_a_reading() -> None:
+    lines = [
+        '{"event":"turn.understand","code":"partial","ms":3000,"channel":"text","routeCode":"ok","routeMs":1100,'
+        '"sumsCode":"skipped","sumsMs":null,"judgeCode":"late","judgeMs":3000}',
+        '{"event":"turn.understand","code":"ok","ms":1500,"channel":"text","routeCode":"ok","routeMs":1300,'
+        '"sumsCode":"ok","sumsMs":900,"judgeCode":"what they said!","judgeMs":"x"}',
+    ]
+    parts = summarize(lines)["understand"]["parts"]
+    assert parts["route"] == {"codes": {"ok": 2}, "ms": {"p50": 1100.0, "p95": 1300.0, "n": 2}}
+    assert parts["sums"]["codes"] == {"skipped": 1, "ok": 1}
+    assert parts["sums"]["ms"]["n"] == 1
+    assert parts["judge"]["codes"] == {"late": 1, "other": 1}
 
 
 def test_logstats_counts_first_attempt_failures_by_purpose_and_groups_issue_codes() -> None:

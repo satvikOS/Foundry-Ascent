@@ -149,6 +149,20 @@ function balanced(text: string): boolean {
   return depth === 0;
 }
 
+/** The same expression with each leaf as `made` makes it. */
+export function mapLeaves(e: Expr, made: (leaf: Expr & { t: 'num' | 'name' }) => Expr): Expr {
+  switch (e.t) {
+    case 'num':
+    case 'name':
+      return made(e);
+    case 'neg':
+    case 'pct':
+      return { ...e, a: mapLeaves(e.a, made) };
+    case 'bin':
+      return { ...e, a: mapLeaves(e.a, made), b: mapLeaves(e.b, made) };
+  }
+}
+
 /** Every node of an expression. */
 export function nodesOf(e: Expr): Expr[] {
   if (e.t === 'num' || e.t === 'name') return [e];
@@ -212,7 +226,13 @@ const RANK: Readonly<Record<Operator, number>> = { '+': 1, '-': 1, '*': 2, '/': 
 
 /** The working as it is shown, each leaf as it is said: "40 × ($9 − $3) − $20". */
 export function renderExpr(e: Expr, said: (leaf: Expr & { t: 'num' | 'name' }) => string): string {
-  const rank = (x: Expr): number => (x.t === 'bin' ? RANK[x.op] : 3);
+  /** "12% ÷ 100" is 12%. */
+  const share = (x: Expr): string | null => {
+    if (x.t !== 'bin' || x.op !== '/' || x.b.t !== 'num' || x.b.v !== 100) return null;
+    const of = x.a.t === 'num' || x.a.t === 'name' ? said(x.a) : '';
+    return of.endsWith('%') ? of : null;
+  };
+  const rank = (x: Expr): number => (x.t !== 'bin' || share(x) !== null ? 3 : RANK[x.op]);
   const draw = (x: Expr): string => {
     switch (x.t) {
       case 'num':
@@ -223,6 +243,8 @@ export function renderExpr(e: Expr, said: (leaf: Expr & { t: 'num' | 'name' }) =
       case 'neg':
         return rank(x.a) < 3 ? `−(${draw(x.a)})` : `−${draw(x.a)}`;
       case 'bin': {
+        const percent = share(x);
+        if (percent !== null) return percent;
         const left = rank(x.a) < RANK[x.op] ? `(${draw(x.a)})` : draw(x.a);
         // a − (b + c), a ÷ (b × c): what is on the right keeps its parentheses.
         const bare =

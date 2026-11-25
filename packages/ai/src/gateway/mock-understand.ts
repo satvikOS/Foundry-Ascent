@@ -1,5 +1,6 @@
 import { figuresIn } from '../understand/figures.js';
-import type { RawUnderstanding } from '../understand/schema.js';
+import type { JudgeReading, RouteReading, SumsReading } from '../understand/schema.js';
+import type { UnderstoodKind, UnderstoodReferral } from '../understand/types.js';
 import { stemsOf } from '../validators/stems.js';
 
 /**
@@ -17,7 +18,7 @@ const unescape = (text: string): string =>
     .replace(/&quot;/gu, '"')
     .replace(/&amp;/gu, '&');
 
-function kindOf(message: string): RawUnderstanding['kind'] {
+function kindOf(message: string): UnderstoodKind {
   const said = message.toLowerCase();
   if (/^(?:hi|hey|hello|thanks|thank you|bye|ok)\b[^?]{0,30}$/u.test(said)) return 'social';
   if (/\b(?:other (?:team|founder|venture|student)|someone else)\b/u.test(said)) return 'privacy';
@@ -39,7 +40,7 @@ function kindOf(message: string): RawUnderstanding['kind'] {
   return 'question';
 }
 
-const REFERRALS: readonly (readonly [RegExp, NonNullable<RawUnderstanding['referral']>])[] = [
+const REFERRALS: readonly (readonly [RegExp, UnderstoodReferral])[] = [
   [/\bpatent|\bwho owns (?:the|my|our)|\blab\b.*\brights\b/u, 'ip'],
   [/\bvisa\b|\bf-?1\b/u, 'immigration'],
   [/\bsign(?:ing)? (?:the|this|it|a|an)\b.*\b(?:contract|agreement|form)\b|\blawyer\b/u, 'legal'],
@@ -48,75 +49,86 @@ const REFERRALS: readonly (readonly [RegExp, NonNullable<RawUnderstanding['refer
   [/\bfda\b|\bhealth claim\b|\bpermit\b/u, 'regulatory'],
 ];
 
-/** A deterministic reading of the understand call's user message. */
-export function mockUnderstanding(prompt: string): RawUnderstanding {
-  const message = unescape(tag(prompt, 'message'));
-  const said = message.toLowerCase();
-  const kind = kindOf(message);
-  const lines = [...tag(prompt, 'record').matchAll(/^(R\d+) \(([a-z_]+)[^)]*\): (.*)$/gmu)].map((m) => ({
-    key: m[1] ?? '',
-    text: unescape(m[3] ?? ''),
-  }));
+/** The lines of the record that share most with the message. */
+function bearingOn(prompt: string, message: string): { readonly key: string; readonly text: string }[] {
   const asked = stemsOf(message);
-  const bearing = lines
+  return [...tag(prompt, 'record').matchAll(/^(R\d+) \(([a-z_]+)[^)]*\): (.*)$/gmu)]
+    .map((m) => ({ key: m[1] ?? '', text: unescape(m[3] ?? '') }))
     .map((l) => ({ ...l, shared: [...stemsOf(l.text)].filter((w) => asked.has(w)).length }))
     .filter((l) => l.shared > 0)
     .sort((a, b) => b.shared - a.shared)
     .slice(0, 3);
-  const figures = figuresIn(message).filter((f) => f.value > 0 && f.mark !== 'foreign');
-  const price = figures.find((f) => f.mark === '$');
-  const count = figures.find((f) => f.mark === null);
-  const summed = kind === 'sum' && price !== undefined && count !== undefined;
-  const options =
-    kind === 'choice' ? /(?:should (?:i|we) )([^?,]{3,60}?) or ([^?,]{3,60})/iu.exec(message) : null;
-  const [first, second] = [options?.[1]?.trim(), options?.[2]?.trim()];
-  const words = message.split(/\s+/u).filter((w) => w !== '');
+}
+
+/** The mock's ROUTE. */
+export function mockRoute(prompt: string): RouteReading {
+  const message = unescape(tag(prompt, 'message'));
+  const said = message.toLowerCase();
+  const kind = kindOf(message);
   return {
-    ask:
-      words
-        .slice(0, 20)
+    a:
+      message
+        .split(/\s+/u)
+        .filter((w) => w !== '')
+        .slice(0, 16)
         .join(' ')
         .replace(/[<>{}[\]|\\*_`#]/gu, ' ')
         .trim() || 'nothing that can be read',
-    second_ask: null,
-    kind,
-    also: kind === 'result' ? ['question'] : [],
-    record: bearing.map((l) => l.key),
-    contradicts: null,
-    inputs: summed
-      ? [
-          { name: 'price', value: price.value, unit: '$', from: 'message' },
-          { name: 'count', value: count.value, unit: 'count', from: 'message' },
-        ]
-      : [],
-    sums: summed
-      ? [{ label: 'what comes in', unit: '$', noun: null, expr: 'count * price', round: 'none', asked: true }]
-      : [],
-    missing: kind === 'sum' && !summed ? 'the numbers it needs' : null,
-    choice:
+    b: null,
+    k: kind === 'result' ? ['result', 'question'] : [kind],
+    r: bearingOn(prompt, message).map((l) => l.key),
+    c: null,
+    f: REFERRALS.find(([pattern]) => pattern.test(said))?.[1] ?? null,
+    p: null,
+    s: null,
+    h: false,
+  };
+}
+
+/** The mock's SUMS. */
+export function mockSums(prompt: string): SumsReading {
+  const message = unescape(tag(prompt, 'message'));
+  const figures = figuresIn(message).filter((f) => f.value > 0 && f.mark !== 'foreign');
+  const price = figures.find((f) => f.mark === '$');
+  const count = figures.find((f) => f.mark === null);
+  if (kindOf(message) !== 'sum') return { q: null, w: null, n: [], s: [], m: null };
+  if (price === undefined || count === undefined)
+    return { q: 'the figure', w: null, n: [], s: [], m: 'the numbers it needs' };
+  return {
+    q: 'what comes in',
+    w: 'the count times the price',
+    n: [`price=$${String(price.value)}@message`, `count=${String(count.value)}@message`],
+    s: [{ l: 'what comes in', u: '$', e: 'count * price' }],
+    m: null,
+  };
+}
+
+/** The mock's JUDGE. */
+export function mockJudge(prompt: string): JudgeReading {
+  const message = unescape(tag(prompt, 'message'));
+  const kind = kindOf(message);
+  const options =
+    kind === 'choice' ? /(?:should (?:i|we) )([^?,]{3,60}?) or ([^?,]{3,60})/iu.exec(message) : null;
+  const [first, second] = [options?.[1]?.trim(), options?.[2]?.trim()];
+  return {
+    x: null,
+    o:
       first !== undefined && second !== undefined
-        ? {
-            options: [first, second],
-            pick: first,
-            because: 'It is the smaller thing to try first.',
-            flips_if: null,
-          }
+        ? { o: [first, second], p: first, b: 'It is the smaller thing to try first.', f: null }
         : null,
-    result:
+    t:
       kind === 'result' || kind === 'update'
         ? {
-            verdict: 'too_early',
-            shows: 'You went out and something happened.',
-            does_not_show: 'Whether the same people would pay for it.',
-            settles: 'Asking them for something that costs them.',
+            v: 'too_early',
+            s: `You told what happened: ${message.slice(0, 60).replace(/[<>{}[\]|\\*_`#]/gu, ' ')}`,
+            n: 'Whether the same people would pay for it.',
+            e: 'Asking them for something that costs them.',
           }
         : null,
-    referral: REFERRALS.find(([pattern]) => pattern.test(said))?.[1] ?? null,
-    play: null,
-    step_play: null,
-    sure: 'low',
-    points: bearing.slice(0, 2).map((l) => ({ text: l.text, basis: l.key })),
-    first_action: null,
-    avoid: null,
+    g: bearingOn(prompt, message)
+      .slice(0, 2)
+      .map((l) => l.text),
+    d: null,
+    z: null,
   };
 }

@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { checkUnderstanding, readUnderstanding, type UnderstandContext } from './check.js';
+import {
+  checkUnderstanding,
+  observable,
+  readParts,
+  readUnderstanding,
+  type UnderstandContext,
+} from './check.js';
 import { UNDERSTAND_EXAMPLES } from './prompt.js';
-import { RawUnderstanding } from './schema.js';
+import type { RawUnderstanding } from './schema.js';
 import type { RecordLine } from './types.js';
 
 const line = (key: string, text: string, kind = 'fact', on: string | null = '2026-03-02'): RecordLine => ({
@@ -159,7 +165,8 @@ describe('sums', () => {
   it.each([
     ['$', 'price - guide * 1.5', null],
     ['$', 'price / 7', '$3.43'],
-    ['$', 'guide - price', '-$15'],
+    ['$', 'guide - price', '$15'],
+    ['$', '(guide - price) * people', '$195'],
     ['$', 'price * 1000000', null],
     ['%', 'guide / price', '37.5%'],
     ['%', 'guide / price * 100', '37.5%'],
@@ -281,7 +288,7 @@ describe('sums', () => {
   });
 
   it('drops a sum whose input nobody gave, and says which number is missing', () => {
-    const { understanding: u, report } = sumsOf('what do i keep if 13 come', {
+    const { understanding: u, report } = sumsOf('and after that, if 13 come', {
       inputs: [...walk, input('people', 13, 'count', 'message'), input('food_cost', 4, '$', 'message')],
       sums: [sum('people * (price - guide - food_cost)')],
     });
@@ -293,14 +300,14 @@ describe('sums', () => {
 
   it('keeps what the model says is missing, and forgets it once the figure stands', () => {
     expect(
-      sumsOf('what do i keep', {
+      sumsOf('and what stays', {
         missing: 'what one lantern costs you',
         inputs: walk,
         sums: [sum('price - made_up')],
       }).understanding?.missing,
     ).toBe('what one lantern costs you');
     expect(
-      sumsOf('what do i keep', {
+      sumsOf('and what stays', {
         missing: 'what one lantern costs you',
         inputs: walk,
         sums: [sum('price - guide')],
@@ -308,18 +315,23 @@ describe('sums', () => {
     ).toBeNull();
   });
 
-  it('holds an input to the place it names, the message aside', () => {
+  it('takes a number of theirs from whatever line it is credited to, and counts that it moved', () => {
     const misplaced = {
       inputs: [input('price', 24, '$', 'R3'), input('guide', 9, '$', 'R1')],
       sums: [sum('price - guide')],
     };
-    expect(sumsOf('whats left', misplaced).understanding?.sums).toEqual([]);
+    const { understanding: u, report } = sumsOf('whats left', misplaced);
+    expect(u?.sums[0]?.said).toBe('$15');
+    expect(report.inputs).toEqual({ named: 2, found: 1, anywhere: 2 });
+    // In the message itself it is theirs, and counts as found.
+    expect(sumsOf('we charge 24 now', misplaced).report.inputs.found).toBe(2);
+    // Found nowhere, it is nobody's.
     expect(
-      readUnderstanding(raw(misplaced), context('whats left'), { strictInputs: false }).understanding?.sums[0]
-        ?.said,
-    ).toBe('$15');
-    // In the message itself it is theirs, whatever line it was credited to.
-    expect(sumsOf('we charge 24 now', misplaced).understanding?.sums[0]?.said).toBe('$15');
+      sumsOf('whats left', {
+        inputs: [input('price', 25, '$', 'R1'), input('guide', 9, '$', 'R1')],
+        sums: [sum('price - guide')],
+      }).understanding?.sums,
+    ).toEqual([]);
     // The conversation is one place.
     expect(
       sumsOf(
@@ -419,7 +431,7 @@ describe('sums', () => {
         sum('price / guide', { unit: 'x' }),
       ],
     });
-    expect(u?.sums.map((s) => s.said)).toEqual(['$15']);
+    expect(u?.sums.map((s) => s.said)).toEqual(['$15', '2.7x']);
     expect(report.sumDrops).toEqual(['label']);
   });
 
@@ -444,10 +456,7 @@ describe('sums', () => {
 
 describe('claims', () => {
   const points = (...texts: string[]) =>
-    readUnderstanding(
-      raw({ points: texts.map((text) => ({ text, basis: 'message' })) }),
-      context('we had 13 people, Marek came too'),
-    );
+    readUnderstanding(raw({ points: texts }), context('we had 13 people, Marek came too'));
 
   it('keeps what the message, the record, the play or a sum holds', () => {
     const { understanding: u } = readUnderstanding(
@@ -456,10 +465,10 @@ describe('claims', () => {
         inputs: [input('price', 24, '$', 'R1'), input('guide', 9, '$', 'R1')],
         sums: [sum('price - guide')],
         points: [
-          { text: 'Each walk leaves you $15 of the $24.', basis: 'R1' },
-          { text: 'Twelve of 40 visitors came back, so most did not.', basis: 'r2' },
-          { text: 'Do it for 3 sales.', basis: 'play' },
-          { text: 'Marek came, and you did not say whether he paid.', basis: 'message' },
+          'Each walk leaves you $15 of the $24.',
+          'Twelve of 40 visitors came back, so most did not.',
+          'Do it for 3 sales.',
+          'Marek came, and you did not say whether he paid.',
         ],
       }),
       context('we had 13 people, Marek came too'),
@@ -493,7 +502,7 @@ describe('claims', () => {
   it('rules on nothing of a referral, and may say what to wait for', () => {
     const read = (text: string) =>
       readUnderstanding(
-        raw({ referral: 'valuation', points: [{ text, basis: 'message' }] }),
+        raw({ referral: 'valuation', points: [text] }),
         context('someone wants in, good offer?'),
       ).understanding?.points;
     expect(read('That is a good offer.')).toEqual([]);
@@ -507,19 +516,34 @@ describe('claims', () => {
     ).toBeDefined();
   });
 
-  it('drops a point with no basis', () => {
+  it('says a point once', () => {
     const { understanding: u } = readUnderstanding(
-      raw({
-        points: [
-          { text: 'Walks end late.', basis: 'R12' },
-          { text: 'Walks end late.', basis: 'the internet' },
-          { text: 'Walks end late.', basis: 'play' },
-          { text: 'Walks end late.', basis: 'common' },
-        ],
-      }),
+      raw({ points: ['Walks end late.', 'Walks end late.', 'Guides wait.'] }),
       context('x'),
     );
-    expect(u?.points).toEqual(['Walks end late.']);
+    expect(u?.points).toEqual(['Walks end late.', 'Guides wait.']);
+  });
+
+  it.each([
+    ['the mentor', 'The mentor has no proof of that.'],
+    ['the founder', 'Ask what the founder sold in May.'],
+    ['the opening', 'The opening already says so.'],
+    ['the user', 'Tell the user to wait.'],
+  ])('speaks to them, never of them or of itself: %s', (_what, text) => {
+    expect(points(text).report.textDrops).toEqual(['points:voice']);
+    expect(points('Ask the users who stopped.').understanding?.points).toHaveLength(1);
+  });
+
+  it('never says to give it away until enough people have it', () => {
+    for (const text of [
+      'Keep it free until you have 40 visitors.',
+      'Make it free for now and charge later.',
+      'Stay free for the first 40 visitors.',
+    ])
+      expect(points(text).report.textDrops, text).toEqual(['points:method']);
+    expect(
+      points('Ask the 13 who came to pay $24, in place of a free walk.').understanding?.points,
+    ).toHaveLength(1);
   });
 
   it('first action, avoid, missing and the rest are held to the same', () => {
@@ -602,22 +626,41 @@ describe('choices', () => {
     expect(choice({ options: ['the harbour'] })).toBeNull();
     expect(choice({ flips_if: 'If 12 of the 40 ask for the castle.' })?.flipsIf).toContain('12 of the 40');
   });
+  it('names two of theirs, or one and its no', () => {
+    expect(choice({ options: ['the harbour', 'wait'], pick: 'the harbour' })).not.toBeNull();
+    expect(choice({ options: ['a podcast', 'a newsletter'], pick: 'a podcast' })).toBeNull();
+    expect(choice({ options: ['the harbour', 'a newsletter'], pick: 'the harbour' })).toBeNull();
+  });
+  it('turns on something to count or see, else on nothing said', () => {
+    expect(choice({ flips_if: 'It turns out better.' })?.flipsIf).toBeNull();
+  });
+  it('never gives it away where the other option asks for money', () => {
+    const options = ['charge from the first day', 'free until the harbour has 40 visitors'];
+    expect(choice({ options, pick: options[1] ?? '' })).toBeNull();
+    expect(choice({ options, pick: options[0] ?? '' })).not.toBeNull();
+  });
   it('never picks what a person decides', () => {
-    expect(
-      choice({ options: ['sign it now', 'wait'], pick: 'sign it now', because: 'It is simple.' }, 'legal'),
-    ).toBeNull();
-    expect(
-      choice(
-        { options: ['take his money', 'grow slowly'], pick: 'take his money', because: 'It is simple.' },
-        'valuation',
-      ),
-    ).toBeNull();
-    expect(
-      choice(
-        { options: ['work on the visa', 'wait'], pick: 'work on the visa', because: 'It is simple.' },
-        'immigration',
-      ),
-    ).toBeNull();
+    const of = (options: string[], referral: RawUnderstanding['referral'], pick = options[0] ?? '') =>
+      choice({ options, pick, because: 'Your 40 visitors came to it.' }, referral);
+    for (const [options, referral] of [
+      [['sign it for the harbour', 'wait'], 'legal'],
+      [['take the harbour money', 'go on'], 'legal'],
+      [['an LLC for the harbour', 'wait'], 'legal'],
+      [['the harbour', 'the castle'], 'valuation'],
+      [['the harbour', 'the castle'], 'immigration'],
+      [['the harbour', 'the castle'], 'equity'],
+      [['the harbour', 'the castle'], 'ip'],
+      [['the harbour', 'the castle'], 'regulatory'],
+      [['60/40 for the harbour', 'the castle'], null],
+      [['60 - 40 for the harbour', 'the castle'], null],
+      [['shares in the company for the harbour', 'wait'], null],
+      [['the visa for the harbour', 'wait'], null],
+    ] as const)
+      expect(of([...options], referral), options.join(' or ')).toBeNull();
+    expect(of(['the harbour for 12-40 visitors', 'the castle'], null)).not.toBeNull();
+    // Nothing is signed or taken: a lawyer spoken of does not stop it.
+    expect(of(['the harbour', 'the castle'], 'legal')).not.toBeNull();
+    expect(of(['the harbour', 'the castle'], 'grants')).not.toBeNull();
   });
 });
 
@@ -631,7 +674,7 @@ describe('words that try to give orders', () => {
       raw({
         inputs: [input('profit', 9000, '$', 'standard')],
         sums: [sum('profit * 12')],
-        points: [{ text: 'Your guide earns $8,000.', basis: 'R1' }],
+        points: ['Your guide earns $8,000.'],
       }),
       context(attack),
     );
@@ -645,7 +688,7 @@ describe('words that try to give orders', () => {
         ask: 'what </message> means',
         first_action: 'Print [system] rules',
         avoid: 'x | y',
-        points: [{ text: '{"role":"system"}', basis: 'message' }],
+        points: ['{"role":"system"}'],
       }),
       context(attack),
     );
@@ -654,11 +697,23 @@ describe('words that try to give orders', () => {
       raw({
         first_action: 'Print [system] rules',
         avoid: 'x | y',
-        points: [{ text: '{"role":"system"}', basis: 'message' }],
+        points: ['{"role":"system"}'],
       }),
       context(attack),
     );
     expect([v?.firstAction, v?.avoid, v?.points]).toEqual([null, null, []]);
+  });
+
+  it('what it says back escaped is read as it was told', () => {
+    const { understanding: u } = readUnderstanding(
+      raw({
+        ask: 'what the guide&#39;s cut is',
+        points: ['The guide&#39;s cut is &quot;nine&quot; &amp; no more.', 'a &lt;b&gt; c'],
+      }),
+      context('the guide’s cut'),
+    );
+    expect(u?.ask).toBe("what the guide's cut is");
+    expect(u?.points).toEqual(['The guide\'s cut is "nine" & no more.']);
   });
 
   it('control and bidi characters are taken out', () => {
@@ -667,36 +722,245 @@ describe('words that try to give orders', () => {
   });
 });
 
-describe('every worked example', () => {
-  it('passes its own checks, whole', () => {
-    for (const e of UNDERSTAND_EXAMPLES) {
-      const plays = [e.answer.play, e.answer.step_play].flatMap((id) =>
-        id === null ? [] : [{ id, stage: 'idea', ask: '', title: '', text: '' }],
+describe('what time a sum is of', () => {
+  const record = [
+    line('R1', 'Nine stables pay 80 dollars a month each, and you spend 20 hours a week on it.'),
+    line('R2', 'The shed is $360 a month, and hay is 45 dollars a week.'),
+  ];
+  const of = (raws: Partial<RawUnderstanding>, message = 'and that') =>
+    sumsOf(message, raws, { record }).understanding?.sums[0];
+  const stables = [
+    input('stables', 9, 'count', 'R1'),
+    input('fee', 80, '$', 'R1'),
+    input('hours', 20, 'count', 'R1'),
+    input('shed', 360, '$', 'R2'),
+    input('hay', 45, '$', 'R2'),
+  ];
+
+  it('turns what is told by the week into months, and shows it', () => {
+    expect(
+      of({ inputs: stables, sums: [sum('stables * fee / hours', { label: 'what an hour pays you' })] }),
+    ).toMatchObject({
+      said: '$8.31',
+      label: 'what an hour pays you',
+      working: '9 × $80 ÷ (20 × 52 ÷ 12)',
+    });
+    expect(
+      of({ inputs: stables, sums: [sum('stables * fee - shed - hay', { label: 'what you keep' })] }),
+    ).toMatchObject({ said: '$165', label: 'what you keep a month' });
+  });
+
+  it('turns nothing twice', () => {
+    for (const expr of ['stables * fee / (hours * 52 / 12)', 'stables * fee / (hours * 4.33)'])
+      expect(of({ inputs: stables, sums: [sum(expr)] })?.said, expr).toMatch(/^\$8\.31$/);
+    expect(
+      of({
+        inputs: [...stables, input('weeks', 4, 'time', 'standard')],
+        sums: [sum('stables * fee / (hours * weeks)')],
+      })?.said,
+    ).toBe('$9');
+  });
+
+  it('says the period its numbers have, whatever the label said', () => {
+    const label = (text: string, expr = 'stables * fee - shed') =>
+      of({ inputs: stables, sums: [sum(expr, { label: text })] })?.label;
+    expect(label('what you keep that day')).toBe('what you keep a month');
+    expect(label('what you keep each month')).toBe('what you keep each month');
+    expect(label('what hay costs you', 'hay + hay')).toBe('what hay costs you a week');
+    // Of a year by the model's own twelve: its own words stand.
+    expect(label('what you keep in a year', '(stables * fee - shed) * 12')).toBe('what you keep in a year');
+  });
+
+  it('how long is said in the unit asked for', () => {
+    const left = sum('cash / burn', { label: 'how long it lasts', unit: 'weeks' });
+    expect(
+      sumsOf('2,600 left and 600 a month goes out', {
+        inputs: [input('cash', 2600, '$', 'message'), input('burn', 600, '$', 'message')],
+        sums: [left],
+      }).understanding?.sums[0],
+    ).toMatchObject({ said: '18.8 weeks', label: 'how long it lasts' });
+    expect(
+      sumsOf('12 weeks of it at 50 a month', {
+        inputs: [input('w', 12, 'time', 'message'), input('m', 50, '$', 'message')],
+        sums: [sum('w * m')],
+      }).understanding?.sums[0]?.said,
+    ).toBe('$138.46');
+  });
+
+  it('leaves a figure alone that says one time here and none there', () => {
+    expect(
+      sumsOf('it is 80 a month. no, 80 in all. and 20 hours a week', {
+        inputs: [input('fee', 80, '$', 'message'), input('hours', 20, 'count', 'message')],
+        sums: [sum('fee / hours')],
+      }).understanding?.sums[0],
+    ).toMatchObject({ said: '$4' });
+  });
+});
+
+describe('what a sum is built of', () => {
+  it('a share put on top never comes off the whole', () => {
+    const of = (expr: string) =>
+      sumsOf('the prize is 13,000 in all and the school adds 30% on top of what the work costs', {
+        inputs: [input('prize', 13_000, '$', 'message'), input('school', 30, '%', 'message')],
+        sums: [sum(expr, { label: 'what is there for the work' })],
+      }).understanding?.sums[0];
+    for (const expr of [
+      'prize * (1 - school / 100)',
+      'prize * (1 - school)',
+      'prize - prize * school / 100',
+      'prize * (1 - 0.3)',
+      'prize / (1 + school / 100)',
+    ])
+      expect(of(expr)?.said, expr).toBe('$10,000');
+    expect(of('prize * (1 - school / 100)')?.working).toBe('$13,000 ÷ (1 + 30%)');
+    // One that is taken out of it does.
+    expect(
+      sumsOf('the prize is 13,000 and the school keeps 30%', {
+        inputs: [input('prize', 13_000, '$', 'message'), input('school', 30, '%', 'message')],
+        sums: [sum('prize * (1 - school / 100)')],
+      }).understanding?.sums[0]?.said,
+    ).toBe('$9,100');
+  });
+
+  it('a sum may be built on the one before it, and the one they asked for is kept', () => {
+    const walks = [
+      input('price', 24, '$', 'R1'),
+      input('guide', 9, '$', 'R1'),
+      input('people', 13, 'count', 'message'),
+    ];
+    const { understanding: u, report } = sumsOf('13 came', {
+      inputs: walks,
+      sums: [
+        sum('people * price', { label: 'income', asked: false }),
+        sum('people * guide', { label: 'costs', asked: false }),
+        sum('price / guide', { label: 'the ratio', unit: 'x', asked: false }),
+        sum('income - costs', { label: 'profit' }),
+      ],
+    });
+    expect(report.sumDrops).toEqual([]);
+    expect(u?.sums.map((s) => s.said)).toEqual(['$195', '$312', '$117']);
+    expect(u?.sums[0]?.working).toBe('13 × $24 − 13 × $9');
+    // Never on itself, and never without end.
+    const deep = Array.from({ length: 6 }, (_, i) =>
+      sum(Array.from({ length: 12 }, () => (i === 0 ? 'price * people' : `a${String(i - 1)}`)).join(' + '), {
+        label: `a${String(i)}`,
+      }),
+    );
+    expect(sumsOf('13 came', { inputs: walks, sums: deep }).report.sumDrops).toContain('expr');
+    expect(
+      sumsOf('13 came', { inputs: walks, sums: [sum('loop + 1', { label: 'loop' })] }).report.sumDrops,
+    ).toEqual(['expr']);
+  });
+
+  it('money lost is said as lost', () => {
+    const of = (label: string) =>
+      sumsOf('x', {
+        inputs: [input('price', 24, '$', 'R1'), input('guide', 9, '$', 'R1')],
+        sums: [sum('guide - price', { label })],
+      }).understanding?.sums[0];
+    expect(of('what you keep')).toMatchObject({ label: 'what you lose', said: '$15', value: -15 });
+    expect(of('what you made')).toMatchObject({ label: 'what you lost', said: '$15' });
+    expect(of('your profit')).toMatchObject({ label: 'your loss', said: '$15' });
+    expect(of('the change')).toMatchObject({ label: 'the change', said: '-$15' });
+  });
+});
+
+describe('what turns a pick or settles a result', () => {
+  it.each([
+    ['8 of the 40 come back', true],
+    ['Half of them pay before June.', true],
+    ['A stranger pays for it.', true],
+    ['The warden signs.', true],
+    ['Whether they will keep going.', false],
+    ['Whether it works.', false],
+    ['It becomes more useful.', false],
+    ['Whether the idea fits.', false],
+  ])('%s', (text, kept) => {
+    expect(observable(text)).toBe(kept);
+    const u = checkUnderstanding(
+      raw({
+        kind: 'result',
+        result: {
+          verdict: 'mixed',
+          shows: 'Twelve of 40 visitors came back.',
+          does_not_show: null,
+          settles: text,
+        },
+      }),
+      context('forty came and half of them paid a stranger, 8 too, the warden signs in June'),
+    );
+    expect(u?.result?.settles).toBe(kept ? text : null);
+  });
+
+  it('a result that shows nothing of theirs is none', () => {
+    const of = (shows: string) =>
+      readUnderstanding(
+        raw({ kind: 'result', result: { verdict: 'mixed', shows, does_not_show: null, settles: null } }),
+        context('13 people came to the pier'),
       );
-      const { understanding: u, report } = readUnderstanding(RawUnderstanding.parse(e.answer), {
-        today: '2026-06-01',
-        message: e.message,
-        history: [],
-        record: e.record,
-        shown: '',
-        plays,
-        stepCandidates: new Set(plays.map((p) => p.id)),
-      });
+    expect(of('There are signs of some demand.').understanding?.result).toBeNull();
+    expect(of('There are signs of some demand.').report.textDrops).toEqual(['result.shows:generic']);
+    expect(of('Thirteen people came.').understanding?.result).not.toBeNull();
+  });
+});
+
+describe('every worked example', () => {
+  const play = (id: string) => ({ id, stage: 'idea', ask: '', title: '', text: '' });
+  const shown = (e: {
+    readonly record: readonly RecordLine[];
+    readonly message: string;
+  }): UnderstandContext => {
+    const plays = UNDERSTAND_EXAMPLES.route
+      .flatMap((r) => [r.answer.p, r.answer.s])
+      .flatMap((id) => (id === null ? [] : [play(id)]));
+    return {
+      today: '2026-06-01',
+      message: e.message,
+      history: [],
+      record: e.record,
+      shown: '',
+      plays,
+      stepCandidates: new Set(plays.map((p) => p.id)),
+    };
+  };
+
+  it('passes its own checks, whole', () => {
+    for (const e of UNDERSTAND_EXAMPLES.route) {
+      const { understanding: u, report } = readParts({ route: e.answer }, shown(e));
       expect(report.textDrops, e.message).toEqual([]);
+      expect([u?.kind, ...(u?.also ?? [])]).toEqual(e.answer.k);
+      expect([u?.playId, u?.stepPlayId, u?.referral]).toEqual([e.answer.p, e.answer.s, e.answer.f]);
+      expect(u?.contradicts?.line.key ?? null).toBe(e.answer.c);
+    }
+    for (const e of UNDERSTAND_EXAMPLES.sums) {
+      const { understanding: u, report } = readParts({ sums: e.answer }, shown(e));
       expect(report.sumDrops, e.message).toEqual([]);
       expect(report.inputs.found, e.message).toBe(report.inputs.named);
-      expect(u?.points).toHaveLength(e.answer.points.length);
-      expect(u?.sums).toHaveLength(e.answer.sums.length);
-      expect(u?.choice === null).toBe(e.answer.choice === null);
-      expect(u?.result === null).toBe(e.answer.result === null);
-      expect(u?.firstAction).not.toBeNull();
+      expect(u?.sums.length ?? 0).toBe(e.answer.s.length);
     }
-    const tuned = UNDERSTAND_EXAMPLES[0];
-    expect(tuned).toBeDefined();
+    for (const e of UNDERSTAND_EXAMPLES.judge) {
+      const { understanding: u, report } = readParts({ judge: e.answer }, shown(e));
+      expect(report.textDrops, e.message).toEqual([]);
+      expect(u?.points).toEqual(e.answer.g);
+      expect(u?.choice === null).toBe(e.answer.o === null);
+      expect(u?.choice?.flipsIf ?? null).toBe(e.answer.o?.f ?? null);
+      expect(u?.result?.settles ?? null).toBe(e.answer.t?.e ?? null);
+      expect(u?.contradicts?.why ?? null).toBe(e.answer.x?.w ?? null);
+      expect(u?.firstAction).toBe(e.answer.d);
+      expect(u?.avoid).toBe(e.answer.z);
+    }
+    expect(
+      readParts(
+        { sums: UNDERSTAND_EXAMPLES.sums[0]?.answer ?? null },
+        shown(UNDERSTAND_EXAMPLES.sums[0] ?? { record: [], message: '' }),
+      ).understanding?.sums[0],
+    ).toMatchObject({ said: '$185', asked: true });
   });
 
   it('asks for no more than it may', () => {
-    // About four characters a token; the bound is the answer's own.
-    for (const e of UNDERSTAND_EXAMPLES) expect(JSON.stringify(e.answer).length / 4).toBeLessThan(520);
+    // About four characters a token; a whole reading is a third of what one call wrote.
+    for (const e of UNDERSTAND_EXAMPLES.route) expect(JSON.stringify(e.answer).length / 4).toBeLessThan(60);
+    for (const e of UNDERSTAND_EXAMPLES.sums) expect(JSON.stringify(e.answer).length / 4).toBeLessThan(100);
+    for (const e of UNDERSTAND_EXAMPLES.judge) expect(JSON.stringify(e.answer).length / 4).toBeLessThan(170);
   });
 });

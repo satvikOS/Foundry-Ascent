@@ -197,10 +197,12 @@ export {
 } from './orchestrator/retrieval.js';
 export { playRefId } from './orchestrator/evidence.js';
 export {
+  judgeLeads,
   prepareUnderstand,
   understandCatalogue,
   understandDue,
   understandTurn,
+  type PreparedPart,
   type PreparedUnderstand,
   type UnderstandInput,
 } from './orchestrator/understand.js';

@@ -511,33 +511,36 @@ free, on the mock gateway and hashed embeddings (without `DATABASE_URL` the mode
 
 ## Understand benchmark
 
-`understand` measures the call that reads a message against the record before a turn decides
-([understand.md](../architecture/understand.md)) on each model it may run on (`understand` in `ops/lab/models.json`: Nova 2 Lite
+`understand` measures the three calls that read a message against the record before a turn decides
+([understand.md](../architecture/understand.md)) on each model they may run on (`understand` in `ops/lab/models.json`: Nova 2 Lite
 without and with low reasoning, gpt-oss 120B and 20B, Qwen3 Next 80B, Nova Micro and Nova Lite), before production turns it on.
 
 ```bash
 gh workflow run ops-conversation-lab.yml -f suite=understand -f budget_usd=2 -f public_key="$KEY"
 gh workflow run ops-conversation-lab.yml -f suite=understand -f groups=heldout,numbers -f budget_usd=2 -f public_key="$KEY"
 gh workflow run ops-conversation-lab.yml -f suite=understand -f understand_model=us.amazon.nova-2-lite-v1:0 -f budget_usd=1
+gh workflow run ops-conversation-lab.yml -f suite=understand -f understand_model=us.amazon.nova-2-lite-v1:0 -f understand_ms=4000,2000 -f budget_usd=1
 ```
 
 - **Cases.** Every turn of the client and held-out scenarios with an expectation (a number, a referral, a pick, news, history, a
   kind, friends offered as proof): 229 today. A case is the message, the founder's lines before it in that conversation, what they
   told in earlier ones (as dated facts) and the scenario's record; no reply exists, so follow-ups that lean on the mentor's words are
-  harder here than in a turn. `groups` and `scenario_ids` narrow them (empty: all, the held-out ones too, since nothing is played
-  and nothing is tuned by looking).
+  harder here than in a turn. `groups` and `scenario_ids` narrow them (empty: all, the first held-out group too; `heldoutb`, which
+  nobody has looked at, only where it is named).
 - **What fits the budget.** Cases are chosen, the same ones on every run of one budget, so that all candidates fit: the rarest
   expectations first, the held-out before the others (about 130 cases for the seven candidates at USD 2; one model alone reads them
   all). Each case is read by every candidate before the next one begins, and is begun only when its worst case fits, so a run its
   budget stopped has still compared the candidates on the same cases.
 - **The code measured** is a turn's own: `apps/api/src/scripts/lab-understand.ts` calls `prepareUnderstand` and
-  `readUnderstanding` (the prompt, the schema, the checks, the sums) through the gateway. A call is given 20 s, so a late one is
-  counted against its channel's budget (2.5 s typed, 1.2 s on a call) instead of cut off.
+  `readParts` (the prompts, the schemas, the checks, the sums) through the gateway, a case's calls at once. A call is given 20 s, so
+  a late one is counted against its channel's cap instead of cut off (3.0 s typed, 1.4 s on a call; `understand_ms=typed,voice`
+  sets others), and each case is graded twice: with every part that came, and with those a turn would have had in time.
 - **Grades**, without a judge (`conversation_lab/understand_bench.py`): the expected number among the sums code worked out (`number`)
   or said at all (`said`); the referral, and no ruling referral where none is expected; the pick; a result read that names the
   news; a record line or claim that names the history; the kind; friends not taken as proof; the play where a phrase of the
-  playbook names one. A failed call got nothing right. Beside them: inputs found where the model says they are (and anywhere the
-  founder gave them, with the sums that would then be right), sums and texts left out by code, p50/p95, late calls, tokens, USD.
+  playbook names one. A failed call got nothing right. No false referral is graded where the judge reads the reply for who
+  decides. Beside them, by part: calls made and skipped, p50/p95, late calls, tokens, USD and what that part is measured on; inputs
+  found where the model says they are (and anywhere the founder gave them), sums and texts left out by code.
 - **Outputs.** The summary holds numbers, candidate ids, group names and codes, for all cases, the held-out and the client ones.
   Sealed: the cases, every reading (`understand-bench.json`) and each case's grades (`understand-grades.json`).
 
@@ -1026,9 +1029,9 @@ gh workflow run ops-conversation-lab.yml -f suite=client -f groups=news,followup
 
 **Reading the message first.** `-f understand=on` (or `off`; `default` leaves the deployment's own) sets `CORE_UNDERSTAND` of this
 run's API process, and `-f understand_model=…` (with `on`; one of `understand` in models.json) its `MODEL_UNDERSTAND_ID`
-([understand.md](../architecture/understand.md)). The summary names both, and the app's log numbers say how the calls ended and how
-long they took. Every turn pays for one more call: the estimate counts 5,000 tokens in and 420 out at that model's price (not
-measured yet), so the whole set does not fit beside the judge on Nova 2 Lite. The two arms of a comparison:
+([understand.md](../architecture/understand.md)); `-f understand_ms=4500,2500` (with `on`) how long a turn waits for it, typed and on
+a call. The summary names them, and the app's log numbers say how the calls ended and how long they took, by part. Every turn pays
+for three small calls more: the estimate counts 5,000 tokens in and 400 out together at that model's price, so the whole set does not fit beside the judge on Nova 2 Lite. The two arms of a comparison:
 
 ```bash
 gh workflow run ops-conversation-lab.yml -f suite=client -f groups=heldout -f understand=on -f budget_usd=2

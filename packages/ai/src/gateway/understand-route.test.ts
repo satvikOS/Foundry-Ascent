@@ -1,9 +1,14 @@
 import type { ConverseCommandInput, ConverseCommandOutput } from '@aws-sdk/client-bedrock-runtime';
 import { describe, expect, it } from 'vitest';
 
-import { checkUnderstanding, readUnderstanding } from '../understand/check.js';
-import { understandMessages, understandSystemPrompt } from '../understand/prompt.js';
-import { RawUnderstanding, UNDERSTAND_SCHEMA_NAME } from '../understand/schema.js';
+import { readParts } from '../understand/check.js';
+import { routeSystemPrompt, understandMessages } from '../understand/prompt.js';
+import {
+  UNDERSTAND_PARTS,
+  UNDERSTAND_SCHEMAS,
+  UNDERSTAND_SCHEMA_NAMES,
+  type UnderstandPart,
+} from '../understand/schema.js';
 import type { ConverseFn } from './bedrock-runtime.js';
 import { MockModelGateway } from './mock.js';
 import { NovaProvider, OSS_REASONING_MAX_TOKENS, THINK_LOW_MAX_TOKENS } from './nova.js';
@@ -202,16 +207,26 @@ describe('the mock model', () => {
       plays,
       stepCandidates: new Set<string>(),
     };
-    const result = await gw.generateStructured({
-      purpose: 'turn',
-      route: 'understand',
-      system: understandSystemPrompt(plays),
-      messages: understandMessages({ context, venture: 'v', step: null, channel: 'text' }),
-      schemaName: UNDERSTAND_SCHEMA_NAME,
-      zodSchema: RawUnderstanding,
-      requestId: 'r',
-    });
-    return readUnderstanding(result.value, context);
+    const part = async (name: UnderstandPart): Promise<unknown> =>
+      (
+        await gw.generateStructured<unknown>({
+          purpose: 'turn',
+          route: 'understand',
+          system: routeSystemPrompt(plays),
+          messages: understandMessages(name, { context, venture: 'v', step: null, channel: 'text' }),
+          schemaName: UNDERSTAND_SCHEMA_NAMES[name],
+          zodSchema: UNDERSTAND_SCHEMAS[name],
+          requestId: 'r',
+        })
+      ).value;
+    return readParts(
+      {
+        route: UNDERSTAND_SCHEMAS.route.parse(await part('route')),
+        sums: UNDERSTAND_SCHEMAS.sums.parse(await part('sums')),
+        judge: UNDERSTAND_SCHEMAS.judge.parse(await part('judge')),
+      },
+      context,
+    );
   };
 
   it('reads the same message the same way, and passes its own checks', async () => {
@@ -232,20 +247,22 @@ describe('the mock model', () => {
   ])('%s is a %s', async (message, kind) => {
     const { understanding: u } = await read(message);
     expect(u?.kind).toBe(kind);
-    expect(checkUnderstanding).toBeDefined();
   });
 
-  it('an answer of another shape is still refused', async () => {
-    const gw = new MockModelGateway({ fixtures: { [UNDERSTAND_SCHEMA_NAME]: () => ({ nothing: true }) } });
-    await expect(
-      gw.generateStructured({
-        purpose: 'turn',
-        system: 's',
-        messages: [{ role: 'user', content: 'x' }],
-        schemaName: UNDERSTAND_SCHEMA_NAME,
-        zodSchema: RawUnderstanding,
-        requestId: 'r',
-      }),
-    ).rejects.toThrow();
+  it('an answer of another shape is still refused, whichever part', async () => {
+    for (const part of UNDERSTAND_PARTS) {
+      const name = UNDERSTAND_SCHEMA_NAMES[part];
+      const gw = new MockModelGateway({ fixtures: { [name]: () => 'nothing' } });
+      await expect(
+        gw.generateStructured<unknown>({
+          purpose: 'turn',
+          system: 's',
+          messages: [{ role: 'user', content: 'x' }],
+          schemaName: name,
+          zodSchema: UNDERSTAND_SCHEMAS[part],
+          requestId: 'r',
+        }),
+      ).rejects.toThrow();
+    }
   });
 });

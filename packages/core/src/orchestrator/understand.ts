@@ -1,21 +1,28 @@
 import {
-  RawUnderstanding,
+  JUDGE_SYSTEM_PROMPT,
+  SUMS_SYSTEM_PROMPT,
+  UNDERSTAND_JUDGE_WAIT_MS,
   UNDERSTAND_MAX_OUTPUT_TOKENS,
-  UNDERSTAND_SCHEMA_NAME,
-  UNDERSTAND_TIMEOUT_MS,
+  UNDERSTAND_PARTS,
+  UNDERSTAND_SCHEMAS,
+  UNDERSTAND_SCHEMA_NAMES,
   exchangesInView,
   isModelGatewayError,
-  readUnderstanding,
+  readParts,
+  routeSystemPrompt,
+  sumsDue,
   understandCacheHint,
   understandMessages,
-  understandSystemPrompt,
   type ChatMessage,
   type HistoryTurn,
   type PromptCacheHint,
   type PromptContinuity,
+  type RouteReading,
   type Understanding,
   type UnderstandContext,
+  type UnderstandPart,
   type UnderstandPlay,
+  type UnderstandReadings,
 } from '@foundry/ai';
 import { type CoachMode, type TurnChannel } from '@foundry/contracts';
 import { type pathRepo } from '@foundry/db';
@@ -30,9 +37,9 @@ import { pathState, stageOrder, type PathSource } from '../path/state.js';
 import { type Playbook } from '../path/types.js';
 
 /**
- * Understand first (docs/architecture/understand.md): a short structured call reads the message against the venture's
- * record before the path decides, and code keeps what it can check. It is off by default (`CORE_UNDERSTAND`), and a turn
- * goes on by its rules whenever the call fails, is late or says nothing that holds.
+ * Understand first (docs/architecture/understand.md): three short structured calls read the message against the venture's
+ * record at once, before the path decides, and code keeps what it can check. It is off by default (`CORE_UNDERSTAND`). A
+ * part that fails or is late leaves its fields empty, and a turn none of whose parts holds goes on by its rules.
  */
 export interface UnderstandInput {
   readonly playbook: Playbook;
@@ -49,11 +56,16 @@ export interface UnderstandInput {
   readonly channel: TurnChannel;
 }
 
-export interface PreparedUnderstand {
+export interface PreparedPart {
   readonly system: string;
   readonly promptCache: PromptCacheHint;
   readonly messages: ChatMessage[];
+}
+
+export interface PreparedUnderstand {
   readonly context: UnderstandContext;
+  /** The calls, by part; `sums` null: there is nothing to count and no figure asked for. */
+  readonly parts: Readonly<Record<'route' | 'judge', PreparedPart>> & { readonly sums: PreparedPart | null };
 }
 
 interface Catalogue {
@@ -63,7 +75,7 @@ interface Catalogue {
 const CATALOGUES = new WeakMap<Playbook, Catalogue>();
 const ASKS = /^(?:how|what|should|when|do|does|can|could|who|where|why|is|am|are|which|will|would|did)\b/iu;
 
-/** The playbook as the call is shown it: once per playbook, so the system prompt is the same text on every turn. */
+/** The playbook as ROUTE is shown it: once per playbook, so the system prompt is the same text on every turn. */
 export function understandCatalogue(playbook: Playbook): Catalogue {
   const known = CATALOGUES.get(playbook);
   if (known !== undefined) return known;
@@ -83,12 +95,12 @@ export function understandCatalogue(playbook: Playbook): Catalogue {
       ),
     };
   });
-  const made = { plays, system: understandSystemPrompt(plays) };
+  const made = { plays, system: routeSystemPrompt(plays) };
   CATALOGUES.set(playbook, made);
   return made;
 }
 
-/** Everything the call reads and its answer is checked against. Pure. */
+/** Everything the calls read and their answers are checked against. Pure. */
 export function prepareUnderstand(input: UnderstandInput): PreparedUnderstand {
   const { playbook, venture, reads, continuity, today } = input;
   const { plays, system } = understandCatalogue(playbook);
@@ -126,11 +138,18 @@ export function prepareUnderstand(input: UnderstandInput): PreparedUnderstand {
       plays.filter((p) => stages.some((s) => s === p.stage && near.has(s))).map((p) => p.id),
     ),
   };
+  const part = (name: UnderstandPart, prompt: string): PreparedPart => ({
+    system: prompt,
+    promptCache: understandCacheHint(prompt),
+    messages: understandMessages(name, { context, venture: about, step, channel: input.channel }),
+  });
   return {
-    system,
-    promptCache: understandCacheHint(system),
-    messages: understandMessages({ context, venture: about, step, channel: input.channel }),
     context,
+    parts: {
+      route: part('route', system),
+      sums: sumsDue(context) ? part('sums', SUMS_SYSTEM_PROMPT) : null,
+      judge: part('judge', JUDGE_SYSTEM_PROMPT),
+    },
   };
 }
 
@@ -157,10 +176,26 @@ const pause = (ms: number): Promise<void> =>
     setTimeout(resolve, ms).unref();
   });
 
+/** How a part ended: `ok`, `late`, `cancelled`, `skipped` (not asked) or the gateway's code. */
+interface PartOutcome {
+  readonly code: string;
+  readonly ms: number | null;
+  readonly modelId: string | null;
+  readonly fallbackUsed: boolean;
+}
+const SKIPPED: PartOutcome = { code: 'skipped', ms: null, modelId: null, fallbackUsed: false };
+
+/** Kinds of message whose reply opens on what JUDGE says: it is waited for as long as there is. */
+const JUDGED: ReadonlySet<string> = new Set(['choice', 'result', 'update', 'pushback']);
+export const judgeLeads = (route: RouteReading | null | undefined): boolean =>
+  route == null || route.k.length === 0 || route.k.some((k) => JUDGED.has(k.trim().toLowerCase()));
+
 /**
- * Reads a message (see the module comment): null when the call failed, was late or left nothing. Never rejects. `tails`:
- * the turn's work for the host (`Kit.later`); the usage row is recorded there, so waiting for the reading never needs a
- * database connection. Logs `turn.understand` with ids, codes, counts and milliseconds, never words.
+ * Reads a message (see the module comment): null when nothing that came in time holds. Never rejects. `tails`: the turn's
+ * work for the host (`Kit.later`); the usage rows are recorded there, one a call, so waiting for the reading never needs a
+ * database connection. The decision needs ROUTE and SUMS; JUDGE is waited for as long as there is when the reply opens on it,
+ * else a little longer than they took. What is late is cancelled. Logs `turn.understand` with ids, codes, counts and
+ * milliseconds, by part, never words.
  */
 export async function understandTurn(
   kit: Kit,
@@ -169,84 +204,146 @@ export async function understandTurn(
   options: { readonly signal?: AbortSignal; readonly tails?: Promise<void>[] } = {},
 ): Promise<Understanding | null> {
   const { gateway, logger } = kit.deps;
+  const { turns } = kit.config;
   const started = performance.now();
-  const budget = UNDERSTAND_TIMEOUT_MS[input.channel];
-  const timeout = AbortSignal.timeout(budget);
+  const budget = input.channel === 'voice' ? turns.understandVoiceMs : turns.understandTypedMs;
   const fields = { requestId: meter.ctx.requestId, purpose: meter.purpose, channel: input.channel };
   const took = (): number => Math.round(performance.now() - started);
-  const late = new Promise<'late'>((resolve) => {
-    timeout.addEventListener(
-      'abort',
-      () => {
-        resolve('late');
-      },
-      { once: true },
-    );
+  const cancel = new AbortController();
+  const cut = new Promise<'late'>((resolve) => {
+    const timer = setTimeout(() => {
+      resolve('late');
+    }, budget);
+    timer.unref();
+    const stop = (): void => {
+      clearTimeout(timer);
+      resolve('late');
+    };
+    cancel.signal.addEventListener('abort', stop, { once: true });
+    if (options.signal?.aborted === true) stop();
+    else options.signal?.addEventListener('abort', stop, { once: true });
   });
   try {
-    const prepared = prepareUnderstand(input);
-    const call = gateway.generateStructured({
-      purpose: meter.purpose,
-      requestId: meter.ctx.requestId,
-      route: 'understand',
-      system: prepared.system,
-      messages: prepared.messages,
-      promptCache: prepared.promptCache,
-      schemaName: UNDERSTAND_SCHEMA_NAME,
-      zodSchema: RawUnderstanding,
-      maxOutputTokens: UNDERSTAND_MAX_OUTPUT_TOKENS,
-      timeoutMs: budget,
-      // Its budget is short: what a cut-off attempt read is spent all the same.
-      estimateCut: true,
-      // One budget for the model and the one behind it.
-      signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
-    });
-    const recorded = call.then(
-      (r) => kit.recordUsage({ ...meter, attempts: r.attempts }),
-      (err: unknown) => kit.recordUsage({ ...meter, attempts: isModelGatewayError(err) ? err.attempts : [] }),
-    );
-    // A provider that does not hear its cancellation holds neither the turn nor the host's after-response work.
-    const settled = Promise.race([recorded, late.then(() => pause(CANCEL_GRACE_MS))]);
-    if (options.tails === undefined) await Promise.race([recorded, late]);
-    else options.tails.push(kit.later(settled));
-    // Whatever the model does with its cancellation, the turn waits no longer than the budget.
-    const result = await Promise.race([call, late]);
-    if (result === 'late') {
-      logger.warn('turn.understand', { ...fields, code: 'late', ms: took() });
+    const { context, parts } = prepareUnderstand(input);
+    const readings: { -readonly [P in keyof UnderstandReadings]: UnderstandReadings[P] } = {};
+    const outcomes: Record<UnderstandPart, PartOutcome | null> = { route: null, sums: null, judge: null };
+    const recorded: Promise<void>[] = [];
+    /** One part: its reading is there when it resolves. Never rejects. */
+    const ask = async (name: UnderstandPart, prepared: PreparedPart | null): Promise<void> => {
+      if (prepared === null) {
+        outcomes[name] = SKIPPED;
+        return;
+      }
+      const request = {
+        purpose: meter.purpose,
+        requestId: meter.ctx.requestId,
+        route: 'understand' as const,
+        system: prepared.system,
+        messages: prepared.messages,
+        promptCache: prepared.promptCache,
+        schemaName: UNDERSTAND_SCHEMA_NAMES[name],
+        zodSchema: UNDERSTAND_SCHEMAS[name],
+        maxOutputTokens: UNDERSTAND_MAX_OUTPUT_TOKENS[name],
+        timeoutMs: budget,
+        // Its budget is short: what a cut-off attempt read is spent all the same.
+        estimateCut: true,
+        signal: options.signal ? AbortSignal.any([options.signal, cancel.signal]) : cancel.signal,
+      };
+      // A gateway that throws at once fails its part, like one that rejects.
+      const call = Promise.resolve().then(() => gateway.generateStructured<unknown>(request));
+      const record = call.then(
+        (r) => kit.recordUsage({ ...meter, attempts: r.attempts }),
+        (err: unknown) =>
+          kit.recordUsage({ ...meter, attempts: isModelGatewayError(err) ? err.attempts : [] }),
+      );
+      recorded.push(record);
+      // A provider that does not hear its cancellation holds neither the turn nor the host's after-response work.
+      const settled = Promise.race([record, cut.then(() => pause(CANCEL_GRACE_MS))]);
+      options.tails?.push(kit.later(settled));
+      try {
+        const result = await call;
+        if (cancel.signal.aborted) return;
+        if (name === 'route') readings.route = UNDERSTAND_SCHEMAS.route.parse(result.value);
+        else if (name === 'sums') readings.sums = UNDERSTAND_SCHEMAS.sums.parse(result.value);
+        else readings.judge = UNDERSTAND_SCHEMAS.judge.parse(result.value);
+        outcomes[name] = {
+          code: 'ok',
+          ms: took(),
+          modelId: result.modelId,
+          fallbackUsed: result.fallbackUsed,
+        };
+      } catch (err) {
+        // Cut off by its own deadline, which is the turn's: late, as by the turn.
+        if (cancel.signal.aborted || options.signal?.aborted === true || took() >= budget) return;
+        outcomes[name] = {
+          code: isModelGatewayError(err) ? err.code : err instanceof Error ? err.name : 'unknown',
+          ms: took(),
+          modelId: null,
+          fallbackUsed: false,
+        };
+      }
+    };
+    const route = ask('route', parts.route);
+    const sums = ask('sums', parts.sums);
+    const judge = ask('judge', parts.judge);
+    await Promise.race([Promise.all([route, sums]), cut]);
+    const left = budget - took();
+    if (outcomes.judge === null && left > 0)
+      await Promise.race([
+        judge,
+        cut,
+        ...(judgeLeads(readings.route)
+          ? []
+          : [pause(Math.min(left, UNDERSTAND_JUDGE_WAIT_MS[input.channel]))]),
+      ]);
+    cancel.abort();
+    if (options.tails === undefined) await Promise.race([Promise.all(recorded), pause(CANCEL_GRACE_MS)]);
+    const stopped = options.signal?.aborted === true ? 'cancelled' : 'late';
+    const ended = (name: UnderstandPart): PartOutcome =>
+      outcomes[name] ?? { ...SKIPPED, code: stopped, ms: took() };
+    const { understanding, report } = readParts(readings, context);
+    const came = UNDERSTAND_PARTS.some((name) => ended(name).code === 'ok');
+    const whole = UNDERSTAND_PARTS.every((name) => ['ok', 'skipped'].includes(ended(name).code));
+    const logged = {
+      ...fields,
+      code: understanding !== null ? (whole ? 'ok' : 'partial') : came ? 'nothing_held' : ended('route').code,
+      ms: took(),
+      routeCode: ended('route').code,
+      routeMs: ended('route').ms,
+      sumsCode: ended('sums').code,
+      sumsMs: ended('sums').ms,
+      judgeCode: ended('judge').code,
+      judgeMs: ended('judge').ms,
+    };
+    if (understanding === null) {
+      logger.warn('turn.understand', logged);
       return null;
     }
-    const { understanding, report } = readUnderstanding(result.value, prepared.context);
+    const answered = UNDERSTAND_PARTS.map(ended).filter((o) => o.code === 'ok');
     logger.info('turn.understand', {
-      ...fields,
-      code: understanding === null ? 'nothing_held' : 'ok',
-      ms: took(),
-      modelId: result.modelId,
-      fallbackUsed: result.fallbackUsed,
-      kind: understanding?.kind ?? null,
-      also: understanding?.also.join(',') ?? '',
-      playId: understanding?.playId ?? null,
-      stepPlayId: understanding?.stepPlayId ?? null,
-      sure: understanding?.sure ?? false,
-      referral: understanding?.referral ?? null,
-      records: prepared.context.record.length,
-      sums: understanding?.sums.length ?? 0,
+      ...logged,
+      modelId: answered[0]?.modelId ?? null,
+      fallbackUsed: answered.some((o) => o.fallbackUsed),
+      kind: understanding.kind,
+      also: understanding.also.join(','),
+      playId: understanding.playId,
+      stepPlayId: understanding.stepPlayId,
+      sure: understanding.sure,
+      referral: understanding.referral,
+      records: context.record.length,
+      sums: understanding.sums.length,
       sumDrops: report.sumDrops.join(','),
       textDrops: report.textDrops.join(','),
-      inputs: `${String(report.inputs.found)}/${String(report.inputs.named)}`,
+      inputs: `${String(report.inputs.anywhere)}/${String(report.inputs.named)}`,
+      // Given from another place than the model said: theirs all the same.
+      inputsMoved: report.inputs.anywhere - report.inputs.found,
     });
     return understanding;
   } catch (err) {
+    cancel.abort();
     logger.warn('turn.understand', {
       ...fields,
-      code: timeout.aborted
-        ? 'late'
-        : options.signal?.aborted === true
-          ? 'cancelled'
-          : isModelGatewayError(err)
-            ? err.code
-            : err instanceof Error
-              ? err.name
-              : 'unknown',
+      code: err instanceof Error ? err.name : 'unknown',
       ms: took(),
     });
     return null;

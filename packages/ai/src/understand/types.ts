@@ -36,7 +36,19 @@ export type UnderstoodReferral = (typeof UNDERSTOOD_REFERRALS)[number];
 export const RESULT_VERDICTS = ['strong', 'promising', 'mixed', 'weak', 'too_early', 'bad'] as const;
 export type ResultVerdict = (typeof RESULT_VERDICTS)[number];
 
-export const SUM_UNITS = ['$', '%', 'people', 'months', 'hours', 'units', 'x'] as const;
+export const SUM_UNITS = [
+  '$',
+  '%',
+  'people',
+  'months',
+  'hours',
+  'units',
+  'x',
+  'minutes',
+  'days',
+  'weeks',
+  'years',
+] as const;
 export type SumUnit = (typeof SUM_UNITS)[number];
 
 /** A line of the founder's record as the call was shown it. */

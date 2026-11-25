@@ -1,12 +1,13 @@
-"""Suite ``understand``: the understand call of a turn (docs/architecture/understand.md) on each model it may run on, before
-production turns it on.
+"""Suite ``understand``: the understand calls of a turn (docs/architecture/understand.md) on each model they may run on, before
+production turns them on.
 
 Every turn of the client and held-out scenarios with an expectation becomes a case: its message, the founder's lines before
 it and the scenario's record. apps/api ``src/scripts/lab-understand.ts`` reads each with a turn's own prompt, schema, checks
 and sums, on the candidates of ``ops/lab/models.json`` ``understand``; this module chooses the cases that fit the budget (the
 same ones for every candidate), grades the readings against the scenarios' expectations without a judge, and keeps what is
 public to numbers, candidate ids, group names and codes. The messages, the readings and each case's grades are private
-(sealed or deleted, like every suite's content).
+(sealed or deleted, like every suite's content). A case is three calls (ROUTE, SUMS, JUDGE); it is graded with every part that
+came and again with those a turn would have had at its caps.
 
 Nothing here calls the app: what the reply makes of a reading is the client suite's to measure (``understand`` input).
 """
@@ -30,7 +31,7 @@ from conversation_lab.client.app import founder_intake
 from conversation_lab.client.plan import in_groups
 from conversation_lab.client.scenarios import GROUPS, HELD_OUT, Expect, FounderTurn, Scenario, load
 from conversation_lab.client.turns import fact_named
-from conversation_lab.config import REPO, LabModels, foundation_model_id
+from conversation_lab.config import REPO, LabModels, UnderstandCaps, foundation_model_id
 
 SCRIPT = "src/scripts/lab-understand.ts"
 #: The script's output under the folder given as ``--out`` (it writes ``<out>/private/understand-bench.json``).
@@ -40,12 +41,12 @@ GRADES_FILE = "understand-grades.json"
 #: How long the script may run (the role's session lasts an hour).
 TIMEOUT_SECONDS = 40 * 60
 CONCURRENCY = 3
-#: Tokens a call is planned at, in and out, and the share of the budget the plan may use (the rest is what the script keeps
-#: in reserve for the calls in flight).
-PLAN_TOKENS = (7_600, 420)
+#: Tokens a case is planned at (its three calls), in and out, and the share of the budget the plan may use (the rest is what
+#: the script keeps in reserve for the calls in flight).
+PLAN_TOKENS = (7_800, 400)
 #: What a Nova model is billed for of those it reads: most of the prompt is a cached prefix, at a quarter of the rate.
 NOVA_PLAN_TOKENS = 3_600
-THINK_TOKENS = 700
+THINK_TOKENS = 1_500
 PLAN_SHARE = 0.8
 #: A code the summary may carry: an AWS error class name, the gateway's own, or a drop of the checks (``points:number``).
 CODE = re.compile(r"[A-Za-z][A-Za-z0-9_.]{1,40}(?::[a-z_]{2,16})?")
@@ -62,6 +63,14 @@ MEASURES = (
     "friends",
     "phrase_play",
 )
+#: The calls of a case, and what each is measured on.
+PARTS: dict[str, tuple[str, ...]] = {
+    "route": ("kind", "referral", "no_false_referral", "history", "phrase_play"),
+    "sums": ("number", "number_said"),
+    "judge": ("pick", "news", "friends"),
+}
+#: The group that is never read unless it is named: what nobody has looked at.
+UNSEEN = frozenset({"heldoutb"})
 #: Kinds of reading that agree with what a scenario expects of the turn.
 KINDS: dict[str, frozenset[str]] = {
     "recall": frozenset({"recall"}),
@@ -239,8 +248,13 @@ def _picks(pick: str, options: Sequence[str]) -> bool:
     low = reading.plain(pick).lower()
     if re.search(r"\b(?:both|neither|in this order)\b", low):
         return True
-    words = [re.escape(o.lower().strip()) for o in options]
-    return any(re.search(rf"\b{w}" + (r"\b" if len(w) < 4 else ""), low) for w in words)
+    for option in options:
+        # "walk*" is any word that begins so, in an expectation as in the client graders.
+        word = option.lower().strip()
+        stem = re.escape(word.rstrip("*"))
+        if re.search(rf"(?<!\w){stem}" + (r"\b" if len(stem) < 4 and not word.endswith("*") else ""), low):
+            return True
+    return False
 
 
 def grade(c: BenchCase, u: Mapping[str, Any] | None, phrase_play: str | None) -> dict[str, bool]:
@@ -257,7 +271,8 @@ def grade(c: BenchCase, u: Mapping[str, Any] | None, phrase_play: str | None) ->
     referral = u.get("referral")
     if e.referral:
         out["referral"] = any(referral in SERVES.get(r, frozenset({r})) for r in e.referral)
-    else:
+    elif "referral" not in c.turn.judge:
+        # A reply the judge reads for who decides may name one: a reading that does is not false.
         out["no_false_referral"] = referral not in RULING
     if e.pick:
         choice = u.get("choice")
@@ -309,13 +324,43 @@ def _codes(values: Iterable[Any]) -> dict[str, int]:
     return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:12])
 
 
-def arm_result(rows: Sequence[Mapping[str, Any]], by_id: Mapping[str, BenchCase]) -> dict[str, Any]:
-    """One candidate's numbers over its rows: every case counts, a failed call as one that got nothing right."""
+def _measures(
+    rows: Sequence[Mapping[str, Any]], by_id: Mapping[str, BenchCase], field: str
+) -> dict[str, dict[str, int]]:
     graded: dict[str, list[bool]] = defaultdict(list)
     for r in rows:
-        case = by_id[r["caseId"]]
-        for name, ok in grade(case, r.get("understanding"), r.get("phrasePlay")).items():
+        for name, ok in grade(by_id[r["caseId"]], r.get(field), r.get("phrasePlay")).items():
             graded[name].append(ok)
+    return {m: {"n": len(graded[m]), "right": sum(graded[m])} for m in MEASURES if graded[m]}
+
+
+def _mean(values: Sequence[float]) -> int | None:
+    return round(sum(values) / len(values)) if values else None
+
+
+def part_result(rows: Sequence[Mapping[str, Any]], part: str) -> dict[str, Any]:
+    """One call's numbers over an arm's rows: how long, how often after the cap, what it read and wrote."""
+    all_calls = [r["parts"][part] for r in rows if isinstance((r.get("parts") or {}).get(part), Mapping)]
+    calls = [c for c in all_calls if c.get("code") != "skipped"]
+    ms = [float(c["ms"]) for c in calls]
+    return {
+        "calls": len(calls),
+        "skipped": len(all_calls) - len(calls),
+        "ok": sum(1 for c in calls if c.get("code") == "ok"),
+        "failures": _codes(c.get("code") for c in calls if c.get("code") != "ok"),
+        "ms": {"p50": _percentile(ms, 50), "p95": _percentile(ms, 95)},
+        "late": sum(1 for c in calls if c.get("late") is True),
+        "tokens": {
+            "input": _mean([float(c["inputTokens"]) for c in calls]),
+            "cached": _mean([float(c["cachedInputTokens"]) for c in calls]),
+            "output": _mean([float(c["outputTokens"]) for c in calls]),
+        },
+        "cost_usd": round(sum(float(c["costUsd"]) for c in calls), 6),
+    }
+
+
+def arm_result(rows: Sequence[Mapping[str, Any]], by_id: Mapping[str, BenchCase]) -> dict[str, Any]:
+    """One candidate's numbers over its rows: every case counts, a failed call as one that got nothing right."""
     ok = [r for r in rows if r.get("code") == "ok"]
     reports = [r["report"] for r in rows if isinstance(r.get("report"), Mapping)]
     inputs = [r["inputs"] for r in reports if isinstance(r.get("inputs"), Mapping)]
@@ -326,7 +371,13 @@ def arm_result(rows: Sequence[Mapping[str, Any]], by_id: Mapping[str, BenchCase]
         "cases": len(rows),
         "ok": len(ok),
         "failures": _codes(r.get("code") for r in rows if r.get("code") != "ok"),
-        "measures": {m: {"n": len(graded[m]), "right": sum(graded[m])} for m in MEASURES if graded[m]},
+        "measures": _measures(rows, by_id, "understanding"),
+        # The same with the parts a turn would have had at its caps, and how many turns had any.
+        "in_time": {
+            "read": sum(1 for r in rows if r.get("inTime") is not None),
+            "measures": _measures(rows, by_id, "inTime"),
+        },
+        "parts": {part: part_result(rows, part) for part in PARTS},
         "inputs": {
             "named": named,
             "found": sum(int(i.get("found", 0)) for i in inputs),
@@ -349,14 +400,11 @@ def arm_result(rows: Sequence[Mapping[str, Any]], by_id: Mapping[str, BenchCase]
     }
 
 
-def number_anywhere(rows: Sequence[Mapping[str, Any]], by_id: Mapping[str, BenchCase]) -> dict[str, int]:
-    """The sums right when an input may come from anywhere the founder gave it: what holding it to the place it names costs."""
-    found = [
-        grade(by_id[r["caseId"]], r.get("anywhere"), None)["number"]
-        for r in rows
-        if by_id[r["caseId"]].expect.number
-    ]
-    return {"n": len(found), "right": sum(found)}
+def _caps(raw: Any) -> dict[str, int] | None:
+    if not isinstance(raw, Mapping):
+        return None
+    found = {k: raw.get(k) for k in ("text", "voice")}
+    return {k: int(v) for k, v in found.items() if isinstance(v, int | float) and not isinstance(v, bool)}
 
 
 def public_result(
@@ -380,6 +428,7 @@ def public_result(
         "script_exit": exit_code,
         "report": True,
         "budget_reached": report.get("budgetReached") is True,
+        "caps": _caps(report.get("caps")),
         "cases_available": available,
         "cases_planned": len(cases),
         "cases_read": len(read),
@@ -401,7 +450,6 @@ def public_result(
                     for name, wanted in ids.items()
                     if wanted
                 },
-                "number_anywhere": number_anywhere(mine, by_id),
             }
         )
     return out
@@ -410,7 +458,9 @@ def public_result(
 # Running -----------------------------------------------------------------------------------------------------
 
 
-def understand_command(*, pnpm: str, budget_usd: float, cases: Path, out: Path, model: str) -> list[str]:
+def understand_command(
+    *, pnpm: str, budget_usd: float, cases: Path, out: Path, model: str, caps: UnderstandCaps | None = None
+) -> list[str]:
     return [
         pnpm,
         "--filter",
@@ -427,6 +477,7 @@ def understand_command(*, pnpm: str, budget_usd: float, cases: Path, out: Path, 
         f"{budget_usd:.2f}",
         "--concurrency",
         str(CONCURRENCY),
+        *(["--typed-ms", str(caps.typed_ms), "--voice-ms", str(caps.voice_ms)] if caps else []),
         *(["--candidates", model] if model else []),
     ]
 
@@ -441,15 +492,18 @@ def run_understand(
     groups: Sequence[str] = (),
     model: str = "",
     scenario_ids: Sequence[str] = (),
+    caps: UnderstandCaps | None = None,
     today: dt.date | None = None,
     runner: Runner = subprocess.run,
 ) -> tuple[dict[str, Any], int]:
     """Chooses the cases, runs the script and grades what it read: the public result and the script's exit code."""
     day = today or dt.datetime.now(dt.UTC).date()
     every = load(day).scenarios
-    # Every client group and the held-out one: nothing here is played, so nothing is tuned by looking.
-    scenarios = [s for s in every if not scenario_ids or s.id in set(scenario_ids)]
+    # Every client group and the held-out one; the unseen one only where it is named, by group or by scenario.
+    scenarios = [s for s in every if (s.id in set(scenario_ids) if scenario_ids else True)]
     scenarios = in_groups(scenarios, groups, named=True)
+    if not groups and not scenario_ids:
+        scenarios = [s for s in scenarios if s.group not in UNSEEN]
     available = cases_of(scenarios)
     names = arms(lab, model)
     cases = chosen_cases(available, affordable(lab, names, budget_usd))
@@ -460,7 +514,7 @@ def run_understand(
     path.write_text(json.dumps({"version": 1, "cases": [case_json(c, day) for c in cases]}), encoding="utf-8")
     if not cases:
         return {"script_exit": 0, "report": False, "cases_available": 0}, 2
-    cmd = understand_command(pnpm=pnpm, budget_usd=budget_usd, cases=path, out=out, model=model)
+    cmd = understand_command(pnpm=pnpm, budget_usd=budget_usd, cases=path, out=out, model=model, caps=caps)
     try:
         done = runner(cmd, cwd=REPO, env=dict(env), capture_output=True, timeout=TIMEOUT_SECONDS, check=False)
         (logs / "understand-bench.log").write_bytes((done.stdout or b"") + (done.stderr or b""))
@@ -536,22 +590,58 @@ def tables(result: Mapping[str, Any]) -> list[str]:
                 f"{r['late']} | {r['usd_per_1000']} |"
             )
         out.append("")
+    caps = result.get("caps") or {}
+    if caps:
+        out += [
+            f"At the caps ({caps.get('text')} ms typed, {caps.get('voice')} ms on a call): what a turn would have had in time.",
+            "",
+        ]
     out += [
-        "| Candidate | sums right if an input may be anywhere | sure | play named | contradictions | sums left out | "
-        "texts left out | failed calls | tokens in (cached) / out |",
+        "| Candidate | turns with a reading | number | referral | no false referral | pick | news | history | kind | "
+        "friends |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for a in result["arms"]:
+        r = a["all"]
+        m = r["in_time"]["measures"]
+        cells = [_rate(m.get(k)) for k in MEASURES if k not in ("number_said", "phrase_play")]
+        out.append(f"| {a['arm']} | {r['in_time']['read']}/{r['cases']} | {' | '.join(cells)} |")
+    out += [
+        "",
+        "| Candidate | part | calls (skipped) | p50 / p95 ms | after the cap | tokens in (cached) / out | accuracy | "
+        "failed calls | USD |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for a in result["arms"]:
         r = a["all"]
+        for part, mine in PARTS.items():
+            p = r["parts"][part]
+            t = p["tokens"]
+            right = ", ".join(
+                f"{k} {_rate(r['measures'].get(k))}" for k in mine if r["measures"].get(k) is not None
+            )
+            out.append(
+                f"| {a['arm']} | {part} | {p['calls']} ({p['skipped']}) | {p['ms']['p50']} / {p['ms']['p95']} | "
+                f"{p['late']} | {t['input']} ({t['cached']}) / {t['output']} | {right or '-'} | "
+                f"{_said_codes(p['failures'])} | {p['cost_usd']} |"
+            )
+    out += [
+        "",
+        "| Candidate | sure | play named | contradictions | sums left out | texts left out | failed readings | "
+        "tokens in (cached) / out |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for a in result["arms"]:
+        r = a["all"]
         t = r["tokens"]
-
-        def said(codes: Mapping[str, int]) -> str:
-            return ", ".join(f"{k} {n}" for k, n in codes.items()) or "-"
-
         out.append(
-            f"| {a['arm']} | {_rate(a['number_anywhere'])} | {r['sure']} | {r['play']} | {r['contradicts']} | "
-            f"{said(r['sum_drops'])} | {said(r['text_drops'])} | {said(r['failures'])} | "
+            f"| {a['arm']} | {r['sure']} | {r['play']} | {r['contradicts']} | "
+            f"{_said_codes(r['sum_drops'])} | {_said_codes(r['text_drops'])} | {_said_codes(r['failures'])} | "
             f"{t['input']} ({t['cached']}) / {t['output']} |"
         )
     out.append("")
     return out
+
+
+def _said_codes(codes: Mapping[str, int]) -> str:
+    return ", ".join(f"{k} {n}" for k, n in codes.items()) or "-"

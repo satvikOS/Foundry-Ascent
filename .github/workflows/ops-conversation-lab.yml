@@ -24,12 +24,13 @@ name: Ops - conversation lab
 #           (packages/db/knowledge/retrieval-benchmark): each embedding model alone, and production's own search with its
 #           vectors in the job's reset database. No app or browser. At most USD 2 a run (expected about 0.30). The summary
 #           prints numbers, the candidates' ids and codes; the models' replies and AWS's refusal messages are sealed.
-#   understand (on its own, never in `all`) the understand call of a turn (docs/architecture/understand.md) on the models
-#           it may run on (ops/lab/models.json `understand`): apps/api/src/scripts/lab-understand.ts reads the messages of
+#   understand (on its own, never in `all`) the understand calls of a turn (docs/architecture/understand.md) on the models
+#           they may run on (ops/lab/models.json `understand`): apps/api/src/scripts/lab-understand.ts reads the messages of
 #           the client and held-out scenarios with a turn's own prompt, checks and sums, each on every model, and the lab
 #           grades the readings against the scenarios' expectations without a judge. No app, browser or database. At most
-#           USD 2. `groups` and `scenario_ids` narrow the scenarios (empty = all of them, held-out included: nothing is
-#           played), `understand_model` compares one model alone. The summary prints numbers, model ids, group names and
+#           USD 2. `groups` and `scenario_ids` narrow the scenarios (empty = all of them, the first held-out group
+#           included; `heldoutb` only where it is named), `understand_model` compares one model alone and
+#           `understand_ms` sets the caps the readings are graded at. The summary prints numbers, model ids, group names and
 #           codes; the messages, the readings and each case's grades are sealed.
 #   face    (on its own, never in `all`) the HeyGen LiveAvatar FULL stock face against the vendor's free SANDBOX
 #           (the Wayne avatar, sessions of about a minute, no credits): the app runs with the face wired as for the
@@ -66,7 +67,7 @@ name: Ops - conversation lab
 #           Claude Haiku 5.5, gpt-oss, Qwen3, DeepSeek, Mistral: benchmark only, production unchanged; the summary names
 #           the coach), `coach_think` lets a Nova 2 coach reason before the replies that judge something, or every typed
 #           one (CORE_THINK of the lab's API process), `understand` reads every message against the record first
-#           (CORE_UNDERSTAND) on `understand_model`, `judge_model` names
+#           (CORE_UNDERSTAND) on `understand_model` within `understand_ms`, `judge_model` names
 #           the judge (never one of the coach's family). Capped at USD 2. The exact wording of the client's questions and the other tools'
 #           recorded scores come from the optional repository secret LAB_CLIENT_PACK (never committed, run step
 #           only); without it our equivalent wording is used and the summary says so.
@@ -166,6 +167,10 @@ on:
           - us.amazon.nova-micro-v1:0
           - us.amazon.nova-lite-v1:0
         default: default
+      understand_ms:
+        description: client with understand=on - how long a turn waits for the reading, typed,voice in milliseconds (such as 4500,2500); understand - the caps it is graded at; empty = the app's own
+        type: string
+        default: ''
       judge_model:
         description: client only - the judge (auto = the first of another family than the coach); one named for both arms of an A/B must be of neither coach's family
         type: choice
@@ -227,6 +232,7 @@ jobs:
           COACH_THINK: ${{ inputs.coach_think }}
           UNDERSTAND: ${{ inputs.understand }}
           UNDERSTAND_MODEL: ${{ inputs.understand_model }}
+          UNDERSTAND_MS: ${{ inputs.understand_ms }}
           JUDGE_MODEL: ${{ inputs.judge_model }}
         run: |
           # Values are checked, never echoed (except the suite and the numbers, which are public).
@@ -301,6 +307,16 @@ jobs:
           if [ "${SUITE}" = client ] && [ "${UNDERSTAND_MODEL}" != default ] && [ "${UNDERSTAND}" != on ]; then
             echo "::error::understand_model is for understand=on."
             exit 1
+          fi
+          if [ -n "${UNDERSTAND_MS}" ]; then
+            if [[ ! "${UNDERSTAND_MS}" =~ ^[0-9]{3,5},[0-9]{3,4}$ ]]; then
+              echo "::error::understand_ms is two numbers of milliseconds, typed,voice."
+              exit 1
+            fi
+            if [ "${SUITE}" != understand ] && { [ "${SUITE}" != client ] || [ "${UNDERSTAND}" != on ]; }; then
+              echo "::error::understand_ms is for the understand suite and for the client suite with understand=on."
+              exit 1
+            fi
           fi
           if [ "${SUITE}" = understand ] && ! awk -v b="${BUDGET}" 'BEGIN { exit !(b <= 2) }'; then
             echo "::error::the understand suite takes at most USD 2."
@@ -383,6 +399,7 @@ jobs:
       LAB_GROUPS: ${{ (matrix.suite == 'client' || matrix.suite == 'understand') && inputs.groups || '' }}
       LAB_UNDERSTAND: ${{ matrix.suite == 'client' && inputs.understand || 'default' }}
       LAB_UNDERSTAND_MODEL: ${{ (matrix.suite == 'client' || matrix.suite == 'understand') && inputs.understand_model || 'default' }}
+      LAB_UNDERSTAND_MS: ${{ (matrix.suite == 'client' || matrix.suite == 'understand') && inputs.understand_ms || '' }}
       LAB_COACH_THINK: ${{ matrix.suite == 'client' && inputs.coach_think || 'default' }}
       LAB_COACH_MODEL: ${{ matrix.suite == 'client' && inputs.coach_model || 'default' }}
       LAB_JUDGE_MODEL: ${{ matrix.suite == 'client' && inputs.judge_model || 'auto' }}
@@ -536,7 +553,8 @@ jobs:
             --scenarios "${LAB_SCENARIO_IDS}" --repeat "${LAB_REPEAT}" --matrix-source "${LAB_MATRIX_SOURCE}" \
             --face-mode "${LAB_FACE_MODE}" --groups "${LAB_GROUPS}" --coach-model "${LAB_COACH_MODEL}" \
             --judge-model "${LAB_JUDGE_MODEL}" --coach-think "${LAB_COACH_THINK}" \
-            --understand "${LAB_UNDERSTAND}" --understand-model "${LAB_UNDERSTAND_MODEL}"
+            --understand "${LAB_UNDERSTAND}" --understand-model "${LAB_UNDERSTAND_MODEL}" \
+            --understand-ms "${LAB_UNDERSTAND_MS}"
 
       - name: Seal the private outputs
         if: always() && env.LAB_PUBLIC_KEY != ''

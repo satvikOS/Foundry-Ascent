@@ -53,6 +53,7 @@ from conversation_lab.config import (
     polly_usd_per_million_characters,
     split_budget,
     suites_for,
+    understand_caps,
     understand_env,
 )
 
@@ -120,6 +121,8 @@ class Context:
     #: The client suite's understand call (config.UNDERSTAND_CHOICES) and the model it names ("" the deployment's own).
     understand: str = DEFAULT_UNDERSTAND
     understand_model: str = ""
+    #: How long it may take, ``typed,voice`` in milliseconds ("" the app's own).
+    understand_ms: str = ""
     #: The live judge policy (config.live_judges): ``auto``, ``ab`` (one judge for every A/B arm) or a live.judge id.
     judge_model: str = JUDGE_AUTO
     live_picks: list[Any] = field(default_factory=list)
@@ -270,6 +273,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         coach_think=str(getattr(args, "coach_think", DEFAULT_THINK) or DEFAULT_THINK),
         understand=str(getattr(args, "understand", DEFAULT_UNDERSTAND) or DEFAULT_UNDERSTAND),
         understand_model=_named(getattr(args, "understand_model", "")),
+        understand_ms=_named(getattr(args, "understand_ms", "")),
         judge_model=str(getattr(args, "judge_model", JUDGE_AUTO) or JUDGE_AUTO),
         client_pack=str(getattr(args, "client_pack", "") or ""),
         client_groups=str(getattr(args, "groups", "") or ""),
@@ -283,7 +287,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         models = coach_app_models(
             ctx.coach_model, lab, offered=lab.client_coach if suite == "client" else None
         )
-        understand = understand_env(ctx.understand, ctx.understand_model, lab)
+        understand = understand_env(
+            ctx.understand, ctx.understand_model, lab, understand_caps(ctx.understand_ms)
+        )
         if suite == "client":
             from conversation_lab.client.judge import judge_candidates
             from conversation_lab.client.suite import check_plan, planned
@@ -341,6 +347,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             "coach_think": ctx.coach_think,
             "understand": ctx.understand,
             "understand_model": ctx.understand_model or "default",
+            "understand_ms": ctx.understand_ms or "default",
             "judge_policy": judge_policy,
         },
     }
@@ -649,7 +656,8 @@ def cmd_run_understand(args: argparse.Namespace) -> int:
         return 2
     try:
         groups = parse_groups(str(args.groups or ""))
-    except ScenarioError as exc:
+        caps = understand_caps(_named(args.understand_ms))
+    except (ScenarioError, ValueError) as exc:
         print(f"run: understand: {exc}", file=sys.stderr)
         return 2
     out = Path(args.out)
@@ -674,6 +682,7 @@ def cmd_run_understand(args: argparse.Namespace) -> int:
             lab=lab,
             groups=groups,
             model=model,
+            caps=caps,
             scenario_ids=tuple(i.strip() for i in (args.scenarios or "").split(",") if i.strip()),
         )
         summary["result"] = result
@@ -1444,6 +1453,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=DEFAULT_UNDERSTAND,
         help="client, with --understand on: that call's model; understand: compare this candidate alone; default or one "
         "of models.json understand",
+    )
+    run.add_argument(
+        "--understand-ms",
+        default="",
+        help="how long a turn waits for the reading, typed,voice in ms (client with --understand on; understand: the caps its "
+        "readings are graded at); empty: the app's own",
     )
     run.add_argument(
         "--judge-model",

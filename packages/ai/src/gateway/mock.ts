@@ -25,12 +25,12 @@ import { RISK_ESCALATION_MAP, primaryForcedCategory } from '../risk/escalation-m
 import { escapeRegExp } from '../risk/normalize.js';
 import { SAFETY_SCREEN_SCHEMA_NAME, type SafetyScreenVerdict } from '../risk/safety-screen.js';
 import { asksAboutIdentity, identityQuestionOf } from '../validators/identity.js';
-import { UNDERSTAND_SCHEMA_NAME } from '../understand/schema.js';
+import { UNDERSTAND_SCHEMA_NAMES } from '../understand/schema.js';
 import { clampWords } from '../validators/speech.js';
 import { mockPathReply, pathBlockIn } from '../testing/path-reply.js';
 import { COACH_ANNOTATIONS_SCHEMA_NAME } from './coach-annotations.js';
 import { mockSafetyScreenVerdict } from './mock-safety-screen.js';
-import { mockUnderstanding } from './mock-understand.js';
+import { mockJudge, mockRoute, mockSums } from './mock-understand.js';
 import {
   ModelOutputInvalidError,
   ModelRefusalError,
@@ -1657,8 +1657,16 @@ const BUILT_IN: Readonly<Record<string, BuiltIn>> = {
   [OPENER_SCHEMA_NAME]: { build: mockNotebookOpener, sampleOnMismatch: false },
   [MOCK_RECAP_SCHEMA_NAME]: { build: mockRecapDraft, sampleOnMismatch: true },
   [SAFETY_SCREEN_SCHEMA_NAME]: { build: mockSafetyScreen, sampleOnMismatch: false },
-  [UNDERSTAND_SCHEMA_NAME]: {
-    build: (context) => mockUnderstanding(context.messages.at(-1)?.content ?? ''),
+  [UNDERSTAND_SCHEMA_NAMES.route]: {
+    build: (context) => mockRoute(context.messages.at(-1)?.content ?? ''),
+    sampleOnMismatch: false,
+  },
+  [UNDERSTAND_SCHEMA_NAMES.sums]: {
+    build: (context) => mockSums(context.messages.at(-1)?.content ?? ''),
+    sampleOnMismatch: false,
+  },
+  [UNDERSTAND_SCHEMA_NAMES.judge]: {
+    build: (context) => mockJudge(context.messages.at(-1)?.content ?? ''),
     sampleOnMismatch: false,
   },
 };

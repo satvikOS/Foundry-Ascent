@@ -1,3 +1,4 @@
+import { UNDERSTAND_TIMEOUT_MS } from '@foundry/ai';
 import { z } from 'zod';
 
 import { THINK_MODES, type ThinkMode } from './orchestrator/think.js';
@@ -104,6 +105,12 @@ export const CoreConfig = z.object({
      */
     understand: z.boolean(),
     /**
+     * How long a turn waits for that reading, by channel (`CORE_UNDERSTAND_TYPED_MS`, `CORE_UNDERSTAND_VOICE_MS`): the parts
+     * that are in by then are used.
+     */
+    understandTypedMs: z.number().int().min(500).max(10_000),
+    understandVoiceMs: z.number().int().min(500).max(5_000),
+    /**
      * Which typed turns let the model reason before it answers (orchestrator/think.ts; `CORE_THINK=off|judgement|typed`,
      * off by default): a model that cannot (any but Amazon Nova 2) answers as always.
      */
@@ -204,6 +211,8 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
     semanticNotes: true,
     rerank: false,
     understand: false,
+    understandTypedMs: UNDERSTAND_TIMEOUT_MS.text,
+    understandVoiceMs: UNDERSTAND_TIMEOUT_MS.voice,
     think: 'off',
   },
   // The persona's library gives two items, not four (live pilot 42099643194: its method notes were injected on almost
@@ -277,7 +286,7 @@ function intFrom(env: EnvLike, name: string, fallback: number): number {
  * APP_VERSION, HOME_TENANT_SLUG, SITE_ORIGIN, plus optional tuning knobs
  * (CORE_TURN_RATE_LIMIT, CORE_REVIEW_SAMPLE_RATE_PCT, CORE_SESSION_CACHE_SECONDS, CORE_SAFETY_SCREEN=on|off,
  * CORE_FOUNDER_PATH=on|off, CORE_SEMANTIC_PLAYS=on|off, CORE_SEMANTIC_NOTES=on|off, CORE_RERANK=on|off,
- * CORE_UNDERSTAND=on|off, CORE_THINK=off|judgement|typed, and
+ * CORE_UNDERSTAND=on|off with CORE_UNDERSTAND_TYPED_MS and CORE_UNDERSTAND_VOICE_MS, CORE_THINK=off|judgement|typed, and
  * for local demos CORE_DISTILL_DELAY_SECONDS / CORE_DISTILL_ACTIVE_SECONDS).
  */
 export function loadConfig(env: EnvLike): CoreConfig {
@@ -306,6 +315,16 @@ export function loadConfig(env: EnvLike): CoreConfig {
       semanticNotes: switchFrom(env, 'CORE_SEMANTIC_NOTES', DEFAULT_CORE_CONFIG.turns.semanticNotes),
       rerank: switchFrom(env, 'CORE_RERANK', DEFAULT_CORE_CONFIG.turns.rerank),
       understand: switchFrom(env, 'CORE_UNDERSTAND', DEFAULT_CORE_CONFIG.turns.understand),
+      understandTypedMs: intFrom(
+        env,
+        'CORE_UNDERSTAND_TYPED_MS',
+        DEFAULT_CORE_CONFIG.turns.understandTypedMs,
+      ),
+      understandVoiceMs: intFrom(
+        env,
+        'CORE_UNDERSTAND_VOICE_MS',
+        DEFAULT_CORE_CONFIG.turns.understandVoiceMs,
+      ),
       think: thinkFrom(env),
     },
     distillation: {

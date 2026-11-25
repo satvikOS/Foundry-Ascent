@@ -1,15 +1,16 @@
 /**
  * The understand call on candidate models (docs/architecture/understand.md; the lab's `understand` suite,
  * docs/runbooks/conversation-lab.md): a turn's own prompt, schema, checks and sums (`prepareUnderstand`,
- * `readUnderstanding`) over the cases the lab made of its client scenarios, each case on every candidate before the next
- * case, so a run its budget stops has read the same cases on all of them.
+ * `readParts`) over the cases the lab made of its client scenarios, each case on every candidate before the next case, so a
+ * run its budget stops has read the same cases on all of them. A case is the turn's three calls, made at once.
  *
  *   MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1 \
  *   pnpm --filter @foundry/api exec tsx src/scripts/lab-understand.ts --cases FILE --budget-usd 2 --out DIR \
- *     [--candidates id@effort,id] [--concurrency 3]
+ *     [--candidates id@effort,id] [--concurrency 3] [--typed-ms 3000] [--voice-ms 1400]
  *
  * Candidates are `understand` in ops/lab/models.json. Without MODEL_PROVIDER=bedrock it runs on the mock model's rules (a
- * plumbing check, free). A call is given longer than a turn's budget, so what is late is measured rather than cut off.
+ * plumbing check, free). A call is given longer than a turn's budget, so what is late is measured rather than cut off: each
+ * case is read with every part, and again with those a turn would have had at the caps (`--typed-ms`, `--voice-ms`).
  * `--budget-usd` is a hard cap: a call is made only when its worst case still fits beside what was spent and what the
  * calls in flight may still cost. Every reading goes to `<DIR>/private/understand-bench.json` (synthetic founders' words:
  * the lab seals it); only counts and codes are printed.
@@ -20,21 +21,32 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  RawUnderstanding,
+  UNDERSTAND_JUDGE_WAIT_MS,
   UNDERSTAND_MAX_OUTPUT_TOKENS,
-  UNDERSTAND_SCHEMA_NAME,
+  UNDERSTAND_PARTS,
+  UNDERSTAND_SCHEMAS,
+  UNDERSTAND_SCHEMA_NAMES,
   UNDERSTAND_TIMEOUT_MS,
   createModelGateway,
   isModelGatewayError,
   modelGatewayConfigFromEnv,
-  readUnderstanding,
+  readParts,
   thinksOnRequest,
   type ModelGateway,
   type Understanding,
+  type UnderstandPart,
+  type UnderstandReadings,
   type UnderstandReport,
 } from '@foundry/ai';
 import { PathIntake, VentureDomain, VentureStage } from '@foundry/contracts';
-import { PLAYBOOK, phraseIntent, prepareUnderstand, type PreparedUnderstand } from '@foundry/core';
+import {
+  PLAYBOOK,
+  judgeLeads,
+  phraseIntent,
+  prepareUnderstand,
+  type PreparedPart,
+  type PreparedUnderstand,
+} from '@foundry/core';
 import { z } from 'zod';
 
 import { reasoningWorstUsd } from './lab-models.js';
@@ -86,23 +98,36 @@ export function armsOf(raw: unknown): Arm[] {
   );
 }
 
-export interface Row {
-  readonly arm: string;
-  readonly caseId: string;
-  /** `ok`, `nothing_held`, `budget` (not called) or the failure's code. */
+/** One call of a case. */
+export interface PartRow {
+  /** `ok`, `skipped` (a turn would not make it) or the failure's code. */
   readonly code: string;
   readonly ms: number;
-  /** Beyond a turn's own budget on its channel. */
-  readonly late: boolean;
   readonly inputTokens: number;
   readonly cachedInputTokens: number;
   readonly outputTokens: number;
   readonly costUsd: number;
   readonly raw: unknown;
-  /** As a turn would use it. */
+}
+
+export interface Row {
+  readonly arm: string;
+  readonly caseId: string;
+  /** `ok`, `nothing_held` or the first failed part's code. */
+  readonly code: string;
+  /** When its last part was in. */
+  readonly ms: number;
+  /** A part came after a turn's budget on its channel. */
+  readonly late: boolean;
+  readonly inputTokens: number;
+  readonly cachedInputTokens: number;
+  readonly outputTokens: number;
+  readonly costUsd: number;
+  readonly parts: Readonly<Record<UnderstandPart, PartRow & { readonly late: boolean }>>;
+  /** With every part that came. */
   readonly understanding: Understanding | null;
-  /** The same, an input taken from anywhere the founder gave it (how much the named place costs). */
-  readonly anywhere: Understanding | null;
+  /** With the parts a turn would have had in time. */
+  readonly inTime: Understanding | null;
   readonly report: UnderstandReport | null;
   /** The category of the play's referral, and the play a phrase of the playbook names for the message. */
   readonly playReferral: string | null;
@@ -170,36 +195,52 @@ export function prepareCase(c: Case): PreparedUnderstand {
   });
 }
 
-const charsOf = (p: PreparedUnderstand): number =>
+const charsOf = (p: PreparedPart): number =>
   p.system.length + p.messages.reduce((n, m) => n + m.content.length, 0);
 
 /**
- * The most one case can be billed on an arm, as lab-models.ts bounds a call: its input at the dearest rate with a full
+ * The most one case can be billed on an arm, as lab-models.ts bounds a call: each part's input at the dearest rate with a full
  * answer, read again for a repair, and the gateway's fallback (the same model) doing the same.
  */
 export function worstUsd(arm: Arm, prepared: PreparedUnderstand): number {
-  return reasoningWorstUsd(
-    arm.modelId,
-    charsOf(prepared),
-    UNDERSTAND_MAX_OUTPUT_TOKENS,
-    arm.effort === 'low' && thinksOnRequest(arm.modelId),
-  );
+  return UNDERSTAND_PARTS.reduce((sum, name) => {
+    const part = prepared.parts[name];
+    return part === null
+      ? sum
+      : sum +
+          reasoningWorstUsd(
+            arm.modelId,
+            charsOf(part),
+            UNDERSTAND_MAX_OUTPUT_TOKENS[name],
+            arm.effort === 'low' && thinksOnRequest(arm.modelId),
+          );
+  }, 0);
 }
 
 /** How long a call may take here: longer than a turn gives it, so a late one is measured. */
 export const BENCH_TIMEOUT_MS = 20_000;
 
-async function readOnce(gateway: ModelGateway, arm: Arm, c: Case): Promise<Row> {
-  const prepared = prepareCase(c);
+const NOT_ASKED: PartRow = {
+  code: 'skipped',
+  ms: 0,
+  inputTokens: 0,
+  cachedInputTokens: 0,
+  outputTokens: 0,
+  costUsd: 0,
+  raw: null,
+};
+
+async function readPart(
+  gateway: ModelGateway,
+  arm: Arm,
+  name: UnderstandPart,
+  prepared: PreparedPart | null,
+): Promise<PartRow> {
+  if (prepared === null) return NOT_ASKED;
   const started = performance.now();
-  const phrasePlay = phraseIntent(PLAYBOOK, c.message)?.intent.playId ?? null;
-  const base = { arm: arm.key, caseId: c.id, phrasePlay };
-  const took = (): { ms: number; late: boolean } => {
-    const ms = Math.round(performance.now() - started);
-    return { ms, late: ms > UNDERSTAND_TIMEOUT_MS[c.channel] };
-  };
+  const took = (): number => Math.round(performance.now() - started);
   try {
-    const result = await gateway.generateStructured({
+    const result = await gateway.generateStructured<unknown>({
       // Sampled as a turn is.
       purpose: 'turn',
       requestId: randomUUID(),
@@ -207,56 +248,120 @@ async function readOnce(gateway: ModelGateway, arm: Arm, c: Case): Promise<Row> 
       system: prepared.system,
       messages: prepared.messages,
       promptCache: prepared.promptCache,
-      schemaName: UNDERSTAND_SCHEMA_NAME,
-      zodSchema: RawUnderstanding,
-      maxOutputTokens: UNDERSTAND_MAX_OUTPUT_TOKENS,
+      schemaName: UNDERSTAND_SCHEMA_NAMES[name],
+      zodSchema: UNDERSTAND_SCHEMAS[name],
+      maxOutputTokens: UNDERSTAND_MAX_OUTPUT_TOKENS[name],
       timeoutMs: BENCH_TIMEOUT_MS,
       estimateCut: true,
       signal: AbortSignal.timeout(BENCH_TIMEOUT_MS),
       ...(arm.effort === 'low' && thinksOnRequest(arm.modelId) ? { think: 'low' as const } : {}),
     });
-    const time = took();
-    const { understanding, report } = readUnderstanding(result.value, prepared.context);
-    const loose = readUnderstanding(result.value, prepared.context, { strictInputs: false });
-    const play = PLAYBOOK.plays.find((p) => p.id === understanding?.playId);
     return {
-      ...base,
-      ...time,
-      code: understanding === null ? 'nothing_held' : 'ok',
+      code: 'ok',
+      ms: took(),
       inputTokens: result.usage.inputTokens,
       cachedInputTokens: result.usage.cacheReadInputTokens ?? 0,
       outputTokens: result.usage.outputTokens,
       costUsd: result.costUsd,
       raw: result.value,
-      understanding,
-      anywhere: loose.understanding,
-      report,
-      playReferral: play?.referral?.category ?? null,
     };
   } catch (err) {
     const attempts = isModelGatewayError(err) ? err.attempts : [];
     const last = attempts.at(-1);
     return {
-      ...base,
-      ...took(),
       code: last?.errorName ?? (isModelGatewayError(err) ? err.code : 'error'),
+      ms: took(),
       inputTokens: attempts.reduce((n, a) => n + a.usage.inputTokens, 0),
       cachedInputTokens: 0,
       outputTokens: attempts.reduce((n, a) => n + a.usage.outputTokens, 0),
       costUsd: attempts.reduce((n, a) => n + a.costUsd, 0),
-      raw: last?.issues ?? null,
-      understanding: null,
-      anywhere: null,
-      report: null,
-      playReferral: null,
+      raw: null,
     };
   }
+}
+
+/** How long a turn waits, by channel. */
+export interface Caps {
+  readonly text: number;
+  readonly voice: number;
+}
+
+/** The parts' readings, of those `kept`. */
+function readingsOf(
+  parts: Readonly<Record<UnderstandPart, PartRow>>,
+  kept: (name: UnderstandPart) => boolean,
+): UnderstandReadings {
+  const of = <T>(name: UnderstandPart, parse: (raw: unknown) => T): T | null =>
+    parts[name].code === 'ok' && kept(name) ? parse(parts[name].raw) : null;
+  return {
+    route: of('route', (raw) => UNDERSTAND_SCHEMAS.route.parse(raw)),
+    sums: of('sums', (raw) => UNDERSTAND_SCHEMAS.sums.parse(raw)),
+    judge: of('judge', (raw) => UNDERSTAND_SCHEMAS.judge.parse(raw)),
+  };
+}
+
+/** Which parts a turn would have had: those within the cap, JUDGE only for as long as a turn waits for it. */
+export function inTimeParts(
+  parts: Readonly<Record<UnderstandPart, PartRow>>,
+  channel: 'text' | 'voice',
+  caps: Caps,
+): (name: UnderstandPart) => boolean {
+  const cap = caps[channel];
+  const within = (name: UnderstandPart): boolean => parts[name].ms <= cap;
+  const { route } = readingsOf(parts, (name) => name === 'route' && within(name));
+  const needed = Math.min(cap, Math.max(parts.route.ms, parts.sums.ms));
+  return (name) =>
+    within(name) &&
+    (name !== 'judge' || judgeLeads(route) || parts.judge.ms <= needed + UNDERSTAND_JUDGE_WAIT_MS[channel]);
+}
+
+async function readOnce(gateway: ModelGateway, arm: Arm, c: Case, caps: Caps): Promise<Row> {
+  const prepared = prepareCase(c);
+  const phrasePlay = phraseIntent(PLAYBOOK, c.message)?.intent.playId ?? null;
+  const [route, sums, judge] = await Promise.all([
+    readPart(gateway, arm, 'route', prepared.parts.route),
+    readPart(gateway, arm, 'sums', prepared.parts.sums),
+    readPart(gateway, arm, 'judge', prepared.parts.judge),
+  ]);
+  const late = (p: PartRow): PartRow & { late: boolean } => ({ ...p, late: p.ms > caps[c.channel] });
+  const parts = { route: late(route), sums: late(sums), judge: late(judge) };
+  const all = [route, sums, judge];
+  const { understanding, report } = readParts(
+    readingsOf(parts, () => true),
+    prepared.context,
+  );
+  const { understanding: inTime } = readParts(
+    readingsOf(parts, inTimeParts(parts, c.channel, caps)),
+    prepared.context,
+  );
+  const failed = all.find((p) => p.code !== 'ok' && p.code !== 'skipped');
+  const play = PLAYBOOK.plays.find((p) => p.id === understanding?.playId);
+  const total = (of: (p: PartRow) => number): number => all.reduce((n, p) => n + of(p), 0);
+  return {
+    arm: arm.key,
+    caseId: c.id,
+    code: understanding === null ? (failed?.code ?? 'nothing_held') : 'ok',
+    ms: Math.max(...all.map((p) => p.ms)),
+    late: UNDERSTAND_PARTS.some((name) => parts[name].late),
+    inputTokens: total((p) => p.inputTokens),
+    cachedInputTokens: total((p) => p.cachedInputTokens),
+    outputTokens: total((p) => p.outputTokens),
+    costUsd: total((p) => p.costUsd),
+    parts,
+    understanding,
+    inTime,
+    report: understanding === null ? null : report,
+    playReferral: play?.referral?.category ?? null,
+    phrasePlay,
+  };
 }
 
 export interface BenchOptions {
   readonly budgetUsd: number;
   readonly concurrency: number;
   readonly gatewayFor: (arm: Arm) => ModelGateway;
+  /** How long a turn waits (default its own). */
+  readonly caps?: Caps;
   /** The most a case can be billed on an arm (default {@link worstUsd}). */
   readonly worst?: (arm: Arm, prepared: PreparedUnderstand) => number;
 }
@@ -272,6 +377,7 @@ export async function runBench(
 ): Promise<{ rows: Row[]; spentUsd: number; budgetReached: boolean; casesRead: number }> {
   const gateways = new Map(arms.map((arm) => [arm.key, options.gatewayFor(arm)]));
   const worstOf = options.worst ?? worstUsd;
+  const caps = options.caps ?? UNDERSTAND_TIMEOUT_MS;
   const rows: Row[] = [];
   let spent = 0;
   let reserved = 0;
@@ -294,7 +400,7 @@ export async function runBench(
       for (const arm of arms) {
         const gateway = gateways.get(arm.key);
         if (gateway === undefined) continue;
-        const row = await readOnce(gateway, arm, c);
+        const row = await readOnce(gateway, arm, c, caps);
         spent += row.costUsd;
         rows.push(row);
       }
@@ -316,18 +422,28 @@ interface Args {
   readonly concurrency: number;
   readonly budgetUsd: number;
   readonly out: string;
+  readonly caps: Caps;
 }
 
 /** The owner's cap on a paid run. */
 export const MAX_BUDGET_USD = 2;
+
+const FLAGS = [
+  '--cases',
+  '--candidates',
+  '--concurrency',
+  '--budget-usd',
+  '--out',
+  '--typed-ms',
+  '--voice-ms',
+];
 
 export function parseArgs(argv: readonly string[]): Args {
   const given = new Map<string, string>();
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i] ?? '';
     const value = argv[i + 1];
-    if (!['--cases', '--candidates', '--concurrency', '--budget-usd', '--out'].includes(flag))
-      throw new UsageError(`unknown argument ${flag}`);
+    if (!FLAGS.includes(flag)) throw new UsageError(`unknown argument ${flag}`);
     if (value === undefined) throw new UsageError(`${flag} needs a value`);
     given.set(flag, value);
   }
@@ -340,11 +456,21 @@ export function parseArgs(argv: readonly string[]): Args {
   const concurrency = Number(given.get('--concurrency') ?? '3');
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8)
     throw new UsageError('--concurrency is between 1 and 8');
+  const cap = (flag: string, most: number, fallback: number): number => {
+    const value = Number(given.get(flag) ?? fallback);
+    if (!Number.isInteger(value) || value < 500 || value > most)
+      throw new UsageError(`${flag} is between 500 and ${String(most)}`);
+    return value;
+  };
   return {
     cases,
     out,
     budgetUsd,
     concurrency,
+    caps: {
+      text: cap('--typed-ms', 10_000, UNDERSTAND_TIMEOUT_MS.text),
+      voice: cap('--voice-ms', 5_000, UNDERSTAND_TIMEOUT_MS.voice),
+    },
     candidates: (given.get('--candidates') ?? '').split(',').filter((c) => c.trim() !== ''),
   };
 }
@@ -367,6 +493,7 @@ async function main(argv: readonly string[]): Promise<void> {
   const { rows, ...run } = await runBench(arms, cases, {
     budgetUsd: args.budgetUsd,
     concurrency: args.concurrency,
+    caps: args.caps,
     // The mock bills nothing.
     ...(config.provider === 'mock' ? { worst: () => 0 } : {}),
     gatewayFor: (arm) =>
@@ -388,6 +515,7 @@ async function main(argv: readonly string[]): Promise<void> {
     cases: cases.length,
     ...run,
     budgetUsd: args.budgetUsd,
+    caps: args.caps,
     wallMs: Math.round(performance.now() - started),
   };
   const dir = join(args.out, 'private');

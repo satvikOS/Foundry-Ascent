@@ -11,7 +11,7 @@ import yaml
 
 from conversation_lab import cli, config
 from conversation_lab import understand_bench as bench
-from conversation_lab.client.scenarios import CLIENT_DIR, Expect, FounderTurn, load
+from conversation_lab.client.scenarios import CLIENT_DIR, HELD_OUT, Expect, FounderTurn, load
 
 DAY = dt.date(2026, 11, 25)
 LAB = config.lab_models()
@@ -43,6 +43,20 @@ def read(**over: object) -> dict[str, object]:
     }
 
 
+def part(ms: int, **over: object) -> dict[str, object]:
+    return {
+        "code": "ok",
+        "ms": ms,
+        "late": False,
+        "inputTokens": 3000,
+        "cachedInputTokens": 2000,
+        "outputTokens": 90,
+        "costUsd": 0.001,
+        "raw": {"a": "SECRET WORDS"},
+        **over,
+    }
+
+
 def row(arm: str, case_id: str, **over: object) -> dict[str, object]:
     return {
         "arm": arm,
@@ -54,9 +68,13 @@ def row(arm: str, case_id: str, **over: object) -> dict[str, object]:
         "cachedInputTokens": 5000,
         "outputTokens": 300,
         "costUsd": 0.002,
-        "raw": {"ask": "SECRET WORDS"},
+        "parts": {
+            "route": part(900),
+            "sums": part(0, code="skipped"),
+            "judge": part(1400, late=True, raw={"g": ["SECRET WORDS"]}),
+        },
         "understanding": read(),
-        "anywhere": read(),
+        "inTime": read(),
         "report": {"sumDrops": [], "inputs": {"named": 0, "found": 0, "anywhere": 0}, "textDrops": []},
         "playReferral": None,
         "phrasePlay": None,
@@ -129,7 +147,7 @@ def test_what_a_run_can_afford_follows_its_price() -> None:
         "us.amazon.nova-lite-v1:0",
     ]
     assert bench.arms(LAB, NOVA) == every[:2]
-    assert 60 <= bench.affordable(LAB, every, 2.0) < len(CASES)
+    assert 50 <= bench.affordable(LAB, every, 2.0) < len(CASES)
     assert bench.affordable(LAB, bench.arms(LAB, "openai.gpt-oss-20b-1:0"), 2.0) > len(CASES)
     assert bench.call_usd(LAB, f"{NOVA}@low") > bench.call_usd(LAB, f"{NOVA}@none") > 0
     assert sum(bench.call_usd(LAB, a) for a in every) * bench.affordable(LAB, every, 2.0) <= 2.0
@@ -172,6 +190,15 @@ def test_referrals() -> None:
     assert bench.grade(case(referral=("ip",)), read(referral="legal"), None)["referral"] is False
     assert bench.grade(case(number=("1",)), read(referral="ip"), None)["no_false_referral"] is False
     assert bench.grade(case(number=("1",)), read(referral="wellbeing"), None)["no_false_referral"]
+    # A reply the judge reads for who decides is no place for a false one.
+    judged = bench.BenchCase(
+        "NM-01:1.1",
+        case().scenario,
+        FounderTurn("x", expect=Expect(number=("1",)), judge=("referral",)),
+        1,
+        1,
+    )
+    assert "no_false_referral" not in bench.grade(judged, read(referral="ip"), None)
 
 
 def test_picks_news_history_kinds_and_friends() -> None:
@@ -179,6 +206,12 @@ def test_picks_news_history_kinds_and_friends() -> None:
     assert bench.grade(pick, read(choice={"pick": "The flyers first"}, kind="choice"), None)["pick"]
     assert bench.grade(pick, read(choice={"pick": "nothing now"}), None)["pick"] is False
     assert bench.grade(pick, read(choice={"pick": "Both"}), None)["pick"]
+    # "flyer*" is any word that begins so.
+    starred = case(pick=("flyer*", "no"))
+    assert bench.grade(starred, read(choice={"pick": "the flyers first"}), None)["pick"]
+    assert bench.grade(starred, read(choice={"pick": "posters"}), None)["pick"] is False
+    assert bench.grade(case(pick=("no*",)), read(choice={"pick": "nothing"}), None)["pick"]
+    assert bench.grade(case(pick=("no",)), read(choice={"pick": "nothing"}), None)["pick"] is False
     news = case(news=("kits",))
     shown = {"verdict": "mixed", "shows": "Seven kits went."}
     assert bench.grade(news, read(result=shown, kind="result"), None)["news"]
@@ -215,7 +248,7 @@ def some_result() -> dict[str, object]:
         cases[0].id,
         code="ThrottlingException",
         understanding=None,
-        anywhere=None,
+        inTime=None,
         report=None,
         late=True,
     )
@@ -226,7 +259,12 @@ def some_result() -> dict[str, object]:
     }
     rows.append(row("another.model", cases[1].id))
     return bench.public_result(
-        {"budgetReached": True}, rows, cases, exit_code=0, available=len(CASES), known=names
+        {"budgetReached": True, "caps": {"text": 3000, "voice": 1400, "other": "x"}},
+        rows,
+        cases,
+        exit_code=0,
+        available=len(CASES),
+        known=names,
     )
 
 
@@ -241,6 +279,7 @@ def test_the_summary_is_numbers_ids_and_codes() -> None:
         assert s.founder not in text
     assert result["budget_reached"] is True
     assert result["cases_read"] == 20
+    read_cases = bench.chosen_cases(CASES, 30)[:20]
     first = result["arms"][0]["all"]
     assert first["failures"] == {"ThrottlingException": 1}
     assert first["sum_drops"] == {"input": 1, "other": 1}
@@ -249,9 +288,27 @@ def test_the_summary_is_numbers_ids_and_codes() -> None:
     assert (first["cases"], first["ok"], first["late"]) == (20, 19, 1)
     assert first["ms"] == {"p50": 900, "p95": 900}
     assert first["usd_per_1000"] == 2.0
+    assert first["parts"]["route"] == {
+        "calls": 20,
+        "skipped": 0,
+        "ok": 20,
+        "failures": {},
+        "ms": {"p50": 900, "p95": 900},
+        "late": 0,
+        "tokens": {"input": 3000, "cached": 2000, "output": 90},
+        "cost_usd": 0.02,
+    }
+    assert (first["parts"]["sums"]["calls"], first["parts"]["sums"]["skipped"]) == (0, 20)
+    assert (first["parts"]["judge"]["late"], first["parts"]["judge"]["ms"]["p95"]) == (20, 1400)
+    assert first["in_time"]["read"] == 19
+    assert result["caps"] == {"text": 3000, "voice": 1400}
+    assert "3000 ms typed, 1400 ms on a call" in text
     # Every case counts, whatever became of its call.
     assert (
-        first["measures"]["no_false_referral"]["n"] + first["measures"].get("referral", {"n": 0})["n"] == 20
+        first["measures"]["no_false_referral"]["n"]
+        + first["measures"].get("referral", {"n": 0})["n"]
+        + sum(1 for c in read_cases if not c.expect.referral and "referral" in c.turn.judge)
+        == 20
     )
 
 
@@ -295,6 +352,59 @@ def test_a_run_writes_its_cases_grades_what_was_read_and_prints_neither(tmp_path
     assert not list((tmp_path).glob("public/*"))
 
 
+def ran(tmp_path: Path, **over: object) -> tuple[list[str], list[str]]:
+    """The command of a run and the ids of the cases it was given."""
+    seen: list[str] = []
+    ids: list[str] = []
+
+    def runner(cmd: list[str], **_: object) -> subprocess.CompletedProcess[bytes]:
+        seen.extend(cmd)
+        doc = json.loads(Path(cmd[cmd.index("--cases") + 1]).read_text(encoding="utf-8"))
+        ids.extend(c["id"] for c in doc["cases"])
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    bench.run_understand(
+        tmp_path, env={}, budget_usd=2.0, pnpm="pnpm", lab=LAB, model=NOVA, today=DAY, runner=runner, **over
+    )
+    return seen, ids
+
+
+def test_the_unseen_group_is_read_only_where_it_is_named(tmp_path: Path) -> None:
+    unseen = {s.id for s in SCENARIOS if s.group in bench.UNSEEN}
+    assert unseen
+    named = sorted(unseen)[0]
+    of = {
+        "default": ran(tmp_path / "a")[1],
+        "group": ran(tmp_path / "b", groups=("heldoutb",))[1],
+        "scenario": ran(tmp_path / "c", scenario_ids=(named,))[1],
+    }
+    assert of["default"]
+    assert not [i for i in of["default"] if i.split(":")[0] in unseen]
+    assert [i for i in of["default"] if i.startswith("HO-")]
+    assert {i.split(":")[0] for i in of["group"]} <= unseen
+    assert of["group"]
+    assert {i.split(":")[0] for i in of["scenario"]} == {named}
+
+
+def test_the_caps_reach_the_script_and_the_api_process(tmp_path: Path) -> None:
+    caps = config.understand_caps("4500, 2500")
+    assert caps == config.UnderstandCaps(4_500, 2_500)
+    cmd, _ = ran(tmp_path / "a", caps=caps)
+    assert (cmd[cmd.index("--typed-ms") + 1], cmd[cmd.index("--voice-ms") + 1]) == ("4500", "2500")
+    assert "--typed-ms" not in ran(tmp_path / "b")[0]
+    assert config.understand_env("on", "", LAB, caps) == {
+        "CORE_UNDERSTAND": "on",
+        "CORE_UNDERSTAND_TYPED_MS": "4500",
+        "CORE_UNDERSTAND_VOICE_MS": "2500",
+    }
+    assert config.understand_caps("") is None
+    for wrong in ("4500", "4500,2500,1", "a,b", "100,2000", "20000,2000", "4500,9000", "45 00,2000"):
+        with pytest.raises(ValueError, match="understand_ms"):
+            config.understand_caps(wrong)
+    with pytest.raises(ValueError, match="understand_ms"):
+        config.understand_env("off", "", LAB, caps)
+
+
 def test_a_script_that_wrote_nothing_is_no_result(tmp_path: Path) -> None:
     def runner(cmd: list[str], **_: object) -> subprocess.CompletedProcess[bytes]:
         raise subprocess.TimeoutExpired(cmd, 1)
@@ -313,6 +423,7 @@ def test_the_command_refuses_what_it_does_not_offer(
     assert "at most USD 2" in capsys.readouterr().err
     assert cli.main([*base, "--budget-usd", "1", "--understand-model", "us.amazon.nova-pro-v1:0"]) == 2
     assert cli.main([*base, "--budget-usd", "1", "--groups", "sums"]) == 2
+    assert cli.main([*base, "--budget-usd", "1", "--understand-ms", "9"]) == 2
     assert not (tmp_path / "o").exists()
 
 
@@ -354,10 +465,11 @@ def test_no_prompt_or_rule_of_the_call_holds_the_wording_of_a_scenario() -> None
     plain = " ".join(re.findall(r"[a-z0-9']+", sources.lower()))
     for path in sorted(CLIENT_DIR.glob("*.yaml")):
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
-        size = 4 if doc["group"] == "heldout" else 5
+        size = 4 if doc["group"] in HELD_OUT else 5
         for s in doc["scenarios"]:
             for turn in (t for session in s["sessions"] for t in session["turns"]):
                 words = re.findall(r"[a-z0-9']+", turn["say"].lower())
                 runs = {" ".join(words[i : i + size]) for i in range(len(words) - size + 1)}
-                shared = [r for r in runs if r in plain]
-                assert not shared, (s["id"], len(shared))
+                # A number alone: a failure shows no wording, the unseen group's least of all.
+                shared = sum(1 for r in runs if r in plain)
+                assert shared == 0, s["id"]

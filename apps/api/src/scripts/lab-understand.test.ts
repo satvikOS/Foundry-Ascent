@@ -2,7 +2,9 @@ import { readFile } from 'node:fs/promises';
 
 import {
   MockModelGateway,
-  UNDERSTAND_SCHEMA_NAME,
+  UNDERSTAND_PARTS,
+  UNDERSTAND_SCHEMA_NAMES,
+  UNDERSTAND_TIMEOUT_MS,
   type GenerateStructuredRequest,
   type GenerateStructuredResult,
 } from '@foundry/ai';
@@ -14,11 +16,13 @@ import {
   UsageError,
   armsOf,
   chosenArms,
+  inTimeParts,
   parseArgs,
   prepareCase,
   runBench,
   worstUsd,
   type Arm,
+  type PartRow,
 } from './lab-understand.js';
 
 const ARMS = armsOf(JSON.parse(await readFile(CANDIDATES_FILE, 'utf8')));
@@ -61,6 +65,8 @@ class Priced extends MockModelGateway {
   constructor(
     private readonly usd: number,
     private readonly fails = false,
+    /** Parts whose answer comes after a turn's cap. */
+    private readonly slow: readonly string[] = [],
   ) {
     super();
   }
@@ -68,6 +74,7 @@ class Priced extends MockModelGateway {
     request: GenerateStructuredRequest<T>,
   ): Promise<GenerateStructuredResult<T>> {
     this.requests.push(request);
+    if (this.slow.includes(request.schemaName)) await new Promise((resolve) => setTimeout(resolve, 120));
     if (this.fails) throw new Error('the provider said secret things');
     const result = await super.generateStructured(request);
     return { ...result, costUsd: this.usd };
@@ -110,12 +117,12 @@ describe('the candidates', () => {
 describe('a case', () => {
   it('is prepared as a turn would: the record dated, what was told before in it, the lines of the conversation', () => {
     const [, second, third] = CASES.map(prepareCase);
-    const text = third?.messages[0]?.content ?? '';
+    const text = third?.parts.judge.messages[0]?.content ?? '';
     expect(text).toContain('A walk is 24 dollars and a guide gets 9.');
     expect(text).toContain('2026-02-20');
     expect(text).toContain('You had 13 people.');
     expect(text).toContain('A phone call, as it was transcribed.');
-    expect(second?.messages[0]?.content).toContain('Founder: we had 13 last night');
+    expect(second?.parts.judge.messages[0]?.content).toContain('Founder: we had 13 last night');
     expect(text).toContain('You are doing this for the first time.');
   });
 
@@ -140,16 +147,49 @@ describe('a run', () => {
       },
     });
     expect(run.rows).toHaveLength(6);
-    expect(run).toMatchObject({ budgetReached: false, casesRead: 3, spentUsd: 0.006 });
+    // Three calls a case.
+    expect(run).toMatchObject({ budgetReached: false, casesRead: 3, spentUsd: 0.018 });
     const sum = run.rows.find((r) => r.caseId === 'AA-01:1.1');
     expect(sum?.understanding?.sums[0]).toMatchObject({ said: '$312', working: '13 × $24' });
     expect(sum?.report?.inputs).toEqual({ named: 2, found: 2, anywhere: 2 });
+    expect(sum?.inTime).toEqual(sum?.understanding);
+    for (const part of UNDERSTAND_PARTS) expect(sum?.parts[part]).toMatchObject({ code: 'ok', late: false });
     expect(run.rows.find((r) => r.caseId === 'AA-01:2.1')?.understanding?.referral).toBe('ip');
-    for (const g of gateways)
-      for (const r of g.requests)
-        expect(r).toMatchObject({ purpose: 'turn', schemaName: UNDERSTAND_SCHEMA_NAME, route: 'understand' });
+    for (const g of gateways) {
+      expect(g.requests).toHaveLength(9);
+      for (const r of g.requests) {
+        expect(r).toMatchObject({ purpose: 'turn', route: 'understand' });
+        expect(Object.values(UNDERSTAND_SCHEMA_NAMES)).toContain(r.schemaName);
+      }
+    }
     expect(gateways[0]?.requests[0]).not.toHaveProperty('think');
     expect(gateways[1]?.requests[0]).toHaveProperty('think', 'low');
+  });
+
+  it('reads each case again as a turn at the caps would have', async () => {
+    const run = await runBench(arms.slice(0, 1), CASES.slice(0, 1), {
+      budgetUsd: 1,
+      concurrency: 1,
+      caps: { text: 60, voice: 60 },
+      gatewayFor: () =>
+        new Priced(0.001, false, [UNDERSTAND_SCHEMA_NAMES.sums, UNDERSTAND_SCHEMA_NAMES.judge]),
+    });
+    const [row] = run.rows;
+    expect(row?.late).toBe(true);
+    expect(UNDERSTAND_PARTS.map((part) => row?.parts[part].late)).toEqual([false, true, true]);
+    expect(row?.understanding?.sums).toHaveLength(1);
+    expect(row?.inTime).toMatchObject({ kind: 'sum', sums: [], points: [] });
+  });
+
+  it('a part a turn would not make is none, and costs nothing', async () => {
+    const none = bench('AA-02:1.1', 'where do we meet people', { record: [] });
+    const run = await runBench(arms.slice(0, 1), [none], {
+      budgetUsd: 1,
+      concurrency: 1,
+      gatewayFor: () => new Priced(0.001),
+    });
+    expect(run.rows[0]?.parts.sums).toMatchObject({ code: 'skipped', costUsd: 0, late: false });
+    expect(run.spentUsd).toBe(0.002);
   });
 
   it('begins no case it could not pay on every arm', async () => {
@@ -158,7 +198,7 @@ describe('a run', () => {
       budgetUsd: 1,
       concurrency: 1,
       worst: (arm) => each.get(arm.key) ?? 0,
-      gatewayFor: () => new Priced(0.15),
+      gatewayFor: () => new Priced(0.05),
     });
     expect(run.budgetReached).toBe(true);
     expect(run.casesRead).toBe(1);
@@ -180,6 +220,41 @@ describe('a run', () => {
   });
 });
 
+describe('what a turn would have had', () => {
+  const part = (ms: number, raw: unknown = null): PartRow => ({
+    code: 'ok',
+    ms,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    costUsd: 0,
+    raw,
+  });
+  const route = (k: string) => ({
+    a: 'x',
+    b: null,
+    k: [k],
+    r: [],
+    c: null,
+    f: null,
+    p: null,
+    s: null,
+    h: false,
+  });
+  const caps = UNDERSTAND_TIMEOUT_MS;
+  const kept = (k: string, judgeMs: number, routeMs = 900) =>
+    UNDERSTAND_PARTS.filter(
+      inTimeParts({ route: part(routeMs, route(k)), sums: part(1_000), judge: part(judgeMs) }, 'text', caps),
+    );
+  it('is what came within the cap, JUDGE only for as long as it is waited for', () => {
+    expect(kept('question', 1_500)).toEqual(['route', 'sums', 'judge']);
+    expect(kept('question', 2_400)).toEqual(['route', 'sums']);
+    expect(kept('choice', 2_400)).toEqual(['route', 'sums', 'judge']);
+    expect(kept('choice', caps.text + 1)).toEqual(['route', 'sums']);
+    expect(kept('question', 2_400, caps.text + 1)).toEqual(['sums', 'judge']);
+  });
+});
+
 describe('the command line', () => {
   it('needs its files and stays under the owner’s cap', () => {
     const ok = ['--cases', 'c', '--out', 'o', '--budget-usd', '2', '--candidates', 'a,b'];
@@ -189,12 +264,19 @@ describe('the command line', () => {
       budgetUsd: 2,
       concurrency: 3,
       candidates: ['a', 'b'],
+      caps: UNDERSTAND_TIMEOUT_MS,
+    });
+    expect(parseArgs([...ok, '--typed-ms', '4500', '--voice-ms', '2000']).caps).toEqual({
+      text: 4_500,
+      voice: 2_000,
     });
     for (const bad of [
       ['--cases', 'c'],
       ['--cases', 'c', '--out', 'o', '--budget-usd', '2.01'],
       ['--cases', 'c', '--out', 'o', '--budget-usd', 'x'],
       ['--cases', 'c', '--out', 'o', '--concurrency', '9'],
+      ['--cases', 'c', '--out', 'o', '--typed-ms', '20000'],
+      ['--cases', 'c', '--out', 'o', '--voice-ms', '100'],
       ['--what', 'c'],
       ['--cases'],
     ])

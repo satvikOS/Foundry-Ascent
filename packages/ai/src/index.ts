@@ -167,6 +167,7 @@ export * from './distill/index.js';
 // Understanding (what a message asks, read against the record) -----------------------------------------
 export {
   checkUnderstanding,
+  readParts,
   readUnderstanding,
   type ReadUnderstanding,
   type UnderstandContext,
@@ -174,19 +175,32 @@ export {
   type UnderstandPlay,
   type UnderstandReport,
 } from './understand/check.js';
+export { mergeReadings } from './understand/merge.js';
 export {
+  JUDGE_SYSTEM_PROMPT,
+  SUMS_SYSTEM_PROMPT,
   UNDERSTAND_EXAMPLES,
   exchangesInView,
+  routeSystemPrompt,
+  sumsDue,
   understandCacheHint,
   understandMessages,
-  understandSystemPrompt,
+  type UnderstandExample,
   type UnderstandPrompt,
 } from './understand/prompt.js';
 export {
-  RawUnderstanding,
+  JudgeReading,
+  RouteReading,
+  SumsReading,
+  UNDERSTAND_JUDGE_WAIT_MS,
   UNDERSTAND_MAX_OUTPUT_TOKENS,
-  UNDERSTAND_SCHEMA_NAME,
+  UNDERSTAND_PARTS,
+  UNDERSTAND_SCHEMAS,
+  UNDERSTAND_SCHEMA_NAMES,
   UNDERSTAND_TIMEOUT_MS,
+  type RawUnderstanding,
+  type UnderstandPart,
+  type UnderstandReadings,
 } from './understand/schema.js';
 export { type SumDrop } from './understand/sums.js';
 export {

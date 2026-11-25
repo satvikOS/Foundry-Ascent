@@ -184,6 +184,7 @@ def run_suite(
             "coach_think": ctx.coach_think,
             "understand": ctx.understand,
             "understand_model": ctx.understand_model or "default",
+            "understand_ms": ctx.understand_ms or "default",
             "groups": list(parse_groups(ctx.client_groups)) or "all",
             "plan": state.get("plan"),
             "calibration": calibration,

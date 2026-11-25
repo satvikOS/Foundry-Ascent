@@ -1,15 +1,18 @@
 /**
- * The understand call in a whole turn (docs/architecture/understand.md): a seeded database and the mock model. Off, a turn
- * makes the same calls, writes and events as without it; on, one metered call is made beside the query's embedding, the
- * step is shown once, after it, and a late, failed or empty reading leaves the turn to its rules.
+ * The understand calls in a whole turn (docs/architecture/understand.md): a seeded database and the mock model. Off, a turn
+ * makes the same calls, writes and events as without them; on, its three metered calls are made beside the query's embedding,
+ * the step is shown once, after them, what came in time is used, and a late, failed or empty reading leaves the turn to its
+ * rules.
  */
 import {
   MockModelGateway,
   ModelUnavailableError,
-  UNDERSTAND_SCHEMA_NAME,
+  UNDERSTAND_PARTS,
+  UNDERSTAND_SCHEMA_NAMES,
   UNDERSTAND_TIMEOUT_MS,
   type GenerateStructuredRequest,
   type GenerateStructuredResult,
+  type UnderstandPart,
 } from '@foundry/ai';
 import { TurnStreamEvent, type TurnGuidance, type TurnView } from '@foundry/contracts';
 import { p } from '@foundry/db';
@@ -24,21 +27,58 @@ import { createCoreHarness, type CoreHarness } from '../testing/harness.js';
 
 const ASK = 'What should I charge the two labs of our pilot for the lab kit box';
 
+type Behaviour = 'answers' | 'hangs' | 'fails' | 'stops when told';
+
 class ReadingGateway extends MockModelGateway {
   readonly requests: GenerateStructuredRequest<unknown>[] = [];
-  behaviour: 'answers' | 'hangs' | 'fails' | 'says nothing' = 'answers';
+  readonly cancelled: UnderstandPart[] = [];
+  behaviour: Partial<Record<UnderstandPart, Behaviour>> = {};
+  every(behaviour: Behaviour): void {
+    this.behaviour = { route: behaviour, sums: behaviour, judge: behaviour };
+  }
 
   override generateStructured<T>(
     request: GenerateStructuredRequest<T>,
   ): Promise<GenerateStructuredResult<T>> {
-    if (request.schemaName !== UNDERSTAND_SCHEMA_NAME) return super.generateStructured(request);
+    const part = UNDERSTAND_PARTS.find((x) => UNDERSTAND_SCHEMA_NAMES[x] === request.schemaName);
+    if (part === undefined) return super.generateStructured(request);
     this.requests.push(request);
-    if (this.behaviour === 'fails') return Promise.reject(new ModelUnavailableError('throttled', 'mock'));
-    // A provider that does not even hear its cancellation.
-    if (this.behaviour === 'hangs') return new Promise(() => undefined);
-    return super.generateStructured(request);
+    request.signal?.addEventListener('abort', () => this.cancelled.push(part), { once: true });
+    switch (this.behaviour[part]) {
+      case 'fails':
+        return Promise.reject(new ModelUnavailableError('throttled', 'mock'));
+      // A provider that does not even hear its cancellation.
+      case 'hangs':
+        return new Promise(() => undefined);
+      case 'stops when told':
+        return new Promise((_resolve, reject) => {
+          request.signal?.addEventListener(
+            'abort',
+            () => {
+              const error = new ModelUnavailableError('aborted', 'mock');
+              error.attempts = [
+                {
+                  kind: 'initial',
+                  modelId: 'mock-cut',
+                  outcome: 'aborted',
+                  latencyMs: 1,
+                  usage: { inputTokens: 100, outputTokens: 0 },
+                  costUsd: 0.0001,
+                  errorName: 'AbortError',
+                } as unknown as (typeof error.attempts)[number],
+              ];
+              reject(error);
+            },
+            { once: true },
+          );
+        });
+      default:
+        return super.generateStructured(request);
+    }
   }
 }
+/** A cap the tests can wait for. */
+const CAPS = { understandTypedMs: 600, understandVoiceMs: 600 };
 
 let h: CoreHarness;
 let priya: RequestContext;
@@ -57,7 +97,15 @@ beforeEach(() => {
   logger = new RecordingLogger();
 });
 
-const coreWith = (understand: boolean, over: { founderPath?: boolean; safetyScreen?: boolean } = {}): Core =>
+const coreWith = (
+  understand: boolean,
+  over: {
+    founderPath?: boolean;
+    safetyScreen?: boolean;
+    understandTypedMs?: number;
+    understandVoiceMs?: number;
+  } = {},
+): Core =>
   createCore({
     db: h.t.db,
     gateway,
@@ -106,7 +154,9 @@ describe('off (the default)', () => {
   it('makes no call, writes nothing and sends the events it always did', async () => {
     const run = await say(coreWith(false), ASK);
     expect(gateway.requests).toEqual([]);
-    expect(gateway.calls.some((c) => c.schemaName === UNDERSTAND_SCHEMA_NAME)).toBe(false);
+    expect(
+      gateway.calls.some((c) => Object.values(UNDERSTAND_SCHEMA_NAMES).some((n) => n === c.schemaName)),
+    ).toBe(false);
     expect(run.read).toBeNull();
     expect(run.guidance).toHaveLength(1);
     // The step a rule named is shown before anything is looked for.
@@ -125,19 +175,22 @@ describe('off (the default)', () => {
 });
 
 describe('on', () => {
-  it('reads the message once, beside the embedding, and shows the step once, after it', async () => {
+  it('reads the message once, in its parts at once, beside the embedding, and shows the step once, after it', async () => {
     const off = await say(coreWith(false), ASK);
     const run = await say(coreWith(true), ASK);
-    expect(gateway.requests).toHaveLength(1);
-    const [request] = gateway.requests;
-    expect(request).toMatchObject({
-      purpose: 'turn',
-      route: 'understand',
-      timeoutMs: UNDERSTAND_TIMEOUT_MS.text,
-      estimateCut: true,
-    });
-    expect(request?.promptCache?.systemChars).toBe(request?.system.length);
-    expect(request?.messages[0]?.content).toContain(`<message>\n${ASK}\n</message>`);
+    expect(gateway.requests.map((r) => r.schemaName).sort()).toEqual(
+      Object.values(UNDERSTAND_SCHEMA_NAMES).sort(),
+    );
+    for (const request of gateway.requests) {
+      expect(request).toMatchObject({
+        purpose: 'turn',
+        route: 'understand',
+        timeoutMs: UNDERSTAND_TIMEOUT_MS.text,
+        estimateCut: true,
+      });
+      expect(request.promptCache?.systemChars).toBe(request.system.length);
+      expect(request.messages[0]?.content).toContain(`<message>\n${ASK}\n</message>`);
+    }
     expect(run.guidance).toHaveLength(1);
     expect(run.turn?.guidance).toEqual(run.guidance[0]);
     expect(run.names.indexOf('turn.guidance')).toBeGreaterThan(run.names.indexOf('turn.status:retrieving'));
@@ -145,17 +198,34 @@ describe('on', () => {
     expect(run.names.filter((n) => n !== 'turn.guidance' && n !== 'turn.delta')).toEqual(
       off.names.filter((n) => n !== 'turn.guidance' && n !== 'turn.delta'),
     );
-    expect(run.read).toMatchObject({ code: 'ok', kind: 'question', purpose: 'turn' });
+    expect(run.read).toMatchObject({
+      code: 'ok',
+      kind: 'question',
+      purpose: 'turn',
+      routeCode: 'ok',
+      sumsCode: 'ok',
+      judgeCode: 'ok',
+    });
+    for (const part of UNDERSTAND_PARTS) expect(typeof run.read?.[`${part}Ms`]).toBe('number');
     expect(logger.records.findLast((r) => r.event === 'turn.path')?.fields).toMatchObject({
       understood: true,
     });
   });
 
-  it('is metered like every call: a row of the ledger the caps count', async () => {
+  it('is metered like every call: a row of the ledger each, which the caps count', async () => {
     const off = await say(coreWith(false), ASK);
     const run = await say(coreWith(true), ASK);
     const turns = (r: Run) => r.ledger.filter((x) => x.purpose === 'turn').length;
-    expect(turns(run)).toBe(turns(off) + 1);
+    expect(turns(run)).toBe(turns(off) + 3);
+  });
+
+  it('a part that was cut off is metered too', async () => {
+    const off = await say(coreWith(false), ASK);
+    gateway.behaviour = { judge: 'stops when told' };
+    const run = await say(coreWith(true, CAPS), ASK);
+    expect(run.read).toMatchObject({ code: 'partial', judgeCode: 'late' });
+    const turns = (r: Run) => r.ledger.filter((x) => x.purpose === 'turn').length;
+    expect(turns(run)).toBe(turns(off) + 3);
   });
 
   it('logs ids, codes and milliseconds, never words', async () => {
@@ -166,28 +236,64 @@ describe('on', () => {
 
   it('a failed reading leaves the turn to its rules', async () => {
     const off = await say(coreWith(false), ASK);
-    gateway.behaviour = 'fails';
+    gateway.every('fails');
     const run = await say(coreWith(true), ASK);
-    expect(run.read).toMatchObject({ code: 'model_unavailable' });
+    expect(run.read).toMatchObject({ code: 'model_unavailable', routeCode: 'model_unavailable' });
     expect(plain(run.guidance)).toEqual(plain(off.guidance));
     expect(run.turn?.status).toBe('completed');
   });
 
   it('a reading that says nothing leaves it to them too', async () => {
-    gateway = new ReadingGateway({ streamDelayMs: 0, fixtures: { [UNDERSTAND_SCHEMA_NAME]: () => ({}) } });
+    gateway = new ReadingGateway({
+      streamDelayMs: 0,
+      fixtures: Object.fromEntries(Object.values(UNDERSTAND_SCHEMA_NAMES).map((n) => [n, () => 'nothing'])),
+    });
     const run = await say(coreWith(true), ASK);
     expect(run.read?.code).toBe('model_output_invalid');
     expect(run.guidance).toHaveLength(1);
   });
 
-  it('a late one is not waited for beyond its budget', async () => {
-    gateway.behaviour = 'hangs';
+  it('uses the parts that came, and cancels the one that is late', async () => {
+    gateway.behaviour = { judge: 'hangs' };
     const started = performance.now();
     const run = await say(coreWith(true), ASK);
+    expect(run.read).toMatchObject({ code: 'partial', kind: 'question', routeCode: 'ok', judgeCode: 'late' });
+    expect(gateway.cancelled).toEqual(expect.arrayContaining(['judge']));
+    // The reply does not open on what JUDGE says of a question: it is not waited for to the end.
+    expect(performance.now() - started).toBeLessThan(UNDERSTAND_TIMEOUT_MS.text);
+    expect(run.turn?.status).toBe('completed');
+  });
+
+  it('waits for JUDGE to the end of the budget where the reply opens on it', async () => {
+    gateway.behaviour = { judge: 'hangs' };
+    const run = await say(coreWith(true, CAPS), 'Two labs paid us $40 each today, was that a good result?');
+    expect(run.read).toMatchObject({ code: 'partial', judgeCode: 'late' });
+    expect(Number(run.read?.ms)).toBeGreaterThanOrEqual(CAPS.understandTypedMs - 50);
+  });
+
+  it('without ROUTE, what the others say of a figure stands', async () => {
+    gateway.behaviour = { route: 'fails' };
+    const run = await say(coreWith(true), 'how much comes in if 13 labs pay $24 each?');
+    expect(run.read).toMatchObject({ code: 'partial', kind: 'sum', sums: 1, routeCode: 'model_unavailable' });
+    expect(run.turn?.status).toBe('completed');
+  });
+
+  it('without ROUTE and nothing of theirs, it is none', async () => {
+    gateway.behaviour = { route: 'fails' };
+    const run = await say(coreWith(true), ASK);
+    expect(run.read?.code).toBe('nothing_held');
+    expect(run.turn?.status).toBe('completed');
+  });
+
+  it('a late one is not waited for beyond its budget', async () => {
+    gateway.every('hangs');
+    const started = performance.now();
+    const run = await say(coreWith(true, CAPS), ASK);
     const took = performance.now() - started;
-    expect(run.read).toMatchObject({ code: 'late' });
-    expect(took).toBeGreaterThanOrEqual(UNDERSTAND_TIMEOUT_MS.text - 50);
-    expect(took).toBeLessThan(UNDERSTAND_TIMEOUT_MS.text + 2_500);
+    expect(run.read).toMatchObject({ code: 'late', routeCode: 'late', sumsCode: 'late', judgeCode: 'late' });
+    expect(took).toBeGreaterThanOrEqual(CAPS.understandTypedMs - 50);
+    expect(took).toBeLessThan(CAPS.understandTypedMs + 2_500);
+    expect(new Set(gateway.cancelled)).toEqual(new Set(UNDERSTAND_PARTS));
     expect(run.guidance).toHaveLength(1);
     expect(run.turn?.status).toBe('completed');
   }, 20_000);
@@ -213,7 +319,7 @@ describe('on', () => {
       core,
       'I am thinking about ending it, the pilot with the agency. What should I charge instead?',
     );
-    expect(gateway.requests).toHaveLength(1);
+    expect(gateway.requests).toHaveLength(3);
     expect(clear.turn).not.toBeNull();
   });
 });

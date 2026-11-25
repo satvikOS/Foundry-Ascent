@@ -248,7 +248,7 @@ export function PrincipalsPage() {
                       <UserAvatar name={row.principal.displayName} size="sm" decorative className="mt-0.5" />
                       <div className="min-w-0">
                         <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 font-medium">
-                          <span className="whitespace-nowrap">{row.principal.displayName}</span>
+                          <span className="[overflow-wrap:anywhere]">{row.principal.displayName}</span>
                           {isMe ? <Badge variant="outline">You</Badge> : null}
                           {row.status === 'active' ? null : (
                             <Badge variant="muted" className="border-dotted border-border-strong">
