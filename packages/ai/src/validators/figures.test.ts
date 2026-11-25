@@ -152,11 +152,11 @@ describe('figures nobody gave, read as the lab reads them (lab run 42238272157: 
     });
   });
 
-  it('is asked of the prompt: no local rate, market price, size or statistic of its own, and how to find one', () => {
-    const rules = conversationCraftRules('text');
-    expect(rules).toMatch(/local rate/);
-    expect(rules).toMatch(/market size/);
-    expect(rules).toMatch(/how to find/);
-    expect(rules).toMatch(/not even as an example/);
+  it('is asked of the prompt: no price, rate or statistic of its own, even as an example, and how to find one', () => {
+    const rules = conversationCraftRules('text').replace(/\s+/g, ' ');
+    expect(rules).toContain(
+      'Never a figure of your own in a price, threshold, target, rate or statistic, even as an example',
+    );
+    expect(rules).toContain('name its role or say how to find it');
   });
 });

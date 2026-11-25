@@ -105,7 +105,8 @@ function referenceKeys(found: readonly retrievalRepo.RetrievedItem[]): string[] 
 }
 
 beforeAll(async () => {
-  t = await createTestDatabase({ seed: true });
+  // Without the cited corpus (its own tests: corpus.db.test.ts): the pack's are the only public passages here.
+  t = await createTestDatabase({ seed: { corpus: false } });
   if (!t.seed) throw new Error('seed missing');
   seed = t.seed;
   const v = seed.ventures.find((x) => x.key === 'quietquad');
@@ -158,7 +159,11 @@ describe('ingestion into the common pool', () => {
       keptWithdrawn: 0,
       passages: 0,
     });
-    await seedDatabase(t.db, { homeTenant: { slug: 'ain', name: 'Ain Foundry (test)' }, owner: null });
+    await seedDatabase(t.db, {
+      homeTenant: { slug: 'ain', name: 'Ain Foundry (test)' },
+      owner: null,
+      corpus: false,
+    });
     expect(await sources(seed.tenantId)).toEqual(before);
     expect(await chunkState(seed.tenantId)).toEqual(chunksBefore);
   });

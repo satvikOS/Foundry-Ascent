@@ -346,6 +346,23 @@ describe('evidence sources (additive)', () => {
     expect(EvidenceItem.parse({ ...item, source: null }).source).toBeNull();
   });
 
+  it('reads evidence without a citation as before, and carries where an excerpt can be checked', () => {
+    expect(EvidenceItem.parse(item).citation).toBeUndefined();
+    expect(EvidenceItem.parse({ ...item, citation: null }).citation).toBeNull();
+    const citation = {
+      kind: 'play' as const,
+      locator: 'Chapter 1',
+      url: 'https://www.sba.gov/',
+      licence: null,
+      attribution: null,
+      sources: [{ title: 'The Mom Test', authors: 'Rob Fitzpatrick', locator: 'Chapter 1', url: null }],
+    };
+    expect(EvidenceItem.parse({ ...item, citation }).citation).toEqual(citation);
+    expect(EvidenceItem.safeParse({ ...item, citation: { ...citation, kind: 'rumour' } }).success).toBe(
+      false,
+    );
+  });
+
   it('carries the source of a passage by id and scope', () => {
     for (const scope of ['venture', 'program', 'public', 'persona'] as const) {
       expect(EvidenceItem.parse({ ...item, source: { id: ID, scope } }).source).toEqual({ id: ID, scope });

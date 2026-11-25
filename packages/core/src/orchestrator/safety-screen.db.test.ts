@@ -532,9 +532,11 @@ describe('with the safety screen switched off (the default, CORE_SAFETY_SCREEN u
       const session = await core.sessions.create(ctx, h.ventures.quietquad.id, { mode: 'coach' });
       const { events, outcome, atClassifying, all } = await runTracked(core, gateway, ctx, session.id, text);
       expect(outcome.status, text).toBe('completed');
-      // The same calls in the same order as an ordinary message (no screen, no wait for one before the embedding).
-      expect(atClassifying, text).toEqual(plain.atClassifying);
-      expect(all.slice(0, 2), text).toEqual(plain.all.slice(0, 2));
+      // The same calls in the same order as an ordinary message (no screen, no wait for one before the embedding); a
+      // courtesy has nothing to look up, so it buys no embedding.
+      const courtesy = text === 'goodbye';
+      expect(atClassifying, text).toEqual(courtesy ? [] : plain.atClassifying);
+      expect(all.slice(0, courtesy ? 1 : 2), text).toEqual(plain.all.slice(courtesy ? 1 : 0, 2));
       expect(
         all.filter((c) => c.includes(SAFETY_SCREEN_SCHEMA_NAME)),
         text,

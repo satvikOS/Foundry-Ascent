@@ -27,7 +27,7 @@ import { useMemory } from '@/lib/api/hooks/memory';
 import { useEndSession, useSession } from '@/lib/api/hooks/sessions';
 import { useTurnStream } from '@/lib/api/hooks/turn-stream';
 import { useVenture } from '@/lib/api/hooks/ventures';
-import { CallReviewSlot } from '@/features/calls/call-review-slot';
+import { CallReviewSlot, useCallReviewShown } from '@/features/calls/call-review-slot';
 import { ConversationRecordings } from '@/features/recordings/conversation-recordings';
 import { CallButtons } from '@/features/calls/call-buttons';
 import { useCallEntry } from '@/features/calls/call-entry';
@@ -39,6 +39,8 @@ import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { conversationVeir, NEUTRAL_MENTOR_NAME, veirDisplay } from '@/lib/veir';
 import { conversationOrigin } from '@/features/documents/upload-queue';
 import { EscalationFlowDialog, type EscalationDraft } from '@/features/escalations/escalation-flow-dialog';
+import { IntakeCard } from '@/features/path/intake-card';
+import { OpeningStep } from '@/features/path/path-section';
 
 import { coachingAvailability } from '../coach/availability';
 import { deriveTurnProgress } from '../coach/progress';
@@ -158,6 +160,7 @@ function Conversation() {
   const callable = calls.callable && canSend;
   const { state } = stream;
   const progress = deriveTurnProgress(state);
+  const reviewing = useCallReviewShown(sessionId);
   const veir = veirDisplay(venture.data);
   // Named after the conversation's own persona: an older conversation can be with one the venture no longer has.
   const withVeir = session ? conversationVeir(session, veir) : null;
@@ -394,6 +397,13 @@ function Conversation() {
               {ended ? 'Ended before anything was asked.' : `Ask ${personaName} anything.`}
             </p>
           ) : null}
+          {visibleTurns.length === 0 &&
+          !showLive &&
+          !waitingForFirst &&
+          !ended &&
+          session.privacy === 'standard' ? (
+            <OpeningStep tenant={tenant} ventureId={ventureId} />
+          ) : null}
           {visibleTurns.map((turn) => (
             <StoredExchange
               key={turn.id}
@@ -405,6 +415,7 @@ function Conversation() {
               ventureId={ventureId}
               canEdit
               latest={!showLive && turn.id === latest?.id}
+              stepOpen={!showLive && !reviewing && turn.id === latest?.id}
               memoryItems={memory.data}
               escalations={escalations.data}
               sendDisabledReason={ended ? 'This conversation has ended.' : sendDisabledReason}
@@ -441,6 +452,11 @@ function Conversation() {
               />
             </div>
           ) : null}
+          <IntakeCard
+            ventureId={ventureId}
+            personaName={personaName}
+            enabled={!ended && session.privacy === 'standard' && !showLive && !waitingForFirst}
+          />
           <CallReviewSlot sessionId={sessionId} />
           <ConversationRecordings sessionId={sessionId} privacy={session.privacy} />
           {ended ? (

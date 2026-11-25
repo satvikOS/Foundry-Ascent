@@ -4,11 +4,14 @@ import { ErrorState } from '@/components/ui/error-state';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { PortfolioDashboard } from '@/features/program/portfolio-dashboard';
-import { portfolioQueryOptions, usePortfolio } from '@/lib/api/hooks/program';
+import { usePortfolio } from '@/lib/api/hooks/program';
 
 export const Route = createFileRoute('/$tenant/app/program/portfolio')({
   loader: ({ context }) => {
-    context.queryClient.query(portfolioQueryOptions()).catch(() => undefined);
+    // Loaded apart: loaders are in the first page load, the page's contracts are not needed there.
+    void import('@/lib/api/hooks/program')
+      .then(({ portfolioQueryOptions }) => context.queryClient.query(portfolioQueryOptions()))
+      .catch(() => undefined);
   },
   head: () => ({ meta: [{ title: 'Portfolio' }] }),
   component: PortfolioPage,

@@ -12,7 +12,7 @@ export const VENTURE_DATA_STALE_MS = 5 * 60_000;
 
 /**
  * What a finished turn can change in the venture's cached data: the memory it kept, the overview that counts
- * it, the venture itself, a draft escalation, and the venture's conversations. Not the notebook (written
+ * it, the venture itself, a draft escalation, the venture's conversations and its path. Not the notebook (written
  * later, by distillation), the documents, the team or the call settings, which a turn never changes.
  */
 export function ventureKeysAfterTurn(ventureId: string): QueryKey[] {
@@ -22,6 +22,7 @@ export function ventureKeysAfterTurn(ventureId: string): QueryKey[] {
     queryKeys.venture.detail(ventureId),
     queryKeys.venture.escalations(ventureId),
     queryKeys.venture.sessions(ventureId),
+    queryKeys.venture.path(ventureId),
   ];
 }
 

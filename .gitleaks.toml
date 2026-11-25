@@ -19,5 +19,5 @@ regexes = ['''^FA-(?:AAAAA-BBBBB-CCCCC-DDDDD|ABCDE-FGHJK-MNPQR-STVWX|00000-00000
 
 [allowlist]
 description = "Public identifiers and constants, not secrets"
-regexes = ['''^0123456789ABCDEFGHJKMNPQRSTVWXYZ$''', '''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''', '''^Max-Age=\d+$''', '''^scrypt\$N=\d+,r=\d+,p=\d+\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$''']
+regexes = ['''^0123456789ABCDEFGHJKMNPQRSTVWXYZ$''', '''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''', '''^Max-Age=\d+$''', '''^m\du\d-[a-z0-9-]+$''', '''^scrypt\$N=\d+,r=\d+,p=\d+\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$''']
 paths = ['''(?:^|/)pnpm-lock\.yaml$''', '''^docs/blueprints/''']

@@ -14,6 +14,7 @@ import {
   preparedOpenerQueryOptions,
   useCreateSession,
 } from '@/lib/api/hooks/sessions';
+import { useVenturePath } from '@/lib/api/hooks/path';
 import { useVenture } from '@/lib/api/hooks/ventures';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
@@ -24,6 +25,7 @@ import { BREAKPOINTS, useMediaQuery } from '@/lib/hooks/use-media-query';
 import { NEUTRAL_MENTOR_NAME, veirDisplay } from '@/lib/veir';
 
 import { conversationOrigin, NEW_CHAT_ORIGIN } from '@/features/documents/upload-queue';
+import { NowLine, StartChips } from '@/features/path/start-line';
 
 import { CallButtons } from '../calls/call-buttons';
 import { useCallEntry } from '../calls/call-entry';
@@ -72,6 +74,8 @@ interface ShownOpener {
   readonly at: string | null;
   /** They have talked before. */
   readonly returning: boolean;
+  /** The path had loaded by then: its step and its ways to start are part of what New chat shows. */
+  readonly path: boolean;
 }
 
 /**
@@ -177,6 +181,9 @@ function NewChat() {
       clearTimeout(timer);
     };
   }, [missing]);
+  // The path's step is named in the greeting: awaited with it, and left out when it is late (nothing moves later).
+  const path = useVenturePath(ventureId);
+  const pathKnown = path.isSuccess || path.isError;
   // Read once per visit: the heading never changes in front of the founder.
   const [previousWelcome] = useState(readShownWelcome);
   if (shown === null) {
@@ -185,16 +192,17 @@ function NewChat() {
       ? (preparedQuery.data ?? (preparedQuery.isError || prepareLate ? preview : undefined))
       : preview;
     if (preview !== undefined && !openerQuery.isRefetching) {
-      if (line !== undefined) {
+      if (line !== undefined && (pathKnown || openerLate)) {
         setShown({
           opener: line.opener,
           at: line.opener === null ? null : line.at,
           returning: line.lastConversation !== null,
+          path: path.isSuccess,
         });
       }
     } else if (openerQuery.isError || openerLate) {
       // Not in time (or not at all): greet without it, and the conversation opens without one too.
-      setShown({ opener: null, at: null, returning: false });
+      setShown({ opener: null, at: null, returning: false, path: path.isSuccess });
     }
   }
   // New chat is for the venture team; its Call entries show only while calls are on.
@@ -292,6 +300,8 @@ function NewChat() {
 
   const name = veir?.name ?? NEUTRAL_MENTOR_NAME;
   const available = availability?.available === true;
+  // A private chat reads nothing, the path included.
+  const startPath = shown?.path === true && !temporary ? (path.data ?? null) : null;
   const welcome = newChatGreeting({
     opener: shown?.opener ?? null,
     firstName: firstName(me.principal.displayName),
@@ -356,6 +366,7 @@ function NewChat() {
             >
               {welcome.line}
             </p>
+            {startPath ? <NowLine path={startPath} tenant={tenant} ventureId={ventureId} /> : null}
           </Greeting>
 
           <div className="mt-8">
@@ -393,6 +404,8 @@ function NewChat() {
               <p className="mt-3 text-center text-caption text-muted-foreground" data-testid="private-note">
                 Private: not kept.
               </p>
+            ) : startPath && available ? (
+              <StartChips path={startPath} onPick={choose} />
             ) : null}
           </div>
         </div>

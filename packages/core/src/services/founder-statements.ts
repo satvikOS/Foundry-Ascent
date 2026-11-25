@@ -32,6 +32,9 @@ const CONSTRAINT = new RegExp(
   `${LEAD}(we|i)\\s+(can['’]?t|cannot|can not|won['’]?t be able to|don['’]?t have (?:the )?(?:budget|money|time|funding|runway) (?:to|for))\\s+(.+)$`,
   'i',
 );
+/** A corrected fact ("change it: the fee is 450 now, not 300"): what it is now, and what it was. */
+const CORRECTION =
+  /(?:^|[:,;]\s+|\bso\s+)(?:actually,?\s+)?(the|our|my)\s+((?:[\w-]+\s+){0,3}[\w-]+)\s+(?:is|are)\s+(?:now\s+)?(\S.{0,60}?)(?:\s+now)?,?\s+(?:not|instead of|no longer|rather than)\s+(\S.{0,40})$/i;
 /** Hedges and questions: nothing is decided ("maybe we've decided…", "should we…?"). */
 const HEDGE =
   /\?|\b(?:maybe|might|perhaps|probably|possibly|thinking (?:about|of)|considering|not sure|unsure|wondering|if we|whether|unless|kind of|sort of)\b/i;
@@ -83,7 +86,7 @@ function covered(
 }
 
 /**
- * The decisions, goals and constraints `founderText` states in the plain first-person shapes (see the module
+ * The decisions, goals, constraints and corrections `founderText` states in the plain first-person shapes (see the module
  * comment), as `founder_stated` memory candidates, except those `modelCandidates` already say. `founderName` (their
  * first name) is the subject of what "I" decided; "we" is the team.
  */
@@ -115,6 +118,7 @@ export function statedMemory(
     const decision = DECISION.exec(sentence);
     const goal = GOAL.exec(sentence);
     const constraint = CONSTRAINT.exec(sentence);
+    const correction = CORRECTION.exec(sentence.replace(/[.!…]+$/, ''));
     let item: Pick<MemoryCandidate, 'type' | 'title' | 'content'> | null = null;
     if (decision?.[1] !== undefined && decision[2] !== undefined && decision[4] !== undefined) {
       const what = clause(decision[4]);
@@ -151,6 +155,17 @@ export function statedMemory(
           content: `${who(constraint[1])} ${verb} ${what}.`,
         };
       }
+    }
+    // "It is X, not Y" of a fact with a figure: only a figure is corrected this plainly.
+    if (item === null && correction?.[2] !== undefined && /\d/.test(correction[3] ?? '')) {
+      const subject = correction[2].toLowerCase();
+      const now = thirdPerson((correction[3] ?? '').trim());
+      const was = thirdPerson((correction[4] ?? '').trim());
+      item = {
+        type: 'decision',
+        title: titleOf(`${subject}: ${now} now, not ${was}`),
+        content: `The ${subject} is ${now} now, not ${was}.`,
+      };
     }
     if (item === null || covered(item.content, [...options.modelCandidates, ...out])) continue;
     out.push({ ...item, evidence_ids: [], confidence: 0.7, source: 'founder_stated' });

@@ -21,7 +21,7 @@ import { type ApiApp, createApp } from '../app.js';
 import { type ApiConfig, loadApiConfig, loadCoreConfig, required } from '../config.js';
 import { API_DB_RESUME_BUDGET_MS } from '../lambda-contract.js';
 import { type Logger } from '../logging.js';
-import { createDatabase, createGateway, createProcessLogger } from './common.js';
+import { createDatabase, createGateway, createProcessLogger, previousEmbeddingsFor } from './common.js';
 import { observeDatabase } from './db-observer.js';
 import { InflightTracker } from './inflight.js';
 
@@ -176,6 +176,7 @@ export function createApiRuntime(env: EnvLike): ApiRuntime {
     afterResponse: (task) => {
       void inflight.track(task);
     },
+    ...previousEmbeddingsFor(env, logger),
     ...speechFor(env, config),
     ...sttGrantsFor(env, config),
     ...mediaFor(config),

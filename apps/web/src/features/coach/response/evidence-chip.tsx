@@ -1,13 +1,16 @@
 import type { EvidenceItem } from '@foundry/contracts';
 
+import { HoverPopover } from '@/components/ui/hover-popover';
 import { cn } from '@/lib/utils';
+
+import { EvidencePreview } from '../../path/sources';
 
 interface EvidenceChipProps {
   /** Evidence key, e.g. "E2". */
   evidenceKey: string;
   /** The evidence item the key refers to (null when it is not available for this turn). */
   item: EvidenceItem | null | undefined;
-  /** Opens the source (the conversation's Sources panel). Without it the chip is a plain label. */
+  /** Opens the source (the conversation's Sources panel), on a click or Enter. Without it the chip is a plain label. */
   onOpen?: ((key: string) => void) | undefined;
   className?: string;
 }
@@ -46,8 +49,9 @@ export function CitationKey({ evidenceKey }: { evidenceKey: string }) {
 }
 
 /**
- * Citation chip (shows "2" for E2). Opens the source in the conversation's Sources panel. Its accessible name starts
- * with the number it shows and includes the source title, so screen-reader users hear what is cited.
+ * Citation chip (shows "2" for E2). Hovering it, or a tap, shows the source's title and the passage that supports the
+ * sentence; a click opens it in the conversation's Sources panel. Its accessible name starts with the number it shows
+ * and includes the source title, so screen-reader users hear what is cited.
  */
 export function EvidenceChip({ evidenceKey, item, onOpen, className }: EvidenceChipProps) {
   // Compact in running text; on touch screens it grows to a 24 px target (WCAG 2.5.8) without a layout jump
@@ -78,23 +82,31 @@ export function EvidenceChip({ evidenceKey, item, onOpen, className }: EvidenceC
       </span>
     );
   }
+  const open = () => {
+    onOpen(evidenceKey);
+  };
   return (
-    <button
-      type="button"
-      data-slot="evidence-chip"
-      aria-label={citationName(evidenceKey, item.title)}
-      title={item.title}
-      onClick={() => {
-        onOpen(evidenceKey);
-      }}
-      className={cn(
-        base,
-        'cursor-pointer bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-        'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring',
-        className,
-      )}
+    <HoverPopover
+      label={citationName(evidenceKey)}
+      content={<EvidencePreview item={item} onOpen={open} />}
+      onActivate={open}
     >
-      {citationNumber(evidenceKey)}
-    </button>
+      {(props) => (
+        <button
+          type="button"
+          data-slot="evidence-chip"
+          aria-label={citationName(evidenceKey, item.title)}
+          className={cn(
+            base,
+            'cursor-pointer bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+            'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring',
+            className,
+          )}
+          {...props}
+        >
+          {citationNumber(evidenceKey)}
+        </button>
+      )}
+    </HoverPopover>
   );
 }

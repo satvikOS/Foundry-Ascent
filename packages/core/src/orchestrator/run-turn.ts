@@ -29,6 +29,7 @@ import {
   callsRepo,
   escalationsRepo,
   memoryRepo,
+  pathRepo,
   personasRepo,
   readTogether,
   sessionsRepo,
@@ -58,6 +59,12 @@ import {
   type AdmitVoiceTurn,
   type VoiceTurnReads,
 } from '../services/call-admission.js';
+import { applyReport, changesPath, keepDecided } from '../path/apply.js';
+import { evidencePlayOf } from '../path/engine.js';
+import { PLAYBOOK } from '../path/playbook/index.js';
+import { guardReport } from '../path/report.js';
+import { evidenceKeysOf, nextActionsOf, pathTurn, withEvidenceKeys, type PathTurn } from '../path/turn.js';
+import { type Playbook } from '../path/types.js';
 import { createDraftEscalation, reviseDraftEscalation } from '../services/escalations.js';
 import { proposeMemoryCandidates, settleKeptMemory } from '../services/memory.js';
 import { statedMemory } from '../services/founder-statements.js';
@@ -73,7 +80,7 @@ import {
   type LoadedContinuity,
 } from './continuity.js';
 import { renderLeftOffSection, type LeftOffData } from './continuity-prompt.js';
-import { candidateVisibility } from './evidence.js';
+import { candidateVisibility, type PlayEvidence } from './evidence.js';
 import { type FaceApproval, generationTotals, SpeechStream } from './generate.js';
 import { embedRetrievalQuery, privateRetrievalOwner, retrieveEvidence } from './retrieval.js';
 import { safetyScreenDue, screenIndirectIdeation } from './safety-screen.js';
@@ -163,6 +170,8 @@ export interface OrchestratorOptions {
    * a call starts. Default: the orchestrator's own.
    */
   readonly turnContexts?: TurnContextKeyring;
+  /** The founder path's playbook (core `path/`); replaceable in tests. Default: the program's (`turns.founderPath` on). */
+  readonly playbook?: Playbook;
 }
 
 /**
@@ -269,10 +278,12 @@ interface Coach {
    * admission (it never waits for the distillation worker; null when it cannot be read).
    */
   readonly leftOff: Promise<LeftOffData | null>;
+  /** The founder path's rows and the record it is read from. */
+  readonly path: pathRepo.PathReads;
 }
 
 /** What the coach is before its conversation context (presence, notes) joins it ({@link Coach}). */
-type CoachBase = Omit<Coach, 'personaEirName' | 'presence' | 'memory' | 'leftOff'>;
+type CoachBase = Omit<Coach, 'personaEirName' | 'presence' | 'memory' | 'leftOff' | 'path'>;
 
 /** A turn past the preflight's checks, before its conversation context is in hand (turn-context.ts). */
 interface Checked extends Omit<Proceed, 'kind' | 'venture' | 'coach'> {
@@ -284,6 +295,17 @@ interface Checked extends Omit<Proceed, 'kind' | 'venture' | 'coach'> {
   readonly keys: TurnContextKeys | null;
   /** Read in the preflight, or the prefetch under way for the same keys (null on the crisis path). */
   readonly context: { readonly read: TurnContextReads } | { readonly prefetched: TurnContextPrefetch } | null;
+}
+
+/** The response as an escalation packs it: what the model said a person should do next, not the path's own step. */
+function escalationOf(model: CoachResponse, stored: CoachResponse): CoachResponse {
+  return model.next_actions.length === 0 ? stored : { ...stored, next_actions: model.next_actions };
+}
+
+/** The play the turn rests on, as evidence with the sources it cites. */
+function playEvidence(playbook: Playbook, path: PathTurn): PlayEvidence | null {
+  const play = evidencePlayOf(playbook, path.decision);
+  return play === null ? null : { play, sources: playbook.sources };
 }
 
 /** The vEIR's last message as the founder heard it: the previous answer, or the opener on the first turn. */
@@ -312,6 +334,7 @@ export function createOrchestrator(
     options.speechKeys ??
     new PlatformKeyCache(kit, Math.max(cfg.session.keyGraceSeconds, cfg.session.ttlSeconds));
   const turnContexts = options.turnContexts ?? new TurnContextKeyring();
+  const playbook: Playbook | null = cfg.turns.founderPath ? (options.playbook ?? PLAYBOOK) : null;
 
   /**
    * Starts the conversation's context reads in a transaction of their own, beside the preflight, when the process knows
@@ -735,6 +758,7 @@ export function createOrchestrator(
         presence: { ...presence, eirSeesWork: presence.eirSeesWork && session.privacy !== 'ephemeral' },
         memory: reads.memory,
         leftOff,
+        path: reads.path,
       };
     }
     return {
@@ -986,6 +1010,129 @@ export function createOrchestrator(
     readonly phaseB: { fields: PendingFields | null };
   }
 
+  /**
+   * What the founder path decides for the turn (core `path/engine.ts`): pure, so it costs no round trip and no model
+   * call. Null without a playbook, or when it fails (logged without content): the turn then goes on without a step.
+   */
+  function decidePath(
+    ctx: RequestContext,
+    pre: Proceed,
+    coach: Coach,
+    input: z.output<typeof RunTurnInput>,
+    risk: RiskClassification,
+  ): PathTurn | null {
+    if (playbook === null) return null;
+    try {
+      return pathTurn({
+        playbook,
+        ventureId: pre.session.ventureId,
+        venture: pre.venture,
+        reads: coach.path,
+        today: kit.now().toISOString().slice(0, 10),
+        message: input.text,
+        previousReply: previousReplyOf(coach),
+        // What the latest turn that gave a step decided: a follow-up stays on it.
+        previous: coach.history.findLast((t) => t.guidance !== null)?.guidance ?? null,
+        mode: pre.mode,
+        counterpart: input.rehearsalCounterpart ?? null,
+        conversationMode: pre.session.mode,
+        crisis: false,
+        riskCategories: risk.categories,
+        started: coach.heardHistory.length > 0,
+        continuity: coach.memory.continuity,
+        earlierMessages: coach.history.map((t) => t.founderText),
+      });
+    } catch (err) {
+      logger.error('turn.path_undecided', {
+        requestId: ctx.requestId,
+        sessionId: pre.session.id,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Stores what the turn's decision changed: the step it gave, the step the founder's own report finished, the work they
+   * reported, the idea they told and a change of it. Nothing to store (the step they were on), no transaction. A temporary chat stores nothing. Never throws: a step that could
+   * not be stored keeps its id and is stored by the next turn.
+   */
+  async function keepDecision(
+    ctx: RequestContext,
+    turnId: string,
+    session: sessionsRepo.SessionRecord,
+    path: PathTurn | null,
+  ): Promise<void> {
+    if (path === null || playbook === null || session.privacy !== 'standard') return;
+    const { decision } = path;
+    if (!changesPath(decision)) return;
+    try {
+      await kit.inRequest(ctx, (scope) =>
+        keepDecided(scope, ctx, {
+          playbook,
+          ventureId: session.ventureId,
+          sessionId: session.id,
+          today: kit.now().toISOString().slice(0, 10),
+          decision,
+        }),
+      );
+    } catch (err) {
+      logger.warn('turn.path_unsaved', {
+        requestId: ctx.requestId,
+        turnId,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    }
+  }
+
+  /**
+   * Applies what the annotation call says the message reports (`path_report`), held to the founder's own words
+   * (path/report.ts). A report the decision itself already acted on is not applied twice. Never throws.
+   */
+  async function keepReport(
+    ctx: RequestContext,
+    turn: turnsRepo.TurnRecord,
+    session: sessionsRepo.SessionRecord,
+    coach: Coach,
+    path: PathTurn | null,
+    reported: CoachResponse['path_report'],
+  ): Promise<void> {
+    if (path === null || playbook === null || session.privacy !== 'standard') return;
+    const guarded = guardReport(reported, turn.founderText, playbook);
+    if (guarded === null) return;
+    const { decision } = path;
+    // A change of direction opens what the old customer showed: nothing of that message claims it back.
+    if (decision.pivot !== null) return;
+    // The step the report is about: the stored one the turn opened on.
+    const open = coach.path.steps.find(
+      (s) => s.status === 'now' && s.origin !== 'coach' && s.id !== decision.completes?.step.id,
+    );
+    const step = decision.completes !== null ? null : (open ?? null);
+    if (step === null && guarded.criteria.length === 0) return;
+    try {
+      await kit.inRequest(ctx, async (scope) => {
+        // As it stands now (this turn's own decision, or the founder in the app, may have changed it): an open one still
+        // takes the report, a closed one keeps how it was closed.
+        const current = step === null ? null : await pathRepo.getStep(scope.tx, step.id);
+        const stillOpen = current !== null && current.status !== 'done' && current.status !== 'skipped';
+        await applyReport(scope, ctx, {
+          playbook,
+          ventureId: session.ventureId,
+          sessionId: session.id,
+          today: kit.now().toISOString().slice(0, 10),
+          report: guarded,
+          step: stillOpen ? current : null,
+        });
+      });
+    } catch (err) {
+      logger.warn('turn.path_report_unsaved', {
+        requestId: ctx.requestId,
+        turnId: turn.id,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    }
+  }
+
   async function accepted(a: Accepted): Promise<RunTurnOutcome> {
     const { ctx, turn, pre, input, others, eirNames, addressees, emit, signal } = a;
     const ventureId = pre.session.ventureId;
@@ -1020,12 +1167,32 @@ export function createOrchestrator(
     if (active === null || coach === null)
       throw new DomainError('assignment_inactive', 'No active coach', { reason: 'no_assignment' });
 
+    // What the founder path decides for this turn, shown at once (before the first text of the reply).
+    const path = decidePath(ctx, pre, coach, input, risk);
+    if (path !== null && path.guidance !== null)
+      await emit({ event: 'turn.guidance', turnId: turn.id, guidance: path.guidance });
+    if (path !== null)
+      logger.info('turn.path', {
+        requestId: ctx.requestId,
+        turnId: turn.id,
+        kind: path.decision.kind,
+        intent: path.decision.intent,
+        matched: path.decision.matched,
+        stage: path.decision.state.stage,
+        stepId: path.decision.step?.view.id ?? null,
+        playId: path.decision.step?.view.playId ?? null,
+        completes: path.decision.completes !== null,
+        offered: path.decision.offered,
+        carried: path.decision.carried,
+      });
+
     // Step 3: authorized, scoped retrieval. "Where you left off" (the latest earlier conversations, read as they
     // were said when not distilled yet) has been loading since the preflight, in its own transaction: it never waits
     // for the distillation worker, and the turn never waits for it longer than for retrieval.
     await emit({ event: 'turn.status', phase: 'retrieving', detail: null, evidenceCount: null });
     const embedding =
-      a.embedding ?? embedRetrievalQuery(kit, ctx, { purpose: 'turn', ventureId }, a.query, signal, a.tails);
+      a.embedding ??
+      embedRetrievalQuery(kit, ctx, { purpose: 'turn', ventureId }, a.query, signal, a.tails, input.text);
     // The retrieval transaction opens while the query is embedded (its begin and context run beside the embedding,
     // which needs no database connection), and the search is used without waiting for the commit: it only reads.
     const { value: retrieved, ended } = await kit.readInRequest(ctx, async (scope) => {
@@ -1037,6 +1204,8 @@ export function createOrchestrator(
         stage: pre.venture.stage,
         query: a.query,
         founderText: input.text,
+        // The play that answers what they asked is evidence itself, with the sources it cites.
+        play: playbook === null || path === null ? null : playEvidence(playbook, path),
         // What the conversation is about: an item it keeps naming may be offered unasked, rate-limited (coaching v3).
         conversation: {
           earlierFounderTexts: [...coach.history].reverse().map((t) => t.founderText),
@@ -1134,6 +1303,23 @@ export function createOrchestrator(
       },
       conversationGoal: pre.session.goal,
       rehearsalCounterpart: input.rehearsalCounterpart ?? null,
+      guidance:
+        path === null || playbook === null
+          ? null
+          : withEvidenceKeys(
+              path.prompt,
+              // The play itself and the notes of the sources it cites first, then anything shown under their titles.
+              [
+                ...new Set([
+                  ...pack.playKeys,
+                  ...evidenceKeysOf(
+                    playbook,
+                    path.decision,
+                    pack.items.map((k) => k.item),
+                  ),
+                ]),
+              ].slice(0, 4),
+            ),
       channel: pre.channel,
       continuity,
       leftOff: leftOffSection,
@@ -1159,7 +1345,22 @@ export function createOrchestrator(
       await withdrawFaceUnits(a.faceApproval);
       return { status: 'failed', turnId: turn.id, replayed: false, error };
     }
-    const { context, shown, generation, checked } = answered;
+    const { context, shown, generation } = answered;
+    // A coaching turn's next action is the step the path decided, so call summaries and recaps name the same one.
+    const decidedActions = path === null ? null : nextActionsOf(path.decision);
+    const withPathFields = (c: typeof answered.checked): typeof answered.checked =>
+      c.blocked || path === null || playbook === null
+        ? c
+        : {
+            ...c,
+            response: {
+              ...c.response,
+              ...(decidedActions === null ? {} : { next_actions: decidedActions }),
+              // Only what the founder's own words support is kept, with the turn too.
+              path_report: guardReport(c.response.path_report, turn.founderText, playbook),
+            },
+          };
+    const checked = withPathFields(answered.checked);
     a.phaseB.fields = answered.annotations;
     const status = checked.blocked ? 'blocked' : 'completed';
     // A streamed reply's fields (phase B) are still being written: what they keep is kept when they arrive.
@@ -1210,7 +1411,11 @@ export function createOrchestrator(
       else if (writtenWhole) {
         await speech.queue(checked.response.spoken ?? deriveSpoken(checked.response.answer));
         await speech.finish();
-      } else await speech.finish();
+      } else {
+        // The decided step, when the reply left it out: one short sentence, signed and said like the reply's own units.
+        if (answered.spokenStep !== null) await speech.queue(answered.spokenStep);
+        await speech.finish();
+      }
     }
     // Ephemeral sessions are never shared with the assigned EIR (RLS turns_read enforces it as well).
     const sampled =
@@ -1232,6 +1437,8 @@ export function createOrchestrator(
       ...coach.history.map((t) => ({ founder: t.founderText, answer: t.response?.answer ?? null })),
       { founder: turn.founderText, answer: checked.response.answer },
     ]);
+    // Stored beside the turn (the step's id is derived, so neither waits for the other); both before the turn completes.
+    const pathKept = checked.blocked ? Promise.resolve() : keepDecision(ctx, turn.id, pre.session, path);
     const persisted = await kit.inRequest(ctx, async (scope) => {
       const { tx } = scope;
       const finished = await turnsRepo.finishTurn(tx, {
@@ -1250,6 +1457,7 @@ export function createOrchestrator(
         firstTokenMs,
         sampledForReview: sampled,
         mode: checked.response.mode,
+        guidance: checked.blocked ? null : (path?.guidance ?? null),
       });
       if (finished === null) throw fail.conflict('The turn is no longer pending', 'turn_not_pending');
       await turnsRepo.insertTurnEvidence(
@@ -1263,6 +1471,8 @@ export function createOrchestrator(
           title: k.item.title,
           ventureId: k.ventureId,
           source: k.item.source ?? null,
+          citation: k.item.citation ?? null,
+          excerpt: k.item.excerpt,
         })),
       );
       const kept =
@@ -1298,7 +1508,7 @@ export function createOrchestrator(
           category: esc.category,
           priority: esc.priority,
           requestedRole: esc.requested_role ?? 'eir',
-          response: checked.blocked ? null : checked.response,
+          response: checked.blocked ? null : escalationOf(answered.checked.response, checked.response),
           evidence: shown.map((k) => k.item),
           reason: esc.reason,
         });
@@ -1395,8 +1605,13 @@ export function createOrchestrator(
     const addFields = async (
       pending: Promise<AnnotatedTurn>,
       drafted: DraftedEscalation | null,
-    ): Promise<{ readonly view: TurnView; readonly kept: readonly memoryRepo.MemoryRecord[] } | null> => {
-      const annotated = await pending;
+    ): Promise<{
+      readonly view: TurnView;
+      readonly kept: readonly memoryRepo.MemoryRecord[];
+      readonly report: CoachResponse['path_report'];
+    } | null> => {
+      const raw = await pending;
+      const annotated = { ...raw, checked: withPathFields(raw.checked) };
       const response = annotated.checked.response;
       const keep = keepableOf(response);
       const { answer: _answer, spoken: _spoken, ...fields } = { ...response, memory_candidates: keep };
@@ -1454,7 +1669,7 @@ export function createOrchestrator(
               category: settled.category,
               priority: settled.priority,
               requestedRole: settled.requestedRole,
-              response,
+              response: escalationOf(raw.checked.response, response),
               evidence: shown.map((k) => k.item),
               reason: settled.reason,
             });
@@ -1472,7 +1687,7 @@ export function createOrchestrator(
               category: esc.category,
               priority: esc.priority,
               requestedRole: esc.requested_role ?? 'eir',
-              response,
+              response: escalationOf(raw.checked.response, response),
               evidence: shown.map((k) => k.item),
               reason: esc.reason,
             });
@@ -1519,7 +1734,7 @@ export function createOrchestrator(
             memoryCandidates: kept?.records.length ?? 0,
             notes: annotated.checked.results.notes.filter((n) => n.startsWith('annotations_')).join(','),
           });
-          return { view, kept: kept?.createdRecords ?? [] };
+          return { view, kept: kept?.createdRecords ?? [], report: response.path_report ?? null };
         });
       } catch (err) {
         kit.deps.logger.warn('turn.annotations_unsaved', {
@@ -1531,6 +1746,7 @@ export function createOrchestrator(
       }
     };
 
+    await pathKept;
     if (persisted.blocked !== null) {
       // Nothing will read the fields of a reply that was held back.
       await answered.annotations?.stop();
@@ -1558,11 +1774,15 @@ export function createOrchestrator(
       else kit.deps.afterResponse(settling);
     };
     await settle(persisted.kept);
+    // A reply written whole has its fields already.
+    if (answered.annotations === null)
+      await keepReport(ctx, turn, pre.session, coach, path, checked.response.path_report);
     if (answered.annotations !== null) {
       // The reply's fields, added to the stored turn when they arrive: the founder already has the reply, and a call is
       // listening again (lab run 42238272157: everything waited 5.6 s for them on Haiku).
       const annotated = await addFields(answered.annotations.result, persisted.drafted);
       if (annotated !== null) {
+        await keepReport(ctx, turn, pre.session, coach, path, annotated.report);
         // The same turn again, with its fields (the contract's `fieldsPending`).
         await emit({ event: 'turn.completed', turn: annotated.view });
         await settle(annotated.kept);
@@ -1845,6 +2065,7 @@ export function createOrchestrator(
               query,
               options.signal,
               tails,
+              input.text,
             );
           }
         } catch (err) {

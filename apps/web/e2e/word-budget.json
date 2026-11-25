@@ -3,12 +3,12 @@
   "screens": {
     "New chat": {
       "before": 79,
-      "after": 62,
-      "budget": 66
+      "after": 74,
+      "budget": 78
     },
     "Conversation": {
       "before": 45,
-      "after": 40,
+      "after": 42,
       "budget": 43
     },
     "Call": {
@@ -23,8 +23,8 @@
     },
     "Documents": {
       "before": 73,
-      "after": 49,
-      "budget": 52
+      "after": 51,
+      "budget": 53
     }
   }
 }

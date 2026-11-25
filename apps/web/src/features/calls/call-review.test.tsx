@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CallEnded } from '@/lib/realtime/call-engine';
 import { announce } from '@/components/a11y/live-announcer';
+import { makeGuidance, makePath } from '@/features/path/testing';
+import { queryKeys } from '@/lib/api/query-keys';
 import { IDS } from '@/lib/realtime/testing';
 
 import { CallReviewCard, exchangesLine } from './call-review';
@@ -102,10 +104,14 @@ function renderSummary(
   value: CallEnded,
   canWrite = true,
   privacy: 'standard' | 'ephemeral' | null = 'standard',
-  options: { focusOnMount?: boolean; timeline?: TimelineSource | null } = {},
+  options: {
+    focusOnMount?: boolean;
+    timeline?: TimelineSource | null;
+    guidance?: ReturnType<typeof makeGuidance>;
+  } = {},
 ) {
   const callbacks = { dismiss: vi.fn(), again: vi.fn(), leave: vi.fn() };
-  renderWithRouter(
+  const { client } = renderWithRouter(
     <CallReviewCard
       tenant="ain"
       ventureId={IDS.venture}
@@ -118,8 +124,10 @@ function renderSummary(
       onLeave={callbacks.leave}
       focusOnMount={options.focusOnMount ?? true}
       timeline={options.timeline ?? null}
+      guidance={options.guidance ?? null}
     />,
   );
+  client.setQueryData(queryKeys.venture.path(IDS.venture), makePath());
   return callbacks;
 }
 
@@ -147,6 +155,22 @@ afterEach(() => {
 });
 
 describe('CallReviewCard', () => {
+  it('shows the step the call ended on, in place of the summary’s own actions', async () => {
+    const summary = { nextActions: [{ owner: 'Maya', action: 'Another thing', target_date: null }] };
+    renderSummary(ended(summary), true, 'standard', { guidance: makeGuidance() });
+    const review = await screen.findByRole('region', { name: 'Call ended' });
+    expect(within(review).getByRole('region', { name: /^Hear five lab managers/ })).toBeInTheDocument();
+    expect(within(review).getByRole('button', { name: 'Done' })).toBeInTheDocument();
+    expect(within(review).queryByText('Another thing')).toBeNull();
+  });
+
+  it('shows no step under the support a call ended with', async () => {
+    const blocked = { reason: 'crisis_support', supportMessage: 'Call 988.', escalationId: null };
+    renderSummary(ended({}, { blocked }), true, 'standard', { guidance: makeGuidance() });
+    await screen.findByRole('region', { name: 'Support' });
+    expect(screen.queryByRole('region', { name: /^Hear five/ })).toBeNull();
+  });
+
   it('shows the call and says quietly what was saved to Knowledge, with nothing to keep or decline', async () => {
     const fetchMock = stubFetch();
     const second = memory({ id: IDS.turn, title: 'Pilot with one library', status: 'confirmed' });

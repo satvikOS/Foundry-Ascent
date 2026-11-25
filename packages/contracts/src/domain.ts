@@ -415,6 +415,30 @@ export type EvidenceSourceScope = z.infer<typeof EvidenceSourceScope>;
 export const EvidenceSource = z.object({ id: Id, scope: EvidenceSourceScope });
 export type EvidenceSource = z.infer<typeof EvidenceSource>;
 
+/** A published source an evidence item rests on, as a citation names it. */
+export const EvidenceCitedSource = z.object({
+  title: z.string().max(200),
+  authors: z.string().max(200),
+  locator: z.string().max(200).nullable(),
+  url: z.string().max(500).nullable(),
+});
+export type EvidenceCitedSource = z.infer<typeof EvidenceCitedSource>;
+
+/**
+ * What lets a reader check an evidence item: where in its source the excerpt is, the page to read, and how it may be
+ * used. `play`: the item is a play of the playbook, whose method rests on `sources`; `passage`: a stored passage.
+ */
+export const EvidenceCitation = z.object({
+  kind: z.enum(['play', 'passage']),
+  /** Section, chapter, or module, unit and timestamp. */
+  locator: z.string().max(200).nullable(),
+  url: z.string().max(500).nullable(),
+  licence: z.string().max(200).nullable(),
+  attribution: z.string().max(400).nullable(),
+  sources: z.array(EvidenceCitedSource).max(4),
+});
+export type EvidenceCitation = z.infer<typeof EvidenceCitation>;
+
 export const EvidenceItem = z.object({
   key: z.string().regex(/^E\d+$/),
   kind: EvidenceKind,
@@ -429,6 +453,11 @@ export const EvidenceItem = z.object({
    * and for a passage whose source is not known. Additive: older APIs and answers stored before it send none.
    */
   source: EvidenceSource.nullable().optional(),
+  /**
+   * Where the excerpt can be checked; null for the venture's own record and for a source that records nothing.
+   * Additive: older APIs send none.
+   */
+  citation: EvidenceCitation.nullable().optional(),
 });
 export type EvidenceItem = z.infer<typeof EvidenceItem>;
 

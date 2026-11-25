@@ -216,5 +216,6 @@ export function makeTurnWithEvidence(evidence: EvidenceItem[], id: string = IDS.
     channel: 'text',
     author: null,
     myFeedback: null,
+    guidance: null,
   };
 }

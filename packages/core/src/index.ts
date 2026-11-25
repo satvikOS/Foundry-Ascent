@@ -71,6 +71,11 @@ export * from './auth/index.js';
 export * from './authz/index.js';
 
 export { type MeService } from './services/me.js';
+export { createPathService, type PathService } from './path/service.js';
+export { decide, type DecideInput, type Decision, type TurnKind } from './path/engine.js';
+export { type Playbook, type PathIntent, type PlaybookStage } from './path/types.js';
+export { PLAYBOOK } from './path/playbook/index.js';
+export { lexicalIntent, phraseIntent } from './path/match.js';
 export { type VenturesService } from './services/ventures.js';
 export { type SessionsService, type EndSessionResult, type SessionPageResult } from './services/sessions.js';
 export {
@@ -172,7 +177,8 @@ export {
   type EvidencePackOptions,
   type KeyedEvidence,
 } from './orchestrator/evidence.js';
-export { privateRetrievalOwner } from './orchestrator/retrieval.js';
+export { privateRetrievalOwner, retrieveEvidence } from './orchestrator/retrieval.js';
+export { playRefId } from './orchestrator/evidence.js';
 export { SYNTHETIC_WARM_UP_GUARDS, warmTurnEngine, type TurnWarmUpGuards } from './orchestrator/warm-up.js';
 export { assembleContext, estimateTokens, type AssembledContext } from './orchestrator/context-budget.js';
 export { secondsUntilUtcMidnight, shouldSampleForReview } from './orchestrator/sampling.js';

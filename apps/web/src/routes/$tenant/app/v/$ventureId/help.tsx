@@ -2,7 +2,6 @@ import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
 
 import { EscalationsPage } from '@/features/escalations/escalations-page';
-import { ventureEscalationsQueryOptions } from '@/lib/api/hooks/escalations';
 import { canWrite } from '@/lib/auth/roles';
 
 interface HelpSearch {
@@ -22,7 +21,12 @@ export const Route = createFileRoute('/$tenant/app/v/$ventureId/help')({
   loader: ({ context, params }) => {
     // Only founders and the team read the venture's requests (the API answers 403 to everyone else).
     if (!canWrite(context.me, params.ventureId)) return;
-    context.queryClient.query(ventureEscalationsQueryOptions(params.ventureId)).catch(() => undefined);
+    // Loaded apart: loaders are in the first page load, the page's contracts are not needed there.
+    void import('@/lib/api/hooks/escalations')
+      .then(({ ventureEscalationsQueryOptions }) =>
+        context.queryClient.query(ventureEscalationsQueryOptions(params.ventureId)),
+      )
+      .catch(() => undefined);
   },
   head: () => ({ meta: [{ title: 'Human help' }] }),
   component: EscalationsPage,

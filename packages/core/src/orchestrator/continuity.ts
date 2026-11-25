@@ -1,4 +1,4 @@
-import type { StudentProfile } from '@foundry/contracts';
+import type { PathCheckIn, StudentProfile } from '@foundry/contracts';
 import {
   MAX_PROMPT_DIGESTS,
   firstNameOf,
@@ -24,14 +24,18 @@ import {
 import {
   studentRepo,
   notebooksRepo,
+  pathRepo,
   personasRepo,
   principalsRepo,
+  readTogether,
   sessionsRepo,
   type AppExecutor,
   type ReadPart,
 } from '@foundry/db';
 
 import { mentionsEir } from '../internal/eir-names.js';
+import { checkInOf } from '../path/engine.js';
+import { checkInOpener } from '../path/opener.js';
 import { addressFounder, properNounsIn, type OpenerPeople } from './address-founder.js';
 import {
   LEFT_OFF_CONVERSATIONS,
@@ -397,6 +401,9 @@ const TAKE_UP_EXCHANGES = 20;
  * The vEIR's opening line for a new standard conversation of `principalId` (its first bubble, and what a call says),
  * in this order:
  * 1. the notebook's next opener when a person wrote or rewrote it (they chose what to open with);
+ *    then, the step the path gave this person before today (or that is due): the opening names it with its due state and
+ *    asks how it went (founder path release, 2026-11-24: path/opener.ts), unless a conversation opened with that since
+ *    in which nothing was said. `checkIn` is that step's data, for one-tap answers;
  * 2. the model-written line (coaching v3, owner round 3: what an opener is about is the model's choice, written at
  *    distillation from that conversation and the notebook's open threads, so it costs no model call here), when it is
  *    current (drawn from the person's latest conversation, call or chat; for a line of unknown origin, the notebook
@@ -440,18 +447,24 @@ export async function chooseOpener(
     readonly sessionId?: string | null;
     /** Display names of the venture's people, so a name in a distilled line keeps its real case. */
     readonly team?: readonly string[];
+    /** ISO date (YYYY-MM-DD) the step's due state is read on. Default: today (UTC). */
+    readonly today?: string;
   },
 ): Promise<{
   readonly opener: ChosenOpener | null;
+  /** The step the opening asks about (one-tap answers); null when it asks about none. */
+  readonly checkIn: PathCheckIn | null;
   readonly latest: LeftOffConversationData | null;
   /** The vEIR's replies at the end of the person's latest conversations with it, newest first ({@link pastRepliesOf}). */
   readonly pastReplies: readonly string[];
   readonly missing: MissingOpener | null;
 }> {
-  const notebook = await notebooksRepo.getNotebook(tx, {
-    ventureId: args.ventureId,
-    personaId: args.persona.id,
+  // One statement: the step costs the opener no round trip of its own.
+  const { notebook, step } = await readTogether(tx, {
+    notebook: notebooksRepo.notebookPart({ ventureId: args.ventureId, personaId: args.persona.id }),
+    step: pathRepo.nowStepPart(args.ventureId),
   });
+  const today = args.today ?? new Date().toISOString().slice(0, 10);
   const guards: OpenerGuards = {
     ...args.guards,
     personaName: args.persona.name,
@@ -488,8 +501,13 @@ export async function chooseOpener(
   // of the venture erases the copy.
   const source = notebook?.content.nextOpenerSource;
   const pastReplies = pastRepliesOf(last);
-  const found = (opener: ChosenOpener | null, missing: MissingOpener | null = null) => ({
+  const found = (
+    opener: ChosenOpener | null,
+    missing: MissingOpener | null = null,
+    checkIn: PathCheckIn | null = null,
+  ) => ({
     opener,
+    checkIn,
     latest,
     pastReplies,
     missing,
@@ -506,6 +524,22 @@ export async function chooseOpener(
       ).personEdits.includes(notebooksRepo.OPENER_EDIT));
   if (stored !== null && chosen && !fromSomeoneElse)
     return found({ text: stored, sourceSessionId: source ?? null, byPerson: source === null });
+  // The step the path gave this person: named with its due state, in the program's own words (never drawn from a
+  // conversation). Said once: not the way the last conversation opened, nor again after one they opened and left.
+  const checkIn = step === null ? null : checkInOf({ today }, [step], args.principalId);
+  if (step !== null && checkIn !== null) {
+    const line = checkInOpener({
+      title: step.title,
+      givenOn: step.createdAt.slice(0, 10),
+      dueOn: step.dueOn,
+      today,
+      seed: `${args.principalId}:${step.id}:${today}`,
+    })
+      .map((text) => validatedOpener(text, guards))
+      .find((text): text is string => text !== null && !repeatsOpener(text, latest?.opener ?? null));
+    if (line !== undefined && (latest === null || !(await openedSince(tx, args, latest, line))))
+      return found({ text: line, sourceSessionId: null, byPerson: false }, null, checkIn);
+  }
   // What the latest conversation opened on, when the founder never took it up there: not opened on again.
   const names = [
     principal?.displayName ?? null,
@@ -672,6 +706,28 @@ export async function chooseOpener(
     fresh === undefined ? null : { text: fresh, sourceSessionId: latest.sessionId, byPerson: false },
     missing,
   );
+}
+
+/** Whether a conversation the person opened since `latest` (and said nothing in) opened with `line` already. */
+async function openedSince(
+  tx: AppExecutor,
+  args: {
+    readonly ventureId: string;
+    readonly principalId: string;
+    readonly sessionId?: string | null;
+  },
+  latest: LeftOffConversationData,
+  line: string,
+): Promise<boolean> {
+  const since = await sessionsRepo.countConversationsOpenedSince(tx, {
+    ventureId: args.ventureId,
+    principalId: args.principalId,
+    since: latest.lastActivityAt,
+    afterSessionId: latest.sessionId,
+    excludeSessionId: args.sessionId ?? null,
+    opener: line,
+  });
+  return since.withOpener > 0;
 }
 
 /**

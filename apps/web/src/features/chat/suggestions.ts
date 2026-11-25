@@ -12,7 +12,8 @@ export interface PromptSuggestion {
   mode?: CoachMode;
 }
 
-export type SuggestionIcon = 'goal' | 'idea' | 'challenge' | 'rehearse';
+export type SuggestionIcon =
+  'goal' | 'idea' | 'challenge' | 'rehearse' | 'continue' | 'finished' | 'stuck' | 'next' | 'organise';
 
 /** What talking about an overdue action starts with. */
 export function overduePrompt(title: string): string {

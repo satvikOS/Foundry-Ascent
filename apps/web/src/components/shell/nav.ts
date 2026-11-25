@@ -19,6 +19,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  Signpost,
   Users,
   UserSquare,
   Waypoints,
@@ -28,6 +29,7 @@ import {
 import {
   canAccessVenture,
   canManageAnyTeam,
+  canReadPath,
   hasAnyRole,
   canUseAdminConsole,
   canUseEirStudio,
@@ -86,7 +88,7 @@ export function staffWorkspace(id: StaffWorkspaceId): StaffWorkspace {
   return found;
 }
 
-export type VentureDestinationId = 'knowledge' | 'documents' | 'recordings' | 'help' | 'venture';
+export type VentureDestinationId = 'path' | 'knowledge' | 'documents' | 'recordings' | 'help' | 'venture';
 
 export interface VentureDestination {
   id: VentureDestinationId;
@@ -94,6 +96,7 @@ export interface VentureDestination {
   icon: LucideIcon;
   shortcut: string;
   to:
+    | '/$tenant/app/v/$ventureId/path'
     | '/$tenant/app/v/$ventureId/knowledge'
     | '/$tenant/app/v/$ventureId/documents'
     | '/$tenant/app/v/$ventureId/recordings'
@@ -103,6 +106,8 @@ export interface VentureDestination {
 
 /** The venture's pages, under the conversations in the sidebar (`shortcut`: binding and shortcuts list). */
 export const VENTURE_DESTINATIONS: readonly VentureDestination[] = [
+  // Where the venture is, what is next and its story (the founder path).
+  { id: 'path', label: 'Your path', icon: Signpost, shortcut: 'g t', to: '/$tenant/app/v/$ventureId/path' },
   {
     id: 'knowledge',
     label: 'Knowledge',
@@ -137,13 +142,20 @@ export const VENTURE_DESTINATIONS: readonly VentureDestination[] = [
 ];
 
 /**
- * The venture's pages this person can open: all of them for its members and its assigned EIR; only the
- * Venture page (where they see its team) for program leads and platform admins who are neither (the other
- * pages would refuse them).
+ * The venture's pages this person can open: all of them for its team and its assigned EIR (an advisor: all but the
+ * path, which is the team's); only its path (its shape) and the Venture page (where they see its team) for program leads
+ * and platform admins who are neither (the other pages would refuse them).
  */
 export function ventureDestinations(me: Me, ventureId: string): readonly VentureDestination[] {
-  if (canAccessVenture(me, ventureId)) return VENTURE_DESTINATIONS;
-  if (canManageAnyTeam(me)) return VENTURE_DESTINATIONS.filter((destination) => destination.id === 'venture');
+  const path = canReadPath(me, ventureId);
+  if (canAccessVenture(me, ventureId))
+    return path
+      ? VENTURE_DESTINATIONS
+      : VENTURE_DESTINATIONS.filter((destination) => destination.id !== 'path');
+  if (canManageAnyTeam(me))
+    return VENTURE_DESTINATIONS.filter(
+      (destination) => destination.id === 'venture' || destination.id === 'path',
+    );
   return [];
 }
 

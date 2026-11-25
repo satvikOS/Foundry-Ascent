@@ -18,6 +18,7 @@ import * as personasRepo from './personas.js';
 import * as principalsRepo from './principals.js';
 import * as resourcesRepo from './resources.js';
 import { AIN_CURRICULUM } from '../seed/curriculum.js';
+import { PROGRAMME_NOTES } from '../seed/programme-notes.js';
 import * as sessionsRepo from './sessions.js';
 import * as tenantsRepo from './tenants.js';
 import * as turnsRepo from './turns.js';
@@ -175,8 +176,8 @@ describe('remaining repository functions', () => {
         tenantId: seed.tenantId,
         scope: 'program',
       });
-      // The programme handbook and the Ain curriculum notes.
-      expect(shared).toHaveLength(1 + AIN_CURRICULUM.length);
+      // The programme handbook, the Ain curriculum notes and its course notes.
+      expect(shared).toHaveLength(1 + AIN_CURRICULUM.length + PROGRAMME_NOTES.length);
       const doc = await documentsRepo.getDocument(tx, must(must(seed.ventures[0]).documentIds[0]));
       expect(doc?.status).toBe('ready');
     });

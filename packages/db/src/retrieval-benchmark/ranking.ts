@@ -100,6 +100,57 @@ export function quality(
   };
 }
 
+export interface SelectionQuality {
+  /** Answerable questions with a passage that answers among the first ones returned (`shown`). */
+  readonly recall: number;
+  /** Passages that answer, of those returned for answerable questions (a lower bound: labels are not complete). */
+  readonly precision: number;
+  readonly perQuery: number;
+  /** Answerable questions that got nothing at all. */
+  readonly answerableEmpty: number;
+  /** Questions nothing answers that got nothing at all. */
+  readonly noAnswerEmpty: number;
+  /** Passages returned for a question nothing answers, on average. */
+  readonly perNoAnswer: number;
+}
+
+/** What a search that decides how much to return gave: its first `shown` passages of each question, by question id. */
+export function selection(
+  queries: readonly BenchmarkQuery[],
+  returned: ReadonlyMap<string, readonly { readonly id: string }[]>,
+  shown: number,
+): SelectionQuality {
+  const of = (q: BenchmarkQuery): readonly { readonly id: string }[] =>
+    (returned.get(q.id) ?? []).slice(0, shown);
+  const answerable = queries.filter((q) => q.kind === 'answerable');
+  const unanswerable = queries.filter((q) => q.kind === 'no_answer');
+  const good = (q: BenchmarkQuery): number => of(q).filter((s) => q.expected.includes(s.id)).length;
+  const total = (list: readonly BenchmarkQuery[], count: (q: BenchmarkQuery) => number): number =>
+    list.reduce((acc, q) => acc + count(q), 0);
+  const per = (n: number, d: number): number => (d === 0 ? 0 : round(n / d));
+  const out = total(answerable, (q) => of(q).length);
+  return {
+    recall: per(
+      total(answerable, (q) => Math.min(1, good(q))),
+      answerable.length,
+    ),
+    precision: per(total(answerable, good), out),
+    perQuery: per(out, answerable.length),
+    answerableEmpty: per(
+      total(answerable, (q) => Number(of(q).length === 0)),
+      answerable.length,
+    ),
+    noAnswerEmpty: per(
+      total(unanswerable, (q) => Number(of(q).length === 0)),
+      unanswerable.length,
+    ),
+    perNoAnswer: per(
+      total(unanswerable, (q) => of(q).length),
+      unanswerable.length,
+    ),
+  };
+}
+
 /** A fixed, even sample of `count` questions, both kinds in proportion: the same one every run. */
 export function sampleQueries(queries: readonly BenchmarkQuery[], count: number): BenchmarkQuery[] {
   const size = Math.max(0, Math.min(queries.length, Math.floor(count)));

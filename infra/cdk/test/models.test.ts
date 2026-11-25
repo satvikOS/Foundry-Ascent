@@ -99,8 +99,8 @@ describe('model selection', () => {
   it('grants a model reached only through a checked US profile in that profile’s destination regions alone', () => {
     const production = effectiveModels(loadConfig().models);
     expect(production).toEqual({
-      primary: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
-      fallback: 'us.amazon.nova-2-lite-v1:0',
+      primary: 'us.amazon.nova-2-lite-v1:0',
+      fallback: 'global.amazon.nova-2-lite-v1:0',
       embeddings: 'amazon.titan-embed-text-v2:0',
       background: {
         primary: 'us.amazon.nova-2-lite-v1:0',
@@ -109,21 +109,14 @@ describe('model selection', () => {
       },
     });
     expect(reasoningAccess(production)).toEqual({
-      // Nova is also reached through its global profile (the background fallback): the widest grant wins.
+      // Nova is also reached through its global profile (the coach's fallback): the widest grant wins, so Nova is
+      // granted in every region and no Claude model is granted to the app at all.
       foundationModels: ['amazon.nova-2-lite-v1:0'],
       globalFoundationModels: ['amazon.nova-2-lite-v1:0'],
-      regionalFoundationModels: [
-        {
-          modelId: 'anthropic.claude-haiku-4-5-20251001-v1:0',
-          regions: ['us-east-1', 'us-east-2', 'us-west-2'],
-        },
-      ],
-      inferenceProfiles: [
-        'us.anthropic.claude-haiku-4-5-20251001-v1:0',
-        'us.amazon.nova-2-lite-v1:0',
-        'global.amazon.nova-2-lite-v1:0',
-      ],
+      regionalFoundationModels: [],
+      inferenceProfiles: ['us.amazon.nova-2-lite-v1:0', 'global.amazon.nova-2-lite-v1:0'],
     });
+    expect(JSON.stringify(reasoningAccess(production))).not.toContain('anthropic');
     // A profile whose destinations were not checked keeps its model granted in every region; so does another source.
     expect(geoDestinations('us.anthropic.claude-sonnet-4-6', 'us-east-1')).toBeNull();
     expect(geoDestinations('us.anthropic.claude-haiku-4-5-20251001-v1:0', 'us-west-2')).toBeNull();
@@ -137,7 +130,7 @@ describe('model selection', () => {
     const luna = effectiveModels({ ...models, luna: { modelId: 'openai.gpt-6-luna', enabled: true } });
     expect(luna).toMatchObject({
       primary: 'openai.gpt-6-luna',
-      fallback: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      fallback: 'us.amazon.nova-2-lite-v1:0',
       background: models.background,
     });
     expect(usesMantle(luna)).toBe(true);
@@ -148,9 +141,9 @@ describe('model selection', () => {
 const LUNA_COACH: PlatformConfig['models'] = { ...loadConfig().models, primary: 'us.openai.gpt-6-luna' };
 
 describe('GPT-6 Luna as the coach (ADR-0024: prepared, off)', () => {
-  it('is off: production coaches on Claude Haiku 4.5, with no OpenAI model granted', () => {
+  it('is off: production coaches on Nova 2 Lite, with no OpenAI model granted', () => {
     const models = effectiveModels(loadConfig().models);
-    expect(models.primary).toBe('us.anthropic.claude-haiku-4-5-20251001-v1:0');
+    expect(models.primary).toBe('us.amazon.nova-2-lite-v1:0');
     expect(JSON.stringify(reasoningAccess(models))).not.toContain('openai');
     expect(usesOpenAiProfile(reasoningAccess(models).inferenceProfiles)).toBe(false);
   });
@@ -160,7 +153,7 @@ describe('GPT-6 Luna as the coach (ADR-0024: prepared, off)', () => {
     expect(models).toEqual({
       ...effectiveModels(loadConfig().models),
       primary: 'us.openai.gpt-6-luna',
-      fallback: 'us.amazon.nova-2-lite-v1:0',
+      fallback: 'global.amazon.nova-2-lite-v1:0',
     });
     expect(usesMantle(models)).toBe(false);
     expect(reasoningAccess(models)).toEqual({
@@ -171,8 +164,8 @@ describe('GPT-6 Luna as the coach (ADR-0024: prepared, off)', () => {
       ],
       inferenceProfiles: [
         'us.openai.gpt-6-luna',
-        'us.amazon.nova-2-lite-v1:0',
         'global.amazon.nova-2-lite-v1:0',
+        'us.amazon.nova-2-lite-v1:0',
       ],
     });
     expect(usesOpenAiProfile(['us.openai.gpt-6-luna'])).toBe(true);
@@ -186,7 +179,7 @@ describe('GPT-6 Luna as the coach (ADR-0024: prepared, off)', () => {
     )) {
       expect((fn.Environment as { Variables: Record<string, unknown> }).Variables).toMatchObject({
         MODEL_PRIMARY_ID: 'us.openai.gpt-6-luna',
-        MODEL_FALLBACK_ID: 'us.amazon.nova-2-lite-v1:0',
+        MODEL_FALLBACK_ID: 'global.amazon.nova-2-lite-v1:0',
         MODEL_BACKGROUND_PRIMARY_ID: 'us.amazon.nova-2-lite-v1:0',
         MODEL_BACKGROUND_PURPOSES: 'classification,eval,ingestion,seed',
       });
@@ -313,7 +306,7 @@ describe('Bedrock permissions in production (config/production.json)', () => {
   };
 
   it.each(['FoundryAscent-Api', 'FoundryAscent-Worker'])(
-    '%s may invoke (incl. streaming) the Claude Haiku 4.5 profile and its model where it routes, both Nova profiles, the Nova model in every region and region-less, and Titan',
+    '%s may invoke (incl. streaming) both Nova profiles, the Nova model in every region and region-less, and Titan, and no Claude model',
     (name) => {
       const runtime = functionPolicyStatements(templates.app, name).find(
         (s) => s.Sid === 'BedrockRuntimeModels',
@@ -321,10 +314,6 @@ describe('Bedrock permissions in production (config/production.json)', () => {
       expect(runtime?.Action).toEqual(['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream']);
       expect(((runtime?.Resource as unknown[] | undefined) ?? []).map(render).sort()).toEqual(
         [
-          `arn:aws:bedrock:us-east-1:${account}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0`,
-          'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
-          'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
-          'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
           `arn:aws:bedrock:us-east-1:${account}:inference-profile/us.amazon.nova-2-lite-v1:0`,
           `arn:aws:bedrock:us-east-1:${account}:inference-profile/global.amazon.nova-2-lite-v1:0`,
           'arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0',

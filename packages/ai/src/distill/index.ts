@@ -11,7 +11,7 @@ export {
   OPENER_SCHEMA_NAME,
 } from './schema.js';
 export { MAX_DISTILL_TURNS, buildDistillPrompt, buildOpenerPrompt } from './prompt.js';
-export type { DistillPromptInput, DistillTurn, OpenerPromptInput } from './prompt.js';
+export type { DistillPath, DistillPromptInput, DistillTurn, OpenerPromptInput } from './prompt.js';
 export {
   NOTEBOOK_OPENER_PIN,
   NOTEBOOK_SUMMARY_PIN,

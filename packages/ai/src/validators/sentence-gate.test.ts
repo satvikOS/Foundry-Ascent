@@ -425,6 +425,10 @@ describe('SentenceGate', () => {
         greetingDropped: false,
         openersDropped: 0,
         questionsRephrased: 0,
+        contractEdits: 0,
+        contractAppended: false,
+        supportEdits: 0,
+        rewritten: false,
         dropped: [],
       });
       const kept = gate({ previousReply: previous, founderText: 'any tips?', keepDropped: true });

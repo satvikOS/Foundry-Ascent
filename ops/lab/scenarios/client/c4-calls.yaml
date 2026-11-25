@@ -1,0 +1,176 @@
+# Voice calls (typed-input voice channel): spoken replies, one step in one sentence.
+group: calls
+scenarios:
+  - id: CL-01
+    title: unit economics, then a value proposition canvas, twice
+    role: undergrad
+    founder: Jasper Nakagawa
+    studies: senior in marketing
+    venture:
+      {
+        name: GlowBox,
+        oneLiner: A monthly candle box made by student makers.,
+        stage: validation,
+        domain: consumer,
+        goal: Know whether a box makes money.,
+      }
+    facts:
+      margin: ['3.5', '3.50', three fifty, three dollars fifty, three dollars and fifty, three and a half]
+      boxes: [box, boxes, candle*]
+    record:
+      - {
+          type: fact,
+          title: What one box costs,
+          content: 'A box sells for 12 dollars; candles cost 7 dollars and postage 1.50 a box; about 40 boxes go out a month.',
+          days_ago: 8,
+        }
+    passing: The margin is 12 - 7 - 1.50 = 3.50 a box, the same both times, with the arithmetic said aloud; then a filled first canvas, not a lecture.
+    sessions:
+      - channel: call
+        turns:
+          - {
+              say: 'Can you work out my unit economics for one box?',
+              expect: { remember: [margin], history: [boxes] },
+              judge: [relevance, actionability, memory],
+            }
+          - {
+              say: 'So what would I make in a month at forty boxes?',
+              expect: { history: [boxes] },
+              judge: [relevance],
+            }
+          - {
+              say: 'Now help me fill in a value proposition canvas for it.',
+              expect: { history: [boxes] },
+              judge: [relevance, actionability],
+            }
+      - channel: call
+        gap_days: 2
+        turns:
+          - {
+              say: 'What were my unit economics again, per box?',
+              expect: { kind: recall, remember: [margin] },
+              judge: [memory],
+            }
+          - {
+              say: 'And what did you tell me to do next?',
+              expect: { kind: coaching },
+              judge: [memory, actionability],
+            }
+  - id: CL-02
+    title: pitch competition with a date, deck and live pitch
+    role: grad
+    founder: Imani Boateng
+    studies: master's student in public health
+    venture:
+      {
+        name: CareLoop,
+        oneLiner: Follow-up calls for patients leaving a rural clinic.,
+        stage: validation,
+        domain: clinical,
+        goal: Pitch well at the spring competition.,
+      }
+    facts:
+      date: ['{date+16}']
+      pitch: [pitch*, deck, slide*]
+      calls: [follow-up*, clinic*, patient*, '31']
+    record:
+      - {
+          type: evidence,
+          title: Follow-up pilot,
+          content: '31 patients got a follow-up call at one clinic; 9 fewer came back to the emergency room than the month before.',
+          days_ago: 15,
+        }
+    intake:
+      {
+        idea: Follow-up calls after discharge,
+        customer: Rural clinics,
+        studies: Public health,
+        experience: some,
+        hoursPerWeek: 10,
+        deadline: { what: Pitch competition, 'on': '{iso+16}' },
+        doneSoFar: One clinic pilot,
+        block: The pitch,
+      }
+    passing: Concrete deck order and a spoken opening built from the pilot's own numbers, a dated rehearsal step before the competition, and no invented figures.
+    sessions:
+      - channel: call
+        turns:
+          - {
+              say: "I'm pitching at a competition on {date+16}. Five slides and a four minute live pitch. Help me prepare.",
+              expect: { history: [calls, pitch] },
+              judge: [relevance, actionability],
+            }
+          - {
+              say: 'Which slides, in what order?',
+              expect: { history: [calls, pitch] },
+              judge: [relevance, actionability],
+            }
+          - {
+              say: "And how should I open when I'm standing up there?",
+              expect: { history: [calls] },
+              judge: [relevance, actionability],
+            }
+          - { say: 'What question will the judges hit me with?', judge: [critical, relevance] }
+  - id: CL-03
+    title: what did we talk about last time
+    role: undergrad
+    founder: Felix Amadi
+    studies: junior in biology
+    venture:
+      {
+        name: SproutShelf,
+        oneLiner: Herb shelves students rent for their windows.,
+        stage: discovery,
+        domain: consumer,
+        goal: Talk to people in dorms.,
+      }
+    facts:
+      { herbs: [herb*, shelf, shelves, window*], resident: [resident*, RA, dorm*, hall*], count: ['6', six] }
+    passing: The call names what was discussed (the six hall residents) and the agreed step, with nothing invented.
+    sessions:
+      - channel: call
+        turns:
+          - {
+              say: 'I talked to six people in my hall about the herb shelves and four said the windows are too small.',
+            }
+          - {
+              say: 'So what do I do with that?',
+              expect: { history: [herbs, count, resident] },
+              judge: [relevance, actionability],
+            }
+      - channel: call
+        gap_days: 3
+        turns:
+          - {
+              say: 'What did we talk about last time?',
+              expect: { kind: recall, remember: [herbs] },
+              judge: [memory],
+            }
+          - {
+              say: 'Right. And did I have something to do?',
+              expect: { kind: recall, history: [herbs, resident, count] },
+              judge: [memory, actionability],
+            }
+  - id: CL-04
+    title: an either-or asked on a call
+    role: undergrad
+    founder: Gwen Adler
+    studies: senior in information science
+    venture:
+      {
+        name: DeskPing,
+        oneLiner: Tells students when a library desk is free.,
+        stage: validation,
+        domain: software,
+        goal: Choose who pays.,
+      }
+    facts: { desks: [desk*, library], payer: [library, librar*, student*] }
+    sessions:
+      - channel: call
+        turns:
+          - {
+              say: 'Should I sell this to the library or to students?',
+              expect: { pick: [library, libraries, student], history: [desks, payer] },
+              judge: [relevance, critical, actionability],
+            }
+          - { say: 'Why not the other one?', judge: [critical] }

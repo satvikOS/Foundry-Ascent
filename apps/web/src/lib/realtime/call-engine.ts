@@ -1561,6 +1561,7 @@ export class CallEngine {
           return null;
         }
         turn.turnId = completed.id;
+        if (completed.guidance) this.set({ guidance: completed.guidance });
         if (turn.units === 0 && completed.status === 'completed' && completed.response) {
           // No streamed units (streaming is off): speak the stored, validated spoken reply sentence by
           // sentence. A reply without one is shown, never voiced.
@@ -1612,6 +1613,9 @@ export class CallEngine {
       case 'turn.status':
         // The server's risk classification of the line (a participant-safe label: `sensitive` or none).
         if (event.phase === 'classifying') turn.risk = event.detail === null ? 'ordinary' : 'sensitive';
+        return null;
+      case 'turn.guidance':
+        this.set({ guidance: event.guidance });
         return null;
       case 'turn.delta':
         return null;

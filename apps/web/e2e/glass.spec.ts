@@ -255,6 +255,15 @@ async function passedThrough(page: Page, glass: Locator, layer: string): Promise
   return { layer, mean: sum / pixels, max };
 }
 
+/** Scrolls until the latest answer's last lines of prose lie under the composer, at the bottom of the window. */
+function proseUnderComposer(page: Page): Promise<void> {
+  return page.evaluate(() => {
+    const prose = [...document.querySelectorAll('[data-slot="markdown"]')].at(-1);
+    if (!prose) throw new Error('no answer');
+    window.scrollTo(0, window.scrollY + prose.getBoundingClientRect().bottom - window.innerHeight);
+  });
+}
+
 function reportPassed(results: Passed[], name: string): void {
   process.stdout.write(
     `glass-translucency ${name}\n${results.map((r) => `${r.layer}: mean ${r.mean.toFixed(2)} max ${r.max.toFixed(0)}`).join('\n')}\n`,
@@ -379,11 +388,8 @@ test.describe('frosted glass', () => {
         layer.evaluate((element) =>
           Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
         );
-      // The answer's prose under the composer and its chips: scrolled up from the end.
-      await page.evaluate(() => {
-        window.scrollTo(0, document.documentElement.scrollHeight);
-        window.scrollBy(0, -520);
-      });
+      // The answer's prose under the composer and its chips (its step's card, its actions: further down).
+      await proseUnderComposer(page);
       const results: Measured[] = [];
       const passed: Passed[] = [];
       passed.push(await passedThrough(page, composerCard, 'composer'));
@@ -392,7 +398,9 @@ test.describe('frosted glass', () => {
 
       // A menu over the transcript (the conversation's), with the answer's prose beneath it.
       await page.evaluate(() => {
-        window.scrollTo(0, 300);
+        const prose = [...document.querySelectorAll('[data-slot="markdown"]')].at(-1);
+        if (!prose) throw new Error('no answer');
+        window.scrollTo(0, window.scrollY + prose.getBoundingClientRect().top + 120);
       });
       await page.getByRole('button', { name: 'Conversation options' }).click();
       const menu = page.getByRole('menu');
@@ -449,10 +457,7 @@ test.describe('frosted glass', () => {
         page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
       ).toBeVisible({ timeout: 30_000 });
       // The composer over the answer's prose, on a phone too.
-      await page.evaluate(() => {
-        window.scrollTo(0, document.documentElement.scrollHeight);
-        window.scrollBy(0, -520);
-      });
+      await proseUnderComposer(page);
       const composer = await passedThrough(page, page.locator('[data-slot="composer"]'), 'composer');
       reportPassed([composer], `glass-${scheme}-phone`);
       expect(composer.mean, 'phone composer: mean change over the prose').toBeGreaterThanOrEqual(4);

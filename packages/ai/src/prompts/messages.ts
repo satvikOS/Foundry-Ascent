@@ -14,6 +14,7 @@ import {
   saysOnlyNoAnswer,
 } from './conversation-state.js';
 import { escapeData, truncate } from './escape.js';
+import type { PromptGuidance } from './guidance.js';
 
 /** A completed earlier turn. Turns without an answer (blocked/failed) should be omitted by the caller or are skipped. */
 export interface HistoryTurn {
@@ -37,7 +38,7 @@ export interface BuildMessagesOptions {
   continuity?: PromptContinuity | null;
   /** ISO date (YYYY-MM-DD) for marking overdue commitments in the notes. Default: today (UTC). */
   today?: string;
-  /** Upper bound on the rendered notes. Default 6 000 characters. */
+  /** Upper bound on the rendered notes. Default 6 000 characters ({@link GUIDED_CONTINUITY_CHARS} with `guidance`). */
   maxContinuityChars?: number;
   /** Most recent turns to keep. Default 8. */
   maxHistoryTurns?: number;
@@ -54,11 +55,20 @@ export interface BuildMessagesOptions {
    */
   opener?: string | null;
   /**
+   * What the path decided for this turn (the same object passed to `buildSystemPromptParts`): its brief and step say who
+   * they are and what is open, so the notes are kept short and their own agenda is left out, and `<conversation_state>`
+   * lets the step be named again.
+   */
+  guidance?: PromptGuidance | null;
+  /**
    * The vEIR's replies at the end of its last conversations with this founder, newest first: `<conversation_state>`
    * reads how it asked and opened there (its phrasing ledger, prompts/phrasing.ts), never what was said.
    */
   pastReplies?: readonly (string | null | undefined)[];
 }
+
+/** Upper bound on the notes of a turn whose path already carries the brief and the open step. */
+export const GUIDED_CONTINUITY_CHARS = 2_400;
 
 function wrapFounder(text: string): string {
   return `<founder_message>\n${escapeData(text)}\n</founder_message>`;
@@ -88,6 +98,7 @@ const stateBlocks = new WeakMap<
     readonly founderText: string;
     readonly opener: string | null;
     readonly past: readonly (string | null | undefined)[] | undefined;
+    readonly guided: boolean;
     readonly block: string;
   }
 >();
@@ -98,13 +109,15 @@ function conversationStateBlock(
   founderText: string,
   opener: string | null,
   past: readonly (string | null | undefined)[] | undefined,
+  guided: boolean,
 ): string {
   const cached = stateBlocks.get(history);
   if (
     cached?.length === history.length &&
     cached.founderText === founderText &&
     cached.opener === opener &&
-    cached.past === past
+    cached.past === past &&
+    cached.guided === guided
   ) {
     return cached.block;
   }
@@ -115,8 +128,9 @@ function conversationStateBlock(
       founderText,
       { opener, ...(past === undefined ? {} : { pastReplies: past }) },
     ),
+    { guided },
   );
-  stateBlocks.set(history, { length: history.length, founderText, opener, past, block });
+  stateBlocks.set(history, { length: history.length, founderText, opener, past, guided, block });
   return block;
 }
 
@@ -195,22 +209,36 @@ export function buildMessages(
     messages.push({ role: 'assistant', content: truncate(turn.answer ?? '', maxChars) });
   }
   const started = completed.length > 0 || (options.opener ?? '').trim() !== '';
+  const guidance = options.guidance ?? null;
+  // A path with a step, or a check-in on one, is the agenda: the notes' own (older wordings of it) is left out, except
+  // where they ask what is remembered.
+  const pathAgenda =
+    guidance !== null && guidance.kind !== 'recall' && (guidance.step !== null || guidance.checkIn !== null);
+  const maxNotes = options.maxContinuityChars ?? (guidance === null ? undefined : GUIDED_CONTINUITY_CHARS);
   const notes = buildContinuityBlock(options.continuity, {
     ...(options.today !== undefined ? { today: options.today } : {}),
-    ...(options.maxContinuityChars !== undefined ? { maxChars: options.maxContinuityChars } : {}),
+    ...(maxNotes !== undefined ? { maxChars: maxNotes } : {}),
     // What the vEIR already said here: an open commitment it raised is not pushed again (LAB-R8).
     saidInConversation: [...completed.map((t) => t.answer), options.opener ?? null],
     // Once the conversation is under way, the notebook's opener has done its job, and a message with a subject of the
     // founder's own, or only a no-answer, is not answered from the notes' agenda.
     conversationStarted: started,
     ownSubject:
-      started &&
-      leavesAgendaOut(founderText, options.continuity, completed.at(-1)?.answer ?? options.opener ?? null),
+      pathAgenda ||
+      (started &&
+        leavesAgendaOut(founderText, options.continuity, completed.at(-1)?.answer ?? options.opener ?? null)),
   });
   const state =
     options.conversationState === false
       ? ''
-      : conversationStateBlock(history, completed, founderText, options.opener ?? null, options.pastReplies);
+      : conversationStateBlock(
+          history,
+          completed,
+          founderText,
+          options.opener ?? null,
+          options.pastReplies,
+          guidance !== null,
+        );
   const parts = [notes, options.evidenceBlock, state, wrapFounder(founderText)].filter(
     (p): p is string => p !== undefined && p !== '',
   );

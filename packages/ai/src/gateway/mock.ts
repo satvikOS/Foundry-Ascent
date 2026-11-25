@@ -26,6 +26,7 @@ import { escapeRegExp } from '../risk/normalize.js';
 import { SAFETY_SCREEN_SCHEMA_NAME, type SafetyScreenVerdict } from '../risk/safety-screen.js';
 import { asksAboutIdentity, identityQuestionOf } from '../validators/identity.js';
 import { clampWords } from '../validators/speech.js';
+import { mockPathReply, pathBlockIn } from '../testing/path-reply.js';
 import { COACH_ANNOTATIONS_SCHEMA_NAME } from './coach-annotations.js';
 import { mockSafetyScreenVerdict } from './mock-safety-screen.js';
 import {
@@ -107,6 +108,7 @@ export interface MockEvidence {
   id: string;
   kind: string;
   title: string;
+  excerpt: string;
 }
 
 export interface MockGenerateContext {
@@ -198,11 +200,16 @@ function evidenceIn(messages: readonly ChatMessage[], system: string): MockEvide
   const items: MockEvidence[] = [];
   for (const text of [system, ...messages.map((m) => m.content)]) {
     for (const match of text.matchAll(
-      /<item id="(E\d+)" kind="([a-z_]+)"[^>]*>\n<title>([^\n]*)<\/title>/g,
+      /<item id="(E\d+)" kind="([a-z_]+)"[^>]*>\n<title>([^\n]*)<\/title>(?:\n<excerpt>([\s\S]*?)<\/excerpt>)?/g,
     )) {
       const id = match[1];
       if (id !== undefined && !items.some((i) => i.id === id)) {
-        items.push({ id, kind: match[2] ?? 'chunk', title: unescapeData(match[3] ?? '').trim() });
+        items.push({
+          id,
+          kind: match[2] ?? 'chunk',
+          title: unescapeData(match[3] ?? '').trim(),
+          excerpt: unescapeData(match[4] ?? '').trim(),
+        });
       }
     }
   }
@@ -515,6 +522,16 @@ function callbackTo(previous: PreviousConversation): string {
   return `${whereWeWere(previous)} ${plannedLine(previous) ?? 'Where did you land on it?'}`;
 }
 
+/** "What did we talk about last time?": about the last conversation, not the venture's record alone. */
+const ASKS_LAST_TIME =
+  /\b(?:last (?:time|call|chat|session|conversation)|yesterday|we (?:just )?(?:talk|spoke|speak|discuss|cover)\w*|where (?:were|did) we|left off)\b/i;
+
+/** Where the last conversation was and what was planned, with no question. */
+function lastTimeLine(previous: PreviousConversation): string {
+  const planned = plannedLine(previous)?.split(/(?<=\.)\s+/)[0] ?? '';
+  return `${whereWeWere(previous)}${planned === '' ? '' : ` ${planned}`}`;
+}
+
 /** "I did the thing I said I'd do", "update on what I said I'd do last time": a report on their last plan. */
 const COMMITMENT_REPORT =
   /\b(?:(?:did|done|finished|got through|managed) (?:the thing|what) (?:i|we) (?:said|promised|planned)|(?:update|news) on (?:the thing |what )?(?:i|we) (?:said|promised|planned)|what (?:i|we) (?:said|promised) (?:i|we)(?:'d| would) do)\b/i;
@@ -553,23 +570,38 @@ function saidEarlier(question: string, history: readonly string[]): string | nul
     if (![...asked].some((w) => words.has(w))) continue;
     const sentence =
       line.split(/(?<=[.!?])\s+/).find((s) => [...asked].some((w) => contentWords(s).has(w))) ?? line;
-    const plain = sentence
-      .replace(/^(?:(?:hey|hi|so|ok|okay|well|also|and|but)\b[\s,!.]*)+/i, '')
-      .replace(/[.!?]+$/, '')
-      .replace(/\b(?:we're|we are)\b/gi, 'you’re')
-      .replace(/\b(?:i'm|i am)\b/gi, 'you’re')
-      .replace(/\b(?:we've|i've)\b/gi, 'you’ve')
-      .replace(/\b(?:we|i)\b/gi, 'you')
-      .replace(/\b(?:our|my)\b/gi, 'your')
-      .replace(/\b(?:us|me)\b/gi, 'you');
-    // A short phrase: never a run of their words long enough to read as parroting (it ends with a name it reached).
-    const all = plain.split(/\s+/);
-    let end = Math.min(all.length, 10);
-    while (end < all.length && end < 11 && /^\p{Lu}/u.test(all[end] ?? '')) end += 1;
-    const clipped = all.slice(0, end).join(' ');
-    return clipped === '' ? null : tidyFounderWords(clipped);
+    const clipped = saidBack(sentence);
+    return clipped === '' ? null : clipped;
   }
   return null;
+}
+
+/** A founder's sentence as a short phrase said back to them ("I charge $8 a box" → "you charge $8 a box"). */
+function saidBack(sentence: string): string {
+  const plain = sentence
+    .replace(/^(?:(?:hey|hi|so|ok|okay|well|also|and|but)\b[\s,!.]*)+/i, '')
+    .replace(/[.!?]+$/, '')
+    .replace(/\b(?:we're|we are)\b/gi, 'you’re')
+    .replace(/\b(?:i'm|i am)\b/gi, 'you’re')
+    .replace(/\b(?:we've|i've)\b/gi, 'you’ve')
+    .replace(/\b(?:we|i)\b/gi, 'you')
+    .replace(/\b(?:our|my)\b/gi, 'your')
+    .replace(/\b(?:us|me)\b/gi, 'you');
+  // A short phrase: never a run of their words long enough to read as parroting (it ends with a name it reached).
+  const all = plain.split(/\s+/);
+  let end = Math.min(all.length, 10);
+  while (end < all.length && end < 11 && /^\p{Lu}/u.test(all[end] ?? '')) end += 1;
+  return tidyFounderWords(all.slice(0, end).join(' '));
+}
+
+/** What the founder told earlier in the conversation, as short phrases, the first things first. */
+function toldEarlier(history: readonly string[]): string[] {
+  return history
+    .flatMap((text) => text.split(/(?<=[.!?])\s+/))
+    .filter((s) => !s.trim().endsWith('?') && contentWords(s).size >= 3 && /\b(?:i|we|my|our|it)\b/i.test(s))
+    .filter((s) => !/\b(?:feel|stupid|nonsense|waste|honestly|help me)\b/i.test(s))
+    .map((s) => lowerFirst(saidBack(s)))
+    .slice(0, 4);
 }
 
 /** A thread named for the founder: the mock's phrase for its topic, or their own words quoted. */
@@ -794,8 +826,16 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
     return socialResponse(mode, wornDownReply(name), channel);
   }
 
+  // The founder path decided this turn: its reply has the path's shape (the observation and the step, or its answer).
+  const path = pathBlockIn(context.system);
+  const decided =
+    path !== null && !path.social && !path.rehearsal && forced !== 'safety_wellbeing' && mode !== 'rehearse'
+      ? path
+      : null;
+
   // News first (LAB-R8): react to it and ask about it, never the conversation's pending question.
   if (
+    decided === null &&
     identity === null &&
     forced === null &&
     mode !== 'rehearse' &&
@@ -806,7 +846,13 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
     return newsResponse(mode, context.founderText, channel, openingSeed, reading.priorReplies.join('\n'));
   }
 
-  if (identity === null && forced === null && mode !== 'rehearse') {
+  if (
+    identity === null &&
+    forced === null &&
+    mode !== 'rehearse' &&
+    // On a path, only what is purely social is (a hello, thanks, a goodbye): recall and reports are its own.
+    (decided === null || (decided.kind === 'coaching' && socialTurnOf(context.founderText) !== null))
+  ) {
     const social = socialReply({
       text: context.founderText,
       moves,
@@ -827,11 +873,15 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   if (moves.includes('stress')) opening.push(pick(STRESS_LINES, seed));
   if (moves.includes('sarcasm')) opening.push(pick(SARCASM_LINES, seed));
   else if (moves.includes('humour')) opening.push(pick(HUMOUR_LINES, seed));
-  // Asked to choose or for a number: the pick or the number first (LAB-V3, SM-06, SM-16).
+  /** Said first whatever the help is: an honest answer, a repair, a word for a hard week. */
+  const words = [...opening];
+  // Asked to choose or for a number: the pick or the number first (LAB-V3, SM-06, SM-16); on a path, the play's.
   const choice =
-    identity === null && directChoiceOf(context.founderText) ? pickOf(context.founderText, names) : null;
+    decided === null && identity === null && directChoiceOf(context.founderText)
+      ? pickOf(context.founderText, names)
+      : null;
   if (choice !== null) opening.unshift(`My pick: ${choice}, because it's the simpler one to test first.`);
-  if (identity === null && asksForNumber(context.founderText)) {
+  if (decided === null && identity === null && asksForNumber(context.founderText)) {
     opening.unshift(NUMBER_LINES[topic] ?? NUMBER_LINES.general);
   }
   if (reading.firstMessage && !reading.openerShown && name !== null) {
@@ -983,6 +1033,36 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   const optional = new Set([spokenParts.length - 1, ...opening.map((_, i) => i).slice(1)]);
   const spoken = spokenWithin(spokenParts, optional, handBack, 70);
 
+  const onPath =
+    decided === null
+      ? null
+      : mockPathReply(context.system, channel, {
+          founderText: context.founderText,
+          told: toldEarlier(reading.founderHistory),
+          ...(previous === null || !ASKS_LAST_TIME.test(context.founderText)
+            ? {}
+            : { lastTime: lastTimeLine(previous) }),
+          said,
+          evidence: context.evidence.map((e) => ({
+            key: e.id,
+            kind: e.kind,
+            title: e.title,
+            text: e.excerpt,
+          })),
+          opening: words.join(' '),
+          // Where the playbook answers nothing they asked: the observation, as without a path.
+          body: voiceOf(channel, [...opening.filter((line) => !words.includes(line)), insight].join(' ')),
+          ...(area === null
+            ? {}
+            : {
+                note:
+                  channel === 'voice'
+                    ? "I've flagged part of this for a qualified person."
+                    : `Part of this touches on ${area}, so I've flagged it for a qualified person to weigh in. I can only share general information on that part.`,
+              }),
+          ...(question === null ? {} : { question }),
+        });
+
   const claims: CoachResponse['claims'] = [];
   if (cited.length > 0) {
     claims.push({
@@ -1011,7 +1091,7 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
   return {
     mode,
     // On a call the transcript is what was said (no citation keys: the claims carry the ids).
-    answer: channel === 'voice' ? spoken : paragraphs.join('\n\n'),
+    answer: onPath ?? (channel === 'voice' ? spoken : paragraphs.join('\n\n')),
     claims,
     uncertainty: [{ item: bank.uncertainty, level: 'medium' }],
     challenge: mode === 'route' ? null : bank.challenge,
@@ -1053,8 +1133,13 @@ export function mockCoachResponse(context: MockGenerateContext): CoachResponse {
             critique: 'Lead with your strongest piece of customer evidence, then make a specific ask.',
           }
         : null,
-    spoken: channel === 'voice' ? spoken : null,
+    spoken: channel === 'voice' ? (onPath ?? spoken) : null,
   };
+}
+
+/** A written observation as a call says it: no citation keys. */
+function voiceOf(channel: string, text: string): string {
+  return channel === 'voice' ? withoutCitations(text) : text;
 }
 
 /** A number when one is asked for (SM-16): a reasoned range and the assumption behind it. */

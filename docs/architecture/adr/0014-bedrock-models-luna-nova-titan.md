@@ -5,7 +5,8 @@
   **Ops - verify AWS access** workflow is retired with the stage-0 key, so models are probed with the
   probe script instead; amended 2026-11-06 by [ADR-0022](0022-coach-on-claude-haiku.md): the coach is Claude
   Haiku 4.5 with Nova 2 Lite (`us.`) behind it, and the background purposes run on Nova 2 Lite with its `global.`
-  profile as fallback)
+  profile as fallback; amended 2026-11-24 by [ADR-0024](0024-coach-on-luna.md), which supersedes ADR-0022: the coach is
+  Nova 2 Lite again (`us.`, with `global.` behind it) and Luna's Bedrock-runtime path is prepared, off)
 - **Date:** 2026-10-05
 - **Deciders:** Platform owner
 - **Blueprint basis:** 03 §8 "Data minimization" and "Vendor", §14 "Model memorization / retention",

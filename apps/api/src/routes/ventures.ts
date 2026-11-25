@@ -7,7 +7,9 @@ import {
   MemoryAction,
   MemoryQuery,
   UpdateVentureRequest,
+  SavePathIntake,
   SaveStudentProfile,
+  UpdatePathStep,
   LearningReflectionInput,
 } from '@foundry/contracts';
 import { type Core } from '@foundry/core';
@@ -48,6 +50,25 @@ export function registerVentureRoutes(r: RouteBuilder, core: Core): void {
     await core.student.removeReflection(ctx, pathParam(c, 'id'), pathParam(c, 'reflectionId'));
     return c.body(null, 204);
   });
+
+  // The founder path: founders and team read and change it, the assigned EIR reads it, a program lead its shape.
+  r.get('/ventures/:id/path', async (c, ctx) => c.json(await core.path.get(ctx, pathParam(c, 'id'))));
+  r.get('/ventures/:id/path/arc', async (c, ctx) =>
+    c.json({ items: await core.path.arc(ctx, pathParam(c, 'id')) }),
+  );
+  r.session('PUT', '/ventures/:id/path/intake', async (c, ctx) =>
+    c.json(await core.path.saveIntake(ctx, pathParam(c, 'id'), jsonBody(c, SavePathIntake))),
+  );
+  r.patch('/ventures/:id/path/steps/:stepId', async (c, ctx) =>
+    c.json(
+      await core.path.updateStep(
+        ctx,
+        pathParam(c, 'id'),
+        pathParam(c, 'stepId'),
+        jsonBody(c, UpdatePathStep),
+      ),
+    ),
+  );
 
   // Memory --------------------------------------------------------------------------------------------
   // One page (excerpts; `nextCursor`), so responses stay far below the Data API's 1 MB limit.

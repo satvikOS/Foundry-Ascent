@@ -114,6 +114,8 @@ export interface TracedRoundTrip {
 }
 
 export interface LatencyRigOptions {
+  /** What the model writes (default {@link harnessReply}): fixed replies, when their shape must not vary. */
+  readonly reply?: (context: MockGenerateContext) => string;
   /**
    * Extra copies of each of the venture's three most recent confirmed memory items, as production's venture
    * memory held them (the same advisor meeting four times): retrieval then meets the repeats a real turn does.
@@ -263,7 +265,10 @@ export async function createLatencyRig(
   const logs: string[] = [];
   const logger: Logger = createJsonLogger({ level: 'info', write: (line) => logs.push(line) });
   const gateway = observeGateway(
-    simulatedGateway(new MockModelGateway({ streamDelayMs: 0, streamFixture: harnessReply }), live),
+    simulatedGateway(
+      new MockModelGateway({ streamDelayMs: 0, streamFixture: options.reply ?? harnessReply }),
+      live,
+    ),
   );
   const speech = new FakeSpeechSynthesizer();
   speech.delayMs = latency.speechFirstByteMs;

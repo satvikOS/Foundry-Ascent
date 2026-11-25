@@ -218,8 +218,8 @@ describe('figures nobody gave', () => {
     expect(out.results.notes).toEqual(
       expect.arrayContaining(['invented_figure_removed:1', 'invented_figure:1']),
     );
-    expect(conversationCraftRules('text')).toContain(
-      'Never a figure of your own in a price, threshold, target or example',
+    expect(conversationCraftRules('text').replace(/\s+/g, ' ')).toContain(
+      'Never a figure of your own in a price, threshold, target, rate or statistic, even as an example',
     );
   });
 });

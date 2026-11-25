@@ -9,6 +9,7 @@ import {
   forcedEscalationFor,
   founderMoves,
   identityQuestionOf,
+  inDistress,
   isModelGatewayError,
   openerSaidHello,
   SHORT_BUDGET,
@@ -42,6 +43,16 @@ import { type RequestContext } from '../context.js';
 import { DomainError, isDomainError, toDomainError } from '../errors.js';
 import { type OtherVentures } from '../internal/directory.js';
 import { type Kit } from '../internal/kit.js';
+import {
+  checkReply,
+  guidanceWords,
+  owesStep,
+  promptInput,
+  renderPathGuidance,
+  replyChecks,
+  spokenStepLine,
+  type PathPromptGuidance,
+} from '../path/ai-adapter.js';
 import { assembleContext, type AssembledContext } from './context-budget.js';
 import { type KeyedEvidence } from './evidence.js';
 import {
@@ -54,6 +65,7 @@ import {
   type GenerationMeter,
 } from './generate.js';
 import { withoutTrailingFields } from './reply-extract.js';
+import { pathReportRequest } from './turn-prompts.js';
 
 /**
  * Steps 4–6 of a turn (system design §7), shared by founder turns (`runTurn`) and the EIR studio's test bench
@@ -88,6 +100,8 @@ export interface AnswerSpec {
   readonly venture: PromptVentureContext | null;
   readonly conversationGoal: string | null;
   readonly rehearsalCounterpart: string | null;
+  /** What the founder path decided for the turn (core `path/`); absent or null: none (a test conversation). */
+  readonly guidance?: PathPromptGuidance | null;
   readonly channel: TurnChannel;
   readonly continuity: PromptContinuity;
   /**
@@ -155,6 +169,11 @@ export type AnswerOutcome =
       readonly checked: CoachResponseValidation;
       /** A streamed reply's fields, arriving after it (`deferAnnotations`); null when `checked` has them already. */
       readonly annotations: PendingFields | null;
+      /**
+       * A call's reply left the decided step out: the server's one sentence for it, already in `checked`'s answer and
+       * spoken form, to be said after the reply's last unit. Null: the reply names it, or owes none.
+       */
+      readonly spokenStep: string | null;
     }
   | {
       /** The model failed; every billable attempt made is already in the usage ledger. */
@@ -246,6 +265,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
 
   // Step 4: assemble context (≤ maxInputTokens): rules and persona, the vEIR's notes, history, evidence.
   const today = kit.now().toISOString().slice(0, 10);
+  const guidance = spec.guidance ?? null;
   const prompt = buildSystemPromptParts({
     release: {
       version: spec.release.version,
@@ -274,8 +294,16 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     today,
     channel: spec.channel,
     continuity: spec.continuity,
+    ...promptInput(guidance),
   });
   const system = `${prompt.stable}${prompt.turn}`;
+  // The path's decision is in the system prompt (the coaching package renders it there); a build that does not render
+  // it gets it at the start of the founder's message.
+  const rendered = guidance === null ? '' : renderPathGuidance(guidance, spec.channel, today);
+  const leftOff =
+    rendered === '' || prompt.turn.includes(rendered)
+      ? spec.leftOff
+      : [rendered, spec.leftOff].filter((t) => t !== '').join('\n\n');
   const context = assembleContext({
     system,
     evidence: spec.evidence.map((k) => k.item),
@@ -284,9 +312,10 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     maxInputTokens: cfg.turns.maxInputTokens,
     maxHistoryTurns: cfg.turns.historyTurns,
     continuity: spec.continuity,
-    leftOff: spec.leftOff,
+    leftOff,
     today,
     opener: spec.opener,
+    guidance,
     ...(spec.pastReplies === undefined ? {} : { pastReplies: spec.pastReplies }),
   });
   const shown: KeyedEvidence[] = spec.evidence.filter((k) => context.shownKeys.has(k.item.key));
@@ -320,16 +349,16 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
   const saidBefore = [previousReply, ...earlierReplies].filter(
     (t): t is string => typeof t === 'string' && t.trim() !== '',
   );
-  const alreadySaid =
-    saidBefore.length === 0 ||
-    asksToRepeat(spec.founderText) ||
+  const identityAsked =
     identityQuestionOf(spec.founderText, {
       personaName: spec.personaName,
       eirNames: guards.eirNames,
       personaEirName: spec.personaEirName,
       mentor: spec.presence?.mentor === true,
       addressees: guards.addressees,
-    }) !== null
+    }) !== null;
+  const alreadySaid =
+    saidBefore.length === 0 || asksToRepeat(spec.founderText) || identityAsked
       ? null
       : {
           text: saidBefore.join('\n\n'),
@@ -361,7 +390,32 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     spec.founderText,
     ...shown.map((k) => `${k.item.title} ${k.item.excerpt}`),
     ...rememberedText(spec.continuity, spec.venture),
+    // The step's and the answer's own figures and dates are the program's, not invented ones.
+    ...(guidance === null ? [] : [guidanceWords(guidance)]),
   ].join('\n');
+
+  // What the reply is held to: the path's decision, and what may be stated (the founder's words, the sources, the path).
+  const checks = replyChecks(guidance, today, {
+    evidence: shown.map((k) => ({ key: k.item.key, title: k.item.title, excerpt: k.item.excerpt })),
+    founderText: knownFigures,
+    ...(guidance === null ? {} : { guidanceText: guidanceWords(guidance) }),
+    alsoKnown: [
+      spec.personaName,
+      spec.personaEirName ?? '',
+      spec.venture?.name ?? '',
+      ...guards.addressees,
+      JSON.stringify(spec.release.doctrine),
+      today,
+    ].join('\n'),
+  });
+  // A social turn, a wrap-up, a sincere question about the coach and a founder in distress owe no step.
+  const owesContract =
+    guidance !== null &&
+    social === null &&
+    !wrapUp &&
+    !risk.categories.includes('safety_wellbeing') &&
+    !inDistress(spec.founderText) &&
+    !identityAsked;
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
   await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
@@ -385,6 +439,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     startedAt: spec.startedAt,
     narration: { founder: spec.continuity.founderFirstName ?? null, people: guards.addressees },
     alreadySaid,
+    pathReport: pathReportRequest(system, guidance),
   };
   let generation: Generation;
   try {
@@ -408,6 +463,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
               social !== null ? SOCIAL_BUDGETS[social] : wrapUp ? SOCIAL_BUDGETS.closing : preferenceBudget,
             noQuestions,
             knownFigures,
+            ...checks,
             previousReply,
             earlierReplies,
             pastReplies: spec.pastReplies ?? [],
@@ -455,23 +511,36 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     social,
     noQuestions,
     knownFigures,
+    ...checks,
     founderText: spec.founderText,
     introduced,
     channel: spec.channel,
   };
   const validated = validateCoachResponse(generation.raw, options);
   validated.results.notes.push(...generation.notes);
-  const checked =
+  const gated =
     generation.gateBlocked === null
       ? validated
       : enforceGateBlock(validated, generation.gateBlocked, spec.channel);
+  // The reply contract: a reply that leaves the decided step out (or only asks) is completed from the decision, never by
+  // a second model call. A reply the founder spoke over stands as they heard it.
+  const { checked, spokenStep } =
+    guidance === null || !owesContract || gated.blocked || generation.stream?.interrupted === true
+      ? { checked: gated, spokenStep: null }
+      : withReplyContract(gated, guidance, {
+          channel: spec.channel,
+          today,
+          founderText: spec.founderText,
+        });
+  await streamAdded(spec, generation, gated, checked);
   const pending = generation.annotations ?? null;
-  if (pending === null) return { kind: 'answered', context, shown, generation, checked, annotations: null };
+  if (pending === null)
+    return { kind: 'answered', context, shown, generation, checked, annotations: null, spokenStep };
   if (checked.blocked) {
     // Nothing will read the fields of a reply that was held back: the call is stopped (what it cost is metered).
     pending.cancel();
     await pending.result;
-    return { kind: 'answered', context, shown, generation, checked, annotations: null };
+    return { kind: 'answered', context, shown, generation, checked, annotations: null, spokenStep };
   }
   const annotations = pending.result.then((result) => ({
     checked: withAnnotations(checked, generation.raw, result, options),
@@ -490,6 +559,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
       generation,
       checked,
       annotations: { result: annotations, stop },
+      spokenStep,
     };
   }
   // Waited for here (the studio's test conversation): one generation, as a reply written whole would be.
@@ -506,6 +576,75 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     },
     checked: annotated.checked,
     annotations: null,
+    spokenStep,
+  };
+}
+
+/** What the contract added after a streamed reply, streamed after it: what was shown is the start of what is stored. */
+async function streamAdded(
+  spec: AnswerSpec,
+  generation: Generation,
+  before: CoachResponseValidation,
+  after: CoachResponseValidation,
+): Promise<void> {
+  const { stream } = generation;
+  const shown = before.response.answer.trimEnd();
+  const full = after.response.answer;
+  if (stream?.fallback !== null || stream.deltas === 0) return;
+  if (full === before.response.answer || !full.startsWith(shown)) return;
+  await spec.emit({
+    event: 'turn.delta',
+    turnId: spec.ids.turnId,
+    seq: stream.deltas,
+    text: full.slice(shown.length),
+  });
+}
+
+/**
+ * A validated reply held to the reply contract (`@foundry/ai` `checkReplyContract`, through the path's adapter). Typed:
+ * the repaired text stands as the answer. On a call, what was said was said: when the step was left out, the server's
+ * one sentence is added to what is said and to the transcript. What was found is noted (codes only).
+ */
+export function withReplyContract(
+  checked: CoachResponseValidation,
+  guidance: PathPromptGuidance,
+  context: { readonly channel: TurnChannel; readonly today: string; readonly founderText: string },
+): { readonly checked: CoachResponseValidation; readonly spokenStep: string | null } {
+  const { response } = checked;
+  const contract = checkReply(response.answer, guidance, context);
+  const voice = context.channel === 'voice';
+  const spokenStep =
+    voice && guidance.step !== null && owesStep(guidance) && contract.findings.includes('missing_step')
+      ? spokenStepLine(guidance.step, context.today)
+      : null;
+  const answer =
+    spokenStep !== null
+      ? `${response.answer.trimEnd()} ${spokenStep}`
+      : voice
+        ? response.answer
+        : (contract.repaired ?? response.answer);
+  if (contract.findings.length === 0 && answer === response.answer) return { checked, spokenStep: null };
+  return {
+    spokenStep,
+    checked: {
+      ...checked,
+      response: {
+        ...response,
+        answer,
+        spoken:
+          spokenStep === null || response.spoken === null || response.spoken === undefined
+            ? response.spoken
+            : `${response.spoken.trimEnd()} ${spokenStep}`,
+      },
+      results: {
+        ...checked.results,
+        notes: [
+          ...checked.results.notes,
+          ...contract.findings.map((f) => `reply_contract:${f}`),
+          ...(answer === response.answer ? [] : ['reply_contract_repaired']),
+        ],
+      },
+    },
   };
 }
 

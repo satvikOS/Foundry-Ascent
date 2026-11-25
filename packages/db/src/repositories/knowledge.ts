@@ -5,6 +5,7 @@ import {
 } from '@foundry/contracts';
 
 import { camelRow, col, type CamelRow, type RawRow } from '../columns.js';
+import { embeddingModelOf } from '../embedding-model.js';
 import { SqlUsageError } from '../errors.js';
 import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { encodeVectorLiteral, p } from '../params.js';
@@ -368,6 +369,7 @@ export async function insertChunks(ex: SqlExecutor, input: InsertChunksInput): P
       content: c.content,
       token_count: c.tokenCount ?? 0,
       embedding: c.embedding ? encodeVectorLiteral(c.embedding) : null,
+      embedding_model: embeddingModelOf(c.embedding),
     };
   });
   const batches: (typeof items)[] = [];
@@ -389,10 +391,11 @@ export async function insertChunks(ex: SqlExecutor, input: InsertChunksInput): P
   for (const batch of batches) {
     const result = await ex.query(
       `INSERT INTO knowledge_chunks (source_id, tenant_id, scope, venture_id, persona_id, ordinal, heading, content,
-                                     token_count, embedding)
+                                     token_count, embedding, embedding_model)
        SELECT :sourceId, :tenantId, :scope, :ventureId, :personaId, x.ordinal, x.heading, x.content, x.token_count,
-              CAST(x.embedding AS vector)
-       FROM jsonb_to_recordset(:rows) AS x (ordinal integer, heading text, content text, token_count integer, embedding text)`,
+              CAST(x.embedding AS vector), x.embedding_model
+       FROM jsonb_to_recordset(:rows)
+         AS x (ordinal integer, heading text, content text, token_count integer, embedding text, embedding_model text)`,
       {
         sourceId: p.uuid(input.sourceId),
         tenantId: p.uuid(input.tenantId),
@@ -501,6 +504,81 @@ export function setMemoryEmbeddings(
   );
 }
 
+// Changing the embedding model (docs/runbooks/embedding-model.md) -----------------------------------------------
+
+/** Rows whose vector `modelId` did not make (recorded as another model's), oldest first. System only. */
+export function listChunksOfOtherModels(
+  sx: SystemExecutor,
+  modelId: string,
+  limit = 64,
+): Promise<EmbeddingBacklogItem[]> {
+  return queryRows(
+    sx,
+    `SELECT id, coalesce(heading || E'\\n\\n', '') || content AS text
+     FROM knowledge_chunks WHERE embedding IS NOT NULL AND embedding_model <> :modelId
+     ORDER BY created_at, id LIMIT :limit`,
+    { modelId: p.text(modelId), limit: p.int(limit) },
+    (r) => ({ id: col.uuid.decode(r.id, 'id'), text: col.text.decode(r.text, 'text') }),
+  );
+}
+
+/** As {@link listChunksOfOtherModels}, for live memory items. System only. */
+export function listMemoryOfOtherModels(
+  sx: SystemExecutor,
+  modelId: string,
+  limit = 64,
+): Promise<EmbeddingBacklogItem[]> {
+  return queryRows(
+    sx,
+    `SELECT id, title || E'\\n\\n' || content AS text
+     FROM memory_objects
+     WHERE embedding IS NOT NULL AND embedding_model <> :modelId
+       AND status IN ('proposed', 'confirmed', 'disputed')
+     ORDER BY created_at, id LIMIT :limit`,
+    { modelId: p.text(modelId), limit: p.int(limit) },
+    (r) => ({ id: col.uuid.decode(r.id, 'id'), text: col.text.decode(r.text, 'text') }),
+  );
+}
+
+/**
+ * Records `modelId` on rows whose vector's model is not recorded (embedded before migration 0034): the first step of a
+ * model change, so they are known to need a new vector. Returns the rows recorded. System only.
+ */
+export async function stampEmbeddingModel(sx: SystemExecutor, modelId: string): Promise<number> {
+  let stamped = 0;
+  for (const table of ['knowledge_chunks', 'memory_objects']) {
+    const result = await sx.query(
+      `UPDATE ${table} SET embedding_model = :modelId WHERE embedding IS NOT NULL AND embedding_model IS NULL`,
+      { modelId: p.text(modelId) },
+    );
+    stamped += result.rowCount;
+  }
+  return stamped;
+}
+
+/** Embedded rows by the model recorded for their vector (`null`: not recorded). System only. */
+export function countEmbeddingModels(
+  sx: SystemExecutor,
+): Promise<
+  { readonly store: 'chunks' | 'memory'; readonly modelId: string | null; readonly rows: number }[]
+> {
+  return queryRows(
+    sx,
+    `SELECT 'chunks' AS store, embedding_model, count(*)::int AS n FROM knowledge_chunks
+      WHERE embedding IS NOT NULL GROUP BY embedding_model
+     UNION ALL
+     SELECT 'memory', embedding_model, count(*)::int FROM memory_objects
+      WHERE embedding IS NOT NULL GROUP BY embedding_model
+     ORDER BY 1, 2`,
+    {},
+    (r) => ({
+      store: col.enum(['chunks', 'memory'] as const).decode(r.store, 'store'),
+      modelId: col.text.nullable.decode(r.embedding_model, 'embedding_model'),
+      rows: col.int.decode(r.n, 'n'),
+    }),
+  );
+}
+
 async function setEmbeddings(
   ex: SqlExecutor,
   table: 'knowledge_chunks' | 'memory_objects',
@@ -512,11 +590,15 @@ async function setEmbeddings(
   for (let i = 0; i < items.length; i += 8) {
     const batch = items.slice(i, i + 8).map((it) => {
       assertEmbedding(it.embedding);
-      return { id: it.id, embedding: encodeVectorLiteral(it.embedding) };
+      return {
+        id: it.id,
+        embedding: encodeVectorLiteral(it.embedding),
+        embedding_model: embeddingModelOf(it.embedding),
+      };
     });
     const result = await ex.query(
-      `UPDATE ${table} t SET embedding = CAST(x.embedding AS vector)
-       FROM jsonb_to_recordset(:rows) AS x (id uuid, embedding text)
+      `UPDATE ${table} t SET embedding = CAST(x.embedding AS vector), embedding_model = x.embedding_model
+       FROM jsonb_to_recordset(:rows) AS x (id uuid, embedding text, embedding_model text)
        WHERE t.id = x.id ${guard}`,
       { rows: p.json(batch) },
     );

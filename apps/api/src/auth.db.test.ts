@@ -238,7 +238,7 @@ describe('sessions', () => {
       const path = route.path.replace(/:[A-Za-z]+/g, '00000000-0000-4000-8000-000000000000');
       const res = await api.app.request(
         buildRequest(path, {
-          method: route.method === 'PUT' ? 'POST' : route.method,
+          method: route.method,
           ...(route.method === 'GET' ? {} : { body: {} }),
         }),
       );

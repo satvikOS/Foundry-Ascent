@@ -288,6 +288,32 @@ export {
   type InventedFigures,
 } from './validators/figures.js';
 export {
+  buildSupportIndex,
+  checkCitationSupport,
+  supportUnit,
+  type CitationSupport,
+  type SupportFinding,
+  type SupportIndex,
+  type SupportInput,
+  type SupportSource,
+  type UnitSupport,
+} from './validators/citation-support.js';
+export {
+  carriesContract,
+  checkReplyContract,
+  composeFromGuidance,
+  contractApplies,
+  contractTail,
+  firstUnitVerdict,
+  fitSpoken,
+  namesStep,
+  saidVerbatim,
+  spokenReserve,
+  stepLine,
+  type ContractVerdict,
+  type ReplyContractInput,
+} from './validators/reply-contract.js';
+export {
   SentenceGate,
   findUnitEnd,
   holdBackFor,

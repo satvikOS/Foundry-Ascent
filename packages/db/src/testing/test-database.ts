@@ -177,6 +177,7 @@ export async function createTestDatabase(options: CreateTestDatabaseOptions = {}
         owner,
         ...(overrides.includeDemoData === undefined ? {} : { includeDemoData: overrides.includeDemoData }),
         ...(overrides.now === undefined ? {} : { now: overrides.now }),
+        ...(overrides.corpus === undefined ? {} : { corpus: overrides.corpus }),
       });
     }
   } catch (err) {

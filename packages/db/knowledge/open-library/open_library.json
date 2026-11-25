@@ -1,0 +1,961 @@
+{
+  "metadata": {
+    "title": "Open founder library",
+    "version": "1.0.0",
+    "accessed": "2026-11-24",
+    "scope": "Compact notes in our own words on U.S. government pages (public domain or freely reusable) and CC BY-SA textbooks. See LICENSE.md beside this file.",
+    "language": "en"
+  },
+  "sources": [
+    {
+      "key": "sba-business-plan",
+      "title": "Write your business plan",
+      "publisher": "U.S. Small Business Administration",
+      "url": "https://www.sba.gov/business-guide/plan-your-business/write-your-business-plan",
+      "licence": "Public domain (U.S. Government information on SBA.gov)",
+      "attribution": "Source: U.S. Small Business Administration, www.sba.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "business-plan"
+      ],
+      "playSources": [
+        "sba-plan"
+      ],
+      "notes": [
+        {
+          "heading": "Traditional or lean business plan",
+          "locator": "Pick a business plan format",
+          "content": "The SBA describes two formats. A traditional business plan is detailed and is what lenders and investors commonly ask for. A lean startup plan is a short, high-level summary of the key elements, quicker to write; some lenders and investors may ask for more."
+        },
+        {
+          "heading": "Sections of a traditional business plan",
+          "locator": "Traditional business plan",
+          "content": "Sections: executive summary; company description (the problems you solve and for whom, and your advantages); market analysis; organization and management; service or product line; marketing and sales; funding request, if you are asking for money; financial projections; and an appendix where needed. Use the sections that fit your business."
+        },
+        {
+          "heading": "Market, marketing and sales sections",
+          "locator": "Traditional business plan",
+          "content": "Market analysis shows the industry outlook and target market and what successful competitors do, and whether you can do it better. Marketing and sales says how you will attract and keep customers and how a sale happens; the financial projections rest on it."
+        },
+        {
+          "heading": "Funding request and financial projections",
+          "locator": "Traditional business plan",
+          "content": "A funding request says how much you need over the next five years, what it pays for, and whether you want debt or equity and on what terms. Projections cover five years (income, balance sheet, cash flow, capital spending), with the first year by quarter or month, and must match the request."
+        },
+        {
+          "heading": "The nine parts of a lean startup plan",
+          "locator": "Lean startup plan",
+          "content": "A lean startup plan covers key partnerships, key activities, key resources, value proposition, customer relationships, customer segments, channels, cost structure and revenue streams: the same nine parts as a Business Model Canvas, each in a few lines."
+        },
+        {
+          "heading": "Value proposition and customer segments",
+          "locator": "Lean startup plan",
+          "content": "Make the value proposition a clear, compelling statement of the unique value your company brings. Be specific about customer segments: your business is not for everyone, so name the target market you will serve."
+        },
+        {
+          "heading": "Cost structure and revenue streams",
+          "locator": "Lean startup plan",
+          "content": "Decide whether the company focuses on reducing cost or on maximizing value, and name the most significant costs of that choice. Then explain how it makes money (for example direct sales, memberships, advertising) and list every stream if there are several."
+        }
+      ]
+    },
+    {
+      "key": "sba-market-research",
+      "title": "Market research and competitive analysis",
+      "publisher": "U.S. Small Business Administration",
+      "url": "https://www.sba.gov/business-guide/plan-your-business/market-research-competitive-analysis",
+      "licence": "Public domain (U.S. Government information on SBA.gov)",
+      "attribution": "Source: U.S. Small Business Administration, www.sba.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "market-research",
+        "competition"
+      ],
+      "playSources": [
+        "sba-plan"
+      ],
+      "notes": [
+        {
+          "heading": "Questions market research answers",
+          "locator": "Use market research to find customers",
+          "content": "Market research should answer: is there demand, how large is the market, what can customers earn and spend, where are they and where can you reach them, how many similar options exist already (saturation), and what do they pay for the alternatives now (pricing)."
+        },
+        {
+          "heading": "Existing data or direct research",
+          "locator": "Use market research to find customers",
+          "content": "Existing sources (published statistics) save time and answer general questions, such as industry trends or household income, but may not fit your audience closely. Direct research (surveys, questionnaires, focus groups, in-depth interviews) takes longer and tells you about your own target audience."
+        },
+        {
+          "heading": "Free federal data for market size",
+          "locator": "Free small business data and trends",
+          "content": "Free federal sources for market numbers include Census Bureau business data, Bureau of Labor Statistics data, Federal Reserve statistics, Bureau of Economic Analysis data and the NAICS industry codes that classify businesses."
+        },
+        {
+          "heading": "What to assess in a competitive analysis",
+          "locator": "Use competitive analysis to find a market advantage",
+          "content": "For each competitor, by product line and market segment, assess market share, strengths and weaknesses, your window of opportunity to enter, how much your target market matters to them, barriers to entry, and indirect or secondary competitors that could affect you."
+        }
+      ]
+    },
+    {
+      "key": "sba-startup-costs",
+      "title": "Calculate your startup costs",
+      "publisher": "U.S. Small Business Administration",
+      "url": "https://www.sba.gov/business-guide/plan-your-business/calculate-your-startup-costs",
+      "licence": "Public domain (U.S. Government information on SBA.gov)",
+      "attribution": "Source: U.S. Small Business Administration, www.sba.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "startup-costs",
+        "break-even"
+      ],
+      "playSources": [
+        "sba-plan"
+      ],
+      "notes": [
+        {
+          "heading": "Common startup costs to list",
+          "locator": "Identify your startup expenses",
+          "content": "Start from the kind of business (brick-and-mortar, online or service). Common startup costs: office space, equipment and supplies, communications, utilities, licenses and permits, insurance, lawyer and accountant, inventory, salaries, advertising and marketing, market research, printed materials and a website. Add your own."
+        },
+        {
+          "heading": "How to estimate a startup cost",
+          "locator": "Estimate how much your expenses will cost",
+          "content": "Permits and licenses usually have published fees. For less certain costs, such as salaries, look online and ask mentors, vendors and service providers what similar companies pay."
+        },
+        {
+          "heading": "One-time and monthly costs",
+          "locator": "Add up your expenses for a full financial picture",
+          "content": "Split startup costs into one-time costs (major equipment, logo, permits and fees) and monthly costs (salaries, rent, utilities). Count at least one year of monthly costs; five years is ideal. Together they show how much capital you need and when."
+        },
+        {
+          "heading": "Break-even point formula",
+          "locator": "Break-even analysis",
+          "content": "Break-even is where total revenue equals total cost. In units: fixed costs / (price per unit - variable cost per unit). In sales dollars: fixed costs / contribution margin, where contribution margin = (price - variable cost per unit) / price. It is a planning estimate."
+        },
+        {
+          "heading": "Fixed and variable costs for break-even",
+          "locator": "Break-even analysis",
+          "content": "Fixed costs stay the same whatever you sell (rent, salaries, insurance). Split a cost that is partly fixed into its fixed and variable parts. The SBA suggests adding about 10% for miscellaneous costs you cannot predict."
+        }
+      ]
+    },
+    {
+      "key": "sba-fund",
+      "title": "Fund your business",
+      "publisher": "U.S. Small Business Administration",
+      "url": "https://www.sba.gov/business-guide/plan-your-business/fund-your-business",
+      "licence": "Public domain (U.S. Government information on SBA.gov)",
+      "attribution": "Source: U.S. Small Business Administration, www.sba.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "bootstrapping",
+        "fundraising",
+        "investors",
+        "loans",
+        "crowdfunding",
+        "grants"
+      ],
+      "playSources": [
+        "sba-plan"
+      ],
+      "notes": [
+        {
+          "heading": "Self-funding (bootstrapping)",
+          "locator": "Fund your business yourself with self-funding",
+          "content": "Self-funding, or bootstrapping, uses your own resources: savings, family and friends, even retirement accounts. You keep complete control and take on all the risk. Do not spend more than you can afford to lose; ask the plan administrator and a financial advisor before using retirement money."
+        },
+        {
+          "heading": "Venture capital: what you give up",
+          "locator": "Get venture capital from investors",
+          "content": "Venture capital is money for an ownership share and an active role, not a loan. It usually looks for high-growth companies, accepts more risk for more return and invests for longer. Investors almost always want a board seat, so you give up some control and ownership."
+        },
+        {
+          "heading": "Steps to raise venture capital",
+          "locator": "How to get venture capital funding",
+          "content": "Usual steps: find an investor and check their reputation and start-up experience; share the business plan; go through due diligence on team, market, product, governance and finances; agree a term sheet; receive the investment, often in rounds tied to milestones."
+        },
+        {
+          "heading": "Rewards crowdfunding",
+          "locator": "Use crowdfunding to fund your business",
+          "content": "In rewards crowdfunding many people give small amounts and usually get a gift, such as the product, not ownership or a financial return. It suits creative projects and physical products. Read each platform’s terms. Selling shares through crowdfunding is different: securities law applies."
+        },
+        {
+          "heading": "What to bring to a small business loan",
+          "locator": "Get a small business loan",
+          "content": "A loan lets you keep full control. Lenders want a business plan, an expense sheet of startup costs and five years of projections. For a new business the decision usually rests on the owner’s personal credit score. Compare offers from banks and credit unions."
+        },
+        {
+          "heading": "SBA-guaranteed loans",
+          "locator": "Use Lender Match",
+          "content": "If a bank sees your business as too risky, an SBA guarantee can reduce the bank’s risk. The SBA’s Lender Match tool finds lenders that offer SBA-guaranteed loans."
+        },
+        {
+          "heading": "SBIR and STTR awards",
+          "locator": "SBA investment programs",
+          "content": "SBIR awards fund federal research and development with commercial potential; STTR funds small businesses that work with a nonprofit research institution. Both are competitive programs. SBICs are privately owned, SBA-licensed funds that invest in qualifying small businesses."
+        }
+      ]
+    },
+    {
+      "key": "sba-structure",
+      "title": "Choose a business structure",
+      "publisher": "U.S. Small Business Administration",
+      "url": "https://www.sba.gov/business-guide/launch-your-business/choose-business-structure",
+      "licence": "Public domain (U.S. Government information on SBA.gov)",
+      "attribution": "Source: U.S. Small Business Administration, www.sba.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "legal-structure"
+      ],
+      "playSources": [
+        "sba-launch"
+      ],
+      "notes": [
+        {
+          "heading": "Who to ask about a business structure",
+          "locator": "Before choosing",
+          "content": "Consult a business counselor, an attorney and an accountant before choosing a business structure: it affects your taxes, your liability and how you can raise money. The SBA recommends operating agreements, partnership agreements and bylaws even where they are not required."
+        },
+        {
+          "heading": "Sole proprietorship",
+          "locator": "Review common business structures",
+          "content": "You are a sole proprietor automatically if you do business without registering another form. You have full control, but your business and personal assets are not separate, so you can be personally responsible for its debts. It is harder to raise money. You can still use a trade name."
+        },
+        {
+          "heading": "Partnership",
+          "locator": "Review common business structures",
+          "content": "A partnership is the simplest form for two or more owners. In a limited partnership one general partner has unlimited liability and the others are limited; in a limited liability partnership each owner is protected from the actions of the others. Profits go on personal tax returns. Put the agreement in writing."
+        },
+        {
+          "heading": "LLC (limited liability company)",
+          "locator": "Review common business structures",
+          "content": "An LLC in most cases protects your personal assets if the business is sued or fails. Profits and losses can pass to your personal return without corporate tax, but members pay self-employment tax. Some states limit an LLC’s life when members change."
+        },
+        {
+          "heading": "C corporation",
+          "locator": "Review common business structures",
+          "content": "A C corporation is a separate legal entity with the strongest protection from personal liability, higher cost to form and more record-keeping. It pays income tax, and dividends can be taxed again on owners’ returns. It can raise money by selling stock."
+        },
+        {
+          "heading": "S corporation",
+          "locator": "Review common business structures",
+          "content": "An S corporation passes profits and some losses to the owners’ personal returns, avoiding corporate tax. It must file with the IRS for that status, separately from the state. Limits apply: at most 100 shareholders, and no nonresident alien shareholders, so international founders should ask an attorney."
+        },
+        {
+          "heading": "Nonprofit and benefit corporations",
+          "locator": "Review common business structures",
+          "content": "A nonprofit corporation must file with the IRS to become tax-exempt and cannot distribute profits. A benefit corporation is for profit, taxed like a C corporation, and must also produce a public benefit; some states require benefit reports."
+        },
+        {
+          "heading": "Compare liability and tax of structures",
+          "locator": "Compare business structures",
+          "content": "Compared on liability: sole proprietors and general partners are personally liable; LLC members and corporation owners generally are not. On tax: sole proprietors, partners and LLC members pay personal and self-employment tax; a C corporation pays corporate tax; S corporation income is taxed on personal returns."
+        }
+      ]
+    },
+    {
+      "key": "sba-register",
+      "title": "Register your business",
+      "publisher": "U.S. Small Business Administration",
+      "url": "https://www.sba.gov/business-guide/launch-your-business/register-your-business",
+      "licence": "Public domain (U.S. Government information on SBA.gov)",
+      "attribution": "Source: U.S. Small Business Administration, www.sba.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "registration",
+        "business-name",
+        "ein",
+        "legal-structure"
+      ],
+      "playSources": [
+        "sba-launch"
+      ],
+      "notes": [
+        {
+          "heading": "Four ways to register a name",
+          "locator": "Choose your business name",
+          "content": "Rules differ by state. Four registrations can apply to a name: an entity name (state), a trademark (federal, protects the name for your goods and services nationwide), a DBA or trade name (may be required, gives no legal protection by itself) and a domain name."
+        },
+        {
+          "heading": "Registering with the state",
+          "locator": "Register your business",
+          "content": "LLCs, corporations, partnerships and nonprofits register in states where they do business, usually with the Secretary of State, and need a registered agent there. The SBA says total registration usually costs under $300, depending on the state and structure: check your state’s own site."
+        },
+        {
+          "heading": "Federal and state tax IDs",
+          "locator": "Get federal and state tax ID numbers",
+          "content": "An EIN is the federal tax ID; it is free from the IRS, so avoid sites that charge for it. You need one to hire, to run a corporation or partnership, for some tax filings and usually for a bank account. State tax IDs depend on your state’s taxes."
+        },
+        {
+          "heading": "Open a business bank account",
+          "locator": "Open a business bank account",
+          "content": "Open a business bank account as soon as you start accepting or spending money as a business, to keep business and personal funds apart. Banks usually ask for an EIN, formation documents, ownership agreements and a business license. Compare fees."
+        },
+        {
+          "heading": "Licenses and permits",
+          "locator": "Apply for licenses and permits",
+          "content": "Some activities need a federal license (for example alcohol, aviation or broadcasting); many others need state or local licenses, such as restaurants, retail and vending. Requirements vary, so check your state, county and city sites, and renew on schedule."
+        }
+      ]
+    },
+    {
+      "key": "uspto-provisional",
+      "title": "Provisional application for patent",
+      "publisher": "United States Patent and Trademark Office",
+      "url": "https://www.uspto.gov/patents/basics/apply/provisional-application",
+      "licence": "Public domain (U.S. Government material on USPTO.gov)",
+      "attribution": "Source: United States Patent and Trademark Office, www.uspto.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "patent"
+      ],
+      "playSources": [
+        "uspto-provisional"
+      ],
+      "notes": [
+        {
+          "heading": "What a provisional patent application does",
+          "locator": "Provisional application for patent",
+          "content": "Ask a registered patent attorney or agent before filing or disclosing. A provisional application sets an early filing date and lets you say \"patent pending\" for 12 months. It is not examined, needs no formal claims, and never becomes a patent by itself."
+        },
+        {
+          "heading": "The 12-month deadline after a provisional",
+          "locator": "Provisional application for patent",
+          "content": "The 12 months cannot be extended. File a nonprovisional application within them to keep the provisional’s date; within 14 months a petition saying the delay was unintentional may restore it. Let it lapse and you may lose the right to patent the invention, not only the date."
+        },
+        {
+          "heading": "What a provisional application needs",
+          "locator": "Filing requirements",
+          "content": "It needs a written description that meets the patent statute, drawings where they are necessary to understand the invention, the names of all inventors, a cover sheet identifying it as provisional, and the filing fee. Provisional applications are not available for designs."
+        },
+        {
+          "heading": "Public disclosure and the one-year clock",
+          "locator": "Cautions",
+          "content": "See a patent attorney before you show the invention publicly. In the U.S. a provisional can be filed up to 12 months after the inventor’s own public disclosure; after that, patenting is barred. A disclosure before filing may already preclude patents in foreign countries."
+        }
+      ]
+    },
+    {
+      "key": "uspto-basics",
+      "title": "Patent essentials",
+      "publisher": "United States Patent and Trademark Office",
+      "url": "https://www.uspto.gov/patents/basics/essentials",
+      "licence": "Public domain (U.S. Government material on USPTO.gov)",
+      "attribution": "Source: United States Patent and Trademark Office, www.uspto.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "patent"
+      ],
+      "playSources": [
+        "uspto-basics"
+      ],
+      "notes": [
+        {
+          "heading": "What a patent gives you",
+          "locator": "Patent essentials",
+          "content": "A U.S. patent gives the right to exclude others from making, using, offering for sale, selling or importing the invention in the United States; it does not itself give the right to make or sell it. It has effect only in the U.S. and its territories."
+        },
+        {
+          "heading": "What can be patented",
+          "locator": "Patent essentials",
+          "content": "An invention must be new, not obvious, useful (it works, not a theory) and clearly described. Laws of nature, physical phenomena and abstract ideas cannot be patented, and neither can a mere idea or suggestion. Some business methods may qualify."
+        },
+        {
+          "heading": "Utility, design and plant patents",
+          "locator": "Patent essentials",
+          "content": "Utility patents cover new and useful processes, machines, articles and compositions, for up to 20 years from the first nonprovisional filing, with maintenance fees. Design patents cover ornamental designs for 15 years from grant. Plant patents cover new plant varieties."
+        },
+        {
+          "heading": "Help with a patent application",
+          "locator": "Patent essentials",
+          "content": "The USPTO recommends a registered patent attorney or agent. Applicants without one can use its Pro Se Assistance Program and Inventors Assistance Center, and search earlier patents in its Patent Public Search database."
+        }
+      ]
+    },
+    {
+      "key": "uspto-ip-types",
+      "title": "Trademark, patent or copyright",
+      "publisher": "United States Patent and Trademark Office",
+      "url": "https://www.uspto.gov/trademarks/basics/trademark-patent-copyright",
+      "licence": "Public domain (U.S. Government material on USPTO.gov)",
+      "attribution": "Source: United States Patent and Trademark Office, www.uspto.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "trademark",
+        "patent",
+        "ip"
+      ],
+      "playSources": [
+        "uspto-basics"
+      ],
+      "notes": [
+        {
+          "heading": "Trademark, patent or copyright",
+          "locator": "Trademark, patent, or copyright",
+          "content": "A trademark identifies the source of goods or services (a name, phrase or design). A patent protects technical inventions. Copyright protects original creative works such as writing, music or software code. The USPTO handles the first two; the U.S. Copyright Office registers the third."
+        }
+      ]
+    },
+    {
+      "key": "uspto-trademark",
+      "title": "What is a trademark?",
+      "publisher": "United States Patent and Trademark Office",
+      "url": "https://www.uspto.gov/trademarks/basics/what-trademark",
+      "licence": "Public domain (U.S. Government material on USPTO.gov)",
+      "attribution": "Source: United States Patent and Trademark Office, www.uspto.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "trademark",
+        "business-name"
+      ],
+      "playSources": [
+        "uspto-basics"
+      ],
+      "notes": [
+        {
+          "heading": "What a trademark covers",
+          "locator": "What is a trademark?",
+          "content": "A trademark is any word, phrase, symbol or design that identifies your goods or services. You do not own the word in general, only its use with your goods or services. Distinctive marks are easier to protect than ones that describe the product."
+        },
+        {
+          "heading": "TM and registered marks",
+          "locator": "What is a trademark?",
+          "content": "Rights come from using a mark, in the area where you use it. Federal registration is optional and gives nationwide rights. You may use TM or SM without registering; the registered symbol only after registration and only for the goods or services in it."
+        }
+      ]
+    },
+    {
+      "key": "irs-ein",
+      "title": "Get an employer identification number",
+      "publisher": "Internal Revenue Service",
+      "url": "https://www.irs.gov/businesses/small-businesses-self-employed/get-an-employer-identification-number",
+      "licence": "Public domain (U.S. Government work, IRS.gov)",
+      "attribution": "Source: Internal Revenue Service, www.irs.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "ein"
+      ],
+      "playSources": [
+        "irs-ein"
+      ],
+      "notes": [
+        {
+          "heading": "An EIN is free from the IRS",
+          "locator": "Get an EIN",
+          "content": "An employer identification number (EIN) is a federal tax ID. The IRS gives it free, online and in minutes; you never have to pay a fee for one, and sites that charge are not the IRS."
+        },
+        {
+          "heading": "Who needs an EIN",
+          "locator": "Who needs an EIN",
+          "content": "You generally need an EIN to hire employees, to operate as a corporation or a partnership, and to pay sales or excise taxes. If you are forming an LLC or a corporation, form it with your state first or the application may be delayed."
+        },
+        {
+          "heading": "Applying for an EIN online",
+          "locator": "How to apply",
+          "content": "Online, the principal place of business must be in the U.S. or its territories, and the responsible party needs an SSN or ITIN; others apply by phone, fax or mail. Finish in one session: it cannot be saved and expires after 15 minutes of inactivity. One EIN per responsible party per day."
+        }
+      ]
+    },
+    {
+      "key": "irs-self-employed",
+      "title": "Self-employed individuals tax center",
+      "publisher": "Internal Revenue Service",
+      "url": "https://www.irs.gov/businesses/small-businesses-self-employed/self-employed-individuals-tax-center",
+      "licence": "Public domain (U.S. Government work, IRS.gov)",
+      "attribution": "Source: Internal Revenue Service, www.irs.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "taxes"
+      ],
+      "playSources": [
+        "irs-self-employed"
+      ],
+      "notes": [
+        {
+          "heading": "When self-employment income must be reported",
+          "locator": "Self-employed tax obligations",
+          "content": "Ask a tax professional about your own case. You have to file an income tax return if your net earnings from self-employment were $400 or more; with less, other filing requirements may still apply."
+        },
+        {
+          "heading": "Forms and quarterly taxes for a sole proprietor",
+          "locator": "Self-employed tax obligations",
+          "content": "A sole proprietor reports income or loss on Schedule C and self-employment tax (Social Security and Medicare) on Schedule SE. Because nobody withholds tax for you, you generally pay estimated tax each quarter; Form 1040-ES has the worksheet."
+        }
+      ]
+    },
+    {
+      "key": "irs-structures",
+      "title": "Business structures",
+      "publisher": "Internal Revenue Service",
+      "url": "https://www.irs.gov/businesses/small-businesses-self-employed/business-structures",
+      "licence": "Public domain (U.S. Government work, IRS.gov)",
+      "attribution": "Source: Internal Revenue Service, www.irs.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "legal-structure",
+        "taxes"
+      ],
+      "playSources": [
+        "irs-structures"
+      ],
+      "notes": [
+        {
+          "heading": "Your structure decides your tax return",
+          "locator": "Business structures",
+          "content": "Your form of business decides which income tax return you file. The most common forms are the sole proprietorship, partnership, corporation and S corporation; the LLC is a structure allowed by state law. Weigh legal and tax considerations when choosing."
+        }
+      ]
+    },
+    {
+      "key": "sec-exempt",
+      "title": "Exempt offerings",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "url": "https://www.sec.gov/resources-small-businesses/exempt-offerings",
+      "licence": "Public information (SEC.gov; may be copied and distributed, SEC cited as source)",
+      "attribution": "Source: U.S. Securities and Exchange Commission, www.sec.gov (staff educational material, paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "securities",
+        "fundraising"
+      ],
+      "playSources": [
+        "sec-exempt"
+      ],
+      "notes": [
+        {
+          "heading": "Selling shares: registered or exempt",
+          "locator": "Exempt offerings",
+          "content": "See a securities attorney first. Every offer and sale of securities must either be registered with the SEC or use an exemption, including a small raise from friends. Common exemptions: Rules 506(b), 506(c) and 504 of Regulation D, Regulation Crowdfunding, Regulation A and intrastate offerings."
+        },
+        {
+          "heading": "Rule 506(b): private offering, no advertising",
+          "locator": "Private placements: Rule 506(b)",
+          "content": "A securities attorney decides whether this fits. Rule 506(b) has no cap on the amount raised, no general solicitation or advertising, any number of accredited investors and at most 35 non-accredited ones in any 90 days, who must be given disclosure documents. File Form D within 15 days of the first sale."
+        },
+        {
+          "heading": "Rule 506(c): advertising, accredited investors only",
+          "locator": "Private placements: Rule 506(c)",
+          "content": "A securities attorney decides whether this fits. Rule 506(c) allows general solicitation, but every purchaser must be an accredited investor and the company must take reasonable steps to verify it. Form D is due within 15 days after the first sale; filing it is free."
+        }
+      ]
+    },
+    {
+      "key": "sec-crowdfunding",
+      "title": "Regulation Crowdfunding",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "url": "https://www.sec.gov/resources-small-businesses/exempt-offerings/regulation-crowdfunding",
+      "licence": "Public information (SEC.gov; may be copied and distributed, SEC cited as source)",
+      "attribution": "Source: U.S. Securities and Exchange Commission, www.sec.gov (staff educational material, paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "securities",
+        "crowdfunding",
+        "fundraising"
+      ],
+      "playSources": [
+        "sec-exempt"
+      ],
+      "notes": [
+        {
+          "heading": "Equity crowdfunding rules",
+          "locator": "Regulation Crowdfunding",
+          "content": "A securities attorney should confirm. Under Regulation Crowdfunding a company may raise up to $5 million in 12 months, only online through an SEC-registered broker-dealer or funding portal, with disclosures filed with the SEC. Non-accredited investors are limited in how much they can invest; resale is generally barred for a year."
+        }
+      ]
+    },
+    {
+      "key": "sec-early-investors",
+      "title": "Early-stage investors",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "url": "https://www.sec.gov/resources-small-businesses/capital-raising-building-blocks/early-stage-investors",
+      "licence": "Public information (SEC.gov; may be copied and distributed, SEC cited as source)",
+      "attribution": "Source: U.S. Securities and Exchange Commission, www.sec.gov (staff educational material, paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "fundraising",
+        "investors"
+      ],
+      "playSources": [
+        "sec-exempt"
+      ],
+      "notes": [
+        {
+          "heading": "Friends and family money",
+          "locator": "Friends and family",
+          "content": "Friends and family usually invest at the earliest stage, because of the relationship, through loans, convertible debt or equity; the SEC’s guide puts typical deals at about $10,000 to $50,000. Tell them clearly the risks and what happens if the company fails. Securities laws still apply."
+        },
+        {
+          "heading": "Angel investors and venture capital funds compared",
+          "locator": "Angel investors; venture capital funds",
+          "content": "Angels are wealthy individuals, often former founders and mostly accredited investors, who invest their own money early, often in groups, with convertible debt or equity. Venture capital funds invest from Series A on, usually in preferred stock, take a board or advisory seat and hold until a sale or public offering."
+        },
+        {
+          "heading": "Round names are not legal categories",
+          "locator": "Overview",
+          "content": "\"Friends and family round\", \"seed round\" and \"Series A\" are not legal categories; federal securities laws do not divide offerings that way. Whatever the round is called, the company needs a registration or an exemption, most commonly Regulation D with sales to accredited investors."
+        }
+      ]
+    },
+    {
+      "key": "sec-solicitation",
+      "title": "General solicitation",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "url": "https://www.sec.gov/resources-small-businesses/capital-raising-building-blocks/general-solicitation",
+      "licence": "Public information (SEC.gov; may be copied and distributed, SEC cited as source)",
+      "attribution": "Source: U.S. Securities and Exchange Commission, www.sec.gov (staff educational material, paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "securities",
+        "pitch-investors"
+      ],
+      "playSources": [
+        "sec-exempt"
+      ],
+      "notes": [
+        {
+          "heading": "What counts as general solicitation",
+          "locator": "General solicitation",
+          "content": "A securities attorney decides for your case. Communication that arouses public interest in a security is generally an offer. Public websites, ads, broadcasts and seminars can be general solicitation, which Rule 506(b) prohibits. Offering only to people with a pre-existing, substantive relationship avoids it."
+        },
+        {
+          "heading": "Pitching at a demo day",
+          "locator": "Demo day events",
+          "content": "Pitching at a demo day need not be general solicitation if a university, government, nonprofit, angel group, incubator or accelerator sponsors it, its ads name no specific offering, and you share only limited details of the offering (that it exists, type and amount, use of proceeds, unsubscribed amount). Check with an attorney."
+        }
+      ]
+    },
+    {
+      "key": "sec-startup-securities",
+      "title": "Common startup securities",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "url": "https://www.sec.gov/resources-small-businesses/capital-raising-building-blocks/common-startup-securities",
+      "licence": "Public information (SEC.gov; may be copied and distributed, SEC cited as source)",
+      "attribution": "Source: U.S. Securities and Exchange Commission, www.sec.gov (staff educational material, paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "securities",
+        "fundraising",
+        "safe-notes"
+      ],
+      "playSources": [
+        "sec-exempt",
+        "sec-safe"
+      ],
+      "notes": [
+        {
+          "heading": "Common and preferred stock",
+          "locator": "Common startup securities",
+          "content": "Common stock is ownership usually issued to founders. Preferred stock is usually issued to outside investors, with different voting and economic rights. Have an attorney draft or review any issue of stock."
+        },
+        {
+          "heading": "Convertible notes and SAFEs",
+          "locator": "Common startup securities",
+          "content": "Both are often used in seed rounds. A convertible note is a loan that can turn into stock, usually preferred, at the next funding round. A SAFE promises future ownership if a trigger happens, such as a later round or a sale; until then its holder owns nothing. Have an attorney review either."
+        }
+      ]
+    },
+    {
+      "key": "sec-accredited",
+      "title": "Accredited investors",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "url": "https://www.sec.gov/resources-small-businesses/capital-raising-building-blocks/accredited-investors",
+      "licence": "Public information (SEC.gov; may be copied and distributed, SEC cited as source)",
+      "attribution": "Source: U.S. Securities and Exchange Commission, www.sec.gov (staff educational material, paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "securities",
+        "investors"
+      ],
+      "playSources": [
+        "sec-exempt"
+      ],
+      "notes": [
+        {
+          "heading": "Who is an accredited investor",
+          "locator": "Accredited investors",
+          "content": "Many exemptions limit sales to accredited investors. An individual qualifies with a net worth over $1 million without the primary residence, or income over $200,000 ($300,000 with a spouse or partner) in each of the last two years and expected this year, or by certain professional criteria."
+        }
+      ]
+    },
+    {
+      "key": "sec-noncompliance",
+      "title": "Consequences of noncompliance",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "url": "https://www.sec.gov/resources-small-businesses/capital-raising-building-blocks/consequences-noncompliance",
+      "licence": "Public information (SEC.gov; may be copied and distributed, SEC cited as source)",
+      "attribution": "Source: U.S. Securities and Exchange Commission, www.sec.gov (staff educational material, paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "securities"
+      ],
+      "playSources": [
+        "sec-exempt"
+      ],
+      "notes": [
+        {
+          "heading": "What happens if securities rules are broken",
+          "locator": "Consequences of noncompliance",
+          "content": "Breaking federal or state securities laws can bring lawsuits, penalties, a bar from popular exemptions, and a right of investors to their money back with interest, even after it is spent. Later investors may refuse a company with unlawful earlier rounds. Ask a securities attorney first."
+        }
+      ]
+    },
+    {
+      "key": "nsf-icorps",
+      "title": "NSF I-Corps Teams",
+      "publisher": "U.S. National Science Foundation",
+      "url": "https://www.nsf.gov/funding/initiatives/i-corps/national-teams-applicants",
+      "licence": "Public domain (U.S. Government work, NSF.gov)",
+      "attribution": "Courtesy: U.S. National Science Foundation, www.nsf.gov (paraphrased)",
+      "accessed": "2026-11-24",
+      "topics": [
+        "customer-discovery",
+        "icorps",
+        "grants"
+      ],
+      "playSources": [
+        "nsf-icorps"
+      ],
+      "notes": [
+        {
+          "heading": "100 customer interviews in I-Corps",
+          "locator": "National I-Corps Teams: commitments",
+          "content": "NSF’s National I-Corps Teams program asks each team for at least 100 interviews with potential customers in a seven-week training. The number is that program’s requirement, not a rule for every venture."
+        },
+        {
+          "heading": "Who can join I-Corps Teams",
+          "locator": "National I-Corps Teams: eligibility",
+          "content": "Confirm the current rules with NSF. The technology must be tied to a college or university, and the team either has a relevant NSF award active in the last five years or completes a regional I-Corps program and gets a recommendation letter. Teams have three to five members."
+        },
+        {
+          "heading": "I-Corps team roles and money",
+          "locator": "National I-Corps Teams: roles and award",
+          "content": "Confirm the current terms with NSF. A team has a technical lead, an entrepreneurial lead (often a graduate student or postdoc) and an independent industry mentor. Accepted teams can receive up to $50,000 for stipends and customer discovery costs; a $10,000 participation fee is paid from it."
+        }
+      ]
+    },
+    {
+      "key": "swanson-bp-plan",
+      "title": "Business Plan Development Guide, chapter 1 (Lee A. Swanson)",
+      "publisher": "University of Saskatchewan, OPENPRESS.USASK.CA",
+      "url": "https://openpress.usask.ca/businessplandevelopmentguide/",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Adapted from Business Plan Development Guide by Lee A. Swanson (University of Saskatchewan, 2017), CC BY-SA 4.0; this note is under CC BY-SA 4.0",
+      "accessed": "2026-11-24",
+      "topics": [
+        "business-plan"
+      ],
+      "playSources": [
+        "swanson-business-plan"
+      ],
+      "notes": [
+        {
+          "heading": "Six stages of writing a business plan",
+          "locator": "Chapter 1, Developing a Business Plan",
+          "content": "Develop a plan in six stages: essential initial research, the business model, an initial draft, making it realistic, making it appeal to stakeholders and to you, and finishing. The first draft is almost never realistic; go back a stage when new information says so."
+        },
+        {
+          "heading": "Words and numbers must tell the same story",
+          "locator": "Chapter 1, Developing a Business Plan",
+          "content": "A business plan tells the story of the start-up twice: in words (operations, people, marketing) and in numbers (the financial plan). Making the two agree is most of the work of turning a first draft into a realistic one. Write the executive summary last."
+        }
+      ]
+    },
+    {
+      "key": "swanson-bp-research",
+      "title": "Business Plan Development Guide, chapter 2 (Lee A. Swanson)",
+      "publisher": "University of Saskatchewan, OPENPRESS.USASK.CA",
+      "url": "https://openpress.usask.ca/businessplandevelopmentguide/",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Adapted from Business Plan Development Guide by Lee A. Swanson (University of Saskatchewan, 2017), CC BY-SA 4.0; this note is under CC BY-SA 4.0",
+      "accessed": "2026-11-24",
+      "topics": [
+        "market-research",
+        "competition",
+        "idea"
+      ],
+      "playSources": [
+        "swanson-business-plan"
+      ],
+      "notes": [
+        {
+          "heading": "Research at four levels",
+          "locator": "Chapter 2, Essential Initial Research",
+          "content": "Check an idea at four levels before planning: society (political, economic, social, technological, environmental and legal trends), the industry (competitive forces), the market (size, growth, the share you can win and its cost) and the firm itself (strengths, weaknesses, founder fit)."
+        },
+        {
+          "heading": "Where your first customers come from",
+          "locator": "Chapter 2, Essential Initial Research",
+          "content": "A new venture’s customers come from one of two places: direct competitors they buy from now, or people who spend the money on something else. Decide which, and work out how competitors will react. You must offer something different, or the same thing in a different way."
+        }
+      ]
+    },
+    {
+      "key": "swanson-bp-canvas",
+      "title": "Business Plan Development Guide, chapter 3 (Lee A. Swanson)",
+      "publisher": "University of Saskatchewan, OPENPRESS.USASK.CA",
+      "url": "https://openpress.usask.ca/businessplandevelopmentguide/",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Adapted from Business Plan Development Guide by Lee A. Swanson (University of Saskatchewan, 2017), CC BY-SA 4.0; this note is under CC BY-SA 4.0",
+      "accessed": "2026-11-24",
+      "topics": [
+        "canvas",
+        "business-model",
+        "business-plan"
+      ],
+      "playSources": [
+        "swanson-business-plan"
+      ],
+      "notes": [
+        {
+          "heading": "Use the canvas before the business plan",
+          "locator": "Chapter 3, Business Models",
+          "content": "Fill in the nine parts of the Business Model Canvas with assumptions, start on a small scale, and replace each assumption with better information. The founder, not hired salespeople, should talk to customers until the model works. Know your business model before you write a full plan."
+        },
+        {
+          "heading": "Questions for each part of the canvas",
+          "locator": "Chapter 3, Business Models",
+          "content": "Ask for each part: for whom do we create value, which of their problems do we solve, how do they want to be reached, what relationship do they expect, what do they pay for now and how would they prefer to pay, which resources, activities and partners does that take, and which costs matter most?"
+        }
+      ]
+    },
+    {
+      "key": "swanson-bp-marketing",
+      "title": "Business Plan Development Guide, chapter 4 (Lee A. Swanson)",
+      "publisher": "University of Saskatchewan, OPENPRESS.USASK.CA",
+      "url": "https://openpress.usask.ca/businessplandevelopmentguide/",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Adapted from Business Plan Development Guide by Lee A. Swanson (University of Saskatchewan, 2017), CC BY-SA 4.0; this note is under CC BY-SA 4.0",
+      "accessed": "2026-11-24",
+      "topics": [
+        "target-market",
+        "competition",
+        "pricing",
+        "business-plan"
+      ],
+      "playSources": [
+        "swanson-business-plan"
+      ],
+      "notes": [
+        {
+          "heading": "Define a target market you can identify",
+          "locator": "Chapter 4, Initial Business Plan Draft",
+          "content": "Define your target market as identifiable people or organizations with shared characteristics who can make or strongly influence the purchase. \"Universities\" is not a target market; information technology managers at universities is. Then fit product, price, distribution and promotion to them."
+        },
+        {
+          "heading": "Show your position among competitors",
+          "locator": "Chapter 4, Initial Business Plan Draft",
+          "content": "Describe every direct and indirect competitor and say what distinguishes you. If you draw a positioning map, use axes that mean something to customers; quality against price often does not. Be careful with claiming better service: customers are the judges of it."
+        },
+        {
+          "heading": "Sales forecasts readers believe",
+          "locator": "Chapter 4, Initial Business Plan Draft",
+          "content": "Forecast sales at least monthly and explain every number: many readers will assume your revenues are overstated and your expenses too low. Say why your pricing beats the alternatives, and count card and platform fees, or you overstate revenue."
+        }
+      ]
+    },
+    {
+      "key": "swanson-bp-financing",
+      "title": "Business Plan Development Guide, chapter 6 (Lee A. Swanson)",
+      "publisher": "University of Saskatchewan, OPENPRESS.USASK.CA",
+      "url": "https://openpress.usask.ca/businessplandevelopmentguide/",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Adapted from Business Plan Development Guide by Lee A. Swanson (University of Saskatchewan, 2017), CC BY-SA 4.0; this note is under CC BY-SA 4.0",
+      "accessed": "2026-11-24",
+      "topics": [
+        "fundraising",
+        "bootstrapping",
+        "loans",
+        "grants",
+        "investors"
+      ],
+      "playSources": [
+        "swanson-business-plan"
+      ],
+      "notes": [
+        {
+          "heading": "Sources of starting capital",
+          "locator": "Chapter 6, Making the Plan Appeal",
+          "content": "Until sales bring cash, money comes from your own funds (almost always first), friends and family, grants and prize money, debt (loans, supplier credit, customers paying in advance) or equity. Bootstrapping means stretching the money and time you already have as far as possible."
+        },
+        {
+          "heading": "Debt or equity: what each costs",
+          "locator": "Chapter 6, Making the Plan Appeal",
+          "content": "Debt costs interest and usually collateral or a personal guarantee, but you keep ownership and know the payments; few lenders lend to early start-ups. Equity costs part of the ownership and control, and the investor expects a return that fits the risk."
+        }
+      ]
+    },
+    {
+      "key": "swanson-bp-pitch",
+      "title": "Business Plan Development Guide, chapter 8 (Lee A. Swanson)",
+      "publisher": "University of Saskatchewan, OPENPRESS.USASK.CA",
+      "url": "https://openpress.usask.ca/businessplandevelopmentguide/",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Adapted from Business Plan Development Guide by Lee A. Swanson (University of Saskatchewan, 2017), CC BY-SA 4.0; this note is under CC BY-SA 4.0",
+      "accessed": "2026-11-24",
+      "topics": [
+        "pitch"
+      ],
+      "playSources": [
+        "swanson-business-plan"
+      ],
+      "notes": [
+        {
+          "heading": "A five-part pitch to investors",
+          "locator": "Chapter 8, The Business Plan Pitch",
+          "content": "Give five parts about equal time: the problem and who has it; how your venture solves it better than the alternatives; why you can do it and make a profit; what you need and why; and why investors should invest, with how they get a return. The goal is a next meeting, not the whole plan."
+        }
+      ]
+    },
+    {
+      "key": "swanson-eit-opportunity",
+      "title": "Entrepreneurship and Innovation Toolkit, chapter 2 (Lee A. Swanson)",
+      "publisher": "University of Saskatchewan, OPENPRESS.USASK.CA",
+      "url": "https://openpress.usask.ca/entrepreneurshipandinnovationtoolkit/",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Adapted from Entrepreneurship and Innovation Toolkit by Lee A. Swanson (University of Saskatchewan, 2017), CC BY-SA 4.0; this note is under CC BY-SA 4.0",
+      "accessed": "2026-11-24",
+      "topics": [
+        "idea",
+        "design-thinking"
+      ],
+      "playSources": [
+        "swanson-toolkit"
+      ],
+      "notes": [
+        {
+          "heading": "Seven places to look for an opportunity",
+          "locator": "Chapter 2, Opportunity Recognition and Design Thinking",
+          "content": "Seven sources of opportunity (after Drucker): the unexpected; a gap between how things are and how they are assumed to be; a process need; changes in an industry or market; population changes; changes in perception; and new knowledge. Recognizing opportunities is a way of thinking that can be learned."
+        },
+        {
+          "heading": "Design thinking in three spaces",
+          "locator": "Chapter 2, Opportunity Recognition and Design Thinking",
+          "content": "Design thinking starts from people’s needs, with what technology can do and what a business requires. It moves back and forth between three spaces: inspiration (the problem), ideation (making, developing and testing ideas) and implementation (bringing it into people’s lives)."
+        }
+      ]
+    },
+    {
+      "key": "swanson-eit-lean",
+      "title": "Entrepreneurship and Innovation Toolkit, chapter 4 (Lee A. Swanson)",
+      "publisher": "University of Saskatchewan, OPENPRESS.USASK.CA",
+      "url": "https://openpress.usask.ca/entrepreneurshipandinnovationtoolkit/",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Adapted from Entrepreneurship and Innovation Toolkit by Lee A. Swanson (University of Saskatchewan, 2017), CC BY-SA 4.0; this note is under CC BY-SA 4.0",
+      "accessed": "2026-11-24",
+      "topics": [
+        "mvp"
+      ],
+      "playSources": [
+        "swanson-toolkit"
+      ],
+      "notes": [
+        {
+          "heading": "Lean start-up and the minimum viable product",
+          "locator": "Chapter 4, Business Models",
+          "content": "A lean start-up releases a minimum viable product early, expecting it to change with customer feedback. The loop is build, measure how the market reacts, and learn whether to pivot or persevere. It is a cheap way to find what has appeal before building the whole business."
+        }
+      ]
+    }
+  ]
+}

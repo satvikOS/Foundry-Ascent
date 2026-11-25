@@ -309,7 +309,7 @@ export class AppStack extends Stack {
     // Bedrock: only the effective models (lib/models.ts). Converse/ConverseStream authorize through
     // InvokeModel/InvokeModelWithResponseStream. Profiles are granted in the invoking region; the foundation model
     // behind them where the profile routes: the destination regions of a geography profile whose model card was
-    // checked (Claude Haiku 4.5's `us.` profile: us-east-1, us-east-2, us-west-2), every region otherwise, plus the
+    // checked (Nova 2 Lite's `us.` profile: us-east-1, us-east-2, us-west-2), every region otherwise, plus the
     // region-less ARN that `global.` profiles are authorized against.
     const foundationModelArn = (modelId: string, region = '*'): string =>
       `arn:${Aws.PARTITION}:bedrock:${region}::foundation-model/${modelId}`;

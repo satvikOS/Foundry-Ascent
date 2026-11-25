@@ -1,11 +1,13 @@
-# ADR-0024: The coach on GPT-6 Luna through Bedrock Converse (prepared, switched off)
+# ADR-0024: The coach on Amazon Nova 2 Lite now; GPT-6 Luna prepared behind a one-line switch
 
-- **Status:** Proposed (the gateway, permissions and measurements are in place; production still runs ADR-0022's Claude
-  Haiku 4.5). Accepted when the switch below is made. It would amend ADR-0022 (the coach's model) and replace the path
-  ADR-0014 reserved for Luna (Bedrock Mantle, `models.luna`).
+- **Status:** Accepted on 2026-11-24 (it supersedes [ADR-0022](0022-coach-on-claude-haiku.md): the coach is Amazon Nova
+  2 Lite, not Claude Haiku 4.5). The Luna half is prepared and switched off: the gateway, permissions and measurements
+  are in place, and the switch below stays one line. It replaces the path ADR-0014 reserved for Luna (Bedrock Mantle,
+  `models.luna`).
 - **Date:** 2026-11-24
 - **Deciders:** Platform owner. Request of **2026-11-24**: a cheaper coach ("GPT-6 Luna, else Nova 2 Lite; not Haiku
-  4.5") and "better cheaper faster stronger embedding models", with replies that cite what they rest on.
+  4.5") and "better cheaper faster stronger embedding models", with replies that cite what they rest on. Decision of
+  **2026-11-24**: Nova 2 Lite now, because the lab's run 45515468231 was refused Luna with `AccessDeniedException`.
 - **Basis:** GPT-6 Luna's Amazon Bedrock model card and the Converse reference (checked 2026-11-24).
 
 ## Context and problem statement
@@ -18,6 +20,23 @@ the account may call it there is unknown until a run tries. Embeddings have been
 against what else Bedrock offers.
 
 ## Decision
+
+0. **Production's coach is Amazon Nova 2 Lite**: `models.primary` `us.amazon.nova-2-lite-v1:0`, `models.fallback`
+   `global.amazon.nova-2-lite-v1:0` (the same model through the global profile), in `infra/cdk/config/production.json`.
+   The models suite of lab run 45515468231 (2026-11-24) refused `us.openai.gpt-6-luna` with `AccessDeniedException`, so
+   the first choice cannot be had; Nova answered, against Claude Haiku 4.5 on the same run:
+
+   | Measured in the lab, 2026-11-24 | Nova 2 Lite | Claude Haiku 4.5 |
+   | ------------------------------- | ----------- | ---------------- |
+   | First token, p50                | 675 ms      | 569 ms           |
+   | Whole reply                     | 0.96 s      | 1.96 s           |
+   | Structured answer               | 2.0 s       | 5.9 s            |
+   | Cost per reply                  | USD 0.0005  | USD 0.0025       |
+
+   Haiku starts a little sooner; Nova finishes in half the time and costs a fifth. The app's roles no longer hold any
+   Claude permission, and the usage ledger keeps Haiku's earlier rows under their own name. Haiku 4.5 stays in the lab
+   (the live evaluation's first judge of a Nova coach, a benchmark candidate, an A/B arm by editing `live.coach`).
+   The decisions that follow are Luna's, prepared for the day AWS grants it.
 
 1. **Luna runs on the Converse adapter** (`packages/ai/src/gateway/nova.ts`), as `us.openai.gpt-6-luna` or
    `global.openai.gpt-6-luna`; the bare id stays Mantle's. What its requests carry, from the model card and what other
@@ -50,23 +69,23 @@ against what else Bedrock offers.
    "primary": "us.openai.gpt-6-luna",
    ```
 
-   `fallback` is already `us.amazon.nova-2-lite-v1:0`; the background route, embeddings and caps do not change.
-   `infra/cdk/test/models.test.ts` ("GPT-6 Luna as the coach") proves the environment and permissions of that
-   configuration today. The tests that state production's current coach (`models.test.ts`, the app template's snapshot,
-   `ops/lab/tests/test_config.py`) change with it.
+   `fallback` stays `global.amazon.nova-2-lite-v1:0`, so Nova is behind Luna; the background route, embeddings and caps
+   do not change. `infra/cdk/test/models.test.ts` ("GPT-6 Luna as the coach") proves the environment and permissions of
+   that configuration today. The tests that state production's current coach (`models.test.ts`, the app template's
+   snapshot, `ops/lab/tests/test_config.py`) change with it.
 
-## Make the switch when
+## Make the Luna switch when
 
 1. the `models` suite shows `us.openai.gpt-6-luna` answering, with a first token at p50 of 1.2 s or less and structured
    output valid on the first answer or after one repair every time;
 2. the live evaluation's Luna arm, graded by the same judge as the default arm (`judge_model=ab`), is not below it on
    the brief's dimensions, and the founder path's own acceptance run passes on it;
-3. if Luna is refused, the coach becomes Nova 2 Lite instead: `primary` `us.amazon.nova-2-lite-v1:0`, `fallback`
-   `global.amazon.nova-2-lite-v1:0`.
+3. the account is granted Luna (run 45515468231 was refused: `AccessDeniedException`); until then the coach stays Nova
+   2 Lite.
 
 ## Consequences
 
-- Good: about a tenth of Haiku's price per token; the same endpoint, adapter, fallback rules and spend caps.
+- Good: Nova 2 Lite costs a fifth of Haiku per reply and finishes one in half the time; Luna would be about a tenth of Haiku's price per token; the same endpoint, adapter, fallback rules and spend caps.
 - Good: the fallback is another provider's model, so an outage of one does not take both.
 - Bad: Luna's caching is implicit: no checkpoint guarantees a hit. A cold prefix costs the cache-write rate (1.25 times
   input), which the gateway meters.
@@ -76,7 +95,7 @@ against what else Bedrock offers.
 
 ## Rollback
 
-Set `models.primary` back to `us.anthropic.claude-haiku-4-5-20251001-v1:0` and deploy. No data changes.
+Set `models.primary` back to `us.anthropic.claude-haiku-4-5-20251001-v1:0` and `models.fallback` to `us.amazon.nova-2-lite-v1:0`, restore Haiku's permission lines (the app role's snapshot shows them), and deploy. No data changes.
 
 ## Embeddings and reranking
 
@@ -90,3 +109,4 @@ passages to us-west-2.
 
 - AWS offers explicit cache checkpoints on Converse for Luna, or lists a price change on its model card.
 - The models suite shows a candidate ahead of production's on quality at no more cost and latency.
+- The account is granted GPT-6 Luna: run the models suite and the live A/B again, then the switch above.

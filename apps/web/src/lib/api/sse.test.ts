@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { makeGuidance } from '@/features/path/testing';
+
 import { ApiError } from './errors';
 import { parseTurnStreamFrame, readTurnStream, SseParser, streamTurn, type TurnStreamEventT } from './sse';
 
@@ -107,6 +109,30 @@ describe('SseParser', () => {
 });
 
 describe('parseTurnStreamFrame', () => {
+  it('reads the path’s step (turn.guidance), named by its event or its type, with or without a turn id', () => {
+    const guidance = makeGuidance();
+    for (const [event, payload] of [
+      ['turn.guidance', { event: 'turn.guidance', turnId: TURN_ID, guidance }],
+      ['turn.guidance', { type: 'turn.guidance', guidance }],
+      ['message', { type: 'turn.guidance', guidance }],
+    ] as const) {
+      const parsed = parseTurnStreamFrame({
+        event,
+        data: JSON.stringify(payload),
+        id: undefined,
+        retry: undefined,
+      });
+      expect(parsed).toMatchObject({ event: 'turn.guidance', guidance: { step: { id: guidance.step?.id } } });
+    }
+  });
+
+  it('leaves out a step it cannot read instead of failing the turn (the stored turn carries it too)', () => {
+    const data = JSON.stringify({ event: 'turn.guidance', guidance: { step: 'soon' } });
+    expect(
+      parseTurnStreamFrame({ event: 'turn.guidance', data, id: undefined, retry: undefined }),
+    ).toBeNull();
+  });
+
   it('validates events against the TurnStreamEvent contract', () => {
     const event = parseTurnStreamFrame({
       event: 'turn.status',

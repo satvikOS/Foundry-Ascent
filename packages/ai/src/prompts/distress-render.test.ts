@@ -322,3 +322,32 @@ describe('a message in distress renders as main rendered it (review of the 2026-
     });
   });
 });
+
+describe('matter and the size of a step are not the founder’s state (founder path, 2026-11-24)', () => {
+  it.each([
+    'Our hydrogel removes dead tissue from a wound in the lab.',
+    'We found that the coating kills bacteria and leaves no dead cells behind.',
+    'The sensor spots dying crops from the air.',
+    'Half our returns are dead batteries.',
+    "That's too much before my finals, give me something smaller.",
+    'This is way too much for me right now, I only have one evening.',
+    "It's too much. What's the smallest step?",
+  ])('%j is not in distress', (message) => {
+    expect(inDistress(message)).toBe(false);
+  });
+
+  it.each([
+    'I feel dead inside',
+    'I wish I was dead',
+    "I'm dead weight to this team",
+    'i feel like dying',
+    "That's too much",
+    'its all too much, i only have one evening left in me',
+    "this is too much, i can't do this anymore, give me something smaller",
+    "It's too much and I can't cope. I need something smaller.",
+    'We clear dead tissue and honestly I cannot keep going',
+    'Dead batteries again. I give up.',
+  ])('%j still is', (message) => {
+    expect(inDistress(message)).toBe(true);
+  });
+});

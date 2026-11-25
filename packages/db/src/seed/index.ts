@@ -16,6 +16,14 @@ export {
   type LabAgendaVenture,
 } from './lab-agenda-ventures.js';
 export {
+  ageVenturePathForLab,
+  parseLabClientPlan,
+  seedLabClientVentures,
+  type LabClientRecordItem,
+  type LabClientVenture,
+  type LabClientVenturePlan,
+} from './lab-client-ventures.js';
+export {
   LAB_LIVE_MAX_ENTRIES,
   parseLabLivePlan,
   seedLabLiveVentures,

@@ -731,6 +731,8 @@ def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
         return tables(result)
     if suite == "face":
         return _face_tables(result.get("face") or {})
+    if suite == "client":
+        return [str(result.get("client_md") or "")]
     scenarios: Sequence[Mapping[str, Any]] = result.get("scenarios") or []
     greeting = result.get("greeting") if suite == "recall" else None
     if greeting:

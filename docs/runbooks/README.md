@@ -17,6 +17,7 @@ verify and reverse them. Decisions behind them are in the [ADRs](../architecture
 | [Latency](latency.md)                                                       | Where a turn's time goes, measuring it locally and in production, and what was done to make it faster                     |
 | [The vEIR's face and voice](avatars.md)                                     | Turning on the video face (HeyGen) and cloned voice (ElevenLabs): accounts, keys, recordings, consent, costs, stopping it |
 | [The vEIR's live voice](elevenlabs-voice.md)                                | The ElevenLabs stock voice ("AI voice"): key sync and plan check, the chosen voice, fallback to Polly, live checks        |
+| [Changing the embedding model](embedding-model.md)                          | Moving retrieval to another embedding model online, calibrating its floors, measuring retrieval                           |
 | [Local development](local-development.md)                                   | Running and testing everything on one machine                                                                             |
 
 The one-time legacy AWS cleanup (removal of pre-existing resources, closed 2026-10-06) is in git history:

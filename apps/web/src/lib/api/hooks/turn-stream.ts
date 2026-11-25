@@ -1,4 +1,4 @@
-import type { TurnStatusPhase, TurnView } from '@foundry/contracts';
+import type { TurnGuidance, TurnStatusPhase, TurnView } from '@foundry/contracts';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import type { z } from 'zod';
@@ -58,6 +58,11 @@ export interface TurnStreamState {
   units: StreamUnit[];
   /** The units joined into the answer prose shown while the turn streams ('' before the first unit). */
   streamedText: string;
+  /**
+   * The step the path chose for this turn (`turn.guidance`, sent before the answer's text), shown as its step card at
+   * once; the completed turn's own replaces it. Null before it arrives, and on turns without one.
+   */
+  guidance: TurnGuidance | null;
 }
 
 export interface StreamUnit {
@@ -92,9 +97,14 @@ const INITIAL: TurnStreamState = {
   autoRetryAt: null,
   units: [],
   streamedText: '',
+  guidance: null,
 };
 
-const NO_UNITS = { units: [], streamedText: '' } satisfies Pick<TurnStreamState, 'units' | 'streamedText'>;
+/** A turn that was stopped, held back or failed shows nothing of its reply: no text, no step. */
+const NO_REPLY = { units: [], streamedText: '', guidance: null } satisfies Pick<
+  TurnStreamState,
+  'units' | 'streamedText' | 'guidance'
+>;
 
 type Action =
   | { type: 'start'; text: string }
@@ -118,12 +128,12 @@ export function turnStreamReducer(state: TurnStreamState, action: Action): TurnS
     case 'reset':
       return INITIAL;
     case 'cancelled':
-      if (state.status === 'streaming') return { ...state, ...NO_UNITS, status: 'cancelled', phase: null };
+      if (state.status === 'streaming') return { ...state, ...NO_REPLY, status: 'cancelled', phase: null };
       return state.autoRetryAt === null ? state : { ...state, autoRetryAt: null };
     case 'autoRetry':
       return { ...state, autoRetryAt: action.at };
     case 'failed':
-      return { ...state, ...NO_UNITS, status: 'failed', phase: null, error: action.error };
+      return { ...state, ...NO_REPLY, status: 'failed', phase: null, error: action.error };
     case 'event': {
       const event = action.event;
       switch (event.event) {
@@ -152,6 +162,12 @@ export function turnStreamReducer(state: TurnStreamState, action: Action): TurnS
           const units = [...state.units, { seq: event.seq, text: event.text }].sort((a, b) => a.seq - b.seq);
           return { ...state, turnId: event.turnId, units, streamedText: joinStreamUnits(units) };
         }
+        case 'turn.guidance':
+          // Another turn's (a late frame after a resend), or after the turn ended: ignored.
+          if (state.status !== 'streaming') return state;
+          if (event.turnId !== undefined && state.turnId !== null && event.turnId !== state.turnId)
+            return state;
+          return { ...state, guidance: event.guidance };
         case 'turn.speech':
         case 'turn.audio':
           // Spoken units and their audio belong to a call (the call engine reads them through `onEvent`).
@@ -164,11 +180,12 @@ export function turnStreamReducer(state: TurnStreamState, action: Action): TurnS
             turn: event.turn,
             turnId: event.turn.id,
             ordinal: event.turn.ordinal,
+            guidance: event.turn.guidance ?? state.guidance,
           };
         case 'turn.blocked':
           return {
             ...state,
-            ...NO_UNITS,
+            ...NO_REPLY,
             status: 'blocked',
             phase: null,
             blocked: event,
@@ -177,7 +194,7 @@ export function turnStreamReducer(state: TurnStreamState, action: Action): TurnS
         case 'turn.error':
           return {
             ...state,
-            ...NO_UNITS,
+            ...NO_REPLY,
             status: 'failed',
             phase: null,
             turnId: event.turnId ?? state.turnId,

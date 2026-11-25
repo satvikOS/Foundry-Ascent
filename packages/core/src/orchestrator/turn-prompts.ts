@@ -170,8 +170,33 @@ export function continuationMessages(
   ];
 }
 
+/**
+ * What the annotation call is asked about the founder path, when the prompt does not say it already (the coaching
+ * package's output rules): the open step and the criteria a report may name. Their quote is checked by the server.
+ */
+export function pathReportRequest(
+  system: string,
+  guidance: {
+    readonly step: { readonly title: string } | null;
+    readonly criteria?: readonly { readonly id: string; readonly title: string }[];
+  } | null,
+): string[] {
+  if (guidance === null || system.includes('path_report')) return [];
+  if (guidance.step === null) return ['path_report: null.'];
+  const criteria = (guidance.criteria ?? []).map((c) => `${c.id} (${escapeData(c.title)})`).join('; ');
+  return [
+    `path_report: null unless their message itself says something happened on their step "${escapeData(guidance.step.title)}"`,
+    '(step: done, started, blocked or dropped; quote: their words for it, copied exactly from <founder_message>) or shows',
+    `one of these, with their exact words as its quote: ${criteria === '' ? 'none' : criteria}.`,
+  ];
+}
+
 /** Phase B conversation: the turn's messages, the streamed reply, then the request for its fields. */
-export function annotationMessages(messages: readonly ChatMessage[], answer: string): ChatMessage[] {
+export function annotationMessages(
+  messages: readonly ChatMessage[],
+  answer: string,
+  pathReport: readonly string[] = [],
+): ChatMessage[] {
   return [
     ...messages,
     { role: 'assistant', content: answer },
@@ -183,6 +208,7 @@ export function annotationMessages(messages: readonly ChatMessage[], answer: str
         `reply as one ${COACH_ANNOTATIONS_SCHEMA_NAME} object: the mode you answered in, the claims it makes (facts`,
         'cite ids from the <evidence> block), uncertainty, challenge, next actions, escalation, memory candidates,',
         'follow-up questions and rehearsal, following your instructions. Do not change or repeat the reply.',
+        ...pathReport,
         '</annotation_request>',
       ].join('\n'),
     },

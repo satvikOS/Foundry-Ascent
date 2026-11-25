@@ -44,6 +44,15 @@ export function canWrite(me: Me | null | undefined, ventureId: string): boolean 
   return isMember(me, ventureId, ['founder', 'team']);
 }
 
+/**
+ * Can read the venture's path: founders and the team, its assigned EIR, and a program lead or platform admin (its shape
+ * only). An advisor reads the venture but not its conversations, and not its path either.
+ */
+export function canReadPath(me: Me | null | undefined, ventureId: string): boolean {
+  if (canWrite(me, ventureId) || isAssignedEir(me, ventureId)) return true;
+  return !isMember(me, ventureId) && canManageAnyTeam(me);
+}
+
 /** Whether the person is a founder or team member of any venture (holds conversations of their own). */
 export function writesAnyVenture(me: Me | null | undefined): boolean {
   return Boolean(me?.memberships.some((m) => m.role === 'founder' || m.role === 'team'));

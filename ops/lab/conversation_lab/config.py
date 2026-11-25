@@ -310,3 +310,10 @@ def budget_parts(suite: str, budget_usd: float, app_share: float | None = None) 
     share = APP_SHARE[suite] if app_share is None else app_share
     app = floor_cents(budget_usd * share)
     return app, max(0.0, round(budget_usd - app, 2))
+
+
+#: The client's own test (conversation_lab/client), on its own like the other extra suites: the coach's turns, then the
+#: judge of the client's questions and the small adversarial set's simulator.
+EXTRA_SUITES += ("client",)
+APP_SHARE["client"] = 0.8
+SUITE_WEIGHT["client"] = 1

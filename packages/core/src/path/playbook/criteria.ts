@@ -1,0 +1,186 @@
+import type { PathCriterion } from '@foundry/contracts';
+
+/** What each stage asks a venture to show, and the play that produces it. Counts are targets of the programme. */
+export const CRITERIA: readonly PathCriterion[] = [
+  {
+    id: 'idea-one-page',
+    stage: 'idea',
+    title: 'The idea is on one page',
+    evidence: 'Five lines written: who, the problem, what they do today, your idea, and why you.',
+    playId: 'idea-on-a-page',
+  },
+  {
+    id: 'idea-who-pays',
+    stage: 'idea',
+    title: 'You know who uses it and who pays',
+    evidence:
+      'The user, the customer who pays and the person who says yes are named, even when they are one person.',
+    playId: 'customer-user-buyer',
+  },
+  {
+    id: 'idea-biggest-risk',
+    stage: 'idea',
+    title: 'The thing most likely to sink it is named',
+    evidence: 'One sentence says what must be true, and one test that could show it is false has a date.',
+    playId: 'biggest-reason-to-fail',
+  },
+  {
+    id: 'discovery-ten-conversations',
+    stage: 'discovery',
+    title: 'Ten people told you about the last time',
+    evidence:
+      'Notes from 10 conversations, at most 3 with friends, each about the last time the problem happened.',
+    playId: 'interview-script',
+  },
+  {
+    id: 'discovery-pattern',
+    stage: 'discovery',
+    title: 'You can show the pattern in what they said',
+    evidence:
+      'A table of the interviews with the top problem, what they do now and a quote from at least 5 of them.',
+    playId: 'synthesize-interviews',
+  },
+  {
+    id: 'discovery-alternatives',
+    stage: 'discovery',
+    title: 'You know what you compete with',
+    evidence: 'Three things people use today are listed with what each costs them in money, time or hassle.',
+    playId: 'competitors',
+  },
+  {
+    id: 'discovery-first-group',
+    stage: 'discovery',
+    title: 'One group to serve first is chosen',
+    evidence: 'One group is named, with where to find 20 of them and one reason the others wait.',
+    playId: 'beachhead',
+  },
+  {
+    id: 'validation-promise',
+    stage: 'validation',
+    title: 'The promise is clear in one sentence',
+    evidence: 'One sentence a stranger in the group can repeat back, tried on at least 5 of them.',
+    playId: 'value-proposition',
+  },
+  {
+    id: 'validation-test-card',
+    stage: 'validation',
+    title: 'A test with a pass line is written down',
+    evidence: 'A test card with the belief, the test, the number to measure, the pass line and the end date.',
+    playId: 'experiment-design',
+  },
+  {
+    id: 'validation-commitment',
+    stage: 'validation',
+    title: 'Strangers have committed something',
+    evidence: 'At least 5 people who are not friends paid, pre-ordered, signed or gave real time.',
+    playId: 'pre-sale',
+  },
+  {
+    id: 'validation-decision',
+    stage: 'validation',
+    title: 'You decided from the result',
+    evidence: 'The result is next to the pass line, with the decision written: keep, change or stop.',
+    playId: 'read-results',
+  },
+  {
+    id: 'model-canvas',
+    stage: 'business_model',
+    title: 'The Business Model Canvas is ready to submit',
+    evidence:
+      'All nine boxes filled for one customer group, each marked proven or guess, for the Module 1 capstone.',
+    playId: 'ain-canvas-capstone',
+  },
+  {
+    id: 'model-price',
+    stage: 'business_model',
+    title: 'A price has been tried on buyers',
+    evidence: 'One price was offered to at least 5 buyers, with each yes, no and reason written down.',
+    playId: 'price-test',
+  },
+  {
+    id: 'model-unit-economics',
+    stage: 'business_model',
+    title: 'One sale leaves money over',
+    evidence:
+      'A one-sale table with your own price, costs per sale and cost to win a customer, with what is left.',
+    playId: 'unit-economics',
+  },
+  {
+    id: 'model-money-needed',
+    stage: 'business_model',
+    title: 'You know the money to get going',
+    evidence: 'A list of one-time and monthly costs, with the money to reach the next proof point.',
+    playId: 'money-to-start',
+  },
+  {
+    id: 'sales-ten-customers',
+    stage: 'commercialization',
+    title: 'Ten customers who are not friends',
+    evidence: 'A list of 10 paying or signed customers with the date, the price and how each was found.',
+    playId: 'first-ten-customers',
+  },
+  {
+    id: 'sales-channel',
+    stage: 'commercialization',
+    title: 'One channel is ahead of the others',
+    evidence: 'Three channels tried for a week each, with customers won and hours spent, and one chosen.',
+    playId: 'channel-choice',
+  },
+  {
+    id: 'sales-metric',
+    stage: 'commercialization',
+    title: 'One number runs the week',
+    evidence: 'One metric is written with its last 4 weekly values.',
+    playId: 'one-metric',
+  },
+  {
+    id: 'sales-pitch',
+    stage: 'commercialization',
+    title: 'The pitch is ready to submit',
+    evidence: 'A pitch rehearsed in front of 3 people, timed, and submitted for the Module 2 capstone.',
+    playId: 'ain-pitch-capstone',
+  },
+  {
+    id: 'growth-customers-stay',
+    stage: 'growth',
+    title: 'Customers come back',
+    evidence: 'For one group of customers who started together: how many were still buying 4 weeks later.',
+    playId: 'retention',
+  },
+  {
+    id: 'growth-repeatable',
+    stage: 'growth',
+    title: 'Sales repeat without heroics',
+    evidence:
+      'Four weeks of sales from one channel, with someone other than the founder closing at least one.',
+    playId: 'scaling-readiness',
+  },
+  {
+    id: 'growth-plan',
+    stage: 'growth',
+    title: 'The business plan is ready to submit',
+    evidence: 'A plan built from your own results, with the numbers sourced, for the Module 3 capstone.',
+    playId: 'ain-plan-capstone',
+  },
+  {
+    id: 'transition-ready',
+    stage: 'transition',
+    title: 'The readiness check is done',
+    evidence: 'The six-line check is filled with evidence and reviewed with your EIR.',
+    playId: 'leaving-ain',
+  },
+  {
+    id: 'transition-next-home',
+    stage: 'transition',
+    title: 'The next home is chosen',
+    evidence: 'Three options compared, one chosen, and an application or introduction sent.',
+    playId: 'next-home',
+  },
+  {
+    id: 'transition-handover',
+    stage: 'transition',
+    title: 'The venture can run after you graduate',
+    evidence: 'A one-page handover: who does what, what is owned, what is owed and the next 90 days.',
+    playId: 'after-graduation',
+  },
+];

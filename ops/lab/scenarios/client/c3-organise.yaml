@@ -1,0 +1,125 @@
+# A first-time founder asks to be organised, says they know no business, then brings a different idea.
+group: organise
+scenarios:
+  - id: OR-01
+    title: an engineer with a record asks to be organised, then brings another idea
+    role: undergrad
+    founder: Dana Whitlock
+    studies: junior in mechanical engineering
+    first_time: true
+    passing: >-
+      The first reply names the venture's own record and gives one step with a done-check and a date. The second explains
+      each business word in plain engineering terms. The third names the venture with a fact of its record, offers both
+      ways (pivot or a separate venture), picks an order for service and consulting, and still gives a first step.
+    venture:
+      {
+        name: ToolTally,
+        oneLiner: Tracks which tools a university machine shop has lent to whom.,
+        stage: validation,
+        domain: software,
+        goal: Turn two pilots into paying shops.,
+      }
+    facts:
+      pilots: [two, '2', pilot*]
+      price: ['35']
+      tools: ['900', tool, tools]
+      sheets: [paper, clipboard*, whiteboard*]
+    record:
+      - {
+          type: milestone,
+          title: Two paid pilots,
+          content: 'Two university machine shops pay 35 dollars a month each.',
+          days_ago: 30,
+        }
+      - {
+          type: evidence,
+          title: What they used before,
+          content: 'One shop kept 900 tools on a clipboard and a whiteboard and lost about 40 a year.',
+          days_ago: 28,
+        }
+    intake:
+      {
+        idea: Tool lending tracker for machine shops,
+        customer: University machine shop managers,
+        studies: Mechanical engineering,
+        experience: first_time,
+        hoursPerWeek: 8,
+        doneSoFar: Two paid pilots,
+        block: Not sure what to do next,
+      }
+    sessions:
+      - turns:
+          - {
+              say: "Hi, I've got a startup idea going. Could you help me get it organised?",
+              expect: { history: [pilots, price, tools, sheets] },
+              judge: [memory, relevance, actionability, ease],
+            }
+          - {
+              say: "Honestly I'm still early, I've never done this, I study engineering and I know nothing about business.",
+              expect: { history: [pilots, price, tools, sheets] },
+              judge: [relevance, actionability, ease],
+            }
+          - {
+              say: 'Different thought. What about AI helpers that fill in the front-desk paperwork for small clinics. Would I do that as a service, as consulting, or both?',
+              expect: { kind: new_idea, pick: [service, consult, both] },
+              judge: [memory, relevance, critical, actionability],
+            }
+          - {
+              say: 'Okay, and what would I do first for that?',
+              expect: { kind: coaching },
+              judge: [actionability],
+            }
+  - id: OR-02
+    title: an engineer with nothing yet asks to be organised
+    role: undergrad
+    founder: Ravi Chandran
+    studies: sophomore in electrical engineering
+    first_time: true
+    passing: One plain first step for someone with only an idea, with how, done-check and date; business words explained.
+    venture:
+      {
+        name: WattWatch,
+        oneLiner: A plug that shows what each dorm appliance costs to run.,
+        stage: idea,
+        domain: hardware,
+        goal: Find out if anyone cares.,
+      }
+    facts: { plug: [plug, appliance*, electricity, energy] }
+    sessions:
+      - turns:
+          - {
+              say: 'I have an idea for a plug that shows what each appliance costs. Can you help me get organised?',
+              expect: { history: [plug] },
+              judge: [relevance, actionability, ease],
+            }
+          - {
+              say: "I'm an engineer, I don't know the business side at all. Where do I even begin?",
+              judge: [relevance, actionability, ease],
+            }
+          - { say: "What's a value proposition, and do I need one now?", judge: [relevance, ease] }
+          - { say: 'Can you give me a plan for the next two weeks?', judge: [actionability] }
+  - id: OR-03
+    title: a first-time founder who gives one-word answers
+    role: undergrad
+    founder: Zoe Marchetti
+    studies: first-year, undeclared
+    first_time: true
+    venture:
+      {
+        name: BikeMend,
+        oneLiner: Bike repairs at the dorm door.,
+        stage: idea,
+        domain: consumer,
+        goal: Get a first paying repair.,
+      }
+    facts: { bikes: [bike*, repair*] }
+    sessions:
+      - turns:
+          - {
+              say: 'I want to fix bikes for people in dorms. help?',
+              expect: { history: [bikes] },
+              judge: [actionability, ease],
+            }
+          - { say: 'ok', expect: { kind: social, must_answer: true } }
+          - { say: 'idk what to do', judge: [actionability, ease] }
+          - { say: 'how much do I charge', judge: [relevance, actionability] }

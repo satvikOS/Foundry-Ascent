@@ -1,11 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router';
 
 import { UsagePage } from '@/features/admin/usage/usage-page';
-import { usageQueryOptions } from '@/lib/api/hooks/admin';
 
 export const Route = createFileRoute('/$tenant/app/admin/usage')({
   loader: ({ context }) => {
-    context.queryClient.query(usageQueryOptions()).catch(() => undefined);
+    // Loaded apart: loaders are in the first page load, the page's contracts are not needed there.
+    void import('@/lib/api/hooks/admin')
+      .then(({ usageQueryOptions }) => context.queryClient.query(usageQueryOptions()))
+      .catch(() => undefined);
   },
   head: () => ({ meta: [{ title: 'Usage' }] }),
   component: UsagePage,

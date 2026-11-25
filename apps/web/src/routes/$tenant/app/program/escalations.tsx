@@ -1,11 +1,15 @@
 import { createFileRoute } from '@tanstack/react-router';
 
 import { EscalationQueuePage } from '@/features/program/escalations/escalation-queue-page';
-import { programEscalationsQueryOptions } from '@/lib/api/hooks/program';
 
 export const Route = createFileRoute('/$tenant/app/program/escalations')({
   loader: ({ context }) => {
-    context.queryClient.query(programEscalationsQueryOptions()).catch(() => undefined);
+    // Loaded apart: loaders are in the first page load, the page's contracts are not needed there.
+    void import('@/lib/api/hooks/program')
+      .then(({ programEscalationsQueryOptions }) =>
+        context.queryClient.query(programEscalationsQueryOptions()),
+      )
+      .catch(() => undefined);
   },
   head: () => ({ meta: [{ title: 'Escalation queue' }] }),
   component: EscalationQueuePage,

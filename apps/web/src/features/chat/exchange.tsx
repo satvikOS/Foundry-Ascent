@@ -15,6 +15,7 @@ import { BlockedPanel } from '../coach/blocked-panel';
 import type { TurnProgress } from '../coach/progress';
 import { CitationKey } from '../coach/response/evidence-chip';
 import { TurnProgressList } from '../coach/turn-progress';
+import { TurnStepCard } from '../path/step-card';
 import { isActionSaved, useAddAction } from './actions';
 import { conversationAnswer } from './answer-text';
 import { savedFromTurn } from './memory-saved';
@@ -104,6 +105,8 @@ interface StoredExchangeProps {
   canEdit: boolean;
   /** The conversation's latest exchange. */
   latest: boolean;
+  /** Its step card is whole (the latest reply's, unless the call review below shows the same step). */
+  stepOpen?: boolean;
   memoryItems: MemoryObjectView[] | undefined;
   escalations: EscalationView[] | undefined;
   /** Null when a new message can be sent; otherwise why not. */
@@ -124,6 +127,7 @@ export function StoredExchange({
   ventureId,
   canEdit,
   latest,
+  stepOpen = latest,
   memoryItems,
   escalations,
   sendDisabledReason,
@@ -176,6 +180,21 @@ export function StoredExchange({
         onShowSources={() => {
           showSources(turn.id);
         }}
+        step={
+          turn.guidance ? (
+            <TurnStepCard
+              guidance={turn.guidance}
+              tenant={tenant}
+              ventureId={ventureId}
+              canEdit={canEdit}
+              latest={stepOpen}
+              evidence={turn.evidence}
+              onAskPerson={() => {
+                onRequestEscalation(turn);
+              }}
+            />
+          ) : null
+        }
         nextActions={{
           saved: savedActions,
           savingIndex:
@@ -313,6 +332,19 @@ export function LiveExchange({
         ) : null}
         {streaming || state.status === 'completed' ? (
           <TurnProgressList progress={progress} className={state.streamedText ? 'mt-3' : undefined} />
+        ) : null}
+        {state.guidance ? (
+          // The step is known before the words: it shows at once, under them, and the words grow above it.
+          <div className="mt-5">
+            <TurnStepCard
+              guidance={state.guidance}
+              tenant={tenant}
+              ventureId={ventureId}
+              canEdit={canRetry}
+              latest
+              busy={streaming}
+            />
+          </div>
         ) : null}
         {state.status === 'blocked' && state.blocked ? (
           <BlockedPanel

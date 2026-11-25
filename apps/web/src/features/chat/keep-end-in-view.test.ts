@@ -139,6 +139,27 @@ describe('useKeepEndInView', () => {
     expect(scrollBy).toHaveBeenCalledWith({ top: 732, behavior: 'instant' });
   });
 
+  it('a page made shorter (an older step folding to a line) is no scroll of the reader’s: it keeps following', () => {
+    const hook = mount();
+    hook.rerender({ changeKey: 'streaming', streaming: true });
+    grow({ end: 2100 });
+    expect(hiddenNow()).toBe(0);
+    // The card above folds: the browser moves the page up to fit, and says so (`scroll`) only after the answer grew on.
+    page.end = 1500;
+    page.scrollY = page.end + page.dock - VIEWPORT;
+    act(() => {
+      for (const callback of observers) callback([], {} as ResizeObserver);
+    });
+    page.end = 1900;
+    window.dispatchEvent(new Event('scroll'));
+    grow({ end: 2400 });
+    expect(hiddenNow()).toBe(0);
+    // The reader's own scroll up still stops it.
+    setScroll(page.scrollY - 600);
+    grow({ end: 2900 });
+    expect(hiddenNow()).toBeGreaterThan(0);
+  });
+
   it('when it finishes, its end clears the composer grown by long chips', () => {
     const hook = mount();
     hook.rerender({ changeKey: 'streaming', streaming: true });

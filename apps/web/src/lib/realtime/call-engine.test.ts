@@ -1,6 +1,8 @@
 import type { CallView, SttGrant, TurnView } from '@foundry/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { makeGuidance } from '@/features/path/testing';
+
 import type { CreateTurnBody, StreamTurnOptions, TurnStreamEventT } from '../api/sse';
 import { ApiError } from '../api/errors';
 import type { HeartbeatResult, StartCallResult } from './call-api';
@@ -333,6 +335,26 @@ describe('CallEngine · speaking over the greeting (LAB-R1)', () => {
       return new Promise<SpeechFetchResult>(() => undefined);
     });
   }
+
+  it('keeps the step the path chose on the call’s turn, through the end of the call', async () => {
+    const h = setup({ grant: null });
+    await startLive(h);
+    const guidance = makeGuidance();
+    h.engine.sendText('What should I do next?');
+    await flush();
+    h.script.push({ event: 'turn.guidance', turnId: TURN_ID, guidance });
+    await flush();
+    expect(h.state().guidance).toBe(guidance);
+    // A social turn (no step of its own) leaves the last one in view.
+    h.script.push(completed());
+    h.script.close();
+    await flush(10);
+    expect(h.state().guidance).toBe(guidance);
+    await h.engine.end();
+    expect(h.state()).toMatchObject({ phase: 'ended', guidance });
+    h.engine.reset();
+    expect(h.state().guidance).toBeNull();
+  });
 
   it('a line typed while the greeting is still on its way stops it and is sent at once', async () => {
     // Lab: every call's first line waited 11–14 s for the greeting to play out.

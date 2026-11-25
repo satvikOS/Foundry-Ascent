@@ -13,8 +13,8 @@ export const EXCERPT_CHARS = 600;
  * SQL expression for an excerpt of at most {@link EXCERPT_CHARS} characters (an ellipsis marks truncation).
  * `expr` must be trusted SQL (a column reference), never user input.
  */
-export function excerptSql(expr: string): string {
-  return `CASE WHEN length(${expr}) > ${EXCERPT_CHARS} THEN left(${expr}, ${EXCERPT_CHARS - 1}) || '…' ELSE ${expr} END`;
+export function excerptSql(expr: string, chars: number = EXCERPT_CHARS): string {
+  return `CASE WHEN length(${expr}) > ${chars} THEN left(${expr}, ${chars - 1}) || '…' ELSE ${expr} END`;
 }
 
 /**

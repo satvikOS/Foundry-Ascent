@@ -1,5 +1,5 @@
-import { TurnStreamEvent, type CreateTurnRequest } from '@foundry/contracts';
-import type { z } from 'zod';
+import { Id, TurnGuidance, TurnStreamEvent, type CreateTurnRequest } from '@foundry/contracts';
+import { z } from 'zod';
 
 import { path, sendRequest } from './client';
 import { ApiError } from './errors';
@@ -119,8 +119,21 @@ export class SseParser {
   }
 }
 
-export type TurnStreamEventT = z.infer<typeof TurnStreamEvent>;
+/**
+ * The step the path chose for the turn (the founder path), sent before the answer's text so its card shows at once.
+ * `turnId` may be left out: it is the stream's own turn.
+ */
+export const TurnGuidanceEvent = z.object({
+  event: z.literal('turn.guidance'),
+  turnId: Id.optional(),
+  guidance: TurnGuidance,
+});
+export type TurnGuidanceEvent = z.infer<typeof TurnGuidanceEvent>;
+
+export type TurnStreamEventT = z.infer<typeof TurnStreamEvent> | TurnGuidanceEvent;
 const KNOWN_EVENTS = new Set<string>(TurnStreamEvent.options.map((o) => o.shape.event.value));
+/** Never ends a turn: a guidance frame this page cannot read is left out (the stored turn carries it too). */
+const GUIDANCE_EVENT = 'turn.guidance';
 
 /**
  * Validate one frame against the TurnStreamEvent contract. The event name may come from the `event:`
@@ -141,6 +154,11 @@ export function parseTurnStreamFrame(frame: SseFrame): TurnStreamEventT | null {
   }
   const record = payload as Record<string, unknown>;
   const name = typeof record.event === 'string' ? record.event : frame.event;
+  // The path's frame may name itself with `type` (`{ type: 'turn.guidance', guidance }`).
+  if (name === GUIDANCE_EVENT || record.type === GUIDANCE_EVENT) {
+    const guidance = TurnGuidanceEvent.safeParse({ ...record, event: GUIDANCE_EVENT });
+    return guidance.success ? guidance.data : null;
+  }
   if (!KNOWN_EVENTS.has(name)) return null;
   if (frame.event !== 'message' && frame.event !== name) {
     throw new ApiError({ status: 200, code: 'invalid_response', title: 'Stream event name mismatch' });

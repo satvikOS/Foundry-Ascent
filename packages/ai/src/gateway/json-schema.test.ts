@@ -121,7 +121,11 @@ describe('toStrictJsonSchema', () => {
       rehearsal: null,
     };
     // The model must send it; null means "nothing to say aloud" and parses as absent.
-    const silent = validateStructured({ ...response, spoken: null }, CoachResponse, strict);
+    const silent = validateStructured(
+      { ...response, spoken: null, path_report: null },
+      CoachResponse,
+      strict,
+    );
     expect(silent).toEqual({ ok: true, value: response, repairs: [] });
     const spoken = validateStructured({ ...response, spoken: 'Run the pilot.' }, CoachResponse, strict);
     expect(spoken.ok && spoken.value.spoken).toBe('Run the pilot.');

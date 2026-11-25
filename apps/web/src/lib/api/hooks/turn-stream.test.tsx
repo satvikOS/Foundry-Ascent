@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { IDS, makeTurn } from '@/features/coach/testing';
+import { makeGuidance } from '@/features/path/testing';
 
 import { queryKeys } from '../query-keys';
 import {
@@ -28,6 +29,7 @@ const IDLE: TurnStreamState = {
   autoRetryAt: null,
   units: [],
   streamedText: '',
+  guidance: null,
 };
 const TURN_ID = '7d1f2c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
 
@@ -183,6 +185,51 @@ describe('turnStreamReducer', () => {
         event: { event: 'turn.delta', turnId: TURN_ID, seq: 1, text: 'Late.' },
       }),
     ).toBe(completed);
+  });
+
+  it('shows the path’s step before the first word, and keeps it when the turn completes', () => {
+    const guidance = makeGuidance();
+    const accepted = turnStreamReducer(turnStreamReducer(IDLE, { type: 'start', text: 'What next?' }), {
+      type: 'event',
+      event: { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+    });
+    const guided = turnStreamReducer(accepted, {
+      type: 'event',
+      event: { event: 'turn.guidance', turnId: TURN_ID, guidance },
+    });
+    expect(guided).toMatchObject({ guidance, streamedText: '', status: 'streaming' });
+    // Another turn's late frame changes nothing.
+    expect(
+      turnStreamReducer(guided, {
+        type: 'event',
+        event: {
+          event: 'turn.guidance',
+          turnId: '8e2f3d5f-2b3c-4d4e-9f0a-1b2c3d4e5f60',
+          guidance: makeGuidance({ stageTitle: 'Other' }),
+        },
+      }),
+    ).toBe(guided);
+    const stored = makeGuidance({ stageTitle: 'Stored' });
+    const completed = (turn: ReturnType<typeof makeTurn>) =>
+      turnStreamReducer(guided, { type: 'event', event: { event: 'turn.completed', turn } });
+    expect(completed(makeTurn({ id: TURN_ID, guidance: stored })).guidance).toBe(stored);
+    expect(completed(makeTurn({ id: TURN_ID })).guidance).toBe(guidance);
+    // A turn that was held back, failed or was stopped shows none of it.
+    expect(turnStreamReducer(guided, { type: 'cancelled' }).guidance).toBeNull();
+    expect(
+      turnStreamReducer(guided, {
+        type: 'event',
+        event: {
+          event: 'turn.blocked',
+          turnId: TURN_ID,
+          reason: 'crisis_support',
+          escalationId: null,
+          supportMessage: 'Call 988.',
+        },
+      }).guidance,
+    ).toBeNull();
+    // A new message starts with none.
+    expect(turnStreamReducer(guided, { type: 'start', text: 'And then?' }).guidance).toBeNull();
   });
 
   it('joins units without running sentences together or doubling spaces', () => {

@@ -116,12 +116,12 @@ filter event = "turn.timing" and outcome = "completed"
   by voice, awsConnectionsOpened > 0
 ```
 
-### Prompt caching (Bedrock: the Claude Haiku 4.5 coach, Nova 2 Lite)
+### Prompt caching (Bedrock: Nova 2 Lite, the coach; Claude Haiku 4.5, the coach until 2026-11-24)
 
 Converse and ConverseStream requests carry cache checkpoints (`cachePoint`) where the prompt stops being the
 same as on the conversation's previous turn (`MODEL_PROMPT_CACHE`, on by default; `off` sends none; the mock and
-Luna ignore it), for the models whose cache rates `pricing.ts` carries (`nova.ts` `usesCachePoints`): Nova and, since
-the coach moved to it (ADR-0022), Claude Haiku 4.5.
+Luna ignore it), for the models whose cache rates `pricing.ts` carries (`nova.ts` `usesCachePoints`): Nova and Claude
+Haiku 4.5 (the coach from ADR-0022 to ADR-0024; the notes below are the figures it was configured with).
 
 What AWS documents for Claude Haiku 4.5 (its Bedrock model card, checked 2026-11-06): explicit caching on Converse and
 ConverseStream; checkpoints in `system`, `messages` and `tools`; at least **4,096 tokens** before a checkpoint (a
@@ -703,7 +703,27 @@ filter event = "turn.timing" and ispresent(endpointReason)
   by endpointReason
 ```
 
-### The coach on Claude Haiku 4.5 (2026-11-06)
+### The coach back on Nova 2 Lite (2026-11-24)
+
+What changed: the coach runs on Amazon Nova 2 Lite again, `us.` profile with the `global.` profile behind it
+(ADR-0024, the owner's decision of 2026-11-24; GPT-6 Luna was the first choice and the account was refused it,
+`AccessDeniedException`, lab run 45515468231). The same lab run measured both through the app's gateway, from the
+account's own region:
+
+| Lab, 2026-11-24             | Nova 2 Lite | Claude Haiku 4.5 |
+| --------------------------- | ----------- | ---------------- |
+| First token, p50            | 675 ms      | 569 ms           |
+| Whole reply                 | 0.96 s      | 1.96 s           |
+| Structured answer (phase B) | 2.0 s       | 5.9 s            |
+| Cost of a reply             | USD 0.0005  | USD 0.0025       |
+
+- The first token is about 100 ms later than Haiku's; the reply is whole twice as fast, because Nova writes its words
+  faster, and phase B (the fields, after the turn is complete: "Phase B after the turn") takes a third of the time.
+- Voice: the first spoken unit waits for the first sentence, so Nova's faster words roughly cancel its later first token
+  (the harness's earlier Nova arm, below, is the reference); the call's return to listening is not affected by phase B.
+- Not remeasured in a production call yet: the Haiku sections below are what the coach was until 2026-11-24.
+
+### The coach on Claude Haiku 4.5 (2026-11-06 to 2026-11-24)
 
 What changed: the coach (every turn's streamed reply and its fields) runs on Claude Haiku 4.5 instead of Nova 2 Lite
 (ADR-0022), with prompt caching (above). Nobody has measured Haiku's time to first token from this account yet, so

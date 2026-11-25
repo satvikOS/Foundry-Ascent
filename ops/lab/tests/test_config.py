@@ -11,10 +11,10 @@ from conversation_lab import config
 
 def test_app_models_follow_the_production_config_while_luna_is_disabled() -> None:
     models = config.app_models()
-    # The coach is Claude Haiku 4.5 with Nova 2 Lite behind it; the background purposes run on Nova (ADR-0022).
+    # The coach is Nova 2 Lite (its global profile behind it); the background purposes run on Nova too (ADR-0024).
     assert models == config.AppModels(
-        primary="us.anthropic.claude-haiku-4-5-20251001-v1:0",
-        fallback="us.amazon.nova-2-lite-v1:0",
+        primary="us.amazon.nova-2-lite-v1:0",
+        fallback="global.amazon.nova-2-lite-v1:0",
         embeddings="amazon.titan-embed-text-v2:0",
         background=config.BackgroundModels(
             primary="us.amazon.nova-2-lite-v1:0",
@@ -24,16 +24,16 @@ def test_app_models_follow_the_production_config_while_luna_is_disabled() -> Non
     )
     # The lab's API process gets the same route (packages/ai router.ts reads these variables).
     assert models.env() == {
-        "MODEL_PRIMARY_ID": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-        "MODEL_FALLBACK_ID": "us.amazon.nova-2-lite-v1:0",
+        "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+        "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
         "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
         "MODEL_BACKGROUND_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
         "MODEL_BACKGROUND_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
         "MODEL_BACKGROUND_PURPOSES": "classification,eval,ingestion,seed",
     }
     assert models.for_purpose("turn") == (
-        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         "us.amazon.nova-2-lite-v1:0",
+        "global.amazon.nova-2-lite-v1:0",
     )
     assert models.for_purpose("distill") == models.for_purpose("turn")
     assert models.for_purpose("eval") == ("us.amazon.nova-2-lite-v1:0", "global.amazon.nova-2-lite-v1:0")
@@ -53,7 +53,8 @@ def test_app_models_put_luna_first_once_enabled(tmp_path: Path) -> None:
     path.write_text(json.dumps(raw), encoding="utf-8")
     models = config.app_models(path)
     assert models.primary == "openai.gpt-6-luna"
-    assert models.fallback == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    # Nova stays behind Luna: the configured primary becomes the fallback.
+    assert models.fallback == "us.amazon.nova-2-lite-v1:0"
     assert models.background == config.app_models().background
 
 

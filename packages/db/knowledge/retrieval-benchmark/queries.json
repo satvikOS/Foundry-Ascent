@@ -1,13 +1,14 @@
 {
   "version": 1,
-  "about": "Synthetic retrieval benchmark: student-style questions, written for this file (no founder's words), paraphrased away from the passages they ask for. expected: passages that answer (any of them counts; ids of packages/db/src/retrieval-benchmark/corpus.ts); hardNegatives: passages on the same subject that do not answer; kind no_answer: nothing in the corpus answers (retrieval must be able to tell).",
+  "about": "Synthetic retrieval benchmark: student-style questions, written for this file (no founder's words), paraphrased away from the passages they ask for. expected: passages that answer (any of them counts; ids of packages/db/src/retrieval-benchmark/corpus.ts; play ids of packages/core/src/path/playbook); hardNegatives: passages on the same subject that do not answer; kind no_answer: nothing in the corpus answers (retrieval must be able to tell): small talk, personal matters, homework, sport, celebrities, coding help, other companies, campus logistics.",
   "queries": [
     {
       "id": "RB-001",
       "kind": "answerable",
       "query": "we ship stuff every week but have no clue if anybody cares, is there a cycle for making small things and finding out",
       "expected": [
-        "skb/framework/F01#1"
+        "skb/framework/F01#1",
+        "open/swanson-eit-lean#1"
       ],
       "hardNegatives": [
         "skb/framework/F08#1",
@@ -19,7 +20,12 @@
       "kind": "answerable",
       "query": "i need one sheet that shows who we serve, how we reach them, what we spend and where the money comes from",
       "expected": [
-        "skb/framework/F02#1"
+        "skb/framework/F02#1",
+        "open/swanson-bp-canvas#2",
+        "notes/m1u2-canvas#1",
+        "notes/m1u2-canvas#2",
+        "play/business-model-canvas",
+        "open/sba-business-plan#5"
       ],
       "hardNegatives": [
         "curriculum/ain-curriculum-module-1#1",
@@ -31,7 +37,8 @@
       "kind": "answerable",
       "query": "our thing has ten features and people shrug, how do i line it up with what actually hurts them",
       "expected": [
-        "skb/framework/F03#1"
+        "skb/framework/F03#1",
+        "play/value-proposition"
       ],
       "hardNegatives": [
         "skb/framework/F05#1",
@@ -43,7 +50,11 @@
       "kind": "answerable",
       "query": "what should happen before i put a whole semester into making it and hiring someone to sell",
       "expected": [
-        "skb/framework/F04#1"
+        "skb/framework/F04#1",
+        "notes/m2u1-customer-discovery#5",
+        "open/swanson-bp-canvas#1",
+        "play/build-first",
+        "play/pre-sale"
       ],
       "hardNegatives": [
         "skb/framework/F01#1",
@@ -55,7 +66,8 @@
       "kind": "answerable",
       "query": "i don't really get how nurses work a shift, how should i come up with something they'd find easy",
       "expected": [
-        "skb/framework/F05#1"
+        "skb/framework/F05#1",
+        "open/swanson-eit-opportunity#2"
       ],
       "hardNegatives": [
         "skb/case/SC13#1",
@@ -67,7 +79,8 @@
       "kind": "answerable",
       "query": "two students same age same major, one moved over to us and one didn't, age groups explain nothing",
       "expected": [
-        "skb/framework/F06#1"
+        "skb/framework/F06#1",
+        "play/jobs-to-be-done"
       ],
       "hardNegatives": [
         "skb/framework/F08#1",
@@ -79,7 +92,8 @@
       "kind": "answerable",
       "query": "a judge asked how big this gets and i said one percent of a billion, what's the proper way",
       "expected": [
-        "skb/framework/F07#1"
+        "skb/framework/F07#1",
+        "play/market-size"
       ],
       "hardNegatives": [
         "skb/framework/F09#1",
@@ -103,7 +117,8 @@
       "kind": "answerable",
       "query": "we burn cash on instagram ads and can't tell if each new buyer ever pays that back",
       "expected": [
-        "skb/framework/F09#1"
+        "skb/framework/F09#1",
+        "play/unit-economics"
       ],
       "hardNegatives": [
         "skb/framework/F08#1",
@@ -476,7 +491,9 @@
       "query": "we passed five thousand accounts, can i tell judges people stick around",
       "expected": [
         "skb/case/SC15#2",
-        "skb/case/SC22#2"
+        "skb/case/SC22#2",
+        "play/one-metric",
+        "play/retention"
       ],
       "hardNegatives": [
         "skb/case/SC15#1",
@@ -501,7 +518,8 @@
       "query": "our trial dorm was a hit, how can i tell whether the other halls behave the same",
       "expected": [
         "skb/case/SC19#2",
-        "skb/case/SC19#3"
+        "skb/case/SC19#3",
+        "play/second-group"
       ],
       "hardNegatives": [
         "skb/case/SC19#1"
@@ -597,7 +615,8 @@
       "query": "we changed the concept five times since september, does that count as learning",
       "expected": [
         "skb/case/SC18#2",
-        "skb/case/SC18#3"
+        "skb/case/SC18#3",
+        "play/pivot-or-persevere"
       ],
       "hardNegatives": [
         "skb/case/SC18#1"
@@ -645,7 +664,9 @@
       "query": "should the do-good side and the money side be one organisation or two",
       "expected": [
         "skb/case/SC23#3",
-        "skb/case/SC23#2"
+        "skb/case/SC23#2",
+        "play/social-venture",
+        "open/sba-structure#7"
       ],
       "hardNegatives": [
         "skb/case/SC23#1"
@@ -680,7 +701,8 @@
       "kind": "answerable",
       "query": "i'm on day one, who should guide me and what should i have on paper when this phase is over",
       "expected": [
-        "skb/stage/idea#1"
+        "skb/stage/idea#1",
+        "play/idea-on-a-page"
       ],
       "hardNegatives": [
         "skb/stage/validation#1",
@@ -693,7 +715,11 @@
       "query": "likes and waitlists aren't enough i guess, what proof do i need before the full version",
       "expected": [
         "skb/stage/validation#1",
-        "method/program-method#1"
+        "method/program-method#1",
+        "play/will-anyone-pay",
+        "play/friends-love-it",
+        "play/pre-sale",
+        "notes/m2u1-customer-discovery#3"
       ],
       "hardNegatives": [
         "skb/stage/idea#1",
@@ -729,7 +755,8 @@
       "kind": "answerable",
       "query": "everything goes through me and volume keeps climbing",
       "expected": [
-        "skb/stage/growth#1"
+        "skb/stage/growth#1",
+        "play/hiring"
       ],
       "hardNegatives": [
         "skb/stage/expansion#1",
@@ -741,7 +768,8 @@
       "kind": "answerable",
       "query": "we want to open in another city, what do i have to check again from zero",
       "expected": [
-        "skb/stage/expansion#1"
+        "skb/stage/expansion#1",
+        "play/second-group"
       ],
       "hardNegatives": [
         "skb/stage/growth#1",
@@ -754,7 +782,9 @@
       "query": "what do i hand in when i finish the first part of the ain programme",
       "expected": [
         "curriculum/ain-curriculum-module-1#2",
-        "curriculum/ain-curriculum-roadmap#1"
+        "curriculum/ain-curriculum-roadmap#1",
+        "play/ain-canvas-capstone",
+        "play/foundry-path"
       ],
       "hardNegatives": [
         "curriculum/ain-curriculum-module-2#2",
@@ -767,7 +797,8 @@
       "query": "give me the list of what is in each third of the programme",
       "expected": [
         "curriculum/ain-curriculum-roadmap#2",
-        "curriculum/ain-curriculum-roadmap#1"
+        "curriculum/ain-curriculum-roadmap#1",
+        "play/foundry-path"
       ],
       "hardNegatives": [
         "curriculum/ain-curriculum-module-1#2"
@@ -815,7 +846,8 @@
       "query": "where in the course do i learn llc versus c-corp",
       "expected": [
         "curriculum/ain-curriculum-module-2#1",
-        "curriculum/ain-curriculum-module-2#2"
+        "curriculum/ain-curriculum-module-2#2",
+        "notes/m2u1-legal-structure#3"
       ],
       "hardNegatives": [
         "curriculum/ain-curriculum-module-1#1"
@@ -827,7 +859,9 @@
       "query": "what's the very last deliverable of the programme",
       "expected": [
         "curriculum/ain-curriculum-module-3#2",
-        "curriculum/ain-curriculum-roadmap#1"
+        "curriculum/ain-curriculum-roadmap#1",
+        "play/ain-plan-capstone",
+        "play/foundry-path"
       ],
       "hardNegatives": [
         "curriculum/ain-curriculum-module-2#2"
@@ -838,7 +872,8 @@
       "kind": "answerable",
       "query": "once i'm done can i come back and help newer students",
       "expected": [
-        "curriculum/ain-curriculum-roadmap#1"
+        "curriculum/ain-curriculum-roadmap#1",
+        "play/student-to-mentor"
       ],
       "hardNegatives": [
         "skb/stage/growth#1",
@@ -851,7 +886,8 @@
       "query": "does the opening block teach the difference between who uses it and who buys it",
       "expected": [
         "curriculum/ain-curriculum-module-1#1",
-        "curriculum/ain-curriculum-module-1#2"
+        "curriculum/ain-curriculum-module-1#2",
+        "notes/m1u2-customer-vs-user#1"
       ],
       "hardNegatives": [
         "curriculum/ain-curriculum-module-2#1",
@@ -877,7 +913,8 @@
       "expected": [
         "method/program-method#2",
         "doctrine/corin/the-last-time-interview",
-        "library/corin/last-time-interview-guide#1"
+        "library/corin/last-time-interview-guide#1",
+        "play/interview-mistakes"
       ],
       "hardNegatives": [
         "library/corin/faq-survey-first#1"
@@ -889,7 +926,8 @@
       "query": "what has to be written on the sheet for a trial so it isn't just showing off",
       "expected": [
         "method/program-method#3",
-        "doctrine/guide/assumptions-to-falsifiable-experiments"
+        "doctrine/guide/assumptions-to-falsifiable-experiments",
+        "play/experiment-design"
       ],
       "hardNegatives": [
         "method/program-method#4"
@@ -915,7 +953,11 @@
         "method/program-method#5",
         "doctrine/guide/business-model-risk-tests",
         "library/corin/pilot-pricing#1",
-        "lesson/corin/free-pilot"
+        "lesson/corin/free-pilot",
+        "play/will-anyone-pay",
+        "play/pre-sale",
+        "play/price-test",
+        "notes/m2u1-customer-discovery#3"
       ],
       "hardNegatives": [
         "library/corin/faq-survey-first#1"
@@ -928,7 +970,10 @@
       "expected": [
         "method/program-method#6",
         "doctrine/ruth/ip-and-licensing-readiness",
-        "library/ruth/tto-meeting#1"
+        "library/ruth/tto-meeting#1",
+        "play/student-ip",
+        "play/patent-now-or-wait",
+        "open/uspto-provisional#4"
       ],
       "hardNegatives": [
         "doctrine/ruth/technical-risk-and-market-risk-ledger"
@@ -952,7 +997,8 @@
       "expected": [
         "doctrine/guide/assumptions-to-falsifiable-experiments",
         "doctrine/corin/smallest-decisive-test",
-        "doctrine/thomas/calibrated-challenge"
+        "doctrine/thomas/calibrated-challenge",
+        "play/biggest-reason-to-fail"
       ],
       "hardNegatives": [
         "method/program-method#4"
@@ -975,7 +1021,8 @@
       "query": "our biggest rival is people just putting up with it",
       "expected": [
         "doctrine/guide/business-model-risk-tests",
-        "method/program-method#5"
+        "method/program-method#5",
+        "play/competitors"
       ],
       "hardNegatives": [
         "doctrine/corin/who-signs-the-cheque"
@@ -1024,7 +1071,8 @@
       "expected": [
         "doctrine/thomas/the-evidence-ladder",
         "doctrine/corin/the-commitment-ladder",
-        "library/corin/commitment-ladder#1"
+        "library/corin/commitment-ladder#1",
+        "play/fake-compliments"
       ],
       "hardNegatives": [
         "library/corin/commitment-ladder#3"
@@ -1060,7 +1108,9 @@
       "expected": [
         "doctrine/thomas/who-decides-and-who-pays",
         "doctrine/corin/who-signs-the-cheque",
-        "lesson/corin/champion-not-buyer"
+        "lesson/corin/champion-not-buyer",
+        "play/b2b-selling",
+        "play/customer-user-buyer"
       ],
       "hardNegatives": [
         "lesson/ruth/pilot-budget-owner"
@@ -1073,7 +1123,8 @@
       "expected": [
         "doctrine/thomas/pricing-from-the-alternative",
         "doctrine/corin/price-from-the-workaround",
-        "library/corin/pilot-pricing#2"
+        "library/corin/pilot-pricing#2",
+        "play/pricing"
       ],
       "hardNegatives": [
         "library/corin/pilot-pricing#1",
@@ -1090,7 +1141,9 @@
         "library/corin/commitment-ladder#1",
         "doctrine/corin/the-last-time-interview",
         "doctrine/guide/customer-discovery-discipline",
-        "library/corin/commitment-ladder#2"
+        "library/corin/commitment-ladder#2",
+        "play/friends-love-it",
+        "play/fake-compliments"
       ],
       "hardNegatives": [
         "library/corin/faq-survey-first#1"
@@ -1126,7 +1179,8 @@
       "expected": [
         "library/corin/last-time-interview-guide#2",
         "method/program-method#2",
-        "doctrine/corin/the-last-time-interview"
+        "doctrine/corin/the-last-time-interview",
+        "play/interview-script"
       ],
       "hardNegatives": [
         "library/corin/last-time-interview-guide#1"
@@ -1138,7 +1192,8 @@
       "query": "just hung up with a student, what do i jot down right away",
       "expected": [
         "library/corin/last-time-interview-guide#3",
-        "method/program-method#2"
+        "method/program-method#2",
+        "play/interview-debrief"
       ],
       "hardNegatives": [
         "library/corin/last-time-interview-guide#1",
@@ -1150,7 +1205,8 @@
       "kind": "answerable",
       "query": "the chat went great, what do i request before leaving",
       "expected": [
-        "library/corin/commitment-ladder#2"
+        "library/corin/commitment-ladder#2",
+        "notes/m3u2-networking-2#10"
       ],
       "hardNegatives": [
         "library/corin/commitment-ladder#3",
@@ -1165,7 +1221,8 @@
         "library/corin/commitment-ladder#3",
         "library/corin/case-campus-marketplace#3",
         "library/corin/faq-survey-first#1",
-        "library/corin/case-campus-marketplace#1"
+        "library/corin/case-campus-marketplace#1",
+        "play/survey-or-talk"
       ],
       "hardNegatives": [
         "library/corin/faq-survey-first#2"
@@ -1236,7 +1293,8 @@
       "kind": "answerable",
       "query": "should i blast a questionnaire to the whole campus right now",
       "expected": [
-        "library/corin/faq-survey-first#1"
+        "library/corin/faq-survey-first#1",
+        "play/survey-or-talk"
       ],
       "hardNegatives": [
         "library/corin/faq-survey-first#2"
@@ -1247,7 +1305,8 @@
       "kind": "answerable",
       "query": "i've heard a dozen stories, what do i put in a questionnaire to see how common it is",
       "expected": [
-        "library/corin/faq-survey-first#2"
+        "library/corin/faq-survey-first#2",
+        "play/survey-or-talk"
       ],
       "hardNegatives": [
         "library/corin/faq-survey-first#1"
@@ -1259,7 +1318,8 @@
       "query": "is it ok if they get the trial at no charge",
       "expected": [
         "library/corin/pilot-pricing#1",
-        "lesson/corin/free-pilot"
+        "lesson/corin/free-pilot",
+        "play/pilot-agreement"
       ],
       "hardNegatives": [
         "library/corin/pilot-pricing#2",
@@ -1271,7 +1331,9 @@
       "kind": "answerable",
       "query": "we got fourteen and said we'd quit below fifteen, can we bend it",
       "expected": [
-        "library/corin/transcript-kill-criterion#1"
+        "library/corin/transcript-kill-criterion#1",
+        "play/read-results",
+        "play/experiment-design"
       ],
       "hardNegatives": [
         "doctrine/corin/smallest-decisive-test",
@@ -1297,7 +1359,9 @@
       "expected": [
         "doctrine/ruth/ip-and-licensing-readiness",
         "library/ruth/tto-meeting#1",
-        "method/program-method#6"
+        "method/program-method#6",
+        "play/patent-now-or-wait",
+        "open/uspto-provisional#4"
       ],
       "hardNegatives": [
         "library/ruth/tto-meeting#3"
@@ -1312,7 +1376,8 @@
         "library/ruth/faq-when-regulation#1",
         "method/program-method#6",
         "lesson/ruth/claim-decides-class",
-        "library/ruth/faq-when-regulation#2"
+        "library/ruth/faq-when-regulation#2",
+        "play/medical-rules"
       ],
       "hardNegatives": [
         "library/ruth/case-wearable-class#3"
@@ -1328,7 +1393,8 @@
         "library/ruth/paid-pilot-design#2",
         "library/ruth/faq-pilot-partner#1",
         "library/ruth/paid-pilot-design#3",
-        "lesson/ruth/pilot-budget-owner"
+        "lesson/ruth/pilot-budget-owner",
+        "play/pilot-agreement"
       ],
       "hardNegatives": [
         "library/ruth/faq-pilot-partner#2"
@@ -1355,7 +1421,8 @@
       "expected": [
         "doctrine/ruth/technical-risk-and-market-risk-ledger",
         "skb/case/SC21#2",
-        "skb/case/SC01#2"
+        "skb/case/SC01#2",
+        "notes/m2u1-customer-discovery#3"
       ],
       "hardNegatives": [
         "library/ruth/pathway-map#1"
@@ -1496,7 +1563,8 @@
       "kind": "answerable",
       "query": "how does a trial become an actual order",
       "expected": [
-        "library/ruth/paid-pilot-design#3"
+        "library/ruth/paid-pilot-design#3",
+        "play/pilot-agreement"
       ],
       "hardNegatives": [
         "library/ruth/paid-pilot-design#1",
@@ -1536,7 +1604,8 @@
         "lesson/ruth/pilot-budget-owner",
         "lesson/corin/champion-not-buyer",
         "library/ruth/faq-pilot-partner#2",
-        "library/ruth/faq-pilot-partner#1"
+        "library/ruth/faq-pilot-partner#1",
+        "play/b2b-selling"
       ],
       "hardNegatives": [
         "library/ruth/case-wearable-class#1"
@@ -1561,7 +1630,8 @@
       "query": "rank these for me: they praised it, introduced me to their boss, put down a card",
       "expected": [
         "library/corin/commitment-ladder#1",
-        "doctrine/corin/the-commitment-ladder"
+        "doctrine/corin/the-commitment-ladder",
+        "play/fake-compliments"
       ],
       "hardNegatives": [
         "library/corin/commitment-ladder#3",
@@ -1649,10 +1719,14 @@
     },
     {
       "id": "RB-139",
-      "kind": "no_answer",
+      "kind": "answerable",
       "query": "can i work on my company while on a student visa",
-      "expected": [],
-      "hardNegatives": []
+      "expected": [
+        "play/international-student"
+      ],
+      "hardNegatives": [
+        "open/sba-structure#6"
+      ]
     },
     {
       "id": "RB-140",
@@ -1784,6 +1858,2049 @@
       "id": "RB-158",
       "kind": "no_answer",
       "query": "which vc led formlabs' last round",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-159",
+      "kind": "answerable",
+      "query": "my buddy and i each own half, no paperwork, what are we on the hook for if someone sues",
+      "expected": [
+        "open/sba-structure#3",
+        "open/sba-structure#8",
+        "play/legal-structure",
+        "play/cofounder-agreement"
+      ],
+      "hardNegatives": [
+        "open/sba-structure#5"
+      ]
+    },
+    {
+      "id": "RB-160",
+      "kind": "answerable",
+      "query": "cheapest way to put a shop name on it without lawyers this week",
+      "expected": [
+        "notes/m2u1-legal-structure#2",
+        "open/sba-register#1"
+      ],
+      "hardNegatives": [
+        "open/sba-structure#4"
+      ]
+    },
+    {
+      "id": "RB-161",
+      "kind": "answerable",
+      "query": "which form lets the profits skip the company tax and land on our own returns",
+      "expected": [
+        "open/sba-structure#4",
+        "open/sba-structure#6",
+        "open/sba-structure#8"
+      ],
+      "hardNegatives": [
+        "open/sba-structure#5",
+        "open/irs-structures#1"
+      ]
+    },
+    {
+      "id": "RB-162",
+      "kind": "answerable",
+      "query": "i'm from india on an f-1, can i be one of the owners in that s thing",
+      "expected": [
+        "open/sba-structure#6"
+      ],
+      "hardNegatives": [
+        "open/sba-structure#5",
+        "play/international-student"
+      ]
+    },
+    {
+      "id": "RB-163",
+      "kind": "answerable",
+      "query": "do i have to pay someone to get the nine digit number from the government",
+      "expected": [
+        "open/irs-ein#1",
+        "open/sba-register#3"
+      ],
+      "hardNegatives": [
+        "open/irs-ein#3"
+      ]
+    },
+    {
+      "id": "RB-164",
+      "kind": "answerable",
+      "query": "the form for our tax number timed out halfway, what are the rules there",
+      "expected": [
+        "open/irs-ein#3"
+      ],
+      "hardNegatives": [
+        "open/irs-ein#1"
+      ]
+    },
+    {
+      "id": "RB-165",
+      "kind": "answerable",
+      "query": "just me, no workers, do i need a federal number at all",
+      "expected": [
+        "open/irs-ein#2",
+        "open/sba-register#3"
+      ],
+      "hardNegatives": [
+        "open/irs-ein#3"
+      ]
+    },
+    {
+      "id": "RB-166",
+      "kind": "answerable",
+      "query": "i made five hundred bucks on stickers, does the government care",
+      "expected": [
+        "open/irs-self-employed#1",
+        "play/taxes"
+      ],
+      "hardNegatives": [
+        "open/irs-self-employed#2"
+      ]
+    },
+    {
+      "id": "RB-167",
+      "kind": "answerable",
+      "query": "nobody takes tax out of my side gig, when do i pay it",
+      "expected": [
+        "open/irs-self-employed#2"
+      ],
+      "hardNegatives": [
+        "open/irs-self-employed#1"
+      ]
+    },
+    {
+      "id": "RB-168",
+      "kind": "answerable",
+      "query": "how do i keep my own cash and the shop's cash apart",
+      "expected": [
+        "open/sba-register#4",
+        "play/taxes"
+      ],
+      "hardNegatives": [
+        "open/sba-startup-costs#3"
+      ]
+    },
+    {
+      "id": "RB-169",
+      "kind": "answerable",
+      "query": "want to sell dumplings at the farmers market, what paperwork",
+      "expected": [
+        "open/sba-register#5",
+        "play/permits-food"
+      ],
+      "hardNegatives": [
+        "open/sba-register#2"
+      ]
+    },
+    {
+      "id": "RB-170",
+      "kind": "answerable",
+      "query": "is a do-good company still allowed to keep earnings",
+      "expected": [
+        "open/sba-structure#7",
+        "play/social-venture"
+      ],
+      "hardNegatives": [
+        "open/sba-structure#5"
+      ]
+    },
+    {
+      "id": "RB-171",
+      "kind": "answerable",
+      "query": "does waiting a year kill the quick placeholder filing",
+      "expected": [
+        "open/uspto-provisional#2"
+      ],
+      "hardNegatives": [
+        "open/uspto-provisional#3"
+      ]
+    },
+    {
+      "id": "RB-172",
+      "kind": "answerable",
+      "query": "what do i put in the cheap first filing so it counts",
+      "expected": [
+        "open/uspto-provisional#3"
+      ],
+      "hardNegatives": [
+        "open/uspto-provisional#1"
+      ]
+    },
+    {
+      "id": "RB-173",
+      "kind": "answerable",
+      "query": "we showed it at a fair in april, is it too late here and in europe",
+      "expected": [
+        "open/uspto-provisional#4",
+        "play/patent-now-or-wait"
+      ],
+      "hardNegatives": [
+        "open/uspto-basics#1"
+      ]
+    },
+    {
+      "id": "RB-174",
+      "kind": "answerable",
+      "query": "if they grant me one, does that mean i'm allowed to make the thing",
+      "expected": [
+        "open/uspto-basics#1"
+      ],
+      "hardNegatives": [
+        "open/uspto-basics#2"
+      ]
+    },
+    {
+      "id": "RB-175",
+      "kind": "answerable",
+      "query": "can i own something that's only in my head so far",
+      "expected": [
+        "open/uspto-basics#2"
+      ],
+      "hardNegatives": [
+        "play/share-the-idea"
+      ]
+    },
+    {
+      "id": "RB-176",
+      "kind": "answerable",
+      "query": "how long is the look of a chair protected",
+      "expected": [
+        "open/uspto-basics#3"
+      ],
+      "hardNegatives": [
+        "open/uspto-trademark#1"
+      ]
+    },
+    {
+      "id": "RB-177",
+      "kind": "answerable",
+      "query": "no cash for a lawyer, who helps inventors file by themselves",
+      "expected": [
+        "open/uspto-basics#4"
+      ],
+      "hardNegatives": [
+        "open/uspto-provisional#3"
+      ]
+    },
+    {
+      "id": "RB-178",
+      "kind": "answerable",
+      "query": "is our source code covered by the same thing as our brand name",
+      "expected": [
+        "open/uspto-ip-types#1"
+      ],
+      "hardNegatives": [
+        "open/uspto-trademark#1"
+      ]
+    },
+    {
+      "id": "RB-179",
+      "kind": "answerable",
+      "query": "little r in a circle next to our name, can we",
+      "expected": [
+        "open/uspto-trademark#2"
+      ],
+      "hardNegatives": [
+        "open/uspto-trademark#1"
+      ]
+    },
+    {
+      "id": "RB-180",
+      "kind": "answerable",
+      "query": "is 'Fresh Pizza' too plain to own as a brand",
+      "expected": [
+        "open/uspto-trademark#1"
+      ],
+      "hardNegatives": [
+        "open/uspto-trademark#2"
+      ]
+    },
+    {
+      "id": "RB-181",
+      "kind": "answerable",
+      "query": "my thesis advisor says the college might own what i made",
+      "expected": [
+        "play/student-ip"
+      ],
+      "hardNegatives": [
+        "play/patent-now-or-wait"
+      ]
+    },
+    {
+      "id": "RB-182",
+      "kind": "answerable",
+      "query": "my aunt wants ten percent for five grand",
+      "expected": [
+        "play/friends-family-money",
+        "open/sec-early-investors#1",
+        "open/sec-exempt#1",
+        "notes/m1u1-mindset-2-funding#1"
+      ],
+      "hardNegatives": [
+        "play/valuation"
+      ]
+    },
+    {
+      "id": "RB-183",
+      "kind": "answerable",
+      "query": "can i put 'we're raising' on instagram",
+      "expected": [
+        "open/sec-solicitation#1",
+        "open/sec-exempt#2",
+        "open/sec-exempt#3"
+      ],
+      "hardNegatives": [
+        "open/sec-solicitation#2"
+      ]
+    },
+    {
+      "id": "RB-184",
+      "kind": "answerable",
+      "query": "is a campus showcase in front of rich people like advertising shares",
+      "expected": [
+        "open/sec-solicitation#2"
+      ],
+      "hardNegatives": [
+        "open/sec-solicitation#1"
+      ]
+    },
+    {
+      "id": "RB-185",
+      "kind": "answerable",
+      "query": "how rich does somebody have to be to buy in",
+      "expected": [
+        "open/sec-accredited#1"
+      ],
+      "hardNegatives": [
+        "open/sec-exempt#3"
+      ]
+    },
+    {
+      "id": "RB-186",
+      "kind": "answerable",
+      "query": "we took checks without filing anything, what could happen",
+      "expected": [
+        "open/sec-noncompliance#1"
+      ],
+      "hardNegatives": [
+        "open/sec-exempt#1"
+      ]
+    },
+    {
+      "id": "RB-187",
+      "kind": "answerable",
+      "query": "is seed a legal thing or only a nickname",
+      "expected": [
+        "open/sec-early-investors#3"
+      ],
+      "hardNegatives": [
+        "notes/m3u1-fundraising#5"
+      ]
+    },
+    {
+      "id": "RB-188",
+      "kind": "answerable",
+      "query": "a guy offered money now that turns into shares later",
+      "expected": [
+        "open/sec-startup-securities#2",
+        "notes/m3u1-fundraising#4"
+      ],
+      "hardNegatives": [
+        "open/sec-startup-securities#1"
+      ]
+    },
+    {
+      "id": "RB-189",
+      "kind": "answerable",
+      "query": "what's different about what founders hold versus what outsiders get",
+      "expected": [
+        "open/sec-startup-securities#1"
+      ],
+      "hardNegatives": [
+        "open/sec-startup-securities#2"
+      ]
+    },
+    {
+      "id": "RB-190",
+      "kind": "answerable",
+      "query": "selling slices of the company on a website to regular folks",
+      "expected": [
+        "open/sec-crowdfunding#1"
+      ],
+      "hardNegatives": [
+        "open/sba-fund#4"
+      ]
+    },
+    {
+      "id": "RB-191",
+      "kind": "answerable",
+      "query": "backers who only get the gadget, no ownership",
+      "expected": [
+        "open/sba-fund#4"
+      ],
+      "hardNegatives": [
+        "open/sec-crowdfunding#1"
+      ]
+    },
+    {
+      "id": "RB-192",
+      "kind": "answerable",
+      "query": "borrowing from the bank with no track record, what do they look at",
+      "expected": [
+        "open/sba-fund#5",
+        "open/sba-fund#6"
+      ],
+      "hardNegatives": [
+        "open/swanson-bp-financing#2"
+      ]
+    },
+    {
+      "id": "RB-193",
+      "kind": "answerable",
+      "query": "federal money for turning lab research into something sellable",
+      "expected": [
+        "open/sba-fund#7"
+      ],
+      "hardNegatives": [
+        "open/nsf-icorps#3"
+      ]
+    },
+    {
+      "id": "RB-194",
+      "kind": "answerable",
+      "query": "what do i lose when a fund comes in",
+      "expected": [
+        "open/sba-fund#2",
+        "notes/m3u1-fundraising#2",
+        "open/swanson-bp-financing#2",
+        "open/sec-early-investors#2"
+      ],
+      "hardNegatives": [
+        "notes/m1u1-mindset-2-funding#3"
+      ]
+    },
+    {
+      "id": "RB-195",
+      "kind": "answerable",
+      "query": "one wealthy person's own check versus a firm's money",
+      "expected": [
+        "open/sec-early-investors#2",
+        "notes/m1u1-mindset-2-funding#3",
+        "notes/m1u1-mindset-2-funding#4",
+        "notes/m3u1-fundraising#3"
+      ],
+      "hardNegatives": [
+        "open/sec-accredited#1"
+      ]
+    },
+    {
+      "id": "RB-196",
+      "kind": "answerable",
+      "query": "roughly how big are first checks from relatives and so on",
+      "expected": [
+        "notes/m1u1-mindset-2-funding#5",
+        "open/sec-early-investors#1"
+      ],
+      "hardNegatives": [
+        "open/sec-exempt#1"
+      ]
+    },
+    {
+      "id": "RB-197",
+      "kind": "answerable",
+      "query": "is it smarter to never take other people's cash",
+      "expected": [
+        "notes/m1u1-mindset-2-funding#6",
+        "play/raise-or-grow",
+        "notes/m3u1-bootstrapping#2",
+        "play/bootstrapping",
+        "notes/m3u1-fundraising#1"
+      ],
+      "hardNegatives": [
+        "play/friends-family-money"
+      ]
+    },
+    {
+      "id": "RB-198",
+      "kind": "answerable",
+      "query": "a rival is growing fast, is it worth selling part of us to move quicker",
+      "expected": [
+        "notes/m1u1-mindset-2-funding#7",
+        "play/raise-or-grow"
+      ],
+      "hardNegatives": [
+        "play/scaling-readiness"
+      ]
+    },
+    {
+      "id": "RB-199",
+      "kind": "answerable",
+      "query": "living on noodles and waiting tables while i start",
+      "expected": [
+        "notes/m3u1-bootstrapping#1",
+        "notes/m1u1-mindset-2-funding#2",
+        "play/bootstrapping",
+        "notes/m3u1-fundraising#1"
+      ],
+      "hardNegatives": [
+        "play/money-to-start"
+      ]
+    },
+    {
+      "id": "RB-200",
+      "kind": "answerable",
+      "query": "they sent me a document with preferred and liquidation stuff and want it back friday",
+      "expected": [
+        "play/term-sheet"
+      ],
+      "hardNegatives": [
+        "open/sec-startup-securities#1"
+      ]
+    },
+    {
+      "id": "RB-201",
+      "kind": "answerable",
+      "query": "somebody asked what we're worth and we've sold nothing",
+      "expected": [
+        "play/valuation"
+      ],
+      "hardNegatives": [
+        "play/term-sheet"
+      ]
+    },
+    {
+      "id": "RB-202",
+      "kind": "answerable",
+      "query": "how many months till we're broke",
+      "expected": [
+        "play/runway"
+      ],
+      "hardNegatives": [
+        "play/break-even"
+      ]
+    },
+    {
+      "id": "RB-203",
+      "kind": "answerable",
+      "query": "first coffee with somebody who funds startups, what will they look for",
+      "expected": [
+        "play/investor-meeting"
+      ],
+      "hardNegatives": [
+        "play/find-investors"
+      ]
+    },
+    {
+      "id": "RB-204",
+      "kind": "answerable",
+      "query": "i emailed my slides to sixty funds and heard nothing",
+      "expected": [
+        "play/find-investors",
+        "play/no-replies"
+      ],
+      "hardNegatives": [
+        "play/investor-meeting"
+      ]
+    },
+    {
+      "id": "RB-205",
+      "kind": "answerable",
+      "query": "what happens between meeting a fund and the money arriving",
+      "expected": [
+        "open/sba-fund#3"
+      ],
+      "hardNegatives": [
+        "open/sba-fund#2"
+      ]
+    },
+    {
+      "id": "RB-206",
+      "kind": "answerable",
+      "query": "do banks want the long document or the one pager",
+      "expected": [
+        "open/sba-business-plan#1",
+        "open/sba-fund#5"
+      ],
+      "hardNegatives": [
+        "open/sba-business-plan#5"
+      ]
+    },
+    {
+      "id": "RB-207",
+      "kind": "answerable",
+      "query": "what chapters go in the full document",
+      "expected": [
+        "open/sba-business-plan#2",
+        "play/ain-plan-capstone"
+      ],
+      "hardNegatives": [
+        "open/sba-business-plan#4"
+      ]
+    },
+    {
+      "id": "RB-208",
+      "kind": "answerable",
+      "query": "the story and the spreadsheet in our write-up don't match",
+      "expected": [
+        "open/swanson-bp-plan#2"
+      ],
+      "hardNegatives": [
+        "open/swanson-bp-plan#1"
+      ]
+    },
+    {
+      "id": "RB-209",
+      "kind": "answerable",
+      "query": "nobody will believe my sales numbers",
+      "expected": [
+        "open/swanson-bp-marketing#3",
+        "play/financial-forecast"
+      ],
+      "hardNegatives": [
+        "open/swanson-bp-plan#1"
+      ]
+    },
+    {
+      "id": "RB-210",
+      "kind": "answerable",
+      "query": "how many cups until i stop losing money, rent is 900",
+      "expected": [
+        "play/break-even",
+        "open/sba-startup-costs#4",
+        "open/sba-startup-costs#5"
+      ],
+      "hardNegatives": [
+        "play/unit-economics"
+      ]
+    },
+    {
+      "id": "RB-211",
+      "kind": "answerable",
+      "query": "what will it take to open the doors, i keep forgetting stuff i have to pay for",
+      "expected": [
+        "open/sba-startup-costs#1",
+        "open/sba-startup-costs#3",
+        "play/money-to-start"
+      ],
+      "hardNegatives": [
+        "open/sba-startup-costs#2"
+      ]
+    },
+    {
+      "id": "RB-212",
+      "kind": "answerable",
+      "query": "no clue what a part-timer runs you around here",
+      "expected": [
+        "open/sba-startup-costs#2"
+      ],
+      "hardNegatives": [
+        "open/sba-startup-costs#1"
+      ]
+    },
+    {
+      "id": "RB-213",
+      "kind": "answerable",
+      "query": "where can i look up how many coffee shops are in a county for nothing",
+      "expected": [
+        "open/sba-market-research#3",
+        "play/market-size"
+      ],
+      "hardNegatives": [
+        "open/sba-market-research#1"
+      ]
+    },
+    {
+      "id": "RB-214",
+      "kind": "answerable",
+      "query": "is there too much of this already and what do folks pay now",
+      "expected": [
+        "open/sba-market-research#1",
+        "play/competitors"
+      ],
+      "hardNegatives": [
+        "open/sba-market-research#3"
+      ]
+    },
+    {
+      "id": "RB-215",
+      "kind": "answerable",
+      "query": "write up the rivals one by one, what do i note for each",
+      "expected": [
+        "open/sba-market-research#4",
+        "play/competitors",
+        "open/swanson-bp-marketing#2"
+      ],
+      "hardNegatives": [
+        "open/sba-market-research#1"
+      ]
+    },
+    {
+      "id": "RB-216",
+      "kind": "answerable",
+      "query": "'everybody' is who we sell to, my professor says that's wrong",
+      "expected": [
+        "open/swanson-bp-marketing#1",
+        "play/beachhead",
+        "open/sba-business-plan#6",
+        "play/find-ten-people"
+      ],
+      "hardNegatives": [
+        "open/sba-market-research#1"
+      ]
+    },
+    {
+      "id": "RB-217",
+      "kind": "answerable",
+      "query": "should the chart of us and the others show quality versus price",
+      "expected": [
+        "open/swanson-bp-marketing#2"
+      ],
+      "hardNegatives": [
+        "open/sba-market-research#4"
+      ]
+    },
+    {
+      "id": "RB-218",
+      "kind": "answerable",
+      "query": "will my first buyers leave a rival or be folks not buying at all now",
+      "expected": [
+        "open/swanson-bp-research#2"
+      ],
+      "hardNegatives": [
+        "play/competitors"
+      ]
+    },
+    {
+      "id": "RB-219",
+      "kind": "answerable",
+      "query": "before writing anything, check the trends, the industry, then us",
+      "expected": [
+        "open/swanson-bp-research#1"
+      ],
+      "hardNegatives": [
+        "open/swanson-bp-plan#1"
+      ]
+    },
+    {
+      "id": "RB-220",
+      "kind": "answerable",
+      "query": "where do new opportunities even come from",
+      "expected": [
+        "open/swanson-eit-opportunity#1"
+      ],
+      "hardNegatives": [
+        "play/idea-or-problem"
+      ]
+    },
+    {
+      "id": "RB-221",
+      "kind": "answerable",
+      "query": "is there a government program that makes teams talk to a hundred folks",
+      "expected": [
+        "open/nsf-icorps#1",
+        "open/nsf-icorps#3"
+      ],
+      "hardNegatives": [
+        "open/sba-fund#7"
+      ]
+    },
+    {
+      "id": "RB-222",
+      "kind": "answerable",
+      "query": "can two undergrads and a professor join that science foundation training",
+      "expected": [
+        "open/nsf-icorps#2",
+        "open/nsf-icorps#3"
+      ],
+      "hardNegatives": [
+        "open/nsf-icorps#1"
+      ]
+    },
+    {
+      "id": "RB-223",
+      "kind": "answerable",
+      "query": "people say nice things but i can't tell if they'd buy",
+      "expected": [
+        "notes/m2u1-customer-discovery#3",
+        "play/fake-compliments",
+        "play/friends-love-it",
+        "play/will-anyone-pay",
+        "library/corin/commitment-ladder#3",
+        "doctrine/corin/the-commitment-ladder"
+      ],
+      "hardNegatives": [
+        "play/survey-or-talk"
+      ]
+    },
+    {
+      "id": "RB-224",
+      "kind": "answerable",
+      "query": "we offered three versions and they all picked the one we didn't care about",
+      "expected": [
+        "notes/m2u1-customer-discovery#4"
+      ],
+      "hardNegatives": [
+        "notes/m2u1-customer-discovery#1"
+      ]
+    },
+    {
+      "id": "RB-225",
+      "kind": "answerable",
+      "query": "i hate approaching strangers, can i still do this",
+      "expected": [
+        "notes/m1u1-mindset-1#6",
+        "notes/m3u2-networking-1#4",
+        "notes/m3u2-networking-1#5"
+      ],
+      "hardNegatives": [
+        "notes/m3u2-networking-2#8"
+      ]
+    },
+    {
+      "id": "RB-226",
+      "kind": "answerable",
+      "query": "if i tell people what i'm making won't they copy it",
+      "expected": [
+        "notes/m3u2-networking-1#8",
+        "play/share-the-idea"
+      ],
+      "hardNegatives": [
+        "play/someone-has-my-idea"
+      ]
+    },
+    {
+      "id": "RB-227",
+      "kind": "answerable",
+      "query": "how do i write somebody i don't know on linkedin in a couple lines",
+      "expected": [
+        "notes/m3u2-networking-2#2",
+        "notes/m3u2-networking-2#1",
+        "notes/m3u2-networking-2#3",
+        "play/cold-outreach"
+      ],
+      "hardNegatives": [
+        "notes/m3u2-networking-2#4"
+      ]
+    },
+    {
+      "id": "RB-228",
+      "kind": "answerable",
+      "query": "my messages to managers are long and nobody writes back",
+      "expected": [
+        "notes/m3u2-networking-2#4",
+        "play/cold-outreach",
+        "play/no-replies",
+        "notes/m3u2-networking-2#5"
+      ],
+      "hardNegatives": [
+        "notes/m3u2-networking-2#2"
+      ]
+    },
+    {
+      "id": "RB-229",
+      "kind": "answerable",
+      "query": "zoom with a lady from a hospital tomorrow, what about my camera and notes",
+      "expected": [
+        "notes/m3u2-networking-2#6",
+        "notes/m3u2-networking-2#9"
+      ],
+      "hardNegatives": [
+        "notes/m3u2-networking-2#8"
+      ]
+    },
+    {
+      "id": "RB-230",
+      "kind": "answerable",
+      "query": "what do i send after we hang up so they remember me",
+      "expected": [
+        "notes/m3u2-networking-2#11",
+        "notes/m3u2-networking-2#10"
+      ],
+      "hardNegatives": [
+        "play/interview-debrief"
+      ]
+    },
+    {
+      "id": "RB-231",
+      "kind": "answerable",
+      "query": "at a mixer i freeze",
+      "expected": [
+        "notes/m3u2-networking-2#8",
+        "notes/m3u2-networking-2#7",
+        "play/networking",
+        "notes/m3u2-networking-1#4"
+      ],
+      "hardNegatives": [
+        "notes/m3u2-networking-2#6"
+      ]
+    },
+    {
+      "id": "RB-232",
+      "kind": "answerable",
+      "query": "i'm nineteen, will anyone important even meet me",
+      "expected": [
+        "notes/m3u2-networking-1#6",
+        "play/networking"
+      ],
+      "hardNegatives": [
+        "notes/m3u2-networking-1#1"
+      ]
+    },
+    {
+      "id": "RB-233",
+      "kind": "answerable",
+      "query": "i know nothing about finance or law, am i in over my head",
+      "expected": [
+        "notes/m1u1-mindset-1#4",
+        "play/start-from-zero"
+      ],
+      "hardNegatives": [
+        "play/no-tech-skills"
+      ]
+    },
+    {
+      "id": "RB-234",
+      "kind": "answerable",
+      "query": "what kind of person do i have to be for this",
+      "expected": [
+        "notes/m1u1-mindset-1#2",
+        "notes/m1u1-mindset-1#3"
+      ],
+      "hardNegatives": [
+        "notes/m1u1-mindset-1#7"
+      ]
+    },
+    {
+      "id": "RB-235",
+      "kind": "answerable",
+      "query": "everything keeps going wrong and i take it personally",
+      "expected": [
+        "notes/m1u1-mindset-1#1",
+        "play/stuck"
+      ],
+      "hardNegatives": [
+        "notes/m1u1-mindset-1#2"
+      ]
+    },
+    {
+      "id": "RB-236",
+      "kind": "answerable",
+      "query": "is working at a big firm safer than my own thing",
+      "expected": [
+        "notes/m1u1-mindset-2-team#1",
+        "play/job-or-startup"
+      ],
+      "hardNegatives": [
+        "notes/m1u1-mindset-1#7"
+      ]
+    },
+    {
+      "id": "RB-237",
+      "kind": "answerable",
+      "query": "better to have a great crew or a great concept",
+      "expected": [
+        "notes/m1u1-mindset-2-team#2"
+      ],
+      "hardNegatives": [
+        "play/find-cofounder"
+      ]
+    },
+    {
+      "id": "RB-238",
+      "kind": "answerable",
+      "query": "we're three coders who agree on everything",
+      "expected": [
+        "notes/m1u1-mindset-2-team#3",
+        "play/find-cofounder"
+      ],
+      "hardNegatives": [
+        "notes/m1u1-mindset-2-team#2"
+      ]
+    },
+    {
+      "id": "RB-239",
+      "kind": "answerable",
+      "query": "same app, charge folks once or pay them for their data",
+      "expected": [
+        "notes/m1u1-mindset-2-business-model#2"
+      ],
+      "hardNegatives": [
+        "play/revenue-model"
+      ]
+    },
+    {
+      "id": "RB-240",
+      "kind": "answerable",
+      "query": "how would i know our way of earning works for both sides",
+      "expected": [
+        "notes/m1u1-mindset-2-business-model#1",
+        "notes/m1u1-mindset-2-business-model#3"
+      ],
+      "hardNegatives": [
+        "notes/m1u2-business-model#1"
+      ]
+    },
+    {
+      "id": "RB-241",
+      "kind": "answerable",
+      "query": "kids play with it, moms swipe the card",
+      "expected": [
+        "notes/m1u2-customer-vs-user#1",
+        "play/customer-user-buyer"
+      ],
+      "hardNegatives": [
+        "notes/m1u2-customer-vs-user#2"
+      ]
+    },
+    {
+      "id": "RB-242",
+      "kind": "answerable",
+      "query": "free for readers, shops pay for the space",
+      "expected": [
+        "notes/m1u2-customer-vs-user#2"
+      ],
+      "hardNegatives": [
+        "notes/m1u2-customer-vs-user#1"
+      ]
+    },
+    {
+      "id": "RB-243",
+      "kind": "answerable",
+      "query": "the single figure the whole crew should push up",
+      "expected": [
+        "notes/m1u2-business-model#2",
+        "play/one-metric",
+        "notes/m2u2-pitch#5"
+      ],
+      "hardNegatives": [
+        "skb/framework/F08#1"
+      ]
+    },
+    {
+      "id": "RB-244",
+      "kind": "answerable",
+      "query": "how often do i go back to the one-page grid",
+      "expected": [
+        "notes/m1u2-canvas#2"
+      ],
+      "hardNegatives": [
+        "notes/m1u2-canvas#1"
+      ]
+    },
+    {
+      "id": "RB-245",
+      "kind": "answerable",
+      "query": "how long should the slides be and does anyone read the big document",
+      "expected": [
+        "notes/m2u2-pitch#2",
+        "play/pitch-deck"
+      ],
+      "hardNegatives": [
+        "notes/m2u2-pitch#1"
+      ]
+    },
+    {
+      "id": "RB-246",
+      "kind": "answerable",
+      "query": "what should somebody remember after i talk for ten minutes",
+      "expected": [
+        "notes/m2u2-pitch#3",
+        "open/swanson-bp-pitch#1",
+        "play/pitch-deck"
+      ],
+      "hardNegatives": [
+        "notes/m2u2-pitch#2"
+      ]
+    },
+    {
+      "id": "RB-247",
+      "kind": "answerable",
+      "query": "is making slides useful if we're not raising",
+      "expected": [
+        "notes/m2u2-pitch#4"
+      ],
+      "hardNegatives": [
+        "notes/m2u2-pitch#1"
+      ]
+    },
+    {
+      "id": "RB-248",
+      "kind": "answerable",
+      "query": "got thirty seconds in the elevator with a dean",
+      "expected": [
+        "play/elevator-pitch"
+      ],
+      "hardNegatives": [
+        "play/pitch-deck"
+      ]
+    },
+    {
+      "id": "RB-249",
+      "kind": "answerable",
+      "query": "the contest is in nine days, how do i plan the days",
+      "expected": [
+        "play/pitch-competition"
+      ],
+      "hardNegatives": [
+        "play/pitch-deck"
+      ]
+    },
+    {
+      "id": "RB-250",
+      "kind": "answerable",
+      "query": "our live walk-through keeps crashing in front of people",
+      "expected": [
+        "play/demo"
+      ],
+      "hardNegatives": [
+        "play/pitch-competition"
+      ]
+    },
+    {
+      "id": "RB-251",
+      "kind": "answerable",
+      "query": "judges always ask stuff i can't answer",
+      "expected": [
+        "play/qa-prep"
+      ],
+      "hardNegatives": [
+        "play/pitch-competition"
+      ]
+    },
+    {
+      "id": "RB-252",
+      "kind": "answerable",
+      "query": "my partner does nothing and i don't know how to bring it up",
+      "expected": [
+        "play/team-conflict"
+      ],
+      "hardNegatives": [
+        "play/cofounder-agreement"
+      ]
+    },
+    {
+      "id": "RB-253",
+      "kind": "answerable",
+      "query": "fifty-fifty with my roommate feels fair, shake on it?",
+      "expected": [
+        "play/equity-split"
+      ],
+      "hardNegatives": [
+        "play/cofounder-agreement"
+      ]
+    },
+    {
+      "id": "RB-254",
+      "kind": "answerable",
+      "query": "we keep stepping on each other's toes, who decides what",
+      "expected": [
+        "play/cofounder-agreement"
+      ],
+      "hardNegatives": [
+        "play/team-conflict"
+      ]
+    },
+    {
+      "id": "RB-255",
+      "kind": "answerable",
+      "query": "can't write software, do i need somebody who can first",
+      "expected": [
+        "play/no-tech-skills"
+      ],
+      "hardNegatives": [
+        "play/find-cofounder"
+      ]
+    },
+    {
+      "id": "RB-256",
+      "kind": "answerable",
+      "query": "midterms are eating me alive, how do i keep this going",
+      "expected": [
+        "play/time-with-classes"
+      ],
+      "hardNegatives": [
+        "play/stuck"
+      ]
+    },
+    {
+      "id": "RB-257",
+      "kind": "answerable",
+      "query": "i've been staring at the wall for two weeks",
+      "expected": [
+        "play/stuck"
+      ],
+      "hardNegatives": [
+        "play/time-with-classes"
+      ]
+    },
+    {
+      "id": "RB-258",
+      "kind": "answerable",
+      "query": "found an app that does exactly what i wanted to do",
+      "expected": [
+        "play/someone-has-my-idea"
+      ],
+      "hardNegatives": [
+        "play/competitors"
+      ]
+    },
+    {
+      "id": "RB-259",
+      "kind": "answerable",
+      "query": "four concepts in my notebook and i can't choose",
+      "expected": [
+        "play/pick-an-idea"
+      ],
+      "hardNegatives": [
+        "play/beachhead"
+      ]
+    },
+    {
+      "id": "RB-260",
+      "kind": "answerable",
+      "query": "what is the other team in my cohort working on",
+      "expected": [
+        "play/other-teams-privacy"
+      ],
+      "hardNegatives": [
+        "play/someone-has-my-idea"
+      ]
+    },
+    {
+      "id": "RB-261",
+      "kind": "answerable",
+      "query": "just do it myself for the first few folks, no software",
+      "expected": [
+        "play/concierge-test",
+        "play/no-tech-skills",
+        "play/build-first",
+        "play/smallest-test"
+      ],
+      "hardNegatives": [
+        "play/wizard-of-oz"
+      ]
+    },
+    {
+      "id": "RB-262",
+      "kind": "answerable",
+      "query": "make it look automatic while i do it behind the curtain",
+      "expected": [
+        "play/wizard-of-oz"
+      ],
+      "hardNegatives": [
+        "play/concierge-test"
+      ]
+    },
+    {
+      "id": "RB-263",
+      "kind": "answerable",
+      "query": "put up a website with a button, what should the button ask for",
+      "expected": [
+        "play/landing-page",
+        "play/smallest-test"
+      ],
+      "hardNegatives": [
+        "play/first-100-users"
+      ]
+    },
+    {
+      "id": "RB-264",
+      "kind": "answerable",
+      "query": "take money before i've made any",
+      "expected": [
+        "play/pre-sale",
+        "play/bootstrapping"
+      ],
+      "hardNegatives": [
+        "play/letter-of-intent"
+      ]
+    },
+    {
+      "id": "RB-265",
+      "kind": "answerable",
+      "query": "the firm can't pay until next budget, can they sign something",
+      "expected": [
+        "play/letter-of-intent"
+      ],
+      "hardNegatives": [
+        "play/pre-sale"
+      ]
+    },
+    {
+      "id": "RB-266",
+      "kind": "answerable",
+      "query": "sketch on paper or the real thing first",
+      "expected": [
+        "play/prototype",
+        "play/smallest-test"
+      ],
+      "hardNegatives": [
+        "play/hardware-first-units"
+      ]
+    },
+    {
+      "id": "RB-267",
+      "kind": "answerable",
+      "query": "twelve said yes and we'd written fifteen, now what",
+      "expected": [
+        "play/read-results",
+        "library/corin/transcript-kill-criterion#1"
+      ],
+      "hardNegatives": [
+        "play/pivot-or-persevere"
+      ]
+    },
+    {
+      "id": "RB-268",
+      "kind": "answerable",
+      "query": "two tries failed, change direction or push",
+      "expected": [
+        "play/pivot-or-persevere",
+        "play/read-results",
+        "play/quit-or-continue"
+      ],
+      "hardNegatives": [
+        "play/after-a-pivot"
+      ]
+    },
+    {
+      "id": "RB-269",
+      "kind": "answerable",
+      "query": "we switched who we sell to, what do i redo",
+      "expected": [
+        "play/after-a-pivot"
+      ],
+      "hardNegatives": [
+        "play/pivot-or-persevere"
+      ]
+    },
+    {
+      "id": "RB-270",
+      "kind": "answerable",
+      "query": "our app would hold patient records",
+      "expected": [
+        "play/regulated-data"
+      ],
+      "hardNegatives": [
+        "play/medical-rules"
+      ]
+    },
+    {
+      "id": "RB-271",
+      "kind": "answerable",
+      "query": "buy molds for our bottle or sell some first",
+      "expected": [
+        "play/hardware-first-units"
+      ],
+      "hardNegatives": [
+        "play/pre-sale"
+      ]
+    },
+    {
+      "id": "RB-272",
+      "kind": "answerable",
+      "query": "monthly fee, per use, or one time",
+      "expected": [
+        "play/revenue-model"
+      ],
+      "hardNegatives": [
+        "play/pricing"
+      ]
+    },
+    {
+      "id": "RB-273",
+      "kind": "answerable",
+      "query": "how much to ask when the old way costs them forty a month",
+      "expected": [
+        "play/pricing",
+        "doctrine/corin/price-from-the-workaround",
+        "library/corin/pilot-pricing#2",
+        "doctrine/thomas/pricing-from-the-alternative"
+      ],
+      "hardNegatives": [
+        "play/price-test"
+      ]
+    },
+    {
+      "id": "RB-274",
+      "kind": "answerable",
+      "query": "am i too cheap, how do i check",
+      "expected": [
+        "play/price-test",
+        "play/pricing"
+      ],
+      "hardNegatives": [
+        "play/unit-economics"
+      ]
+    },
+    {
+      "id": "RB-275",
+      "kind": "answerable",
+      "query": "help firms by the hour or sell a tool, which first",
+      "expected": [
+        "play/service-or-product"
+      ],
+      "hardNegatives": [
+        "play/revenue-model"
+      ]
+    },
+    {
+      "id": "RB-276",
+      "kind": "answerable",
+      "query": "each sandwich goes for nine, am i making anything on it",
+      "expected": [
+        "play/unit-economics"
+      ],
+      "hardNegatives": [
+        "play/break-even"
+      ]
+    },
+    {
+      "id": "RB-277",
+      "kind": "answerable",
+      "query": "month by month money sheet for next year, where do i begin",
+      "expected": [
+        "play/financial-forecast",
+        "open/sba-business-plan#4"
+      ],
+      "hardNegatives": [
+        "play/runway"
+      ]
+    },
+    {
+      "id": "RB-278",
+      "kind": "answerable",
+      "query": "how do i land the first folks who pay",
+      "expected": [
+        "play/first-ten-customers"
+      ],
+      "hardNegatives": [
+        "play/first-100-users"
+      ]
+    },
+    {
+      "id": "RB-279",
+      "kind": "answerable",
+      "query": "get a hundred kids on it with zero dollars",
+      "expected": [
+        "play/first-100-users"
+      ],
+      "hardNegatives": [
+        "play/first-ten-customers"
+      ]
+    },
+    {
+      "id": "RB-280",
+      "kind": "answerable",
+      "query": "tiktok, flyers or email, i can only do one",
+      "expected": [
+        "play/channel-choice"
+      ],
+      "hardNegatives": [
+        "play/first-100-users"
+      ]
+    },
+    {
+      "id": "RB-281",
+      "kind": "answerable",
+      "query": "what do i say on the phone to close it",
+      "expected": [
+        "play/sales-conversation"
+      ],
+      "hardNegatives": [
+        "play/cold-outreach"
+      ]
+    },
+    {
+      "id": "RB-282",
+      "kind": "answerable",
+      "query": "they loved it then ghosted us",
+      "expected": [
+        "play/stalled-deal"
+      ],
+      "hardNegatives": [
+        "play/no-replies"
+      ]
+    },
+    {
+      "id": "RB-283",
+      "kind": "answerable",
+      "query": "tutors on one side, freshmen on the other, who do i get first",
+      "expected": [
+        "play/marketplace"
+      ],
+      "hardNegatives": [
+        "play/beachhead"
+      ]
+    },
+    {
+      "id": "RB-284",
+      "kind": "answerable",
+      "query": "big opening day or a quiet one",
+      "expected": [
+        "play/launch"
+      ],
+      "hardNegatives": [
+        "play/first-100-users"
+      ]
+    },
+    {
+      "id": "RB-285",
+      "kind": "answerable",
+      "query": "half of them stop coming after a month",
+      "expected": [
+        "play/retention"
+      ],
+      "hardNegatives": [
+        "play/one-metric"
+      ]
+    },
+    {
+      "id": "RB-286",
+      "kind": "answerable",
+      "query": "we want to add staff and two cities, is it too soon",
+      "expected": [
+        "play/scaling-readiness"
+      ],
+      "hardNegatives": [
+        "play/hiring"
+      ]
+    },
+    {
+      "id": "RB-287",
+      "kind": "answerable",
+      "query": "getting a person to help me, how do i pick",
+      "expected": [
+        "play/hiring"
+      ],
+      "hardNegatives": [
+        "play/find-cofounder"
+      ]
+    },
+    {
+      "id": "RB-288",
+      "kind": "answerable",
+      "query": "graduating in may, what happens to this",
+      "expected": [
+        "play/after-graduation"
+      ],
+      "hardNegatives": [
+        "play/leaving-ain"
+      ]
+    },
+    {
+      "id": "RB-289",
+      "kind": "answerable",
+      "query": "incubator, accelerator, or stay on our own",
+      "expected": [
+        "play/next-home"
+      ],
+      "hardNegatives": [
+        "play/leaving-ain"
+      ]
+    },
+    {
+      "id": "RB-290",
+      "kind": "answerable",
+      "query": "should i just give up on it",
+      "expected": [
+        "play/quit-or-continue"
+      ],
+      "hardNegatives": [
+        "play/pivot-or-persevere"
+      ]
+    },
+    {
+      "id": "RB-291",
+      "kind": "answerable",
+      "query": "are we ready to move out of the center",
+      "expected": [
+        "play/leaving-ain"
+      ],
+      "hardNegatives": [
+        "play/next-home"
+      ]
+    },
+    {
+      "id": "RB-292",
+      "kind": "answerable",
+      "query": "who could guide me and how do i ask them",
+      "expected": [
+        "play/find-mentor"
+      ],
+      "hardNegatives": [
+        "play/mentor-prep"
+      ]
+    },
+    {
+      "id": "RB-293",
+      "kind": "answerable",
+      "query": "seeing my EIR thursday, what do i bring",
+      "expected": [
+        "play/mentor-prep"
+      ],
+      "hardNegatives": [
+        "play/find-mentor"
+      ]
+    },
+    {
+      "id": "RB-294",
+      "kind": "answerable",
+      "query": "talked to eleven people, everybody said something different",
+      "expected": [
+        "play/synthesize-interviews"
+      ],
+      "hardNegatives": [
+        "play/interview-debrief"
+      ]
+    },
+    {
+      "id": "RB-295",
+      "kind": "answerable",
+      "query": "draw me one typical buyer to aim at",
+      "expected": [
+        "play/persona"
+      ],
+      "hardNegatives": [
+        "play/beachhead"
+      ]
+    },
+    {
+      "id": "RB-296",
+      "kind": "answerable",
+      "query": "say what we are in a line so a stranger gets it",
+      "expected": [
+        "play/positioning",
+        "play/value-proposition",
+        "play/elevator-pitch"
+      ],
+      "hardNegatives": [
+        "play/name-and-brand"
+      ]
+    },
+    {
+      "id": "RB-297",
+      "kind": "answerable",
+      "query": "what can i run that could show me i'm wrong",
+      "expected": [
+        "play/experiment-design",
+        "play/biggest-reason-to-fail",
+        "method/program-method#3",
+        "doctrine/guide/assumptions-to-falsifiable-experiments",
+        "play/smallest-test",
+        "doctrine/corin/smallest-decisive-test"
+      ],
+      "hardNegatives": [
+        "play/read-results"
+      ]
+    },
+    {
+      "id": "RB-298",
+      "kind": "answerable",
+      "query": "call it something catchy and order a logo now?",
+      "expected": [
+        "play/name-and-brand"
+      ],
+      "hardNegatives": [
+        "open/uspto-trademark#1"
+      ]
+    },
+    {
+      "id": "RB-299",
+      "kind": "answerable",
+      "query": "be straight with me, is it any good",
+      "expected": [
+        "play/honest-read"
+      ],
+      "hardNegatives": [
+        "play/friends-love-it"
+      ]
+    },
+    {
+      "id": "RB-300",
+      "kind": "no_answer",
+      "query": "hey how's it going today",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-301",
+      "kind": "no_answer",
+      "query": "thanks so much, talk later",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-302",
+      "kind": "no_answer",
+      "query": "lol that's hilarious",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-303",
+      "kind": "no_answer",
+      "query": "you're honestly the best",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-304",
+      "kind": "no_answer",
+      "query": "good morning, did you sleep well",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-305",
+      "kind": "no_answer",
+      "query": "what's your favorite color",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-306",
+      "kind": "no_answer",
+      "query": "are you a real human or a bot",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-307",
+      "kind": "no_answer",
+      "query": "i broke up with my girlfriend last night",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-308",
+      "kind": "no_answer",
+      "query": "my grandma is in the hospital and i'm worried",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-309",
+      "kind": "no_answer",
+      "query": "i can't sleep and my stomach hurts",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-310",
+      "kind": "no_answer",
+      "query": "my roommate plays drums at 2am",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-311",
+      "kind": "no_answer",
+      "query": "what should i get my mom for her birthday",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-312",
+      "kind": "no_answer",
+      "query": "should i drop organic chemistry",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-313",
+      "kind": "no_answer",
+      "query": "solve 3x squared plus 2x equals 8 for me",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-314",
+      "kind": "no_answer",
+      "query": "summarize chapter four of the great gatsby",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-315",
+      "kind": "no_answer",
+      "query": "what year did the civil war end",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-316",
+      "kind": "no_answer",
+      "query": "explain mitosis like i'm five",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-317",
+      "kind": "no_answer",
+      "query": "write my history essay on the french revolution",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-318",
+      "kind": "no_answer",
+      "query": "translate 'where is the library' into spanish",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-319",
+      "kind": "no_answer",
+      "query": "what's the derivative of sine x",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-320",
+      "kind": "no_answer",
+      "query": "who won the bills game sunday",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-321",
+      "kind": "no_answer",
+      "query": "how many goals does messi have",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-322",
+      "kind": "no_answer",
+      "query": "is the basketball team playing tonight",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-323",
+      "kind": "no_answer",
+      "query": "best fantasy football pick this week",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-324",
+      "kind": "no_answer",
+      "query": "did taylor swift and travis break up",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-325",
+      "kind": "no_answer",
+      "query": "what did elon musk post yesterday",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-326",
+      "kind": "no_answer",
+      "query": "how old is zendaya",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-327",
+      "kind": "no_answer",
+      "query": "recommend me a netflix show",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-328",
+      "kind": "no_answer",
+      "query": "why is my react component rendering twice",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-329",
+      "kind": "no_answer",
+      "query": "write a sql query to join two tables",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-330",
+      "kind": "no_answer",
+      "query": "my docker container won't start",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-331",
+      "kind": "no_answer",
+      "query": "how do i center a div",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-332",
+      "kind": "no_answer",
+      "query": "fix this python list index out of range error",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-333",
+      "kind": "no_answer",
+      "query": "how many people work at airbnb now",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-334",
+      "kind": "no_answer",
+      "query": "what percent does doordash take from restaurants",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-335",
+      "kind": "no_answer",
+      "query": "who are the founders of canva",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-336",
+      "kind": "no_answer",
+      "query": "did juicero ever make money",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-337",
+      "kind": "no_answer",
+      "query": "what's the weather in rochester tomorrow",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-338",
+      "kind": "no_answer",
+      "query": "when does the gym open on sundays",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-339",
+      "kind": "no_answer",
+      "query": "how do i get to the airport from campus",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-340",
+      "kind": "no_answer",
+      "query": "is wegmans still open",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-341",
+      "kind": "no_answer",
+      "query": "can i bring my dog to the dorm",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-342",
+      "kind": "no_answer",
+      "query": "what's a good recipe for chili",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-343",
+      "kind": "no_answer",
+      "query": "how do i change a bike tire",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-344",
+      "kind": "no_answer",
+      "query": "how do i apply for financial aid",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-345",
+      "kind": "no_answer",
+      "query": "when is the last day to add a class",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-346",
+      "kind": "no_answer",
+      "query": "what's the capital of mongolia",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-347",
+      "kind": "no_answer",
+      "query": "how tall is mount everest",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-348",
+      "kind": "no_answer",
+      "query": "tell me a joke about cats",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-349",
+      "kind": "no_answer",
+      "query": "what visa do my parents need to visit me",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-350",
+      "kind": "no_answer",
+      "query": "how do i renew my driver's license",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-351",
+      "kind": "no_answer",
+      "query": "how long do i have to pay a parking ticket",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-352",
+      "kind": "no_answer",
+      "query": "how much does the average lawyer earn",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-353",
+      "kind": "no_answer",
+      "query": "what's the stock price of apple today",
+      "expected": [],
+      "hardNegatives": []
+    },
+    {
+      "id": "RB-354",
+      "kind": "no_answer",
+      "query": "should i buy bitcoin with my savings",
       "expected": [],
       "hardNegatives": []
     }

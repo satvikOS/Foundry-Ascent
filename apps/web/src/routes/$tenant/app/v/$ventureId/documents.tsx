@@ -2,7 +2,6 @@ import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
 
 import { DocumentsPage } from '@/features/documents/documents-page';
-import { documentsQueryOptions } from '@/lib/api/hooks/documents';
 
 /** `?source=<knowledge source id>`: the document a citation links to, shown highlighted. */
 export interface DocumentsSearch {
@@ -15,7 +14,10 @@ export const Route = createFileRoute('/$tenant/app/v/$ventureId/documents')({
     return { source: source.success ? source.data : undefined };
   },
   loader: ({ context, params }) => {
-    context.queryClient.query(documentsQueryOptions(params.ventureId)).catch(() => undefined);
+    // Loaded apart: loaders are in the first page load, the page's contracts are not needed there.
+    void import('@/lib/api/hooks/documents')
+      .then(({ documentsQueryOptions }) => context.queryClient.query(documentsQueryOptions(params.ventureId)))
+      .catch(() => undefined);
   },
   head: () => ({ meta: [{ title: 'Documents' }] }),
   component: DocumentsPage,

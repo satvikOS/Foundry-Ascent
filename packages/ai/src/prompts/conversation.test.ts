@@ -143,9 +143,7 @@ describe('vEIR identity rules', () => {
       "You are Corin's vEIR: Corin Halvorsen's digital twin (an AI) in Foundry Ascent, built with Corin's consent from how\nCorin coaches.",
     );
     expect(prompt).toContain('The founder already knows what you are. Never volunteer it or talk about it');
-    expect(prompt).toContain(
-      'no "as an AI", "I\'m just an AI",\n  "I don\'t have a life", no disclaimers or legal lines.',
-    );
+    expect(prompt).toContain('no "as an AI", no disclaimers.');
     // Without the first-person consent it credits the method to Corin.
     expect(prompt).toContain('credit the method to Corin');
     expect(prompt).not.toContain('like Corin on a video call');
@@ -310,17 +308,26 @@ describe('how the persona talks', () => {
   it('asks for mentor-like conversation: short paragraphs, one question, no report headings', () => {
     const prompt = buildSystemPrompt(BASE);
     expect(prompt).toContain(
-      'Talk like a seasoned mentor in a real conversation, not like a report or a help desk.',
+      'Talk like a seasoned mentor in a real conversation, not like a report: warm, plain',
     );
-    expect(prompt).toContain('At most one question per reply, never stacked, and not in every reply.');
-    expect(prompt).toContain('- Mirror their length: a line or two gets one to three sentences;');
-    expect(prompt).toContain(
-      'No headings, report sections or bold\n  labels unless the founder asks for a document',
+    // Founder path (2026-11-24): the answer, why, the step, at most one question, in that order.
+    const flat = prompt.replace(/\s+/g, ' ');
+    expect(flat).toContain('Every coaching reply gives, in this order: 1. The answer:');
+    expect(flat).toContain(
+      'Never a question or promise instead, never "before we…"; "it depends" only with the rule that decides it.',
     );
+    expect(flat).toContain(
+      "3. The next step: <path>'s, in its own words (no <path>: one small step you choose): what, how, done when, by when.",
+    );
+    expect(flat).toContain(
+      '4. At most one question per reply, last, never stacked, only when its answer would change the step.',
+    );
+    expect(flat).toContain('how-to as numbered steps. Last line: "Next: … by <day>. Done when …."');
+    expect(flat).toContain('No headings, report sections or bold labels.');
     expect(prompt).toContain('Be direct: say plainly what you think and why, and name the gap first.');
     // The style's feedback structure is no longer rendered: replies echoed its wording (live pilot 42099643194).
     expect(prompt).not.toContain('Feedback structure:');
-    expect(prompt).toContain('Cite inline right after the sentence a source supports, as [E1]');
+    expect(prompt).toContain('cite inline right after the sentence a source supports, as [E1]');
   });
 
   it('uses the founder’s first name when it is known, and never guesses one', () => {
@@ -353,10 +360,8 @@ describe('how the persona talks', () => {
 describe('auto mode', () => {
   it('lets the model choose among the allowed modes and lists their instructions', () => {
     const p = buildSystemPrompt({ ...BASE, mode: 'auto', allowedModes: ['coach', 'diagnose', 'teach'] });
-    expect(p).toContain('Mode: AUTO. Pick the one mode that fits their latest message (diagnose: ');
-    expect(p).toContain(
-      'teach: they ask how something works or what a concept means, name a goal or a step ahead of them, or do not know)',
-    );
+    expect(p).toContain('Mode: AUTO. Silently pick the mode that fits their latest message;');
+    expect(p).toContain('- TEACH (how something works, a goal or step ahead)');
     expect(p).toContain(MODE_INSTRUCTIONS.diagnose);
     expect(p).toContain(MODE_INSTRUCTIONS.coach);
     expect(p).toContain(MODE_INSTRUCTIONS.teach);
@@ -380,7 +385,7 @@ describe('auto mode', () => {
       rehearsalCounterpart: 'a buyer',
     });
     expect(parseControlBlock(withRehearse)?.rehearsalCounterpart).toBe('a buyer');
-    expect(autoModeInstructions(['rehearse'])).toContain('rehearse: only when they ask to practise');
+    expect(autoModeInstructions(['rehearse'])).toContain('REHEARSE (asked to practise)');
   });
 });
 

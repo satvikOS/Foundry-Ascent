@@ -15,5 +15,12 @@ export {
 } from './data-api.js';
 export * from './repositories/index.js';
 export * from './seed/index.js';
+export {
+  alternateOf,
+  embeddingModelOf,
+  tagAlternate,
+  tagEmbedding,
+  type AlternateEmbedding,
+} from './embedding-model.js';
 export * as knowledgePack from './knowledge-pack/index.js';
 export * from './lab/age-conversations.js';

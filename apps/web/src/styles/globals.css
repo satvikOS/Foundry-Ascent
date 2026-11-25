@@ -1245,6 +1245,7 @@
 
 @media print {
   body {
+    min-height: 0;
     background: #fff;
     color: #000;
   }

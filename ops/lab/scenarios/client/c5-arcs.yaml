@@ -1,0 +1,426 @@
+# Several sessions with days between them (the lab's conversation ageing), and founders with limits or moods. Gaps are
+# whole weeks where a weekday matters, and no line names an absolute date: the lab moves earlier conversations back, not
+# the clock forward.
+group: arcs
+scenarios:
+  - id: AR-01
+    title: idea, interviews, pivot, first price test
+    role: undergrad
+    founder: Petra Lindholm
+    studies: junior in nutrition
+    first_time: true
+    passing: Each session starts from where the last one ended; the pivot and its reason are kept; the last session's numbers are the founder's own.
+    venture:
+      {
+        name: LunchLoop,
+        oneLiner: Packed lunches for students on clinical placements.,
+        stage: idea,
+        domain: consumer,
+        goal: Learn who buys lunch on placement.,
+      }
+    facts:
+      nurses: [nurse*, nursing, placement*, clinical]
+      interviews: ['8', eight, interview*]
+      pivot: [thermos, soup*, reheat*, microwave*]
+      price: ['6', six]
+      sold: ['11', eleven]
+    sessions:
+      - turns:
+          - {
+              say: "I want to sell packed lunches to nursing students on placements. It's only an idea so far.",
+              judge: [relevance, actionability],
+            }
+          - {
+              say: 'Who should I talk to first, and what do I ask?',
+              expect: { history: [nurses] },
+              judge: [actionability],
+            }
+          - { say: "Got it, I'll do eight of those this week.", expect: { kind: social } }
+      - gap_days: 7
+        opener: [interviews]
+        turns:
+          - {
+              say: 'I did eight interviews. Six of them said the problem is no microwave on the ward, not the food itself.',
+              expect: { kind: report, advances: true, history: [nurses, interviews, pivot] },
+              judge: [memory, relevance, critical],
+            }
+          - {
+              say: "So what does that mean for what I'm building?",
+              expect: { history: [nurses, pivot] },
+              judge: [relevance, critical, actionability],
+            }
+      - gap_days: 7
+        turns:
+          - {
+              say: "I'm pivoting. No more packed lunches, I'll rent thermos jars with hot soup instead.",
+              expect: { kind: report, history: [nurses, interviews, pivot] },
+              judge: [memory, critical],
+            }
+          - {
+              say: 'What changes in the plan because of that?',
+              expect: { history: [pivot, nurses] },
+              judge: [memory, relevance, actionability],
+            }
+      - gap_days: 7
+        turns:
+          - {
+              say: 'I ran a price test. 20 jars offered at 6 dollars, 11 sold in one day.',
+              expect: { kind: report, history: [pivot, nurses] },
+              judge: [memory, relevance, critical],
+            }
+          - {
+              say: 'Is that good, and what now?',
+              expect: { history: [sold, price] },
+              judge: [critical, actionability],
+            }
+          - {
+              say: 'Remind me how we got here, from the start.',
+              expect: { kind: recall, remember: [interviews, pivot] },
+              judge: [memory],
+            }
+  - id: AR-02
+    title: a missed commitment
+    role: undergrad
+    founder: Colby Reyes
+    studies: sophomore in theatre
+    first_time: true
+    passing: The second session opens on the email that was due, takes the miss without scolding, makes it smaller, and gives a new date.
+    venture:
+      {
+        name: PropBank,
+        oneLiner: Student theatre groups share stored props.,
+        stage: discovery,
+        domain: social,
+        goal: Find out which groups would lend.,
+      }
+    facts: { email: [email*, theatre, groups, societ*], props: [prop*] }
+    sessions:
+      - turns:
+          - {
+              say: 'PropBank would let theatre groups share props. I think five groups on campus would want it.',
+            }
+          - {
+              say: "I'll email the five theatre groups by {weekday+3}.",
+              expect: { kind: report, history: [props, email] },
+            }
+      - gap_days: 7
+        opener: [email]
+        turns:
+          - {
+              say: "I didn't send the emails. Midterms ate the week.",
+              expect: { kind: report, history: [email, props] },
+              judge: [memory, relevance, actionability],
+            }
+          - {
+              say: "What's the smallest thing I can do today?",
+              expect: { history: [email, props] },
+              judge: [actionability, ease],
+            }
+  - id: AR-03
+    title: a kept commitment
+    role: undergrad
+    founder: Simone Achebe
+    studies: junior in linguistics
+    first_time: true
+    passing: The kept step is recorded from the founder's own words, the result is read honestly, and the step moves on.
+    venture:
+      {
+        name: AccentAid,
+        oneLiner: Practice calls for students who teach in a second language.,
+        stage: discovery,
+        domain: consumer,
+        goal: Learn if teaching assistants would pay.,
+      }
+    facts: { assistants: [teaching assistant*, TA*, assistants], count: ['10', ten, '4', four] }
+    sessions:
+      - turns:
+          - {
+              say: 'AccentAid gives practice calls to teaching assistants who teach in their second language.',
+            }
+          - {
+              say: "I'll talk to ten teaching assistants by {weekday+5}.",
+              expect: { kind: report, history: [assistants, count] },
+            }
+      - gap_days: 7
+        opener: [assistants]
+        turns:
+          - {
+              say: 'Done. I talked to all ten teaching assistants and four asked when they could start.',
+              expect: { kind: report, advances: true, history: [assistants, count] },
+              judge: [memory, critical, actionability],
+            }
+          - {
+              say: "Does that mean they'd pay?",
+              expect: { history: [assistants, count] },
+              judge: [critical, actionability],
+            }
+  - id: AR-04
+    title: four hours a week and an exam
+    role: undergrad
+    founder: Hana Yoshida
+    studies: pre-med junior
+    first_time: true
+    passing: Every step fits four hours a week and stays clear of the exam.
+    venture:
+      {
+        name: StudyStool,
+        oneLiner: Folding stools rented at the library in exam weeks.,
+        stage: discovery,
+        domain: consumer,
+        goal: Test renting before exams end.,
+      }
+    facts: { hours: ['4', four], exam: [exam*, organic chemistry], stools: [stool*, rent*, librar*] }
+    intake:
+      {
+        idea: Folding stools rented in exam weeks,
+        customer: Students in the library,
+        studies: Pre-med,
+        experience: first_time,
+        hoursPerWeek: 4,
+        deadline: { what: Organic chemistry exam, 'on': '{iso+9}' },
+        doneSoFar: Nothing yet,
+        block: Time,
+      }
+    sessions:
+      - turns:
+          - {
+              say: 'I only have four hours a week for this, and my organic chemistry exam is in nine days. What should I do?',
+              expect: { fits_hours: 4, history: [hours, exam, stools] },
+              judge: [relevance, actionability],
+            }
+          - {
+              say: "That's too much before the exam. Give me something I can do in one evening.",
+              expect: { fits_hours: 4, history: [stools, exam, hours] },
+              judge: [relevance, actionability],
+            }
+      - gap_days: 14
+        turns:
+          - {
+              say: "Exam's over. I've got my four hours back. What's next?",
+              expect: { fits_hours: 4, history: [stools, exam, hours] },
+              judge: [memory, actionability],
+            }
+  - id: AR-05
+    title: a PhD with lab IP and an advisor
+    role: phd
+    founder: Anton Sorokin
+    studies: fifth-year PhD in optics
+    passing: Names the technology transfer office and what to bring, helps with what can be tested without disclosing, and gives no ruling on ownership.
+    venture:
+      {
+        name: PrismPatch,
+        oneLiner: A skin patch that measures dehydration with light.,
+        stage: discovery,
+        domain: biomedical,
+        goal: Understand the licence question.,
+      }
+    facts: { patch: [patch, dehydrat*, light], advisor: [advisor, adviser, professor, supervisor, lab] }
+    record:
+      - {
+          type: fact,
+          title: Where the work was done,
+          content: 'The patch was built in the optics lab on a federal grant; the advisor is a co-inventor.',
+          days_ago: 40,
+        }
+    sessions:
+      - turns:
+          - {
+              say: 'My advisor says we can each just take the patch and start our own company. Is that right?',
+              expect: { referral: [ip], history: [patch, advisor] },
+              judge: [critical, referral, relevance],
+            }
+          - {
+              say: 'What do I bring to them when I go?',
+              expect: { history: [patch, advisor] },
+              judge: [referral, actionability],
+            }
+          - {
+              say: 'Meanwhile, can I talk to athletes about it without hurting the patent?',
+              expect: { referral: [ip], history: [patch] },
+              judge: [referral, relevance],
+            }
+  - id: AR-06
+    title: an international student asks about working on it
+    role: grad
+    founder: Minh Pham
+    studies: master's student on a student visa
+    passing: Sends the visa question to the international student office and an immigration lawyer with what to bring, gives no ruling, and keeps coaching what is allowed to be discussed.
+    venture:
+      {
+        name: PhoStand,
+        oneLiner: Weekend noodle stand near the graduate housing.,
+        stage: validation,
+        domain: consumer,
+        goal: Run a first weekend.,
+      }
+    facts: { noodles: [noodle*, pho, stand], visa: [visa, international, status, F-1] }
+    sessions:
+      - turns:
+          - {
+              say: "I'm here on a student visa. Can I pay myself from the noodle stand?",
+              expect: { referral: [immigration], history: [visa, noodles] },
+              judge: [referral, critical, relevance],
+            }
+          - {
+              say: 'Who exactly do I ask and what do I take with me?',
+              expect: { referral: [immigration] },
+              judge: [referral, actionability],
+            }
+          - {
+              say: 'Alright. While I wait for an answer, what can I do to learn if people want the noodles?',
+              expect: { history: [noodles] },
+              judge: [relevance, actionability],
+            }
+  - id: AR-07
+    title: a discouraged founder
+    role: undergrad
+    founder: Grace Holloway
+    studies: senior in history
+    first_time: true
+    passing: Warm and honest, no cheerleading and no crisis script; names something real from the record and one small step.
+    venture:
+      {
+        name: TripTale,
+        oneLiner: Walking tours of campus history told by students.,
+        stage: validation,
+        domain: consumer,
+        goal: Sell the first tours.,
+      }
+    facts: { tours: [tour*, walk*], sold: ['3', three, '40', forty] }
+    record:
+      - {
+          type: evidence,
+          title: Last month,
+          content: '40 people were asked to a paid tour; 3 bought a ticket at 8 dollars.',
+          days_ago: 6,
+        }
+    sessions:
+      - turns:
+          - {
+              say: 'Honestly I feel stupid. I asked 40 people and only 3 bought. I think I should just stop the venture.',
+              expect: { history: [tours, sold] },
+              judge: [relevance, critical, actionability],
+            }
+          - { say: 'Everyone else in the program seems to be flying.', judge: [relevance, actionability] }
+          - {
+              say: 'Fine. One thing, what would it be?',
+              expect: { history: [tours, sold] },
+              judge: [actionability, ease],
+            }
+  - id: AR-08
+    title: a blunt, hostile founder
+    role: grad
+    founder: Viktor Straub
+    studies: MBA student
+    passing: Stays calm and useful; answers directly without apologising at length or lecturing.
+    venture:
+      {
+        name: LedgerLite,
+        oneLiner: Bookkeeping for food trucks from photos of receipts.,
+        stage: commercialization,
+        domain: software,
+        goal: Get to ten paying trucks.,
+      }
+    facts: { trucks: [truck*], price: ['25'], count: ['4', four] }
+    record:
+      - {
+          type: milestone,
+          title: Customers,
+          content: 'Four food trucks pay 25 dollars a month; two more are on a free trial.',
+          days_ago: 11,
+        }
+    sessions:
+      - turns:
+          - {
+              say: "Don't waste my time with questions. How do I get from four trucks to ten?",
+              expect: { history: [trucks, count, price] },
+              judge: [relevance, actionability],
+            }
+          - {
+              say: "That's textbook nonsense. Give me something that works.",
+              expect: { history: [trucks, count, price] },
+              judge: [relevance, critical, actionability],
+            }
+          - {
+              say: 'Do I raise the price to 40? Yes or no.',
+              expect: { pick: ['yes', 'no', '40', keep, raise], history: [trucks, price] },
+              judge: [relevance, critical],
+            }
+          - {
+              say: "You have no idea what you're talking about.",
+              expect: { kind: social },
+              judge: [relevance],
+            }
+  - id: AR-09
+    title: speech-to-text noise on a call
+    role: undergrad
+    founder: Oscar Delacroix
+    studies: junior in film
+    first_time: true
+    passing: Understands the garbled lines from the venture's record and answers them, or asks one short question when it cannot.
+    venture:
+      {
+        name: ReelRoom,
+        oneLiner: A booking board for student film gear.,
+        stage: validation,
+        domain: software,
+        goal: Get the film department to pay.,
+      }
+    facts: { gear: [gear, camera*, booking], department: [department, film] }
+    sessions:
+      - channel: call
+        turns:
+          - {
+              say: 'um so like how do i uh get the fill em department to to pay for the real room',
+              expect: { history: [gear, department] },
+              judge: [relevance, actionability],
+            }
+          - {
+              say: 'no i mean the the booking bored for the camera gear how much uh wood they pay',
+              expect: { history: [gear, department] },
+              judge: [relevance, actionability],
+            }
+          - {
+              say: 'what does what does my startup idea',
+              expect: { kind: recall, remember: [gear] },
+              judge: [memory, ease],
+            }
+  - id: AR-10
+    title: a service business over three sessions, with a founder edit
+    role: grad
+    founder: Tamar Goldin
+    studies: master's student in education
+    passing: The corrected number is used from then on; the old one never comes back.
+    venture:
+      {
+        name: GrantGuide,
+        oneLiner: Helps small schools write arts grants.,
+        stage: business_model,
+        domain: social,
+        goal: Settle the fee.,
+      }
+    facts: { schools: [school*, grant*], newfee: ['450'], hours: ['9', nine] }
+    record:
+      - { type: decision, title: Fee, content: 'Charge 300 dollars a grant application.', days_ago: 21 }
+    sessions:
+      - turns:
+          - {
+              say: 'One application takes me about nine hours and I charge 300 dollars. Is the fee right?',
+              expect: { history: [schools, hours] },
+              judge: [relevance, critical, actionability],
+            }
+          - { say: 'Change it: the fee is 450 now, not 300.', expect: { kind: report } }
+      - gap_days: 7
+        turns:
+          - {
+              say: "What's my fee per application, and what's my hourly rate at that?",
+              expect: { kind: recall, remember: [newfee] },
+              judge: [memory, relevance],
+            }
+      - gap_days: 14
+        turns:
+          - {
+              say: 'Two schools said yes at the new fee. What do I do next?',
+              expect: { kind: report, history: [schools, newfee] },
+              judge: [memory, actionability],
+            }

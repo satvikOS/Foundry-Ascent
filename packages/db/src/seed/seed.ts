@@ -17,7 +17,9 @@
  * - Not demo data: the Ain Foundry curriculum (`./curriculum.ts`), programme notes of the `ain` home tenant only.
  * - Not demo data: the startup knowledge base (real, sourced reference material) is synced into every active
  *   tenant's common pool on every run, demo data or not (`../knowledge-pack/sync.ts`: inserted when absent, re-ingested when
- *   its text changed, withdrawn when the JSON drops it; a person's withdrawal is kept).
+ *   its text changed, withdrawn when the JSON drops it; a person's withdrawal is kept). The cited corpus
+ *   (`../knowledge-pack/corpus.ts`: the open library, and the programme's course notes) likewise, once migration 0034 is
+ *   applied.
  */
 import { col } from '../columns.js';
 import { appendAudit } from '../repositories/audit.js';
@@ -33,6 +35,7 @@ import {
   GUIDE_STYLE,
   PROGRAM_METHOD_SOURCE,
 } from './doctrine.js';
+import { hasCitationSchema, syncCorpusToTenants } from '../knowledge-pack/corpus-sync.js';
 import { syncKnowledgePackToTenants } from '../knowledge-pack/sync.js';
 import {
   COACH_RELEASES,
@@ -73,6 +76,11 @@ export interface SeedConfig {
    * every deploy). Not demo data: it is real, sourced reference material (`../knowledge-pack/sync.ts`).
    */
   readonly knowledgePack?: boolean;
+  /**
+   * Sync the cited corpus (the open library and, in the programme's tenant, its course notes;
+   * `../knowledge-pack/corpus-sync.ts`). Default: as `knowledgePack`.
+   */
+  readonly corpus?: boolean;
   /**
    * Owner-approved releases to apply once (`SEED_OWNER_RELEASES`): persona releases, keys of `OWNER_RELEASES` in
    * ./owner-releases.ts (ADR-0021), demo-story releases, keys of `STORY_RELEASES` in ./story-releases.ts, and coach
@@ -415,6 +423,11 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
   // The startup knowledge base (shared reference library, scope `public`): needs the 0004 columns (kind, body).
   // Every active tenant, not only the home one: a partner tenant's founders get the same library (idempotent).
   if (veirSchema && (config.knowledgePack ?? true)) await syncKnowledgePackToTenants(sx);
+  // The cited corpus (migration 0034's columns): the open library everywhere, the programme's course notes in its own
+  // tenant only, as the curriculum is.
+  if (veirSchema && (config.corpus ?? config.knowledgePack ?? true) && (await hasCitationSchema(sx))) {
+    await syncCorpusToTenants(sx, CURRICULUM_TENANT_SLUG);
+  }
 
   if (demo) {
     const now = config.now ?? new Date();

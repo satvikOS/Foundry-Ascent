@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { tagAlternate, tagEmbedding } from '../embedding-model.js';
 import { p } from '../params.js';
 import { type SeedResult } from '../seed/seed.js';
 import { createTestDatabase, makeContext, type TestDatabase } from '../testing/test-database.js';
-import { EXCERPT_CHARS } from './common.js';
 import * as knowledgeRepo from './knowledge.js';
 import * as memoryRepo from './memory.js';
 import * as retrievalRepo from './retrieval.js';
@@ -143,7 +143,7 @@ describe('venture-scoped retrieval', () => {
     expect(results).toEqual([]);
   });
 
-  it('scores hybrid matches above lexical-only and vector-only ones, with bounded excerpts', async () => {
+  it('ranks a match of words and meaning above one of words alone, and leaves out what neither points at', async () => {
     const chunks = await t.db.system((sx) =>
       retrievalRepo.searchVentureChunks(sx, {
         tenantId: seed.tenantId,
@@ -161,17 +161,12 @@ describe('venture-scoped retrieval', () => {
     expect(appendix).toBeDefined();
     expect(appendix?.components.vector).toBe(0); // NULL embedding → lexical only
     expect(appendix?.components.lexical).toBeGreaterThan(0);
-    expect(appendix?.excerpt.length).toBeLessThanOrEqual(EXCERPT_CHARS);
-    const vectorOnly = chunks.find((c) => c.title.endsWith('Vector only'));
-    expect(vectorOnly?.components.lexical ?? 0).toBe(0);
+    expect(appendix?.excerpt.length).toBeLessThanOrEqual(retrievalRepo.PASSAGE_CHARS);
+    // Nothing points at it (an orthogonal vector, no shared word): below the floor, however few rows there are.
+    expect(chunks.some((c) => c.title.endsWith('Vector only'))).toBe(false);
     for (const c of chunks) {
-      expect(c.score).toBeCloseTo(
-        0.55 * c.components.vector +
-          0.25 * c.components.lexical +
-          0.1 * c.components.recency +
-          0.1 * c.components.authority,
-        6,
-      );
+      expect(c.score).toBeGreaterThan(0);
+      expect(c.score).toBeLessThanOrEqual(1);
       expect(c.freshnessAt).not.toBeNull();
       expect(c.status).toBe('active');
     }
@@ -316,6 +311,298 @@ describe('shared corpora', () => {
       return r.rows.map((row) => String(row['QUERY PLAN'])).join('\n');
     });
     expect(plan).toContain('knowledge_chunks_shared_embedding_idx');
+  });
+});
+
+describe('the relevance floor and diversity', () => {
+  const ask = (query: string, extra: Partial<retrievalRepo.SharedChunkQuery> = {}) =>
+    t.db.withContext(makeContext(A.founder, seed.tenantId), (tx) =>
+      retrievalRepo.searchSharedChunks(tx, {
+        tenantId: seed.tenantId,
+        personaId: seed.personaId,
+        query,
+        embedding: null,
+        limit: 10,
+        ...extra,
+      }),
+    );
+
+  it('returns nothing when nothing is about the message, whatever the stores hold', async () => {
+    for (const query of ['', 'ok thanks', 'what is the tallest building in the world', 'pasta recipe'])
+      expect(await ask(query), query).toEqual([]);
+    const own = await t.db.withContext(makeContext(A.founder, seed.tenantId), async (tx) => [
+      ...(await retrievalRepo.searchVentureChunks(tx, {
+        tenantId: seed.tenantId,
+        ventureId: A.id,
+        query: 'zyzzyva quokka',
+        embedding: null,
+      })),
+      ...(await retrievalRepo.searchResources(tx, { tenantId: seed.tenantId, query: 'zyzzyva quokka' })),
+      ...(await retrievalRepo.searchPatterns(tx, { tenantId: seed.tenantId, query: 'zyzzyva quokka' })),
+    ]);
+    expect(own).toEqual([]);
+  });
+
+  it('gives a message with no subject of its own the founder’s record, best first', async () => {
+    const items = await t.db.withContext(makeContext(A.founder, seed.tenantId), (tx) =>
+      retrievalRepo.searchVentureMemory(tx, {
+        tenantId: seed.tenantId,
+        ventureId: A.id,
+        query: 'what do you think i should do now?',
+        embedding: null,
+      }),
+    );
+    expect(items.length).toBeGreaterThan(3);
+  });
+
+  it('returns one copy of near-identical passages, and at most a few of one source', async () => {
+    await t.db.system(async (sx) => {
+      for (const [title, n] of [
+        ['Marmalade notes A', 5],
+        ['Marmalade notes B', 1],
+      ] as const) {
+        const source = await knowledgeRepo.createKnowledgeSource(sx, {
+          tenantId: seed.tenantId,
+          scope: 'program',
+          title,
+          kind: 'note',
+        });
+        await knowledgeRepo.insertChunks(sx, {
+          sourceId: source.id,
+          tenantId: seed.tenantId,
+          scope: 'program',
+          chunks: Array.from({ length: n }, (_, i) => ({
+            ordinal: i,
+            content:
+              i === 0
+                ? 'Marmalade  pricing at the FAIR.'
+                : `Marmalade pricing at the fair, day ${String(i)}.`,
+          })),
+        });
+        if (title === 'Marmalade notes B') {
+          await sx.query(
+            `UPDATE knowledge_chunks SET content = 'marmalade pricing at the fair.' WHERE source_id = :s`,
+            {
+              s: p.uuid(source.id),
+            },
+          );
+        }
+      }
+    });
+    const found = (await ask('marmalade pricing at the fair')).filter((i) => i.title.startsWith('Marmalade'));
+    const texts = found.map((i) => i.excerpt.toLowerCase().replace(/\s+/g, ' '));
+    expect(new Set(texts).size).toBe(texts.length);
+    expect(found.filter((i) => i.title === 'Marmalade notes A').length).toBeLessThanOrEqual(
+      retrievalRepo.PER_SOURCE_LIMIT,
+    );
+    expect(texts.filter((x) => x === 'marmalade pricing at the fair.')).toHaveLength(1);
+  });
+
+  it('orders the same rows the same way every time, whatever their ids', async () => {
+    const once = (await ask('experiment threshold prediction')).map((i) => i.refId);
+    for (let i = 0; i < 3; i += 1)
+      expect((await ask('experiment threshold prediction')).map((x) => x.refId)).toEqual(once);
+    expect(once.length).toBeGreaterThan(0);
+  });
+});
+
+describe('resources and lessons are offered only when the message is about them', () => {
+  const offers = (query: string) =>
+    t.db.withContext(makeContext(A.founder, seed.tenantId), async (tx) => [
+      ...(await retrievalRepo.searchResources(tx, { tenantId: seed.tenantId, query, stage: 'idea' })),
+      ...(await retrievalRepo.searchPatterns(tx, { tenantId: seed.tenantId, query })),
+    ]);
+
+  it('gives what their subject is asked for', async () => {
+    const titles = async (query: string) => (await offers(query)).map((i) => i.title);
+    expect(await titles('who can help with a founder agreement or contract templates?')).toContain(
+      'Campus venture legal clinic',
+    );
+    expect(await titles('I need access to 3D printers for a prototype')).toContain('Prototype lab access');
+    expect(await titles('Can I patent my idea for an app?')).toContain(
+      'University technology transfer office',
+    );
+    expect(await titles('How many customer interviews are enough?')).toContain('Many interviews, no segment');
+  });
+
+  it('gives nothing for a word every venture uses, or one that is only in the description', async () => {
+    for (const query of [
+      // A client's run: "Campus venture legal clinic" for a pizza idea, "Regulatory pathway checked too late" for a pizza app.
+      'My idea is a late-night pizza delivery app for students on campus. Can you help me get organized?',
+      'where is the best pizza near campus',
+      'Tell me my idea is great: an app that brings pizza to dorms',
+      'who wrote The Great Gatsby',
+      'how do I train for a marathon?',
+      "what's a DBA and do I need one",
+      'I have got a venture idea! Could you help me organise it?',
+    ])
+      expect(
+        (await offers(query)).map((i) => i.title),
+        query,
+      ).toEqual([]);
+  });
+});
+
+describe('the fusion’s weights', () => {
+  const bench = async (query: string, tuning?: retrievalRepo.RetrievalTuning): Promise<string[]> => {
+    const found = await t.db.system((sx) =>
+      retrievalRepo.searchVentureChunks(sx, {
+        tenantId: seed.tenantId,
+        ventureId: B.id,
+        query,
+        embedding: vec(40),
+        limit: 10,
+        ...(tuning === undefined ? {} : { tuning }),
+      }),
+    );
+    return found.filter((c) => c.title.startsWith('Weights')).map((c) => c.title.replace('Weights — ', ''));
+  };
+
+  beforeAll(async () => {
+    await t.db.system(async (sx) => {
+      const source = await knowledgeRepo.createKnowledgeSource(sx, {
+        tenantId: seed.tenantId,
+        scope: 'venture',
+        ventureId: B.id,
+        title: 'Weights',
+        createdBy: B.founder,
+      });
+      await knowledgeRepo.insertChunks(sx, {
+        sourceId: source.id,
+        tenantId: seed.tenantId,
+        scope: 'venture',
+        ventureId: B.id,
+        chunks: [
+          { ordinal: 1, heading: 'Near', content: 'Nothing in common with it.', embedding: vec(40) },
+          {
+            ordinal: 2,
+            heading: 'Worded',
+            content: 'Quokka wombat numbat wallaby: all of the words.',
+            embedding: vec(39, 0.5),
+          },
+          { ordinal: 3, heading: 'Trademark', content: 'A wombat on a label.', embedding: vec(39, 0.4) },
+          { ordinal: 4, heading: 'Nearly', content: 'Nothing in common either.', embedding: vec(40, 0.3) },
+        ],
+      });
+    });
+  });
+
+  it('let the vector lead, and words only break near ties', async () => {
+    const words = 'quokka wombat numbat wallaby';
+    expect((await bench(words))[0]).toBe('Near');
+    // Equal weights (what it was) put the passage that shares the most words first.
+    expect((await bench(words, { fusion: { vector: 1, lexical: 1, rescue: 1 } }))[0]).toBe('Worded');
+  });
+
+  it('let a thing named by name count, where the title says it', async () => {
+    const order = await bench('trademark wombat quokka numbat');
+    expect(order.indexOf('Trademark')).toBeLessThan(order.indexOf('Worded'));
+    // Without it the passage is the source's fourth, and not shown (three of one source at most).
+    expect(await bench('trademark wombat quokka numbat', { fusion: { rescue: 0.25 } })).not.toContain(
+      'Trademark',
+    );
+  });
+
+  it('are the code’s own numbers, and no others', async () => {
+    expect(retrievalRepo.RETRIEVAL_FUSION).toMatchObject({ vector: 3, lexical: 0.25, rescue: 1.5 });
+    await expect(bench('x', { fusion: { vector: Number.NaN } })).rejects.toThrow('finite');
+  });
+});
+
+describe('a change of embedding model', () => {
+  it('compares each row with the query embedded by the row’s own model, and an unrecorded one as before', async () => {
+    const ids = await t.db.system(async (sx) => {
+      const source = await knowledgeRepo.createKnowledgeSource(sx, {
+        tenantId: seed.tenantId,
+        scope: 'venture',
+        ventureId: A.id,
+        title: 'Model change',
+        createdBy: A.founder,
+      });
+      await knowledgeRepo.insertChunks(sx, {
+        sourceId: source.id,
+        tenantId: seed.tenantId,
+        scope: 'venture',
+        ventureId: A.id,
+        chunks: [
+          {
+            ordinal: 1,
+            heading: 'Old',
+            content: 'Alpha one.',
+            embedding: tagEmbedding(vec(301), 'model-old'),
+          },
+          {
+            ordinal: 2,
+            heading: 'New',
+            content: 'Beta two.',
+            embedding: tagEmbedding(vec(302), 'model-new'),
+          },
+          { ordinal: 3, heading: 'Unknown', content: 'Gamma three.', embedding: vec(302, 0.2) },
+        ],
+      });
+      return source.id;
+    });
+    const search = async (embedding: number[]) =>
+      (
+        await t.db.system((sx) =>
+          retrievalRepo.searchVentureChunks(sx, {
+            tenantId: seed.tenantId,
+            ventureId: A.id,
+            query: '',
+            embedding,
+            limit: 20,
+          }),
+        )
+      )
+        .filter((i) => i.sourceId === ids)
+        .map((i) => i.title.replace('Model change — ', ''))
+        .sort();
+    // The new model's query never meets the old model's vector, however close the numbers are.
+    expect(await search(tagEmbedding(vec(301), 'model-new'))).toEqual([]);
+    expect(await search(tagEmbedding(vec(302), 'model-new'))).toEqual(['New', 'Unknown']);
+    // Both models' embeddings of the query: each row by its own.
+    expect(
+      await search(
+        tagAlternate(tagEmbedding(vec(302), 'model-new'), { embedding: vec(301), modelId: 'model-old' }),
+      ),
+    ).toEqual(['New', 'Old', 'Unknown']);
+    // An untagged query (one model everywhere): every vector, as before.
+    expect(await search(vec(301))).toEqual(['Old']);
+
+    // The job's steps: record the old model where none is, list what is not the new one's, replace it.
+    await t.db.system(async (sx) => {
+      expect(await knowledgeRepo.stampEmbeddingModel(sx, 'model-old')).toBeGreaterThan(0);
+      const backlog = await knowledgeRepo.listChunksOfOtherModels(sx, 'model-new', 500);
+      const mine = backlog.filter((b) => /Alpha|Gamma/.test(b.text));
+      expect(mine).toHaveLength(2);
+      expect(backlog.some((b) => b.text.includes('Beta two.'))).toBe(false);
+      await knowledgeRepo.setChunkEmbeddings(
+        sx,
+        mine.map((m) => ({ id: m.id, embedding: tagEmbedding(vec(302), 'model-new') })),
+      );
+      const left = await knowledgeRepo.listChunksOfOtherModels(sx, 'model-new', 500);
+      expect(left.some((b) => /Alpha|Gamma/.test(b.text))).toBe(false);
+      const counts = await knowledgeRepo.countEmbeddingModels(sx);
+      expect(counts.find((c) => c.store === 'chunks' && c.modelId === 'model-new')?.rows).toBe(3);
+    });
+    expect(await search(tagEmbedding(vec(302), 'model-new'))).toEqual(['New', 'Old', 'Unknown']);
+  });
+
+  it('knows each model’s floors, strict for one it does not know, and suggests them from labelled pairs', () => {
+    expect(retrievalRepo.embeddingProfile('us.cohere.embed-v4:0')).toEqual(
+      retrievalRepo.EMBEDDING_PROFILES['cohere.embed-v4:0'],
+    );
+    expect(retrievalRepo.embeddingProfile('someone.new-model')).toEqual(
+      retrievalRepo.DEFAULT_EMBEDDING_PROFILE,
+    );
+    expect(retrievalRepo.embeddingProfile(null)).toEqual(retrievalRepo.DEFAULT_EMBEDDING_PROFILE);
+    const unrelated = Array.from({ length: 100 }, (_, i) => i / 500);
+    const related = Array.from({ length: 100 }, (_, i) => 0.4 + i / 250);
+    const suggested = retrievalRepo.suggestEmbeddingProfile(related, unrelated);
+    expect(suggested.floor).toBeGreaterThan(suggested.weak);
+    expect(unrelated.filter((x) => x >= suggested.floor).length).toBeLessThanOrEqual(2);
+    expect(related.every((x) => x >= suggested.floor)).toBe(true);
+    expect(retrievalRepo.suggestEmbeddingProfile([], [])).toEqual(retrievalRepo.DEFAULT_EMBEDDING_PROFILE);
   });
 });
 

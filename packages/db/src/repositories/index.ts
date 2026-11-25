@@ -40,3 +40,4 @@ export {
   type ReadPartValue,
 } from './common.js';
 export * as studentRepo from './student.js';
+export * as pathRepo from './path.js';

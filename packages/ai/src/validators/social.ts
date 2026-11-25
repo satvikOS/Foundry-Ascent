@@ -833,6 +833,8 @@ export interface WithoutRepeatsOptions {
    * previous reply are settled). Default: every question of `previous`, none settled.
    */
   readonly asked?: readonly QuestionTerms[];
+  /** A sentence never left out, however often it was said (the path's step: validators/reply-contract.ts). */
+  readonly keep?: (sentence: string) => boolean;
 }
 
 export interface WithoutRepeats {
@@ -883,7 +885,11 @@ export function withoutRepeats(
         (s.start >= proseHandBack ||
           (proseHandBackCandidate(text.slice(0, s.start), sentence) &&
             !leansOnPrevious(nextSentence(text, spans, s)))));
-    if (!repeat || isProtectedLine(sentence, options.keepReferrals === true)) {
+    if (
+      !repeat ||
+      isProtectedLine(sentence, options.keepReferrals === true) ||
+      options.keep?.(sentence) === true
+    ) {
       lastKept = s;
       continue;
     }

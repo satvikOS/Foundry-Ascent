@@ -22,6 +22,10 @@ export const Route = createFileRoute('/$tenant/app/v/$ventureId/')({
     context.queryClient.query(ventureOverviewQueryOptions(params.ventureId)).catch(() => undefined);
     // The greeting: fetched on a link's hover too, so New chat rarely waits for it.
     context.queryClient.query(conversationOpenerQueryOptions(params.ventureId)).catch(() => undefined);
+    // The step the greeting names (loaded apart: loaders are in the first page load).
+    void import('@/lib/api/hooks/path')
+      .then(({ pathQueryOptions }) => context.queryClient.query(pathQueryOptions(params.ventureId)))
+      .catch(() => undefined);
   },
   head: () => ({ meta: [{ title: 'New chat' }] }),
   component: NewChatPage,

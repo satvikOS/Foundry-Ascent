@@ -481,14 +481,15 @@ describe('test bench: admission like a founder message', () => {
     const spentBefore = await h.t.db.system((sx) =>
       usageRepo.spendToday(sx, { principalId: corin.principalId }),
     );
-    // One message costs three calls (0.03): within the cap once more, past it after the second.
+    // One message costs three calls (0.03); the same message again two, as its query is embedded already (0.02): within
+    // the cap once more, at it after the second.
     await h.core.admin.updateSettings(owner, { dailyUsdCapPerPrincipal: spentBefore + 0.05 });
     try {
       const input = { releaseId: activeReleaseId, text: QUESTION };
       await core.testBench.runTestTurn(await again(corin), personaId, input);
       await core.testBench.runTestTurn(await again(corin), personaId, input);
       const spent = await h.t.db.system((sx) => usageRepo.spendToday(sx, { principalId: corin.principalId }));
-      expect(spent - spentBefore).toBeCloseTo(0.06, 6);
+      expect(spent - spentBefore).toBeCloseTo(0.05, 6);
       const calls = gateway.calls.length;
       const ctx = await again(corin);
       expect(await refusal(core.testBench.runTestTurn(ctx, personaId, input))).toEqual({

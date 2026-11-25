@@ -1059,10 +1059,40 @@ const SELF_DOUBT =
 const SELF_STATE =
   /\b(?:feel|feeling|felt|cope|coping|keep going|go on|carry on|in a (?:good|bad|dark|great) (?:place|headspace|spot)|energy|sleep|slept|sleeping|eat|eating|think straight|focus on anything|myself|out of bed|(?:left|leave) the house|in me|the point|my life|why i bother|worth it|cut out for|falling apart|nothing(?:'s| is) working|motivat\w*|(?:been|be) (?:ok|okay|alright|all right))\b/;
 
-/** Whether the founder's message is in distress ({@link DISTRESS}, {@link DISTRESS_STATE}): it keeps main's reply and the safety path. */
+/**
+ * Matter and parts that are dead as a matter of fact ("clears dead tissue in a dish", "dead batteries", "a dying crop"):
+ * the wellbeing cue's word said of a thing. A closed list of things, so whatever is said of a person, and every other
+ * word of the message, is read as before.
+ */
+const DEAD_MATTER =
+  /\b(?:dead|dying) (?:(?:skin|muscle|nerve|plant|brain|tumou?r|cancer|heart|bone|coral) )?(?:tissues?|cells?|skin|bacteria|microbes?|batter(?:y|ies)|pixels?|zones?|links?|stock|inventory|code|leads?|plants?|crops?|trees?|leaves|fish|wood|coral|sensors?|nerves?|muscles?)\b|\bdie[- ](?:cut|cutting|cast|casting|size)\b/g;
+
+/** The step or the work is too big ("that's too much before the exam"), never "it's all too much". */
+const TOO_MUCH_WORK =
+  /\b(?:that|this|it)(?:'s| is)(?: (?:a bit|a lot|way|still|kind of|kinda|just|probably|honestly|really))* too much\b/g;
+/** They ask for less to do, or say how much time they have: what "too much" is about. */
+const ASKS_FOR_LESS =
+  /\bsomething (?:much |a bit |a little |a lot )?(?:smaller|shorter|easier|quicker|lighter)\b|\b(?:smaller|shorter|quicker|lighter) (?:step|version|task|thing|one|piece)\b|\bsmallest (?:thing|step|version|piece)\b|\b(?:give me|need|want|is there|got) (?:something|anything) (?:i|we) can (?:do|finish|fit|get done) (?:in|within|tonight|today|before|this)\b|\b(?:i|we)(?:'ve)? (?:only |just )?(?:have|got)(?: got)? (?:only |just |about |maybe )?(?:an?|one|two|three|half an|\d+) (?:evenings?|hours?|minutes?|mins?|afternoons?)\b/;
+
+/** They cannot ("this is too much, I can't…"): it is about them, whatever they ask for. */
+const THEY_CANNOT = /\b(?:i|we) (?:really |just |honestly |even )*(?:can't|cannot|can not|couldn't)\b/;
+
+/** The message without what it says of things and of the size of the work ({@link DEAD_MATTER}, {@link TOO_MUCH_WORK}). */
+function ofThePerson(t: string): string {
+  const without = t.replace(DEAD_MATTER, ' ');
+  return ASKS_FOR_LESS.test(without) && !THEY_CANNOT.test(without)
+    ? without.replace(TOO_MUCH_WORK, ' ')
+    : without;
+}
+
+/**
+ * Whether the founder's message is in distress ({@link DISTRESS}, {@link DISTRESS_STATE}): it keeps main's reply and the
+ * safety path. What it says of matter ("dead tissue") or of the size of a step ("that's too much, something smaller?")
+ * is not; everything else it says is read whole, and the risk rules and the ideation prefilter always read it all.
+ */
 export function inDistress(text: string): boolean {
-  const t = normalize(text);
-  if (t === '') return false;
+  const t = ofThePerson(normalize(text));
+  if (t.trim() === '') return false;
   if (DISTRESS.test(t) || DISTRESS_STATE.test(t) || SELF_STATE_FRAMES.test(t)) return true;
   if (WELLBEING_CUE.test(t) || STRESS_CUE.test(t)) return true;
   if (SELF_CONTINUING.test(t) && SELF_DOUBT.test(t)) return true;
@@ -2283,8 +2313,16 @@ function ago(n: number): string {
 /**
  * The `<conversation_state>` block, or '' when there is nothing worth saying (the first message of a
  * conversation with no notable move). Founder words in it are escaped data.
+ *
+ * `guided`: the turn carries the path's decision (`<path>`: its answer and step), so the lines that would leave the step
+ * out ("never give it again", "never steer back") say to name it once, in one line. A message in distress is rendered as
+ * ever (ac41aec), guided or not.
  */
-export function renderConversationState(state: ConversationState): string {
+export function renderConversationState(
+  state: ConversationState,
+  options: { readonly guided?: boolean } = {},
+): string {
+  const guided = options.guided === true && state.distress !== true;
   const notable =
     state.moves.some((m) => NOTABLE.has(m)) ||
     state.directChoice === true ||
@@ -2355,7 +2393,11 @@ export function renderConversationState(state: ConversationState): string {
       lines.push('  No questions at all: say what you recommend and why, in statements.');
     }
   }
-  if (state.moves.includes('news')) {
+  if (state.moves.includes('news') && guided) {
+    lines.push(
+      '- They bring news: react to it first, in your own words, and say what it changes; then the open step in one line.',
+    );
+  } else if (state.moves.includes('news')) {
     lines.push(
       '- They bring news: react to it and ask about it first, in your own words. In this reply never steer back to an',
       '  earlier question, plan or parked thread.',
@@ -2423,13 +2465,16 @@ export function renderConversationState(state: ConversationState): string {
   // Lab run 42457618242: two no-answers and a request for help in a row met the same next step three replies running.
   if (state.stuckAgain === true) {
     lines.push(
-      '- You already gave them a next step last time; do not repeat it or argue for it again.',
+      guided
+        ? '- You already gave them the step last time: do not argue for it again (name it in one line at the end).'
+        : '- You already gave them a next step last time; do not repeat it or argue for it again.',
       '  Do the work now, in full, in this reply (write the draft, the script, the list or the plan they need), or help with',
       '  what they just asked for. If they are telling you how they are rather than asking for the work, respond to that',
       '  first and leave the work.',
     );
   }
-  if (state.goal === true) {
+  // The path's answer teaches a goal it covers; its step is the preparation.
+  if (state.goal === true && !guided) {
     lines.push(
       '- They name a goal or a step ahead of them: teach and prepare. Most of the reply is how it usually works (the',
       '  usual path, its steps, what the terms mean, what good looks like) and the prep they will need (questions to ask,',
@@ -2477,7 +2522,9 @@ export function renderConversationState(state: ConversationState): string {
   // A first message has no subject to change from.
   if (state.moves.includes('topic_shift') && state.earlierTurns > 0) {
     lines.push(
-      '- They changed the subject: follow them fully. Do not steer back to the earlier thread unless they return to it.',
+      guided
+        ? '- They changed the subject: answer that first, fully; the open step stays one line at the end.'
+        : '- They changed the subject: follow them fully. Do not steer back to the earlier thread unless they return to it.',
     );
   }
   if (state.moves.includes('hesitant') && state.earlierTurns > 0) {
@@ -2518,12 +2565,12 @@ export function renderConversationState(state: ConversationState): string {
   if ((state.adviceGiven ?? []).length > 0) {
     lines.push(
       `- Earlier in this conversation you already said: ${(state.adviceGiven ?? []).map(quoted).join(' | ')}. Build on`,
-      '  it; never give it again.',
+      guided ? '  it; never give it again, except the open step in one line.' : '  it; never give it again.',
     );
   }
   const asks = state.moves.includes('help') || state.moves.includes('question');
   const aboutNotes = state.moves.includes('recall') || state.moves.includes('resume');
-  if ((state.social ?? null) === null && asks && !aboutNotes) {
+  if ((state.social ?? null) === null && asks && !aboutNotes && !guided) {
     lines.push(
       '- Make this reply about what they just said. Bring nothing up from your notes (commitments, open questions,',
       '  earlier advice) unless it bears on it (their plan repeats a recorded pattern or breaks a commitment).',

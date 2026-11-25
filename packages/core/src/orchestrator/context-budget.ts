@@ -8,6 +8,7 @@ import {
 } from '@foundry/ai';
 import { type EvidenceItem } from '@foundry/contracts';
 
+import { promptInput, type PathPromptGuidance } from '../path/ai-adapter.js';
 import { openerMessages } from './turn-prompts.js';
 
 /** Conservative token estimate (≈ 3.6 characters per token for English prose and markup). */
@@ -62,6 +63,8 @@ export function assembleContext(args: {
   readonly opener?: string | null;
   /** The vEIR's replies at the end of its last conversations, newest first (its phrasing ledger reads them). */
   readonly pastReplies?: readonly string[];
+  /** What the path decided for the turn (the same object the system prompt was built with). */
+  readonly guidance?: PathPromptGuidance | null;
 }): AssembledContext {
   const systemTokens = estimateTokens(args.system);
   const answered = args.history.filter(
@@ -86,6 +89,7 @@ export function assembleContext(args: {
             // The founder's first message answers the replayed opener (<conversation_state> says so).
             opener: replayOpener ? (args.opener ?? null) : null,
             ...(args.pastReplies !== undefined ? { pastReplies: args.pastReplies } : {}),
+            ...promptInput(args.guidance ?? null),
           }),
         ],
         args.leftOff ?? '',

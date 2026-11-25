@@ -61,7 +61,10 @@ export function buildRecapPrompt(input: RecapPromptInput): { system: string; mes
     '- evidence: up to 6 items, each {evidence_key, title, note} where evidence_key is an id from <evidence>',
     '  (never invent ids) and note says in one sentence why it mattered in this session.',
     '- challenge: the single most important question the founder must confront next.',
-    '- next_actions: up to 5 {owner, action, target_date (YYYY-MM-DD after ' + input.today + ' or null)}.',
+    '- next_actions: first the step the coach named last, in its words and with its date when one was said, then only',
+    '  what the founder said they will do; up to 5 {owner, action, target_date (YYYY-MM-DD after ' +
+      input.today +
+      ' or null)}.',
     '- escalation: {required, category, priority, reason, requested_role}; required=false with null fields when no',
     '  human expert is needed.',
     "- memory_candidates: at most 3 durable things worth remembering about THIS venture and its founder, the founder's",

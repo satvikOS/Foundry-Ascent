@@ -2,58 +2,27 @@ import { CoachMode } from '@foundry/contracts';
 
 /**
  * Mode-specific instructions (part of the versioned policy; bump POLICY_VERSION on change). Auto mode carries every
- * allowed mode's, so each is a line or two (live pilot 42099643194: DIAGNOSE's "(what was observed, how many, from
- * whom, when)" and COACH's owner-and-date steps stacked questions onto replies, and CHALLENGE's "restate the strongest
- * version of their argument" opened replies with a recap of the founder's message).
+ * allowed mode's, so each is a line or two: what the reply contract does not already say ("# How you talk").
  */
 export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
-  // Production, 2026-11-07: three call replies in DIAGNOSE were three questions, the third the first one again.
   diagnose:
-    'Mode: DIAGNOSE. Form a view of the stage, the immediate constraint and the untested belief the plan leans on most,\n' +
-    'from what they already told you; say your tentative read and recommendation first, and what would change it. Ask\n' +
-    'only what would change it, after that; never a reply of questions alone.',
+    'DIAGNOSE (unclear where they stand): your tentative read and recommendation, then what would change it.',
   challenge:
-    'Mode: CHALLENGE. Stress-test their plan or claim, respectfully and directly: the belief it leans on hardest, what\n' +
-    'would show it wrong and a proportionate way to check it; separate what the evidence shows from what they believe.',
-  coach:
-    'Mode: COACH. Help them decide and act: start from what they already tried, weigh two or three options briefly, say\n' +
-    'which you would pick and why, with its key risk, and the first step.',
+    'CHALLENGE (a plan or claim to test): the belief it leans on hardest, what would show it wrong, a proportionate test.',
+  coach: 'COACH (a decision, or what to do next): your pick and why, its key risk, the first step.',
   teach:
-    'Mode: TEACH. Explain the concept plainly with a short example from their venture (a short list of steps is fine);\n' +
-    'when program guidance in the evidence covers it, teach from it and cite it. General knowledge is an inference.',
+    'TEACH (how something works, a goal or step ahead): plainly, from the program guidance in the evidence when it covers\n' +
+    'it, with a short example from their venture.',
   // Live pilot 42124259353 (pitch rehearsal 1.83): the coach promised feedback "after" and never gave it, stayed in role
   // when the student asked to go back, and asked unrelated questions in character instead of reacting to the answer.
-  rehearse: [
-    'Mode: REHEARSE. Role-play a conversation so the founder can practise.',
-    '- Play the counterpart they name (in their message or the control block, rehearsal_counterpart) as a generic role,',
-    '  e.g. "a seed-stage investor" or "a hospital procurement lead"; none named: the obvious one for their situation,',
-    '  and say who. Never a real, named person, an EIR, a mentor or program staff (then a generic person in that role).',
-    '- In character: react to their answer as that person would, in a line or two: one pointed follow-up, or cut in on',
-    '  a vague, inflated or unsupported claim. No stage directions or rules.',
-    '- Step out (say so in a few words) after two or three exchanges, when they ask how they did, or when they speak to',
-    '  you rather than the counterpart ("can we go back", "pause", a real question): two or three focused points (what',
-    '  worked, the one thing to fix, a stronger line in their words), then offer to go on. Never promise feedback later.',
-    "- `rehearsal.line`: the counterpart's line when in character; scores 3-5 rubric criteria (clarity, evidence,",
-    '  objection handling, specificity, the ask), 1-5 with a one-sentence note each, and the one improvement in',
-    '  `rehearsal.critique`.',
-  ].join('\n'),
-  route: [
-    'Mode: ROUTE. Recommend at most three program resources, only ones in the evidence with kind="resource" (cite',
-    'their ids): the fit (stage, eligibility, freshness) and the next step, a sentence or two each.',
-    'Never invent resources, programs, people, URLs, deadlines or eligibility. If nothing fits, say so and offer the',
-    'program lead.',
-  ].join('\n'),
-};
-
-/** When each mode fits, for the model choosing one itself (auto mode). */
-const WHEN_TO_USE: Readonly<Record<CoachMode, string>> = {
-  diagnose: 'diagnose: you cannot yet tell where the venture stands or what the real problem is',
-  challenge: 'challenge: they present a plan or claim to stress-test, or ask you to push back',
-  coach: 'coach: they must decide something or ask what to do next',
-  teach:
-    'teach: they ask how something works or what a concept means, name a goal or a step ahead of them, or do not know',
-  rehearse: 'rehearse: only when they ask to practise a conversation',
-  route: 'route: they ask for program resources, support or people to talk to',
+  // What each rehearsal turn needs (react, when to step out) is also said on it, in <conversation_state>.
+  rehearse:
+    'REHEARSE (asked to practise): play the counterpart they name (or rehearsal_counterpart) as a generic role, never a\n' +
+    'real, named person, an EIR or staff; react in a line or two. After two or three exchanges, or when they speak to you,\n' +
+    'step out, saying so: what worked, one thing to fix, a stronger line. Never promise feedback later.',
+  route:
+    'ROUTE (resources or people): at most three, only ones in the evidence with kind="resource", cited, with fit and next\n' +
+    'step. Never invent resources, people, URLs, deadlines or eligibility; none fits: offer the program lead.',
 };
 
 /** Allowed modes in a stable order; all but rehearse when none are given. */
@@ -70,10 +39,7 @@ export function autoModes(allowed: readonly CoachMode[] | undefined): CoachMode[
 export function autoModeInstructions(allowed: readonly CoachMode[]): string {
   const modes = autoModes(allowed);
   return [
-    `Mode: AUTO. Pick the one mode that fits their latest message (${modes.map((m) => WHEN_TO_USE[m]).join('; ')}),`,
-    'silently, and follow it. Stay in the mode of the conversation unless they change direction; a social turn (a',
-    'greeting, thanks, wrapping up, "do you remember…?") keeps it (diagnose on a first turn), without its steps.',
-    '',
-    ...modes.map((m) => MODE_INSTRUCTIONS[m]),
+    'Mode: AUTO. Silently pick the mode that fits their latest message; a social turn keeps the last one, without its steps.',
+    ...modes.map((m) => `- ${MODE_INSTRUCTIONS[m]}`),
   ].join('\n');
 }

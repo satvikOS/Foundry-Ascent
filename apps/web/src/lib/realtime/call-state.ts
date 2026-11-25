@@ -1,4 +1,10 @@
-import type { CallEndReason, CallSummary, CallView, TurnBlockedDetail } from '@foundry/contracts';
+import type {
+  CallEndReason,
+  CallSummary,
+  CallView,
+  TurnBlockedDetail,
+  TurnGuidance,
+} from '@foundry/contracts';
 
 import type { VoiceRoute } from './playback';
 
@@ -93,6 +99,8 @@ export interface CallSnapshot {
   readonly notice: CallNotice | null;
   /** The latest turn was held back (crisis support or a safety check): what the founder is offered. */
   readonly blocked: TurnBlockedDetail | null;
+  /** The step the path chose on the call's latest coaching turn (kept for the call's review); null before one. */
+  readonly guidance: TurnGuidance | null;
   /** Typed or spoken lines waiting for the vEIR to finish. */
   readonly queued: number;
   readonly ended: CallEnded | null;
@@ -124,6 +132,7 @@ export const IDLE_CALL: CallSnapshot = {
   voicePaused: false,
   notice: null,
   blocked: null,
+  guidance: null,
   queued: 0,
   ended: null,
   error: null,

@@ -35,6 +35,19 @@ export function createDatabase(env: EnvLike, options: { readonly defaultResumeBu
 }
 
 /**
+ * The embedding model being replaced (`MODEL_EMBEDDINGS_PREVIOUS_ID`, set only while stored rows still carry its
+ * vectors; docs/runbooks/embedding-model.md), as `CoreDeps.previousEmbeddings`.
+ */
+export function previousEmbeddingsFor(
+  env: EnvLike,
+  logger: Logger,
+): { readonly previousEmbeddings?: ModelGateway } {
+  const previous = env.MODEL_EMBEDDINGS_PREVIOUS_ID?.trim();
+  if (previous === undefined || previous === '' || previous === env.MODEL_EMBEDDINGS_ID) return {};
+  return { previousEmbeddings: createGateway({ ...env, MODEL_EMBEDDINGS_ID: previous }, logger) };
+}
+
+/**
  * Model gateway selection (MODEL_PROVIDER=bedrock|mock; mock by default outside production, required in
  * production). No network I/O at construction. Call timings reach the request's metrics (`observeGateway`).
  */

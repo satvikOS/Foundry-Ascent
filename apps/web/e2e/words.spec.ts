@@ -24,7 +24,7 @@ import {
  * Counted: every rendered word (text and empty-field placeholders) a sighted person can see, shell included.
  * Not counted: words read only by screen readers, the AI disclosure (never cut for brevity), what the vEIR
  * or the founder wrote (the answer, its follow-ups, its next steps' text, owner and date, call captions, the
- * founder's own message, conversation titles), toasts, dialogs layered over the screen, and the venture's context
+ * founder's own message, conversation titles, the path's step and its card), toasts, dialogs layered over the screen, and the venture's context
  * panel beside it (collapsible, and mostly the venture's own records; its copy is budgeted as "Context panel" in
  * src/test/copy-budget.json).
  *
@@ -78,6 +78,8 @@ async function visibleWords(root: Locator, skipText: readonly string[] = []): Pr
       '[aria-label="Recent conversations"]',
       '[data-sonner-toaster]',
       '[data-slot="context-panel"]',
+      // The path's step under a reply: the playbook's and the founder's words, its few controls budgeted as "Path".
+      '[data-slot="step-card"]',
     ].join(', ');
     const layered = (node: Element) => {
       const dialog = node.closest('[role="dialog"], [role="alertdialog"]');
@@ -213,16 +215,13 @@ test.describe('word budgets', () => {
         ).toBeVisible({ timeout: 30_000 });
         await settle(page);
         counts.Conversation = await visibleWords(body, [message]);
-        // The vEIR's next step is its own words (they change with the model), so they are not counted.
+        // The path's step under the reply is the playbook's words, so they are not counted.
         const step = await page
           .getByRole('article', { name: 'Exchange 1' })
-          .getByRole('region', { name: 'Suggested next steps' })
-          .getByRole('listitem')
-          .first()
-          .locator('p')
+          .locator('[data-slot="step-card"] [data-slot="next-step"]')
           .first()
           .innerText();
-        expect(step.trim(), 'the answer suggests a next step').not.toBe('');
+        expect(step.trim(), 'the answer comes with its step').not.toBe('');
         expect(counts.Conversation.text, 'next-step text is not counted').not.toContain(step.trim());
       });
 

@@ -2,7 +2,6 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useCallback } from 'react';
 
 import { InboxPage, type InboxFilter } from '@/features/eir/inbox/inbox-page';
-import { inboxEscalationsQueryOptions } from '@/lib/api/hooks/escalations';
 
 interface InboxSearch {
   id?: string | undefined;
@@ -15,7 +14,10 @@ export const Route = createFileRoute('/$tenant/app/eir/inbox')({
     tab: search.tab === 'closed' ? 'closed' : undefined,
   }),
   loader: ({ context }) => {
-    context.queryClient.query(inboxEscalationsQueryOptions()).catch(() => undefined);
+    // Loaded apart: loaders are in the first page load, the page's contracts are not needed there.
+    void import('@/lib/api/hooks/escalations')
+      .then(({ inboxEscalationsQueryOptions }) => context.queryClient.query(inboxEscalationsQueryOptions()))
+      .catch(() => undefined);
   },
   head: () => ({ meta: [{ title: 'Escalation inbox' }] }),
   component: InboxRoute,

@@ -5,7 +5,14 @@ import {
   type PersonaKnowledgeSourceView,
   UpdatePersonaKnowledgeRequest,
 } from '@foundry/contracts';
-import { documentsRepo, knowledgeRepo, personasRepo, settingsRepo, usageRepo } from '@foundry/db';
+import {
+  documentsRepo,
+  knowledgeRepo,
+  personasRepo,
+  settingsRepo,
+  tagEmbedding,
+  usageRepo,
+} from '@foundry/db';
 import { type z } from 'zod';
 
 import { requirePersonaCurator } from '../authz/persona-curator.js';
@@ -182,7 +189,7 @@ export function createKnowledgeLibraryService(kit: Kit): KnowledgeLibraryService
         const vectors = batch.flatMap((chunk, j) => {
           const embedding = result.vectors[j];
           return embedding?.length === knowledgeRepo.EMBEDDING_DIMENSIONS
-            ? [{ id: chunk.id, embedding }]
+            ? [{ id: chunk.id, embedding: tagEmbedding(embedding, result.modelId) }]
             : [];
         });
         if (vectors.length > 0) await kit.system((sx) => knowledgeRepo.setChunkEmbeddings(sx, vectors));

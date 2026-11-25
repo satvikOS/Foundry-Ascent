@@ -335,6 +335,12 @@ export const api = {
     body?: unknown,
     options: Omit<ApiRequestOptions, 'method' | 'body'> = {},
   ) => apiRequest(pathname, { ...options, method: 'POST', body, schema }),
+  put: <S extends z.ZodType>(
+    pathname: string,
+    schema: S,
+    body?: unknown,
+    options: Omit<ApiRequestOptions, 'method' | 'body'> = {},
+  ) => apiRequest(pathname, { ...options, method: 'PUT', body, schema }),
   patch: <S extends z.ZodType>(
     pathname: string,
     schema: S,

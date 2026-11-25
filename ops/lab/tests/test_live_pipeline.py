@@ -505,8 +505,8 @@ def test_estimates_and_shards_respect_the_caps(dataset) -> None:
     assert est["student_turns"] == sum(s.student_turns for s in dataset.scenarios)
     usd = est["usd"]
     assert usd["total"] == pytest.approx(usd["coach_app"] + usd["student_simulator"] + usd["judge"], abs=0.02)
-    # Sanity: priced at production's coach (Claude Haiku 4.5, no prompt-cache discount), never thousands.
-    assert 60 < usd["total"] < 250
+    # Sanity: priced at production's coach (Nova 2 Lite, no prompt-cache discount), never thousands.
+    assert 30 < usd["total"] < 120
     shards = shard(
         picks,
         dataset.by_id(),
@@ -586,10 +586,11 @@ def test_the_coach_model_ab_runs_the_lab_only_and_keeps_the_judge_independent(
     lab = lab_models()
     production = app_models()
     haiku = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    sonnet = "us.anthropic.claude-sonnet-4-6"
     nova = "us.amazon.nova-2-lite-v1:0"
-    # default: production's models, untouched (the coach is Claude Haiku 4.5 since 2026-11-06).
+    # default: production's models, untouched (the coach is Amazon Nova 2 Lite since 2026-11-24, ADR-0024).
     assert coach_app_models(DEFAULT_COACH, lab) == production
-    assert production.primary == haiku
+    assert production.primary == nova
     # An A/B arm: that model alone, primary and fallback, production's embeddings and background route.
     arm = coach_app_models(nova, lab)
     assert (arm.primary, arm.fallback, arm.embeddings, arm.background) == (
@@ -598,22 +599,25 @@ def test_the_coach_model_ab_runs_the_lab_only_and_keeps_the_judge_independent(
         production.embeddings,
         production.background,
     )
-    assert "us.anthropic.claude-sonnet-4-6" in lab.live_coach
+    assert sonnet in lab.live_coach
     with pytest.raises(ValueError, match="coach_model must be"):
         coach_app_models("us.anthropic.claude-opus-9-9", lab)
     # A Claude coach is judged by another family: Llama 4 Maverick, then Nova Premier.
-    assert judges_for(haiku, lab.live_judge) == (
+    assert judges_for(sonnet, lab.live_judge) == (
         "us.meta.llama4-maverick-17b-instruct-v1:0",
         "us.amazon.nova-premier-v1:0",
     )
-    assert all(model_family(j) != "anthropic" for j in judges_for(haiku, lab.live_judge))
+    assert all(model_family(j) != "anthropic" for j in judges_for(sonnet, lab.live_judge))
+    # A Nova coach (production's) is judged by Claude Haiku 4.5, the first live.judge candidate of another family;
+    # the conversation-lab role may invoke it (it is listed under live.judge), and Nova never judges Nova.
+    assert judges_for(production.primary, lab.live_judge)[0] == haiku
+    assert all(model_family(j) != "amazon" for j in judges_for(production.primary, lab.live_judge))
     assert model_family(judges_for(production.primary, lab.live_judge)[0]) != model_family(production.primary)
-    # The estimate prices the chosen coach (about 3.5x Nova 2 Lite a turn for Haiku), production's included; the app's
-    # share follows it.
-    assert coach_cost_factor(lab.prices, None) == coach_cost_factor(lab.prices, haiku)
-    assert coach_cost_factor(lab.prices, nova) == 1.0
+    # The estimate prices the chosen coach (Nova 2 Lite is the baseline, 1.0; Haiku about 3.5x, Sonnet about 10x a
+    # turn), production's included; the app's share follows it.
+    assert coach_cost_factor(lab.prices, None) == coach_cost_factor(lab.prices, nova) == 1.0
     assert 3.0 < coach_cost_factor(lab.prices, haiku) < 4.0
-    assert coach_cost_factor(lab.prices, "us.anthropic.claude-sonnet-4-6") > 9
+    assert coach_cost_factor(lab.prices, sonnet) > 9
     picks = select(dataset.scenarios, families=list(range(1, 31)), sample=10, seed=1)
     base = estimate(
         picks,
@@ -628,10 +632,11 @@ def test_the_coach_model_ab_runs_the_lab_only_and_keeps_the_judge_independent(
         dataset.by_id(),
         prices=lab.prices,
         student_model=lab.live_simulator[0],
-        judge_model=judges_for(haiku, lab.live_judge)[0],
+        judge_model=judges_for(sonnet, lab.live_judge)[0],
+        coach_model=sonnet,
     )
     assert claude["usd"]["coach_app"] > 3 * base["usd"]["coach_app"]
-    assert claude["models"]["coach"] == "default"
+    assert claude["models"]["coach"] == sonnet
     assert base["models"]["coach"] == nova
     assert budget_parts("live", 10.0, 0.9) == (9.0, 1.0)
     # The plan prints the choice, its judges and that production is unchanged; the shard job reproduces its split.
@@ -680,16 +685,16 @@ def test_an_ab_is_graded_by_one_judge_independent_of_every_arm() -> None:
     # A non-default arm on auto is an A/B arm: pinned the same way.
     assert live_judges(nova, JUDGE_AUTO, lab)[0] == JUDGE_AB
     assert live_judges(nova, JUDGE_AUTO, lab)[2] == (maverick,)
-    # A standalone default run: production's coach is Claude Haiku 4.5, so its judge is of another family (Llama 4
-    # Maverick, then Nova Premier), never Claude.
+    # A standalone default run: production's coach is Nova 2 Lite, so its judge is of another family (Claude Haiku 4.5
+    # first, then Llama 4 Maverick), never Nova.
     policy, coach, judges = live_judges("default", JUDGE_AUTO, lab)
-    assert (policy, coach) == (JUDGE_AUTO, haiku)
-    assert judges == (maverick, "us.amazon.nova-premier-v1:0")
-    assert all(model_family(j) != "anthropic" for j in judges)
-    # A named judge of the coach's own family is refused (Claude Haiku judging the Claude Haiku coach), as is one the
-    # lab does not list.
+    assert (policy, coach) == (JUDGE_AUTO, nova)
+    assert judges == (haiku, maverick)
+    assert all(model_family(j) != "amazon" for j in judges)
+    # A named judge of the coach's own family is refused (Nova Premier judging the Nova coach), as is one the lab does
+    # not list.
     with pytest.raises(ValueError, match="coach's own family"):
-        live_judges("default", haiku, lab)
+        live_judges("default", "us.amazon.nova-premier-v1:0", lab)
     with pytest.raises(ValueError, match="judge_model must be"):
         live_judges("default", "us.example.judge-v1:0", lab)
     # No candidate of a family no arm has: refused, never a confounded judge.

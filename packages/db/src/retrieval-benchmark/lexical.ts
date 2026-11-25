@@ -4,6 +4,10 @@
  * database, so its "lexical" column is the stronger textbook ranking, not the app's exact one.
  */
 
+import { stem } from '../knowledge-pack/stem.js';
+
+export { stem };
+
 const STOPWORDS = new Set(
   (
     'a about after all also an and any are as at be been before but by can could did do does for from get got had has ' +
@@ -12,22 +16,6 @@ const STOPWORDS = new Set(
     'was we were what when where which while who whom whose why will with would you your'
   ).split(' '),
 );
-
-/** A light English stemmer (plurals and the commonest endings): the same word in two forms counts once. */
-export function stem(word: string): string {
-  let w = word;
-  if (w.length > 4 && w.endsWith('ies')) w = `${w.slice(0, -3)}y`;
-  else if (w.length > 4 && /(?:ss|x|ch|sh)es$/.test(w)) w = w.slice(0, -2);
-  else if (w.length > 3 && w.endsWith('s') && !/(?:ss|us|is)$/.test(w)) w = w.slice(0, -1);
-  if (w.length > 5 && w.endsWith('ing')) w = undouble(w.slice(0, -3));
-  else if (w.length > 4 && w.endsWith('ed')) w = undouble(w.slice(0, -2));
-  else if (w.length > 5 && w.endsWith('ly')) w = w.slice(0, -2);
-  return w.length > 3 && w.endsWith('e') ? w.slice(0, -1) : w;
-}
-
-function undouble(w: string): string {
-  return /([bdgmnprt])\1$/.test(w) ? w.slice(0, -1) : w;
-}
 
 /** Stemmed content words, in order (a reference's URL is no content). */
 export function contentWords(text: string): string[] {

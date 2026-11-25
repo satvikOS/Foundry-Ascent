@@ -1,7 +1,7 @@
 # ADR-0022: The coach on Claude Haiku 4.5, Nova 2 Lite behind it and for background work
 
-- **Status:** Accepted (amends ADR-0014's model table: the primary reasoning model; ADR-0014's fallback logic, Titan
-  embeddings and the gated Luna flag stand)
+- **Status:** Superseded by [ADR-0024](0024-coach-on-luna.md) on 2026-11-24 (the coach is Amazon Nova 2 Lite again, on
+  the owner's decision; this record stands as the reasoning for 2026-11-06 to 2026-11-24)
 - **Date:** 2026-11-06
 - **Deciders:** Platform owner. Decision of **2026-11-06**: "haiku for now, gpt luna api later".
 - **Basis:** the coach A/B of 2026-11-05 (live run 42146119067: Claude Haiku 4.5 as the app's coach, 36 of 42 judged

@@ -8,6 +8,7 @@ import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import type { CallEngine, CallNotice, CallSnapshot, TypedReason } from '@/lib/realtime/call-engine';
 import { cn } from '@/lib/utils';
 
+import { CallStep } from '@/features/path/call-step';
 import { RecordControl } from '@/features/recordings/record-control';
 import { RecordingSaveStatus } from '@/features/recordings/recording-save-status';
 import type { RecordingSession } from '@/features/recordings/recording-session';
@@ -311,6 +312,9 @@ export function CallLive({
           }}
         />
       </div>
+      {snapshot.guidance && snapshot.ventureId && !snapshot.blocked && !ending.pending ? (
+        <CallStep guidance={snapshot.guidance} tenant={tenant} ventureId={snapshot.ventureId} />
+      ) : null}
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-4 sm:gap-5">
         {snapshot.blocked ? null : (
           <CallStage
@@ -427,7 +431,8 @@ export function CallLive({
         ) : null}
       </div>
 
-      <div className="flex shrink-0 flex-col items-center gap-4 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:pb-5">
+      {/* The controls stay on screen whatever the captions and the step above them take: End call is always in reach. */}
+      <div className="sticky bottom-0 z-[1] flex shrink-0 flex-col items-center gap-4 bg-linear-to-t from-background from-80% to-transparent px-3 pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:pb-5">
         {live && snapshot.voice === 'captions' ? (
           <p role="status" className="flex max-w-xl items-start gap-2 text-small text-muted-foreground">
             <VolumeX aria-hidden className="mt-0.5 size-4 shrink-0" />

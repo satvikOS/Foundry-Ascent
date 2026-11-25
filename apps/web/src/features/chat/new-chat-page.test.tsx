@@ -19,6 +19,7 @@ import { jsonResponse, stubFetch } from '@/features/admin/shared/test-utils';
 import { conversationOrigin } from '@/features/documents/upload-queue';
 import { VentureUploadsProvider } from '@/features/documents/venture-uploads';
 import { makeDocument, makeMemory, makeSession, makeVenture } from '@/features/knowledge/testing';
+import { makePath, makeStep } from '@/features/path/testing';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
 
 import { AttachmentTray, useComposerAttachments } from './attachments';
@@ -78,7 +79,13 @@ function stubApi({
   calls: callsOn = false,
   opener,
   prepared,
-}: { calls?: boolean; opener?: Promise<Response>; prepared?: Promise<Response> } = {}): Call[] {
+  path,
+}: {
+  calls?: boolean;
+  opener?: Promise<Response>;
+  prepared?: Promise<Response>;
+  path?: ReturnType<typeof makePath>;
+} = {}): Call[] {
   const calls: Call[] = [];
   stubFetch().mockImplementation((input, init) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -140,6 +147,9 @@ function stubApi({
     ] as const) {
       if (method === 'GET' && url === `/api/v1/ventures/${id}`) {
         return Promise.resolve(jsonResponse(makeVenture({ id, name })));
+      }
+      if (path && method === 'GET' && url === `/api/v1/ventures/${id}/path`) {
+        return Promise.resolve(jsonResponse(path));
       }
       if (method === 'GET' && url === `/api/v1/ventures/${id}/overview`) {
         return Promise.resolve(jsonResponse(overviewOf(makeVenture({ id, name }))));
@@ -367,6 +377,51 @@ describe('New chat', () => {
     expect(screen.queryByText(/What should we work on/)).toBeNull();
     // The notebook is not what New chat greets with any more.
     expect(calls.some((c) => c.url.endsWith('/notebook'))).toBe(false);
+  });
+
+  it('names the current step and its date under the greeting, with the path’s own ways to start', async () => {
+    stubApi({ path: makePath({ now: makeStep({ dueOn: addDays(localIsoDay(), 1) }) }) });
+    renderNewChat(B);
+    const now = await screen.findByTestId('greeting-step');
+    expect(now).toHaveTextContent(/^Now: Hear five lab managers .* · Due tomorrow$/);
+    expect(within(now).getByRole('link')).toHaveAttribute('href', `/ain/app/v/${B}/path`);
+    const chips = within(screen.getByRole('list', { name: 'Start with' })).getAllByRole('button');
+    expect(chips.map((chip) => chip.textContent)).toEqual([
+      'Continue: Hear five lab managers describe the last time they ran out of a reagent',
+      'I finished it',
+      'I’m stuck',
+    ]);
+    // A tap fills the composer, ready to finish; nothing is sent.
+    await userEvent.setup().click(
+      within(screen.getByRole('list', { name: 'Start with' })).getByRole('button', {
+        name: 'I finished it',
+      }),
+    );
+    expect(composer()).toHaveValue(
+      'I finished “Hear five lab managers describe the last time they ran out of a reagent”. What happened: ',
+    );
+    // The panel has all of the path's ways to start, and the step itself.
+    const quick = within(screen.getByRole('list', { name: 'Quick actions' })).getAllByRole('button');
+    expect(quick.slice(-2).map((button) => button.textContent)).toEqual([
+      'What should I do next?',
+      'Help me get organised',
+    ]);
+    expect(screen.getByRole('button', { name: /^Your path/ })).toBeInTheDocument();
+    // A private chat reads nothing, the path included.
+    await userEvent.setup().click(screen.getByRole('radio', { name: 'Private, a one-off' }));
+    expect(screen.queryByTestId('greeting-step')).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Start with' })).toBeNull();
+  });
+
+  it('a path without a step offers the two ways to a plan; no path, the general ones', async () => {
+    stubApi({ path: makePath({ now: null }) });
+    renderNewChat(A);
+    const chips = within(await screen.findByRole('list', { name: 'Start with' })).getAllByRole('button');
+    expect(chips.map((chip) => chip.textContent)).toEqual([
+      'What should I do next?',
+      'Help me get organised',
+    ]);
+    expect(screen.queryByTestId('greeting-step')).toBeNull();
   });
 
   it('opens the conversation with the line it greeted with', async () => {

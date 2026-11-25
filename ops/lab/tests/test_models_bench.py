@@ -34,6 +34,48 @@ def quality(**overrides: Any) -> dict[str, Any]:
     }
 
 
+def measured(**overrides: Any) -> dict[str, Any]:
+    return {
+        "recall": 0.6,
+        "precision": 0.4,
+        "perQuery": 1.9,
+        "answerableEmpty": 0.1,
+        "noAnswerEmpty": 0.7,
+        "perNoAnswer": 0.5,
+        "quality": quality(noAnswerAuc=None, noAnswerCaught=None),
+        **overrides,
+    }
+
+
+def search() -> dict[str, Any]:
+    """A row of the script's measure of production's own search (lab-retrieval.ts)."""
+    return {
+        "id": TITAN,
+        "dimensions": 1024,
+        "calibration": {
+            "suggested": {"floor": 0.31, "weak": 0.22},
+            "strict": {"floor": 0.4, "weak": 0.3},
+            "current": {"floor": 0.3, "weak": 0.2},
+            "curve": [
+                {"floor": 0.1, "answered": 1, "caught": 0},
+                {"floor": 0.3, "answered": 0.8, "caught": 0.5},
+            ],
+            "related": [0.2, 0.4, 0.6],
+            "unrelated": [0.1, 0.2, 0.3],
+        },
+        "ranking": {name: quality(recallAt1=0.5) for name in models_bench.FUSIONS},
+        "floors": {name: measured() for name in models_bench.FLOORS},
+        "production": {
+            "questions": 350,
+            "playAnswers": 0.05,
+            "retrieval": {name: measured() for name in ("equal_weights", *models_bench.FLOORS)},
+            "pack": measured(precision=0.55),
+            "families": {name: {"questions": 10, "found": 0.5} for name in models_bench.FAMILIES},
+        },
+        "searchMs": {"p50": 14, "p95": 22},
+    }
+
+
 def report(**overrides: Any) -> dict[str, Any]:
     """A lab-models.ts report as the script prints it."""
     base: dict[str, Any] = {
@@ -98,8 +140,9 @@ def report(**overrides: Any) -> dict[str, Any]:
                 "hybrid": None,
             },
         ],
+        "search": [search()],
         "rerank": {
-            "base": {"id": TITAN, "dimensions": 1024},
+            "base": {"id": TITAN, "dimensions": 1024, "by": "search"},
             "sample": 40,
             "before": quality(noAnswerAuc=None),
             "models": [
@@ -110,6 +153,11 @@ def report(**overrides: Any) -> dict[str, Any]:
                     "ms": {"p50": 130, "p95": 260},
                     "usdPerThousandQueries": 2,
                     "quality": quality(mrr=0.88),
+                    "ambiguousOnly": {
+                        "share": 0.4,
+                        "usdPerThousandQuestions": 0.8,
+                        "quality": quality(mrr=0.8),
+                    },
                 }
             ],
         },
@@ -150,6 +198,12 @@ def test_the_script_runs_with_the_run_budget(tmp_path: Path) -> None:
         "x",
     )
     assert models_bench.models_env({}, mock=True)["MODEL_PROVIDER"] == "mock"
+    # The job's own database is the script's; the owner's access code of the seeded app is not.
+    job = models_bench.models_env(
+        {"DATABASE_URL": "postgresql://localhost/foundry", "E2E_OWNER_ACCESS_CODE": "x"}, mock=True
+    )
+    assert job["DATABASE_URL"] == "postgresql://localhost/foundry"
+    assert "E2E_OWNER_ACCESS_CODE" not in job
     cmd = models_bench.models_command(pnpm="pnpm", budget_usd=1.5, out=tmp_path / "lab")
     assert cmd[:6] == ["pnpm", "--filter", "@foundry/api", "exec", "tsx", "src/scripts/lab-models.ts"]
     assert cmd[cmd.index("--budget-usd") + 1] == "1.50"
@@ -190,6 +244,13 @@ def test_public_result_keeps_numbers_candidate_ids_and_codes_only() -> None:
     assert result["embeddings"][1]["code"] == "ThrottlingException"
     assert result["rerank"]["models"][0]["quality"]["mrr"] == 0.88
     assert result["cost_usd"]["total"] == 0.2412
+    found = result["search"][0]
+    assert found["ranking"]["default"]["recall_at_1"] == 0.5
+    assert found["production"]["pack"]["precision"] == 0.55
+    assert found["production"]["families"]["play"] == {"questions": 10, "found": 0.5}
+    assert found["calibration"]["curve"][1] == {"floor": 0.3, "answered": 0.8, "caught": 0.5}
+    assert result["rerank"]["base"]["by"] == "search"
+    assert result["rerank"]["models"][0]["ambiguous_only"]["share"] == 0.4
 
     secret = "arn:aws:bedrock:us-east-1:123456789012 What do I write to the budget owner?"
     hostile = report()
@@ -202,6 +263,15 @@ def test_public_result_keeps_numbers_candidate_ids_and_codes_only() -> None:
     hostile["rerank"]["base"] = {"id": secret, "dimensions": 1}
     hostile["rerank"]["models"][0]["quality"]["mrr"] = secret
     hostile["costUsd"]["total"] = secret
+    hostile["rerank"]["base"]["by"] = secret
+    hostile["rerank"]["models"][0]["ambiguousOnly"]["share"] = secret
+    row = hostile["search"][0]
+    row["calibration"].update(suggested=secret, curve=[{"floor": secret}], related=[secret])
+    row["ranking"][secret] = quality()
+    row["ranking"]["default"] = secret
+    row["production"].update(questions=secret, families={secret: {"questions": secret}}, pack=secret)
+    hostile["search"].append({"id": secret})
+    hostile["refusals"] = [{"id": LUNA, "message": secret}]
     text = json.dumps(models_bench.public_result(hostile, exit_code=0))
     assert secret not in text
     assert "123456789012" not in text
@@ -226,6 +296,14 @@ def test_the_summary_renders_the_numbers() -> None:
     assert f"| {TITAN} (hybrid) | 1024 | 90 / 180 | 0.02 | 0.61 | 0.78 | 0.84 | 0.77 |" in text
     assert "| word search alone | - | - | - | 0.162 |" in text
     assert "budget reached: no" in text
+    assert f"Production's search with {TITAN} (1024), 14 / 22 ms a search." in text
+    assert "| default | 0.5 | 0.78 | 0.84 | 0.71 | 0.12 |" in text
+    assert (
+        "| a turn's evidence with its play | 0.61 | 0.78 | 0.71 | 0.6 | 0.55 | 1.9 | 0.1 | 0.7 | 0.5 |"
+        in text
+    )
+    assert f"| {COHERE_RERANK}, only when ambiguous (0.4 of questions) | 130 / 260 | 0.8 |" in text
+    assert "| no-answer caught | 0 | 0.5 |" in text
     assert "App models" not in text
     # Every row of a table has as many cells as its header.
     width = 0
@@ -309,7 +387,9 @@ def test_the_dry_run_runs_the_real_script_on_the_mock(
     assert all(a["ok"] for a in summary["result"]["access"])
     assert {a["id"] for a in summary["result"]["access"]} == models_bench.candidate_ids()
     assert len(summary["result"]["reasoning"]) == 5
-    assert summary["result"]["embeddings"][0]["vector"]["answerable"] >= 120
+    assert summary["result"]["embeddings"][0]["vector"]["answerable"] >= 220
+    # No database in this run: the models alone.
+    assert summary["result"]["search"] == []
     assert (out / "private" / "models-benchmark.json").is_file()
     text = (out / "public" / "summary.md").read_text()
     private = json.loads((out / "private" / "models-benchmark.json").read_text())

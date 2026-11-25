@@ -144,12 +144,13 @@ to see the plan and characters left), [the live voice runbook](elevenlabs-voice.
 
 **Verify:** the persona's consent lists each asset in use, and its release approval succeeds.
 
-## 8. Enable Anthropic models on Bedrock (production's coach is Claude Haiku 4.5)
+## 8. Enable Anthropic models on Bedrock (the lab's judge; the coach if it moves back to Claude)
 
-Production's coach is Claude Haiku 4.5 (ADR-0022, 2026-11-06), with Amazon Nova 2 Lite behind it. Anthropic models on
+Production's coach is Amazon Nova 2 Lite (ADR-0024, 2026-11-24); Claude Haiku 4.5 was the coach from 2026-11-06 (ADR-0022)
+and is still the conversation lab's first judge of a Nova coach. Anthropic models on
 Bedrock need one-time account-level steps that the platform roles cannot take; this account took them before the
-conversation lab's first Claude runs (2026-11-05, the same account and region), so for production only step 3 is left:
-check it before the deploy that switches the coach. A model that is not available makes every turn fall back to Nova
+conversation lab's first Claude runs (2026-11-05, the same account and region), so only step 3 is left:
+check it before the lab's live run, or before any deploy that points the coach at a Claude model. A Claude coach that is not available makes every turn fall back to its fallback
 (logged as `ai.model.fallback`, reason `client_error`), never fail.
 
 1. As the account administrator, in the Bedrock console (us-east-1) open an Anthropic model in the model

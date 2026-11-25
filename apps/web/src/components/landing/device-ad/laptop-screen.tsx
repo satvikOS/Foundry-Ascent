@@ -41,6 +41,7 @@ function streamState(frame: Frame): TurnStreamState {
     autoRetryAt: null,
     units: frame.streamed ? [{ seq: 0, text: frame.streamed }] : [],
     streamedText: frame.streamed,
+    guidance: null,
   };
 }
 

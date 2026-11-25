@@ -4,6 +4,7 @@ import { createRef, type ComponentProps, type RefObject } from 'react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { makeGuidance } from '@/features/path/testing';
 import type { CallSnapshot } from '@/lib/realtime/call-engine';
 
 import { IDS } from '@/lib/realtime/testing';
@@ -113,6 +114,25 @@ describe('callStatusLabel', () => {
 });
 
 describe('CallLive', () => {
+  it('names the next step beside the call, unfolding to act on it, and never under support', async () => {
+    renderLive({ guidance: makeGuidance() });
+    const step = await screen.findByRole('region', { name: 'Next step' });
+    const line = within(step).getByRole('button', { name: /Hear five lab managers/ });
+    expect(line).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(line);
+    expect(within(step).getByRole('button', { name: 'Not yet' })).toBeInTheDocument();
+    expect(within(step).getAllByRole('checkbox')).toHaveLength(3);
+  });
+
+  it('shows no step under a held-back turn', async () => {
+    renderLive({
+      guidance: makeGuidance(),
+      blocked: { reason: 'crisis_support', supportMessage: 'Call 988.', escalationId: null },
+    });
+    await screen.findByRole('heading', { name: 'Thomas' });
+    expect(document.querySelector('[data-slot="call-step"]')).toBeNull();
+  });
+
   it('shows the vEIR as a call tile, its state and named controls, and no disclaimer line', async () => {
     const { engine } = renderLive();
     // The call screen's header names the vEIR (and takes focus); nothing under the sphere repeats it.

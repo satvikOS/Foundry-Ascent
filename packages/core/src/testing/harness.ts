@@ -13,6 +13,7 @@ import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 import { coreConfig, type CoreConfig } from '../config.js';
 import { createRequestContext, type RequestContext } from '../context.js';
 import { createCore, type Core } from '../core.js';
+import { type Playbook } from '../path/types.js';
 import {
   type Clock,
   type EmbodimentProvider,
@@ -36,6 +37,11 @@ export interface CoreHarnessOptions {
   readonly random?: () => number;
   readonly gatewayOptions?: MockModelGatewayOptions;
   readonly clock?: Clock;
+  /**
+   * The founder path decides the turns (`turns.founderPath`), with this playbook. Default: no path, so a suite about
+   * something else reads its replies and openers as the model wrote them.
+   */
+  readonly playbook?: Playbook;
   /** Text-to-speech for calls (absent: the speech service answers `speech_unavailable`). */
   readonly speech?: SpeechSynthesizer;
   /** Speech-to-text grants for calls (absent: calls start without one). */
@@ -168,7 +174,11 @@ function must<T>(value: T | undefined | null, what: string): T {
 export async function createCoreHarness(options: CoreHarnessOptions = {}): Promise<CoreHarness> {
   const t = await createTestDatabase({ seed: true });
   const seed = must(t.seed, 'seed result');
-  const config = coreConfig({ appEnv: 'test', ...options.config });
+  const config = coreConfig({
+    appEnv: 'test',
+    ...options.config,
+    turns: { founderPath: options.playbook !== undefined, ...options.config?.turns },
+  });
   // Streams without pauses unless a test asks for them.
   const gateway = new MockModelGateway({ streamDelayMs: 0, ...options.gatewayOptions });
   const objectStore = new MemoryObjectStore();
@@ -187,6 +197,7 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
       logger,
       ...(options.random ? { random: options.random } : {}),
       ...(options.clock ? { clock: options.clock } : {}),
+      ...(options.playbook ? { playbook: options.playbook } : {}),
       ...(ports.speech ? { speech: ports.speech } : {}),
       ...(ports.sttGrants ? { sttGrants: ports.sttGrants } : {}),
       ...(ports.embodiment ? { embodiment: ports.embodiment } : {}),
@@ -239,7 +250,18 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
         requestId: `test-${randomBytes(6).toString('hex')}`,
       });
     },
-    withConfig: (overrides) => build(coreConfig({ appEnv: 'test', ...options.config, ...overrides })),
+    withConfig: (overrides) =>
+      build(
+        coreConfig({
+          appEnv: 'test',
+          ...options.config,
+          ...overrides,
+          turns: {
+            founderPath: options.playbook !== undefined,
+            ...(overrides?.turns ?? options.config?.turns),
+          },
+        }),
+      ),
     withPorts: (ports, wrap) => build(config, ports, wrap?.db ? wrap.db(t.db) : t.db),
     cleanup: () => t.cleanup(),
   };

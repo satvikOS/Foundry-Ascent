@@ -1025,8 +1025,8 @@ describe('spoken turns', () => {
     const typed = await core0(h.ventures.quietquad.id, text, 'text');
     const spoken = await core0(h.ventures.quietquad.id, text, 'voice');
     const kinds = (t: TurnView) => t.evidence.map((e) => e.kind);
-    // Not vacuous: the typed turn uses more than a call may.
-    expect(typed.evidence.length).toBeGreaterThan(13);
+    // Not vacuous: the typed turn uses more.
+    expect(typed.evidence.length).toBeGreaterThan(spoken.evidence.length);
     expect(spoken.evidence.length).toBeLessThanOrEqual(13);
     expect(kinds(spoken).filter((k) => k === 'memory').length).toBeLessThanOrEqual(6);
     expect(kinds(spoken).filter((k) => k === 'resource').length).toBeLessThanOrEqual(1);

@@ -279,6 +279,8 @@ export interface GenerateArgs {
   readonly startedAt: number;
   /** Who the reply may narrate by name (the founder it talks to, the venture's people; LAB-M1b). */
   readonly narration?: NarrationNames;
+  /** What the annotation call is asked about the founder path (`pathReportRequest`). */
+  readonly pathReport?: readonly string[];
   /**
    * The conversation's earlier replies (and opener) a reply never says again, or null when it may (the founder asked to
    * hear it again, or sincerely asked who or what the coach is). A whole reply that says one again is written once more
@@ -899,8 +901,11 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   // Cut, or continued: the reply is what was shown. Otherwise it is the reply without the units the gate left out as
   // repeats, exactly as it released it: the final validation never judges released text for repeats again
   // (`ValidateCoachResponseOptions.released`), so the stored answer is what was shown and said.
+  // A gate that wrote part of it itself (the reply contract's missing answer or step, a claim taken out) released the
+  // reply as it stands: what was shown is what is stored.
+  const rewritten = (trace as { readonly rewritten?: boolean }).rewritten === true;
   let replyText =
-    said.cut || early.went !== null
+    said.cut || early.went !== null || rewritten
       ? said.shown.trim()
       : withoutUnits(
           reply.text,
@@ -1019,7 +1024,7 @@ function startAnnotations(a: StreamArgs, replyText: string): PendingAnnotations 
       const out = await a.kit.deps.gateway.generateStructured({
         purpose: a.meter.purpose,
         system: a.system,
-        messages: annotationMessages(a.messages, replyText),
+        messages: annotationMessages(a.messages, replyText, a.pathReport),
         ...(a.promptCache ? { promptCache: a.promptCache } : {}),
         schemaName: COACH_ANNOTATIONS_SCHEMA_NAME,
         zodSchema: CoachAnnotations,

@@ -64,17 +64,17 @@ export function capState(spent: number, cap: number): CapState {
 }
 
 /**
- * Production routing (infra/cdk/config/production.json): Claude Haiku 4.5 through its US inference profile writes
- * what founders read (conversations, recaps, the notes and openers), with Amazon Nova 2 Lite (US profile) behind it;
- * Nova 2 Lite also runs the background work (risk checks, evaluations, document processing), with its global profile
- * behind that. Titan Text Embeddings V2 embeds. GPT-6 Luna's US profile is prepared as a coach and off (ADR-0024); on
+ * Production routing (infra/cdk/config/production.json, ADR-0024): Amazon Nova 2 Lite through its US inference profile
+ * writes what founders read (conversations, recaps, the notes and openers) and runs the background work (risk checks,
+ * evaluations, document processing), with its global profile behind both. Claude Haiku 4.5 was the coach until
+ * 2026-11-24 (ADR-0022): the ledger keeps its earlier rows under their own name. Titan Text Embeddings V2 embeds. GPT-6 Luna's US profile is prepared as a coach and off (ADR-0024); on
  * Bedrock Mantle (the bare id) it is configured but disabled (`models.luna.enabled=false`). Either only appears here if
  * it is ever used.
  */
 const MODEL_NAMES: [RegExp, string, string][] = [
-  [/claude-haiku-4-5/i, 'Claude Haiku 4.5', 'Conversations'],
-  [/^us\.amazon\.nova-2-lite/i, 'Nova 2 Lite (US profile)', 'Fallback and background work'],
-  [/^global\.amazon\.nova-2-lite/i, 'Nova 2 Lite (global profile)', 'Background fallback'],
+  [/claude-haiku-4-5/i, 'Claude Haiku 4.5', 'Conversations (until 24 Nov 2026)'],
+  [/^us\.amazon\.nova-2-lite/i, 'Nova 2 Lite (US profile)', 'Conversations and background work'],
+  [/^global\.amazon\.nova-2-lite/i, 'Nova 2 Lite (global profile)', 'Fallback'],
   [/nova-2-lite/i, 'Nova 2 Lite', 'Reasoning'],
   [/^(?:us|global)\.openai\.gpt-6-luna/i, 'GPT-6 Luna', 'Conversations'],
   [/gpt-6-luna/i, 'GPT-6 Luna', 'Reasoning (disabled: not available for this account)'],

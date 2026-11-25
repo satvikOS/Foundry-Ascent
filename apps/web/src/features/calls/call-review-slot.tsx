@@ -6,15 +6,20 @@ const CallReviewView = lazy(() =>
   import('./call-review').then((module) => ({ default: module.CallReviewView })),
 );
 
+/** Whether the review of a call that just ended shows in this conversation. */
+export function useCallReviewShown(sessionId: string): boolean {
+  const call = useOptionalCall();
+  if (!call?.engine || call.quietEnd || call.route?.open === true) return false;
+  const { snapshot } = call;
+  return snapshot.phase === 'ended' && snapshot.sessionId === sessionId && snapshot.ended !== null;
+}
+
 /**
  * Where a conversation shows the review of a call that just ended in it (design-spec §11): at the end of its
  * transcript, until the founder dismisses it, calls again or the call is forgotten. Loads with the call.
  */
 export function CallReviewSlot({ sessionId }: { sessionId: string }) {
-  const call = useOptionalCall();
-  if (!call?.engine || call.quietEnd || call.route?.open === true) return null;
-  const { snapshot } = call;
-  if (snapshot.phase !== 'ended' || snapshot.sessionId !== sessionId || !snapshot.ended) return null;
+  if (!useCallReviewShown(sessionId)) return null;
   return (
     <Suspense fallback={null}>
       <CallReviewView />

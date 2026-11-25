@@ -38,6 +38,7 @@ import {
   VentureSummary,
   Visibility,
 } from './domain.js';
+import { PathCheckIn } from './path.js';
 
 export const API_PREFIX = '/api/v1';
 /** Required on every non-GET request (CSRF defence in depth alongside SameSite=Strict cookies). */
@@ -180,6 +181,8 @@ export const ConversationOpenerResponse = z.object({
    * body again. `GET` writes nothing.
    */
   missing: z.boolean().optional(),
+  /** Additive. The step the opening asks about (with one-tap answers), when the person was given one before today. */
+  checkIn: PathCheckIn.nullable().optional(),
 });
 export type ConversationOpenerResponse = z.infer<typeof ConversationOpenerResponse>;
 export const SessionDetailResponse = z.object({ session: SessionView, turns: z.array(TurnView) });

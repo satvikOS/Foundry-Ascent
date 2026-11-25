@@ -1,6 +1,7 @@
 """`python -m conversation_lab`: the conversation lab's runner (docs/runbooks/conversation-lab.md).
 
   plan --suite S --budget-usd B           which suites run and each one's hard cap (JSON; standard library only)
+  client-local --out DIR                   the client's test on the mock model: no AWS, no cost (conversation_lab/client)
   run  --suite S --budget-usd B --out DIR  starts the app with the real models and runs one suite (safety: no app,
                                            the safety screen on the app's models over the E-crisis corpus; models:
                                            no app either, the candidate models' benchmark; face:
@@ -112,6 +113,9 @@ class Context:
     live_picks: list[Any] = field(default_factory=list)
     live_selection: dict[str, Any] = field(default_factory=dict)
     live_seeded: dict[str, Any] = field(default_factory=dict)
+    #: The client suite (conversation_lab/client/suite.py): the client's pack file, and the run's prepared state.
+    client_pack: str = ""
+    client: dict[str, Any] = field(default_factory=dict)
 
     @property
     def private(self) -> Path:
@@ -194,6 +198,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not 0 < budget <= MAX_BUDGET_USD:
         print("run: budget out of range", file=sys.stderr)
         return 2
+    if suite == "client":
+        from conversation_lab.client.suite import CLIENT_HARD_CAP_USD
+
+        if budget > CLIENT_HARD_CAP_USD:
+            print(f"run: the client suite is capped at USD {CLIENT_HARD_CAP_USD:g}", file=sys.stderr)
+            return 2
     if args.mock and suite == "voice":
         print(
             "run: the voice suite needs Amazon Polly and Transcribe; it has no mock dry run", file=sys.stderr
@@ -234,6 +244,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         live_approve_memory=bool(args.live_approve_memory),
         coach_model=str(getattr(args, "coach_model", DEFAULT_COACH) or DEFAULT_COACH),
         judge_model=str(getattr(args, "judge_model", JUDGE_AUTO) or JUDGE_AUTO),
+        client_pack=str(getattr(args, "client_pack", "") or ""),
     )
     ctx.private.mkdir(parents=True, exist_ok=True)
     ctx.public.mkdir(parents=True, exist_ok=True)
@@ -310,6 +321,15 @@ def cmd_run(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 2
+        if suite == "client" and not args.mock:
+            from conversation_lab.client.judge import judge_candidates
+
+            result = lab_client.probe(lab.live_simulator)
+            probes.update(result.outcomes)
+            simulator_model = result.chosen
+            result = lab_client.probe(judge_candidates(models.primary, lab))
+            probes.update(result.outcomes)
+            judge_model = result.chosen
     except BudgetExceededError as exc:
         summary["stopped_by"] = f"budget_{exc.side}"
     summary["models"].update({"simulator": simulator_model, "judge": judge_model, "probes": probes})
@@ -356,13 +376,17 @@ def cmd_run(args: argparse.Namespace) -> int:
         ids = run_seed(env, ctx.private / "logs", seed_plan(ctx.live_picks, dataset.by_id()), pnpm=PNPM)
         ctx.live_seeded = seeded_map(ctx.live_picks, dataset.by_id(), ids)
         summary["live_seeded"] = f"{len(ctx.live_seeded)}/{len(ctx.live_picks)}"
+    if suite == "client":
+        from conversation_lab.client.suite import prepare
+
+        prepare(ctx, env, summary)
     if args.mock:
         summary["models"]["app"] = {"primary": "mock", "fallback": "mock", "embeddings": "mock"}
     error: str | None = None
     stack_cm = Stack(
         env=api_process,
         log_dir=ctx.private / "logs",
-        web=suite not in ("matrix", "agenda", "live"),
+        web=suite not in ("matrix", "agenda", "live", "client"),
         api_port=args.api_port,
         web_port=args.web_port,
     )
@@ -488,8 +512,9 @@ def cmd_run_safety(args: argparse.Namespace) -> int:
 
 def cmd_run_models(args: argparse.Namespace) -> int:
     """Suite ``models`` (conversation_lab/models_bench.py): apps/api lab-models.ts on the candidates of models.json,
-    with the run's budget as its hard cap. No app, browser or database. The models' replies and each question's
-    rankings stay in the private folder; the summary keeps numbers, candidate ids and codes."""
+    with the run's budget as its hard cap. No app or browser; with the job's own reset database it measures production's
+    search too. The models' replies, each question's rankings and AWS's refusal messages stay in the private folder; the
+    summary keeps numbers, candidate ids, fixed names and codes."""
     from conversation_lab.models_bench import models_env, public_result, run_models_bench
     from conversation_lab.stack import PNPM
 
@@ -1188,6 +1213,13 @@ def suite_live(
     }
 
 
+def suite_client(ctx: Context, **kwargs: Any) -> dict[str, Any]:
+    """The client's own test (conversation_lab/client): its protocol and questions, arcs, repeats and calls."""
+    from conversation_lab.client.suite import run_suite
+
+    return run_suite(ctx, **kwargs)
+
+
 def _shard_arg(text: str) -> tuple[int, int]:
     index, _, of = text.partition("/")
     shard = (int(index), int(of or 1))
@@ -1198,6 +1230,7 @@ def _shard_arg(text: str) -> tuple[int, int]:
 
 SUITE_RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
     "agenda": suite_agenda,
+    "client": suite_client,
     "face": suite_face,
     "live": suite_live,
     "recall": suite_recall,
@@ -1263,6 +1296,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="live: the student approves every pending AI memory proposal between sessions (default: left as "
         "the product leaves them)",
     )
+    run.add_argument(
+        "--client-pack",
+        default="",
+        help="client: the client's pack (exact wording, other tools' scores), else LAB_CLIENT_PACK, else our wording",
+    )
     run.add_argument("--out", required=True)
     run.add_argument("--api-port", type=int, default=8787)
     run.add_argument("--web-port", type=int, default=4173)
@@ -1281,6 +1319,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     from conversation_lab.live.cli import add_commands
 
     add_commands(sub)
+    from conversation_lab.client.suite import add_commands as add_client_commands
+
+    add_client_commands(sub)
     args = parser.parse_args(argv)
     # Out of the environment before anything runs, so no child process inherits it (face.take_key).
     global _FACE_KEY

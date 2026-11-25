@@ -4,6 +4,7 @@ import { type ModelGateway } from '@foundry/ai';
 import { type Db } from '@foundry/db';
 
 import { type CoreConfig } from './config.js';
+import { type Playbook } from './path/types.js';
 import {
   noopCoreLogger,
   randomIds,
@@ -50,6 +51,13 @@ export interface CoreDeps {
    * calls speak with instead of Amazon Polly; Polly says any unit it fails on (API only). Absent: Amazon Polly.
    */
   readonly stockVoice?: StockVoice;
+  /** The founder path's playbook. Default: the program's (`path/playbook`); tests inject a small one. */
+  readonly playbook?: Playbook;
+  /**
+   * The embedding model being replaced, while stored rows still carry its vectors (docs/runbooks/embedding-model.md):
+   * queries are embedded by both. Absent (the normal state): one model.
+   */
+  readonly previousEmbeddings?: CoreDeps['gateway'];
   readonly clock?: Clock;
   readonly ids?: IdGenerator;
   readonly logger?: CoreLogger;

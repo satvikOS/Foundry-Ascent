@@ -1,4 +1,4 @@
-import type { CallSummary, MemoryObjectView, SessionView } from '@foundry/contracts';
+import type { CallSummary, MemoryObjectView, SessionView, TurnGuidance } from '@foundry/contracts';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Check, EyeOff, ListChecks, Phone, X } from 'lucide-react';
@@ -19,6 +19,7 @@ import { formatDate } from '@/lib/format';
 import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
 
 import { MemorySaved, savedByIds } from '../chat/memory-saved';
+import { TurnStepCard } from '../path/step-card';
 
 import { reviewFocused, useCall, wantsReviewFocus } from './call-context';
 import { callTimeline } from './timeline/call-timeline';
@@ -55,6 +56,7 @@ export function CallReviewView() {
       canWrite={canWriteVenture(me, ventureId)}
       privacy={session.data?.session.privacy ?? null}
       focusOnMount={focusOnMount}
+      guidance={snapshot.guidance}
       timeline={callTimeline(engine).recorder}
       onCallAgain={() => {
         engine.reset();
@@ -90,6 +92,8 @@ interface CallReviewProps {
   onLeave: () => void;
   /** The call's conversation timeline, measured in this page (in memory only); omitted when there is none. */
   timeline?: TimelineSource | null;
+  /** The step the path chose on the call's latest coaching turn: the review shows the same one. */
+  guidance?: TurnGuidance | null;
   /** The founder ended the call from its screen: focus lands here (the support first, if any). */
   focusOnMount?: boolean;
 }
@@ -126,6 +130,7 @@ export function CallReviewCard({
   onDismiss,
   onLeave,
   timeline = null,
+  guidance = null,
   focusOnMount = false,
 }: CallReviewProps) {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
@@ -231,6 +236,17 @@ export function CallReviewCard({
         />
       ) : null}
 
+      {guidance && ended.blocked === null ? (
+        <TurnStepCard
+          guidance={guidance}
+          tenant={tenant}
+          ventureId={ventureId}
+          canEdit={canWrite}
+          latest
+          className="bg-transparent"
+        />
+      ) : null}
+
       {summary ? (
         <SummaryDetails
           tenant={tenant}
@@ -239,6 +255,7 @@ export function CallReviewCard({
           canWrite={canWrite}
           isPrivate={privacy === 'ephemeral'}
           supportShown={ended.blocked !== null}
+          stepShown={guidance?.step != null && ended.blocked === null}
           onLeave={onLeave}
         />
       ) : (
@@ -264,6 +281,7 @@ function SummaryDetails({
   canWrite,
   isPrivate,
   supportShown,
+  stepShown,
   onLeave,
 }: {
   tenant: string;
@@ -276,6 +294,8 @@ function SummaryDetails({
    * remembered, and under that support a line about memory is the wrong thing to say: none is shown.
    */
   supportShown: boolean;
+  /** The path's step is above: the summary's own suggested actions are not listed beside it. */
+  stepShown: boolean;
   onLeave: () => void;
 }) {
   const remembered = !isPrivate && !supportShown && canWrite && summary.turnCount > 0;
@@ -289,8 +309,9 @@ function SummaryDetails({
   );
   const escalations = useVentureEscalations(ventureId);
   const drafted = (escalations.data ?? []).filter((e) => summary.escalationIds.includes(e.id));
+  const nextActions = stepShown ? [] : summary.nextActions;
   // Nothing to say (a call where nothing was said): no empty block under the timeline.
-  if (!isPrivate && !remembered && summary.nextActions.length === 0 && summary.escalationIds.length === 0) {
+  if (!isPrivate && !remembered && nextActions.length === 0 && summary.escalationIds.length === 0) {
     return null;
   }
 
@@ -322,13 +343,13 @@ function SummaryDetails({
         </div>
       ) : null}
 
-      {summary.nextActions.length > 0 ? (
+      {nextActions.length > 0 ? (
         <section aria-labelledby="call-summary-actions">
           <h3 id="call-summary-actions" className="section-label mb-2">
             Next actions
           </h3>
           <ul className="grid gap-1.5">
-            {summary.nextActions.map((action, index) => (
+            {nextActions.map((action, index) => (
               <li key={`${action.action}-${String(index)}`} className="flex gap-2.5 text-body">
                 <ListChecks aria-hidden className="mt-1 size-4 shrink-0 text-muted-foreground" />
                 <span>

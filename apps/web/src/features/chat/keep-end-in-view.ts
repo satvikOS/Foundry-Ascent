@@ -84,6 +84,14 @@ export function useKeepEndInView({
     if (by > 1) window.scrollBy({ top: by, behavior: 'instant' });
   }, [hidden]);
 
+  /**
+   * The page got shorter (an older reply's step folded to a line, the live exchange gave way to the stored one) and the
+   * browser moved it up to fit: no move of the reader's. Read where the layout changed, before the scroll event says so.
+   */
+  const settle = useCallback(() => {
+    if (window.scrollY < lastScrollY.current) lastScrollY.current = window.scrollY;
+  }, []);
+
   useLayoutEffect(() => {
     streamingNow.current = streaming;
   }, [streaming]);
@@ -144,8 +152,9 @@ export function useKeepEndInView({
 
   // Runs after the change is in the DOM and before it is painted, so the reader never sees the end hidden.
   useLayoutEffect(() => {
+    settle();
     if (following.current) reveal();
-  }, [changeKey, reveal]);
+  }, [changeKey, reveal, settle]);
 
   /**
    * (Re)observes whichever parts are mounted. Growth while an answer streams keeps its end in view; growth at any
@@ -161,12 +170,13 @@ export function useKeepEndInView({
     );
     if (targets.length === 0) return;
     const next = new ResizeObserver(() => {
+      settle();
       if (!streamingNow.current) following.current = hidden() <= AT_END_SLACK_PX;
       else if (following.current) reveal();
     });
     for (const target of targets) next.observe(target);
     observer.current = next;
-  }, [hidden, reveal]);
+  }, [hidden, reveal, settle]);
 
   const conversationRef = useCallback(
     (element: HTMLElement | null) => {

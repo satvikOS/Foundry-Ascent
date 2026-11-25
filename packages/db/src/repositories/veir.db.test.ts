@@ -312,7 +312,7 @@ describe('the persona common pool', () => {
       const lessons = await retrievalRepo.searchPatterns(tx, {
         tenantId: seed.tenantId,
         personaId: corin.personaId,
-        query: 'pilot buyer budget owner price',
+        query: 'should we give a free pilot or set a price?',
         limit: 10,
       });
       const ruthLessons = await resourcesRepo.listLessons(tx, {
@@ -325,7 +325,7 @@ describe('the persona common pool', () => {
       // Without a persona, only program-wide lessons.
       const programOnly = await retrievalRepo.searchPatterns(tx, {
         tenantId: seed.tenantId,
-        query: 'pilot buyer budget owner price',
+        query: 'should we give a free pilot or set a price?',
         limit: 10,
       });
       const corinLessons = await resourcesRepo.listLessons(tx, {

@@ -9,6 +9,7 @@ import {
   participantTurnView,
   participantValidator,
 } from './blocked.js';
+import { DEFAULT_CORE_CONFIG } from '../config.js';
 import { assembleContext, estimateTokens } from './context-budget.js';
 import { buildEvidencePack, candidateVisibility, classificationsFor, nearDuplicate } from './evidence.js';
 import { privateRetrievalOwner, retrievalBudgets, VOICE_RETRIEVAL_CAPS } from './retrieval.js';
@@ -179,7 +180,11 @@ describe('evidence pack', () => {
     expect(retrievalBudgets(configured, 'text')).toBe(configured);
     expect(retrievalBudgets(configured, 'voice')).toEqual(VOICE_RETRIEVAL_CAPS);
     const total = (b: typeof configured) => b.memory + b.chunks + b.doctrine + b.resources + b.patterns;
-    expect(total(retrievalBudgets(configured, 'voice'))).toBe(13);
+    expect(total(retrievalBudgets(configured, 'voice'))).toBe(11);
+    // Fewer than a typed turn's own, too.
+    expect(total(retrievalBudgets(DEFAULT_CORE_CONFIG.retrieval, 'voice'))).toBeLessThan(
+      total(DEFAULT_CORE_CONFIG.retrieval),
+    );
     expect(total(configured)).toBe(24);
     const none = { memory: 0, chunks: 0, doctrine: 0, resources: 0, patterns: 0 };
     expect(retrievalBudgets(none, 'voice')).toEqual(none);
@@ -462,6 +467,7 @@ describe('participant views (no cross-venture oracle)', () => {
       blocked: { reason: 'cross_venture', supportMessage: null, escalationId: null },
       author: null,
       myFeedback: null,
+      guidance: null,
     };
     const shown = participantTurnView(view);
     expect(shown.blocked?.reason).toBe('policy');

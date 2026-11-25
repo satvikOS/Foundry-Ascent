@@ -41,6 +41,18 @@ const MESSAGES = [
   'What would make you confident that quiet-space demand is real?',
 ];
 
+/**
+ * Replies of three sentences each (a reply of one or two can hold its only unit for its usage row: the runbook): the
+ * pinned numbers count the database, never the shape of a reply.
+ */
+const REPLIES = [
+  'Measure how many people come back. Count them at the same two doors every day. Ten returning students beat a hundred new ones.',
+  'Show them what it records and what it never does. Offer a week with the sensors covered at their desk. Their worry is a design rule now.',
+  'A student walking over because the map said so. Nothing they say about it counts as much. Put the number next to your pass line.',
+];
+const reply = (context: { readonly founderText: string }): string =>
+  REPLIES[MESSAGES.indexOf(context.founderText)] ?? REPLIES[0] ?? '';
+
 /** A call's turns, in order: the round trips each waited for one after another. */
 async function callTurns(rig: LatencyRig): Promise<SequentialSample[]> {
   const cookie = await rig.signIn(rig.founderId);
@@ -67,7 +79,7 @@ describe.each([
   let turns: SequentialSample[];
 
   beforeAll(async () => {
-    rig = await createLatencyRig(LATENCY, { traceQueries: true, face });
+    rig = await createLatencyRig(LATENCY, { traceQueries: true, face, reply });
     turns = await callTurns(rig);
   }, 180_000);
   afterAll(async () => {

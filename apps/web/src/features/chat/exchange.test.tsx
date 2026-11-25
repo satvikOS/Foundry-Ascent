@@ -7,6 +7,7 @@ import { renderWithProviders } from '@/features/admin/shared/test-utils';
 import type { TurnStreamError, TurnStreamState } from '@/lib/api/hooks/turn-stream';
 
 import { InspectorProvider } from '@/components/shell/inspector';
+import { makeGuidance } from '@/features/path/testing';
 
 import { deriveTurnProgress } from '../coach/progress';
 import { IDS, makeMemory, makeSession, makeTurn } from '../coach/testing';
@@ -27,6 +28,7 @@ const streaming = (overrides: Partial<TurnStreamState> = {}): TurnStreamState =>
   autoRetryAt: null,
   units: [],
   streamedText: '',
+  guidance: null,
   ...overrides,
 });
 
@@ -65,6 +67,22 @@ function answerProps(overrides: Partial<VeirAnswerProps> = {}): VeirAnswerProps 
 }
 
 describe('LiveExchange', () => {
+  it('shows the step’s card as soon as it is known, and the words grow above it', () => {
+    renderLive(streaming({ guidance: makeGuidance() }));
+    const exchange = screen.getByRole('article', { name: 'Current exchange' });
+    const card = within(exchange).getByRole('region', { name: /^Hear five lab managers/ });
+    expect(card).toHaveAttribute('aria-busy', 'true');
+    expect(within(card).getByRole('button', { name: 'Done' })).toBeDisabled();
+    expect(exchange.querySelector('[data-slot="markdown"]')).toBeNull();
+  });
+
+  it('keeps the card under the streamed words', () => {
+    renderLive(streaming({ guidance: makeGuidance(), streamedText: 'Talk to five lab managers.' }));
+    const prose = screen.getByText('Talk to five lab managers.');
+    const card = screen.getByRole('region', { name: /^Hear five lab managers/ });
+    expect(prose.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('shows the progress line before any answer text arrives', () => {
     renderLive(streaming());
     const exchange = screen.getByRole('article', { name: 'Current exchange' });
@@ -307,7 +325,12 @@ describe('StoredExchange', () => {
     {
       memoryItems = [],
       privacy = 'standard',
-    }: { memoryItems?: ReturnType<typeof makeMemory>[]; privacy?: 'standard' | 'ephemeral' } = {},
+      latest = true,
+    }: {
+      memoryItems?: ReturnType<typeof makeMemory>[];
+      privacy?: 'standard' | 'ephemeral';
+      latest?: boolean;
+    } = {},
   ) {
     const ui = (
       <InspectorProvider>
@@ -322,7 +345,7 @@ describe('StoredExchange', () => {
             tenant="ain"
             ventureId={IDS.venture}
             canEdit
-            latest
+            latest={latest}
             memoryItems={memoryItems}
             escalations={[]}
             sendDisabledReason={null}
@@ -341,6 +364,64 @@ describe('StoredExchange', () => {
     await screen.findByText(turn.founderText);
     return result;
   }
+
+  it('shows one next step: the path’s card right under the words, not the reply’s own list beside it', async () => {
+    const { container } = await renderStored(makeTurn({ guidance: makeGuidance() }));
+    const card = screen.getByRole('region', { name: /^Hear five lab managers/ });
+    expect(within(card).getByRole('button', { name: 'Done' })).toBeEnabled();
+    expect(screen.queryByRole('region', { name: 'Suggested next steps' })).toBeNull();
+    const order = [...container.querySelectorAll('[data-slot="markdown"], [data-slot="step-card"]')].map(
+      (element) => element.getAttribute('data-slot'),
+    );
+    expect(order.slice(0, 2)).toEqual(['markdown', 'step-card']);
+    const sources = screen.getByRole('button', { name: /^Sources & reasoning/ });
+    expect(card.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('folds the card of an older reply to one line', async () => {
+    await renderStored(makeTurn({ guidance: makeGuidance() }), { latest: false });
+    expect(screen.queryByRole('button', { name: 'Not yet' })).toBeNull();
+    expect(screen.getByRole('button', { name: /^Next step\s*Hear five/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
+  it('keeps the reply’s suggested steps on a turn without one', async () => {
+    await renderStored(makeTurn());
+    expect(screen.getByRole('region', { name: 'Suggested next steps' })).toBeInTheDocument();
+  });
+
+  it('a citation shows its title and passage on hover, and opens the Sources panel on a click', async () => {
+    await renderStored(makeTurn());
+    const [chip] = screen.getAllByRole('button', { name: /^Source 1: / });
+    if (!chip) throw new Error('no citation');
+    const user = userEvent.setup();
+    await user.hover(chip);
+    const preview = await screen.findByRole('dialog', { name: 'Source 1' });
+    expect(preview).toHaveTextContent('14 problem interviews with undergraduates');
+    expect(preview).toHaveTextContent('Nine of fourteen students described walking between buildings.');
+    // Focus stays where it was: hovering never moves it.
+    expect(preview.contains(document.activeElement)).toBe(false);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Source 1' })).toBeNull();
+    await user.hover(document.body);
+    await user.hover(chip);
+    await screen.findByRole('dialog', { name: 'Source 1' });
+    await user.click(chip);
+    expect(screen.queryByRole('dialog', { name: 'Source 1' })).toBeNull();
+  });
+
+  it('a citation shows its passage on a tap, where there is no hover', async () => {
+    await renderStored(makeTurn());
+    const [chip] = screen.getAllByRole('button', { name: /^Source 1: / });
+    if (!chip) throw new Error('no citation');
+    const user = userEvent.setup();
+    await user.pointer([{ keys: '[TouchA]', target: chip }]);
+    const preview = await screen.findByRole('dialog', { name: 'Source 1' });
+    expect(preview).toHaveTextContent('Nine of fourteen students');
+    expect(within(preview).getByRole('button', { name: 'Open source' })).toBeInTheDocument();
+  });
 
   it('puts the face of the person who wrote the message beside it, not the conversation’s starter', async () => {
     const { container } = await renderStored(

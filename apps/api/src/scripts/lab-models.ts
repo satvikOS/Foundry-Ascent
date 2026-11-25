@@ -5,7 +5,7 @@
  *
  *   MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1 \
  *   pnpm --filter @foundry/api exec tsx src/scripts/lab-models.ts --budget-usd 2 [--requests 6] [--structured 4]
- *     [--rerank-queries 40] [--out DIR]
+ *     [--rerank-queries 60] [--out DIR]
  *
  * The conversation lab runs it on GitHub as its `models` suite (ops/lab conversation_lab/models_bench.py, under the
  * lab's role). No app, database or browser.
@@ -15,13 +15,18 @@
  *   tokens, cost) and the app's annotation schema as structured output (valid on the first answer, after a repair, or
  *   not).
  * - Embedding models that answered: query latency and retrieval quality over the committed benchmark
- *   (@foundry/db/retrieval-benchmark): vector alone and fused with a word search, against the word search alone.
- * - Rerankers that answered: the best embedding's fused top 20, reordered, on a fixed sample of the questions.
+ *   (@foundry/db/retrieval-benchmark: the shared corpus production holds, by the text production embeds): vector alone,
+ *   and fused with a word search in memory, against the word search alone.
+ * - With a local DATABASE_URL (the lab's own, reset and seeded): production's own search with each model's 1024-dimension
+ *   vectors, for every candidate set of fusion weights and floors (./lab-retrieval.ts).
+ * - Rerankers that answered: the top 20 of production's ranking with production's embedding model, reordered, on a fixed
+ *   sample of the questions: for every question, and only for those whose ranking is ambiguous.
  *
  * `--budget-usd` is a hard cap: a call is made only when its worst case still fits beside what was spent and what the
  * calls in flight may still cost. Without MODEL_PROVIDER=bedrock it runs on the mock gateway and hashed embeddings (a
- * plumbing check, free). Prints counts, rates, ids, codes, milliseconds and dollars only; with `--out`, the replies and
- * each question's rankings (synthetic) go to `<DIR>/private/models-benchmark.json`.
+ * plumbing check, free). Prints counts, rates, ids, codes, milliseconds and dollars only; with `--out`, the replies,
+ * each question's rankings (synthetic) and what AWS said when it refused a candidate (account ids masked) go to
+ * `<DIR>/private/models-benchmark.json`, which the lab seals.
  */
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -51,6 +56,8 @@ import {
   type ModelAttempt,
   type ModelGateway,
 } from '@foundry/ai';
+import { PLAYBOOK } from '@foundry/core';
+import { retrievalRepo, type Db } from '@foundry/db';
 import {
   LexicalIndex,
   RANKING_DEPTH,
@@ -68,7 +75,19 @@ import {
 } from '@foundry/db/retrieval-benchmark';
 import { z } from 'zod';
 
+import { createDatabase } from '../runtime/common.js';
+import { refusal } from './lab-local-db.js';
 import { benchmarkMessages, benchmarkSystemPrompt } from './lab-models-prompt.js';
+import {
+  benchSearch,
+  extraTexts,
+  isAmbiguous,
+  openRetrievalStore,
+  type Candidates as RankedCandidates,
+  type EmbeddedCorpus,
+  type RetrievalStore,
+  type SearchResult,
+} from './lab-retrieval.js';
 
 export const MODELS_FILE = fileURLToPath(new URL('../../../../ops/lab/models.json', import.meta.url));
 
@@ -160,6 +179,60 @@ export function failureCode(error: unknown): string {
   return named !== null && /^[A-Za-z][A-Za-z0-9_]{2,63}$/.test(named) ? named : 'Error';
 }
 
+/** What AWS said about a refused candidate: private, and never with an account id or a key id. */
+export interface Refusal {
+  readonly part: 'access' | 'reasoning' | 'embeddings' | 'rerank';
+  readonly id: string;
+  readonly code: string;
+  readonly httpStatus: number | null;
+  readonly message: string;
+}
+
+/**
+ * The provider's own message of a failure, account and key ids masked. It can echo a request (a synthetic one here), so it
+ * goes to the sealed private report only: it is what tells a missing permission from a model the account has not been
+ * given (a Marketplace subscription, a use-case form), which the code alone does not.
+ */
+export function failureMessage(error: unknown): string {
+  const chain: Error[] = [];
+  for (let at: unknown = error; at instanceof Error && chain.length < 6; at = at.cause) chain.push(at);
+  // The gateway's own errors never carry the provider's words: the deepest cause does.
+  const said = chain.at(-1)?.message ?? '';
+  return maskAws(said).slice(0, 1_000);
+}
+
+/** `text` without AWS account ids (12 digits), access key ids and session tokens. */
+export function maskAws(text: string): string {
+  return text
+    .replace(/\b\d{4}-?\d{4}-?\d{4}\b/g, '<account>')
+    .replace(/\b(?:AKIA|ASIA|AROA|AIDA)[A-Z0-9]{12,20}\b/g, '<key>')
+    .replace(/[A-Za-z0-9/+=]{80,}/g, '<token>');
+}
+
+function httpStatusOf(error: unknown): number | null {
+  for (let at: unknown = error, depth = 0; at instanceof Error && depth < 6; at = at.cause, depth += 1) {
+    const status = (at as { $metadata?: { httpStatusCode?: unknown } }).$metadata?.httpStatusCode;
+    if (typeof status === 'number') return status;
+  }
+  return null;
+}
+
+/** Keeps what refused candidates were told. */
+class Refusals {
+  readonly items: Refusal[] = [];
+
+  add(part: Refusal['part'], id: string, error: unknown): void {
+    if (this.items.length >= 60) return;
+    this.items.push({
+      part,
+      id,
+      code: failureCode(error),
+      httpStatus: httpStatusOf(error),
+      message: failureMessage(error),
+    });
+  }
+}
+
 const gatewayFailureCost = (error: unknown): number =>
   isModelGatewayError(error) ? error.attempts.reduce((acc, a) => acc + a.costUsd, 0) : 0;
 
@@ -244,7 +317,12 @@ const dropped = (attempts: readonly ModelAttempt[]): string[] =>
     .flatMap((a) => a.issues ?? [])
     .filter((i) => /^(?:dropped|reasoning_effort):[a-z_]+$/.test(i));
 
-async function probeReasoning(clients: Clients, budget: Budget, id: string): Promise<Access> {
+async function probeReasoning(
+  clients: Clients,
+  budget: Budget,
+  refusals: Refusals,
+  id: string,
+): Promise<Access> {
   const started = performance.now();
   try {
     const result = await budget.run(
@@ -274,6 +352,7 @@ async function probeReasoning(clients: Clients, budget: Budget, id: string): Pro
       latencyMs: Math.round(performance.now() - started),
     };
   } catch (error) {
+    refusals.add('access', id, error);
     return { id, kind: 'reasoning', ok: false, code: failureCode(error), latencyMs: null };
   }
 }
@@ -281,6 +360,7 @@ async function probeReasoning(clients: Clients, budget: Budget, id: string): Pro
 async function benchReasoning(
   clients: Clients,
   budget: Budget,
+  refusals: Refusals,
   candidate: { readonly id: string; readonly effort: ConverseReasoningEffort | null },
   options: { readonly system: string; readonly requests: number; readonly structured: number },
 ): Promise<{ result: ReasoningResult; replies: Reply[] }> {
@@ -336,6 +416,7 @@ async function benchReasoning(
     } catch (error) {
       requests += 1;
       codes.push(failureCode(error));
+      refusals.add('reasoning', id, error);
     }
   }
 
@@ -380,6 +461,7 @@ async function benchReasoning(
       structuredRequests += 1;
       structuredCost += gatewayFailureCost(error);
       structuredCodes.push(failureCode(error));
+      refusals.add('reasoning', id, error);
     }
   }
   return {
@@ -438,6 +520,8 @@ export interface EmbeddingResult {
 interface Embedded {
   readonly result: EmbeddingResult;
   readonly hybrid: ReadonlyMap<string, readonly Scored[]>;
+  /** The vectors, when every text was embedded. */
+  readonly corpus: EmbeddedCorpus | null;
 }
 
 async function embedBatch(
@@ -502,6 +586,7 @@ async function pooled<T, R>(items: readonly T[], job: (item: T) => Promise<R>): 
 async function benchEmbedding(
   clients: Clients,
   budget: Budget,
+  refusals: Refusals,
   region: string,
   model: { readonly id: string; readonly dimensions: number },
   corpus: { readonly passages: readonly BenchmarkPassage[]; readonly queries: readonly BenchmarkQuery[] },
@@ -540,7 +625,7 @@ async function benchEmbedding(
     const indexed = (
       await pooled(batches, async (batch) => {
         const answer = await one(
-          batch.map((p) => `${p.title}\n${p.text}`),
+          batch.map((p) => p.embedText),
           'document',
         );
         corpusTokens += answer.tokens;
@@ -571,19 +656,27 @@ async function benchEmbedding(
     );
     return {
       hybrid,
+      corpus: {
+        modelId: model.id,
+        dimensions: model.dimensions,
+        passages: new Map(indexed.map((x) => [x.id, x.vector])),
+        queries: vectors,
+      },
       result: result(null, {
         vector: quality(corpus.queries, ranked, { scoresMeanRelevance: true }),
         hybrid: quality(corpus.queries, hybrid, { scoresMeanRelevance: false }),
       }),
     };
   } catch (error) {
-    return { hybrid: new Map(), result: result(failureCode(error), empty) };
+    refusals.add('embeddings', model.id, error);
+    return { hybrid: new Map(), corpus: null, result: result(failureCode(error), empty) };
   }
 }
 
 async function probeEmbedding(
   clients: Clients,
   budget: Budget,
+  refusals: Refusals,
   region: string,
   id: string,
   dimensions: number,
@@ -595,8 +688,38 @@ async function probeEmbedding(
       ? { id, kind: 'embedding', ok: false, code: 'BudgetReached', latencyMs: null }
       : { id, kind: 'embedding', ok: true, code: null, latencyMs: Math.round(performance.now() - started) };
   } catch (error) {
+    refusals.add('access', id, error);
     return { id, kind: 'embedding', ok: false, code: failureCode(error), latencyMs: null };
   }
+}
+
+/** The home tenant's stored texts the benchmark does not have, embedded; null when the model or the budget stopped it. */
+async function embedExtras(
+  clients: Clients,
+  budget: Budget,
+  region: string,
+  store: RetrievalStore,
+  model: { readonly id: string; readonly dimensions: number },
+): Promise<ReadonlyMap<string, readonly number[]> | null> {
+  const family = embeddingFamily(model.id);
+  const size = family === null ? 1 : EMBEDDING_BATCH[family];
+  const texts = extraTexts(store);
+  const batches = Array.from({ length: Math.ceil(texts.length / size) }, (_, i) =>
+    texts.slice(i * size, (i + 1) * size),
+  );
+  const out = new Map<string, readonly number[]>();
+  for (const batch of batches) {
+    const answer = await embedBatch(
+      clients.invoke(region),
+      budget,
+      model,
+      batch.map((x) => x.text),
+      'document',
+    );
+    if (answer === null) return null;
+    batch.forEach((x, i) => out.set(x.id, answer.vectors[i] ?? []));
+  }
+  return out;
 }
 
 // ---- Rerankers -------------------------------------------------------------------------------------------------
@@ -629,6 +752,7 @@ async function rerank(
   );
 }
 
+/** A reranker on the same questions, used always and only where the ranking was ambiguous. */
 export interface RerankResult {
   readonly id: string;
   readonly region: string;
@@ -636,15 +760,23 @@ export interface RerankResult {
   readonly ms: { p50: number | null; p95: number | null };
   readonly usdPerThousandQueries: number;
   readonly quality: RetrievalQuality | null;
+  readonly ambiguousOnly: {
+    /** Share of the questions it was used for; what a thousand questions then cost. */
+    readonly share: number;
+    readonly usdPerThousandQuestions: number;
+    readonly quality: RetrievalQuality;
+  } | null;
 }
 
 async function benchReranker(
   clients: Clients,
   budget: Budget,
+  refusals: Refusals,
   model: Reranker,
   sample: readonly BenchmarkQuery[],
   candidates: ReadonlyMap<string, readonly Scored[]>,
   texts: ReadonlyMap<string, string>,
+  ambiguous: ReadonlySet<string> | null,
 ): Promise<{ result: RerankResult; rankings: ReadonlyMap<string, readonly Scored[]> }> {
   const ms: number[] = [];
   const rankings = new Map<string, readonly Scored[]>();
@@ -668,9 +800,11 @@ async function benchReranker(
       );
     } catch (error) {
       code = failureCode(error);
+      refusals.add('rerank', model.id, error);
       break;
     }
   }
+  const used = ambiguous === null ? [] : sample.filter((q) => ambiguous.has(q.id));
   return {
     rankings,
     result: {
@@ -681,6 +815,26 @@ async function benchReranker(
       usdPerThousandQueries: model.usdPerThousandQueries,
       // Half a sample is no measure: only a reranker that answered every question is graded.
       quality: code === null ? quality(sample, rankings, { scoresMeanRelevance: true }) : null,
+      ambiguousOnly:
+        code !== null || ambiguous === null
+          ? null
+          : {
+              share: sample.length === 0 ? 0 : round(used.length / sample.length, 3),
+              usdPerThousandQuestions:
+                sample.length === 0
+                  ? 0
+                  : round((model.usdPerThousandQueries * used.length) / sample.length, 3),
+              quality: quality(
+                sample,
+                new Map(
+                  sample.map((q) => [
+                    q.id,
+                    (ambiguous.has(q.id) ? rankings.get(q.id) : candidates.get(q.id)) ?? [],
+                  ]),
+                ),
+                { scoresMeanRelevance: false },
+              ),
+            },
     },
   };
 }
@@ -693,18 +847,30 @@ export interface BenchOptions {
   readonly requests: number;
   readonly structured: number;
   readonly rerankQueries: number;
+  /** The questions (tests ask fewer); default: the committed ones. */
+  readonly queries?: readonly BenchmarkQuery[];
 }
 
-export async function runModelsBenchmark(clients: Clients, candidates: Candidates, options: BenchOptions) {
+/** Production's embedding model at its size: the base a reranker would reorder. */
+export const PRODUCTION_EMBEDDING = { id: 'amazon.titan-embed-text-v2:0', dimensions: 1024 } as const;
+
+export async function runModelsBenchmark(
+  clients: Clients,
+  candidates: Candidates,
+  options: BenchOptions,
+  /** The lab's own database (reset and seeded) and its home tenant; null: production's search is not measured. */
+  database: { readonly db: Db; readonly tenantSlug: string } | null = null,
+) {
   const budget = new Budget(options.budgetUsd);
-  const passages = benchmarkPassages();
-  const queries = benchmarkQueries();
+  const refusals = new Refusals();
+  const passages = benchmarkPassages(PLAYBOOK.plays);
+  const queries = options.queries ?? benchmarkQueries();
   const { region } = options;
 
   const access: Access[] = [];
-  for (const c of candidates.reasoning) access.push(await probeReasoning(clients, budget, c.id));
+  for (const c of candidates.reasoning) access.push(await probeReasoning(clients, budget, refusals, c.id));
   for (const c of candidates.embeddings) {
-    access.push(await probeEmbedding(clients, budget, region, c.id, c.dimensions[0] ?? 1024));
+    access.push(await probeEmbedding(clients, budget, refusals, region, c.id, c.dimensions[0] ?? 1024));
   }
   for (const c of candidates.rerankers) {
     const started = performance.now();
@@ -722,6 +888,7 @@ export async function runModelsBenchmark(clients: Clients, candidates: Candidate
             },
       );
     } catch (error) {
+      refusals.add('access', c.id, error);
       access.push({ id: c.id, kind: 'rerank', ok: false, code: failureCode(error), latencyMs: null });
     }
   }
@@ -730,20 +897,57 @@ export async function runModelsBenchmark(clients: Clients, candidates: Candidate
   const index = new LexicalIndex(passages);
   const lexical = new Map(queries.map((q) => [q.id, index.search(q.query)] as const));
   const embeddings: EmbeddingResult[] = [];
-  /** The best embedding so far by its fused ranking (what a reranker would reorder). */
-  let best: Embedded | null = null;
+  const store =
+    database === null
+      ? null
+      : await openRetrievalStore(database.db, { passages, queries }, database.tenantSlug);
+  const search: SearchResult[] = [];
+  const searchKept: Record<string, Record<string, unknown>> = {};
+  /** What a reranker reorders: production's ranking with its own model when both were there, else the best fused one. */
+  interface Base {
+    readonly id: string;
+    readonly dimensions: number;
+    readonly by: 'search' | 'fused';
+    readonly mrr: number;
+    readonly rankings: ReadonlyMap<string, readonly Scored[]>;
+    readonly ambiguous: ReadonlySet<string> | null;
+  }
+  let best: Base | null = null;
+  let fused: Embedded | null = null;
   for (const c of candidates.embeddings.filter((e) => may(e.id))) {
     for (const dimensions of c.dimensions) {
       const embedded = await benchEmbedding(
         clients,
         budget,
+        refusals,
         region,
         { id: c.id, dimensions },
         { passages, queries },
         lexical,
       );
       embeddings.push(embedded.result);
-      if ((embedded.result.hybrid?.mrr ?? -1) > (best?.result.hybrid?.mrr ?? -1)) best = embedded;
+      const mrr = embedded.result.hybrid?.mrr ?? -1;
+      if (embedded.corpus !== null && mrr > (fused?.result.hybrid?.mrr ?? -1)) fused = embedded;
+      if (embedded.corpus !== null && (best === null || (best.by === 'fused' && mrr > best.mrr))) {
+        best = { id: c.id, dimensions, by: 'fused', mrr, rankings: embedded.hybrid, ambiguous: null };
+      }
+      if (store === null || embedded.corpus === null || dimensions !== PRODUCTION_EMBEDDING.dimensions)
+        continue;
+      const extras = await embedExtras(clients, budget, region, store, { id: c.id, dimensions });
+      if (extras === null) continue;
+      const measured = await benchSearch(store, embedded.corpus, extras);
+      search.push(measured.result);
+      searchKept[c.id] = measured.kept;
+      if (c.id === PRODUCTION_EMBEDDING.id) {
+        best = {
+          id: c.id,
+          dimensions,
+          by: 'search',
+          mrr: measured.result.ranking.default.mrr,
+          rankings: measured.candidates,
+          ambiguous: ambiguousOf(measured.candidates, retrievalRepo.embeddingProfile(c.id)),
+        };
+      }
     }
   }
 
@@ -753,7 +957,16 @@ export async function runModelsBenchmark(clients: Clients, candidates: Candidate
   const rerankings: Record<string, Record<string, readonly string[]>> = {};
   if (best !== null) {
     for (const c of candidates.rerankers.filter((r) => may(r.id))) {
-      const { result, rankings } = await benchReranker(clients, budget, c, sample, best.hybrid, texts);
+      const { result, rankings } = await benchReranker(
+        clients,
+        budget,
+        refusals,
+        c,
+        sample,
+        best.rankings,
+        texts,
+        best.ambiguous,
+      );
       rerankers.push(result);
       rerankings[c.id] = Object.fromEntries(
         [...rankings].map(([id, r]) => [id, r.slice(0, 5).map((s) => s.id)]),
@@ -762,7 +975,7 @@ export async function runModelsBenchmark(clients: Clients, candidates: Candidate
   }
 
   // Last and dearest: whatever the retrieval part left of the budget.
-  const system = benchmarkSystemPrompt(passages);
+  const system = benchmarkSystemPrompt(benchmarkPassages());
   const reasoning: ReasoningResult[] = [];
   const replies: Reply[] = [];
   for (const c of candidates.reasoning.filter((r) => may(r.id))) {
@@ -770,6 +983,7 @@ export async function runModelsBenchmark(clients: Clients, candidates: Candidate
       const run = await benchReasoning(
         clients,
         budget,
+        refusals,
         { id: c.id, effort },
         { system, requests: options.requests, structured: options.structured },
       );
@@ -793,10 +1007,11 @@ export async function runModelsBenchmark(clients: Clients, candidates: Candidate
       reasoning,
       lexical: quality(queries, lexical, { scoresMeanRelevance: true }),
       embeddings,
+      search,
       rerank: {
-        base: best === null ? null : { id: best.result.id, dimensions: best.result.dimensions },
+        base: best === null ? null : { id: best.id, dimensions: best.dimensions, by: best.by },
         sample: sample.length,
-        before: best === null ? null : quality(sample, best.hybrid, { scoresMeanRelevance: false }),
+        before: best === null ? null : quality(sample, best.rankings, { scoresMeanRelevance: false }),
         models: rerankers,
       },
       costUsd: {
@@ -809,13 +1024,22 @@ export async function runModelsBenchmark(clients: Clients, candidates: Candidate
     },
     private: {
       replies,
+      refusals: refusals.items,
       fused:
-        best === null
+        fused === null
           ? {}
-          : Object.fromEntries([...best.hybrid].map(([id, r]) => [id, r.slice(0, 5).map((s) => s.id)])),
+          : Object.fromEntries([...fused.hybrid].map(([id, r]) => [id, r.slice(0, 5).map((s) => s.id)])),
+      search: searchKept,
       rerankings,
     },
   };
+}
+
+function ambiguousOf(
+  candidates: RankedCandidates,
+  profile: retrievalRepo.EmbeddingProfile,
+): ReadonlySet<string> {
+  return new Set([...candidates].filter(([, ranked]) => isAmbiguous(ranked, profile)).map(([id]) => id));
 }
 
 // ---- Clients ---------------------------------------------------------------------------------------------------
@@ -918,7 +1142,7 @@ export function parseArgs(argv: readonly string[]): Omit<BenchOptions, 'region'>
     budgetUsd: MAX_BUDGET_USD,
     requests: 6,
     structured: 4,
-    rerankQueries: 40,
+    rerankQueries: 60,
     out: null as string | null,
   };
   const count = (flag: string, value: string, max: number): number => {
@@ -975,10 +1199,22 @@ async function main(argv: readonly string[]): Promise<void> {
   const live = process.env.MODEL_PROVIDER === 'bedrock';
   const region = process.env.BEDROCK_REGION ?? 'us-east-1';
   const started = performance.now();
-  const run = await runModelsBenchmark(live ? bedrockClients(region) : mockClients(), candidates, {
-    ...args,
-    region,
-  });
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    DB_DRIVER: process.env.DB_DRIVER ?? 'pg',
+  };
+  const url = env.DATABASE_URL?.trim() ?? '';
+  // Only a database of the lab's own: the benchmark's passages and every vector in it are replaced.
+  const refused = url === '' ? 'none' : refusal(env);
+  if (url !== '' && refused !== null) throw new UsageError(`not the lab's own database (${refused})`);
+  const db = url === '' ? null : createDatabase(env);
+  const slug = env.HOME_TENANT_SLUG?.trim() ?? '';
+  const run = await runModelsBenchmark(
+    live ? bedrockClients(region) : mockClients(),
+    candidates,
+    { ...args, region },
+    db === null ? null : { db, tenantSlug: slug === '' ? 'ain' : slug },
+  ).finally(() => db?.close());
   const report = {
     provider: live ? 'bedrock' : 'mock',
     wallMs: Math.round(performance.now() - started),

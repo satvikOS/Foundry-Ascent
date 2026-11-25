@@ -229,7 +229,7 @@ export function AppShell({ me, children }: AppShellProps) {
   );
 
   return (
-    <div className="app-ground min-h-dvh">
+    <div className="app-ground min-h-dvh print:min-h-0">
       {breathingClaims > 0 ? (
         <>
           <Suspense fallback={null}>
@@ -297,8 +297,8 @@ export function AppShell({ me, children }: AppShellProps) {
 
       <div
         className={cn(
-          'flex min-h-dvh min-w-0 flex-col transition-[padding] duration-(--dur-panel) ease-out-expo motion-reduce:transition-none',
-          'md:pl-[calc(var(--sidebar-width-collapsed)+2*var(--panel-inset))]',
+          'flex min-h-dvh min-w-0 flex-col print:min-h-0 transition-[padding] duration-(--dur-panel) ease-out-expo motion-reduce:transition-none',
+          'md:pl-[calc(var(--sidebar-width-collapsed)+2*var(--panel-inset))] print:pl-0',
           !collapsed && 'lg:pl-[calc(var(--sidebar-width)+2*var(--panel-inset))]',
         )}
       >

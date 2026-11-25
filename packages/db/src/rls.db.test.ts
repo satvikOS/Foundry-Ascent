@@ -29,6 +29,7 @@ import {
 } from './repositories/index.js';
 import { type SeedResult } from './seed/seed.js';
 import { AIN_CURRICULUM } from './seed/curriculum.js';
+import { PROGRAMME_NOTES } from './seed/programme-notes.js';
 import { GUIDE_DOCTRINE, GUIDE_STYLE } from './seed/doctrine.js';
 import { createTestDatabase, makeContext, type TestDatabase } from './testing/test-database.js';
 
@@ -532,6 +533,10 @@ describe('RLS coverage', () => {
       'call_faces',
       // Owner-only rows (the person who recorded the call): repositories/recordings.db.test.ts covers its policies.
       'call_recordings',
+      // The founder path: migrate-0033.db.test.ts covers its policies.
+      'venture_paths',
+      'path_steps',
+      'path_criteria',
     ].sort();
     expect(discovered).toEqual(covered);
   });
@@ -668,10 +673,13 @@ describe('founder isolation', () => {
       }
       expect(await count(tx, 'SELECT count(*) AS n FROM tenants')).toBe(1);
       expect(await count(tx, 'SELECT count(*) AS n FROM ventures')).toBe(1);
-      // Shared corpora of the home tenant are visible (the handbook's 6 passages and the Ain curriculum's); the
+      // Shared corpora of the home tenant are visible (the handbook's 6 passages, the Ain curriculum's and its course
+      // notes); the
       // partner's are not.
       expect(await count(tx, `SELECT count(*) AS n FROM knowledge_chunks WHERE scope = 'program'`)).toBe(
-        6 + AIN_CURRICULUM.reduce((n, s) => n + s.chunks.length, 0),
+        6 +
+          AIN_CURRICULUM.reduce((n, s) => n + s.chunks.length, 0) +
+          PROGRAMME_NOTES.reduce((n, s) => n + s.notes.length, 0),
       );
     });
   });

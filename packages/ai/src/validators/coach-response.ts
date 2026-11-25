@@ -55,6 +55,16 @@ import {
   withoutRepeats,
   announcedCountGap,
 } from './social.js';
+import { guidanceText, type PromptGuidance } from '../prompts/guidance.js';
+import { checkCitationSupport, type SupportIndex } from './citation-support.js';
+import {
+  carriesContract,
+  checkReplyContract,
+  contractApplies,
+  spokenReserve,
+  fitSpoken,
+  saidVerbatim,
+} from './reply-contract.js';
 import { SPOKEN_MAX_CHARS, SPOKEN_MAX_WORDS, clampWords, deriveSpoken, toSpeakable } from './speech.js';
 
 export interface CoachResponseLimits {
@@ -180,6 +190,18 @@ export interface ValidateCoachResponseOptions {
    * real?"), the honest answer stands as written: no volunteered disclaimer is rewritten out of the reply.
    */
   founderText?: string;
+  /**
+   * What the founder path decided for this turn: the reply is held to the reply contract (validators/reply-contract.ts):
+   * what is missing of the answer, who decides or the step is written from it (`reply_contract:<finding>` notes).
+   */
+  guidance?: PromptGuidance | null;
+  /** ISO date: the step's day is said the way a person says it. */
+  today?: string;
+  /**
+   * What may be stated this turn (validators/citation-support.ts): citations that do not hold and claims nobody gave are
+   * left out (`citations_unsupported:n`, `claims_removed:n`). Absent: not checked.
+   */
+  support?: SupportIndex | null;
   /**
    * The conversation already has a message from the vEIR (an earlier reply, its opener, or a call's intro): the
    * reply no longer introduces it ("Hi Ines, I'm Ruth's vEIR." loses the introduction, LAB-M16), unless the founder
@@ -425,6 +447,18 @@ export function validateCoachResponse(
       notes.push('mode_corrected');
     }
   }
+  // Their own words only: a report of the path whose quote is not in their message reports nothing.
+  if (r.path_report && options.founderText !== undefined) {
+    const founder = options.founderText;
+    const criteria = r.path_report.criteria.filter((c) => saidVerbatim(c.quote, founder));
+    const step = saidVerbatim(r.path_report.quote, founder) ? r.path_report.step : null;
+    if (criteria.length < r.path_report.criteria.length || step !== r.path_report.step)
+      notes.push('path_report_unverified');
+    r.path_report =
+      step === null && criteria.length === 0
+        ? null
+        : { step, criteria, quote: step === null ? null : r.path_report.quote };
+  }
   if (r.mode !== 'rehearse' && r.rehearsal !== null) {
     r.rehearsal = null;
     notes.push('rehearsal_removed');
@@ -520,6 +554,23 @@ export function validateCoachResponse(
     (options.founderText !== undefined && asksToRepeat(options.founderText))
       ? null
       : earlier.join('\n\n');
+  // The reply contract and what may be stated: a social turn, a crisis and an honest answer about the coach are exempt, and
+  // what a call already said is never rewritten.
+  const guidance =
+    social === null &&
+    !identityAsked &&
+    options.preRisk.crisis !== true &&
+    !options.preRisk.categories.includes('safety_wellbeing') &&
+    contractApplies(options.guidance, options.founderText)
+      ? options.guidance
+      : null;
+  const saidAloud = options.released === true && channel === 'voice';
+  const knownFigures =
+    options.knownFigures === undefined
+      ? undefined
+      : guidance === null
+        ? options.knownFigures
+        : `${options.knownFigures}\n${guidanceText(guidance, options.today)}`;
   // The forms of the questions asked lately: this conversation's replies and the end of the last ones.
   const usedFrames: ReadonlySet<string> = new Set(
     [...earlier, ...(options.pastReplies ?? [])].flatMap((t) =>
@@ -543,6 +594,7 @@ export function validateCoachResponse(
         keepReferrals: forcedEscalationFor(options.preRisk) !== null,
         signOffs: social === null && !welcomesSignOff(options.founderText),
         strictQuestions: stuckOn(options.founderText, options.previousReply),
+        ...(guidance === null ? {} : { keep: (sentence: string) => carriesContract(sentence, guidance) }),
         asked: askedBefore(options.previousReply, options.earlierReplies),
       });
       // A reply that only signed off again keeps its sign-off: never a stock line in its place.
@@ -588,13 +640,13 @@ export function validateCoachResponse(
       if (named.removed > 0 && note) notes.push(`name_removed:${named.removed}`);
       out = named.text;
     }
-    if (options.knownFigures !== undefined) {
+    if (knownFigures !== undefined) {
       // Asked for a number, the range Thomas reasons out is the answer: it stays (and is counted below).
       const asked = options.founderText !== undefined && asksForNumber(options.founderText);
-      const figures = withoutExampleFigures(out, options.knownFigures, asked);
+      const figures = withoutExampleFigures(out, knownFigures, asked);
       if (figures.removed > 0 && note) notes.push(`example_figure_removed:${figures.removed}`);
       out = figures.text;
-      const invented = withoutInventedFigures(out, options.knownFigures, asked);
+      const invented = withoutInventedFigures(out, knownFigures, asked);
       if (invented.removed > 0 && note) notes.push(`invented_figure_removed:${invented.removed}`);
       out = invented.text;
     }
@@ -613,12 +665,35 @@ export function validateCoachResponse(
     const varied = withVariedQuestions(out, usedFrames);
     if (varied.rephrased > 0 && note) notes.push(`question_rephrased:${varied.rephrased}`);
     out = varied.text;
+    if (saidAloud || identityAsked) return out;
+    if (options.support) {
+      const support = checkCitationSupport(out, options.support, {
+        protect: (unit) => carriesContract(unit, guidance),
+      });
+      if (support.citationsDropped > 0 && note)
+        notes.push(`citations_unsupported:${support.citationsDropped}`);
+      const claims = support.sentencesRemoved + support.sentencesNeutralised;
+      if (claims > 0 && note) notes.push(`claims_removed:${claims}`);
+      // With nothing left, the path's own reply stands in its place (below); with no path, the reply as it was written.
+      if (support.text !== '' || guidance !== null) out = support.text;
+    }
+    if (guidance !== null) {
+      const contract = checkReplyContract({
+        reply: out,
+        guidance,
+        channel,
+        ...(options.today === undefined ? {} : { today: options.today }),
+        ...(options.founderText === undefined ? {} : { founderText: options.founderText }),
+      });
+      if (note) for (const finding of contract.findings) notes.push(`reply_contract:${finding}`);
+      out = contract.repaired ?? out;
+    }
     return out;
   };
   r.answer = crafted(r.answer, true);
   // Figures nobody gave (counted; the lab's checks read the same split: live pilot 42124259353).
-  if (options.knownFigures !== undefined) {
-    const invented = inventedFigures(r.answer, options.knownFigures);
+  if (knownFigures !== undefined) {
+    const invented = inventedFigures(r.answer, knownFigures);
     if (invented.unsourced.length > 0) notes.push(`invented_figure:${invented.unsourced.length}`);
     if (invented.proposed.length > 0) notes.push(`proposed_figure:${invented.proposed.length}`);
   }
@@ -763,9 +838,14 @@ export function validateCoachResponse(
   // The answer's identity check comes before a spoken reply is derived from it, so a call never says a
   // sentence the transcript replaced (step 6 checks the rest).
   r.answer = fixIdentity(r.answer, limits.answerMaxChars, { disclaimers: 'reply' });
+  // The step and who decides are never what a call's word budget cuts: they are said past it.
+  const spokenCap = limits.spokenMaxWords + spokenReserve(guidance, '', options.today);
   // A call needs something to say: the model's spoken reply, or else the answer made speakable.
   if (channel === 'voice' && (r.spoken ?? '') === '') {
-    const derived = deriveSpoken(r.answer, limits.spokenMaxWords);
+    const derived =
+      guidance === null
+        ? deriveSpoken(r.answer, limits.spokenMaxWords)
+        : clampWords(fitSpoken(toSpeakable(r.answer), guidance, limits.spokenMaxWords), spokenCap).text;
     r.spoken = derived === '' ? null : derived;
     notes.push('spoken_derived');
   }
@@ -913,7 +993,10 @@ export function validateCoachResponse(
     };
   }
   if (r.spoken) {
-    const spoken = clampWords(r.spoken, limits.spokenMaxWords, limits.spokenMaxChars);
+    // Within the budget, with the step: over it, what does not carry the contract goes first.
+    const fitted = saidAloud ? r.spoken : fitSpoken(r.spoken, guidance, limits.spokenMaxWords);
+    const spoken = clampWords(fitted, spokenCap, limits.spokenMaxChars);
+    if (fitted !== r.spoken) notes.push('spoken_fitted');
     if (spoken.truncated) notes.push('spoken_truncated');
     r.spoken = spoken.text === '' ? null : spoken.text;
   }

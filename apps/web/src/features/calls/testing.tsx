@@ -77,6 +77,7 @@ export const LIVE: CallSnapshot = {
   voicePaused: false,
   notice: null,
   blocked: null,
+  guidance: null,
   queued: 0,
   ended: null,
   error: null,

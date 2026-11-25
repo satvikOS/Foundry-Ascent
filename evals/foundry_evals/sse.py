@@ -25,6 +25,7 @@ from foundry_evals.models import (
     TurnCompleted,
     TurnDelta,
     TurnError,
+    TurnGuidance,
     TurnSpeech,
     TurnStatus,
     TurnStreamEvent,
@@ -191,6 +192,8 @@ class TurnStreamResult:
     # Validated answer units streamed before the terminal event (turn.delta), and spoken units (turn.speech).
     deltas: list[TurnDelta] = field(default_factory=list)
     speech: list[TurnSpeech] = field(default_factory=list)
+    # The founder path's step for this turn, sent before its text.
+    guidance: TurnGuidance | None = None
     terminal: TurnCompleted | TurnBlocked | TurnError | None = None
     keepalives: int = 0
     frames: int = 0
@@ -208,7 +211,7 @@ class TurnStreamResult:
 
 class TurnStreamReader:
     """Consumes turn-stream bytes incrementally and enforces the event order contract:
-    ``turn.accepted`` → (``turn.status`` | ``turn.delta`` | ``turn.speech``)* → exactly one terminal event (or a lone pre-acceptance
+    ``turn.accepted`` → (``turn.status`` | ``turn.guidance`` | ``turn.delta`` | ``turn.speech``)* → exactly one terminal event (or a lone pre-acceptance
     ``turn.error``). A ``turn.completed`` with ``fieldsPending`` may be followed by one more ``turn.completed`` of the
     same turn, with its fields, which becomes the terminal event. Any other frame after the terminal event is a protocol
     error.
@@ -262,6 +265,11 @@ class TurnStreamReader:
             raise SseProtocolError(f"frame '{event.event}' before turn.accepted")
         if isinstance(event, TurnStatus):
             result.statuses.append(event)
+            return
+        if isinstance(event, TurnGuidance):
+            if event.turn_id != result.accepted.turn_id:
+                raise SseProtocolError("turn.guidance refers to a different turn than turn.accepted")
+            result.guidance = event
             return
         if isinstance(event, TurnDelta | TurnSpeech):
             if event.turn_id != result.accepted.turn_id:

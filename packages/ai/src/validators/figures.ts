@@ -144,7 +144,7 @@ export function spelledNumbersIn(text: string): number[] {
 }
 
 /** The numbers known text holds, in digits or in words. */
-function knownNumbersIn(text: string): number[] {
+export function knownNumbersIn(text: string): number[] {
   return [...numbersIn(text), ...spelledNumbersIn(text)];
 }
 
@@ -207,6 +207,14 @@ function derivable(
     }
   }
   return false;
+}
+
+/**
+ * Whether `value` is one of the `known` numbers, or everyday arithmetic on them (the same reading the figures of a reply
+ * get): what a cited sentence may state (validators/citation-support.ts).
+ */
+export function isKnownNumber(value: number, known: readonly number[], percent = false): boolean {
+  return derivable(value, known, percent);
 }
 
 /** Most numbers shown before a figure that its arithmetic is read on (the latest ones). */

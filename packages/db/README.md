@@ -282,11 +282,17 @@ escalation packets reject them, and recaps and AI memory candidates are built fr
 
 ## 7. Hybrid retrieval
 
-`score = 0.55·max(0, 1 − cosine_distance) + 0.25·ts_rank_cd(tsv, q, 32) + 0.10·recency + 0.10·authority`
-(`RETRIEVAL_WEIGHTS`), recency = 0.5^(age_days / 90). The lexical query ORs the stemmed words of the text
-(`websearch_to_tsquery` with `&` → `|`). NULL embeddings (or `embedding: null` queries) score lexically
-only. Results carry `{kind, refId, title, excerpt (≤ 600 chars), score, freshnessAt, status, ventureId,
-sourceId, memoryType, components}`; core assigns `E1…En`.
+Rank fusion with a relevance floor (`repositories/retrieval.ts`; its module comment is the specification; how it is tuned:
+docs/runbooks/embedding-model.md):
+`score = 0.80·rrf + 0.12·authority + 0.08·recency`, where `rrf` is Reciprocal Rank Fusion of the vector rank (cosine) and
+the lexical rank (coverage of the message's content words, each weighted by its rarity in the store; `VC` and
+`venture capital` are one word, `knowledge-pack/query-terms.ts`), the vector weighing 3 and words 0.25 (1.5 for a row
+whose title says a thing the message names). A row is returned only when it passes the floor
+(`RETRIEVAL_FLOORS`, `EMBEDDING_PROFILES`): nothing relevant returns nothing. Near-identical passages come once, one source
+gives at most two. NULL embeddings (or `embedding: null` queries) score lexically only; a row another model embedded is
+compared with the query embedded by that model or not at all (`embedding_model`, docs/runbooks/embedding-model.md).
+Results carry `{kind, refId, title, excerpt (≤ 3,200 chars: the caller shows the part that matches), score, freshnessAt, status, ventureId, sourceId, memoryType,
+citation, lane, components}`; core assigns `E1…En`. Measured by `packages/core` `orchestrator/retrieval-eval.db.test.ts`.
 
 - `searchVentureMemory({tenantId, ventureId, query, embedding, statuses?, types?, privateOwnerId?, limit=8})`
   — filters tenant + venture first, exact scan; statuses default proposed/confirmed/disputed (disputed =
@@ -302,8 +308,9 @@ sourceId, memoryType, components}`; core assigns `E1…En`.
 - `searchVentureChunks({…, limit=6})` — the venture's own document chunks; withdrawn sources excluded.
 - `searchSharedChunks({tenantId, query, embedding, personaId?, scopes?, classifications?, candidates=40, limit=4})`
   — program/public/persona corpora (`venture_id IS NULL`): ANN candidates from the partial **HNSW** index
-  ∪ lexical candidates, then rescored; persona chunks (kind `doctrine`) only for `personaId`.
-- `searchResources({tenantId, query, stage?, limit=4})` — 0.55 lexical + 0.25 stage fit + 0.10 recency + 0.10 authority.
+  ∪ lexical candidates, then fused; persona chunks (kind `doctrine`) only for `personaId`.
+  `corpus: {founderText, topics?, play?, limit=2}` adds the cited corpus beside `limit` (below).
+- `searchResources({tenantId, query, stage?, limit=4})` — lexical; the stage fit is part of the authority.
 - `searchPatterns({tenantId, query, limit=2})` — published, unexpired.
 
 ## 8. Memory attribute conventions
@@ -371,6 +378,11 @@ AI-origin items can never be confirmed without `approved_by` or `auto_kept_at` (
 - The Ain Foundry curriculum (`./curriculum.ts`, home tenant `ain` only, demo data or not): the programme's roadmap and
   Modules 1–3 curated from its own materials (`1.pdf`–`5.pdf`), one programme-scope note per part with its chunks,
   retrieved like the programme handbook. Inserted once per source like every seeded corpus.
+- The cited corpus (`knowledge-pack/corpus.ts`, once migration 0034 is applied; `SeedConfig.corpus`): short notes in our own
+  words with locator, page, licence, attribution and the day read. The open library (U.S. government pages, CC BY-SA
+  textbooks: `knowledge/open-library`, licences in its LICENSE.md) in every active tenant (scope `public`, uri
+  `library:<key>`), the programme's course notes (`./programme-notes.ts`) in the home tenant `ain` (scope `program`, uri
+  `curriculum:notes/<key>`). `knowledge-pack/corpus-sync.ts` converges on the code like the knowledge pack's sync.
 - Story releases (`./story-releases.ts`): a seeded founder's backstory replaced once in a database that already holds
   the old one (the seed itself never rewrites a row), named in the same list as the owner releases.
   `amara-seam-again-2026-11-08`: Amara gets a new venture, Seam Again (a weekly campus clothes-repair pop-up: memory,

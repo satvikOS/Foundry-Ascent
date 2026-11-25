@@ -1,4 +1,4 @@
-import { personasRepo, readTogether, venturesRepo, type AppExecutor } from '@foundry/db';
+import { pathRepo, personasRepo, readTogether, venturesRepo, type AppExecutor } from '@foundry/db';
 
 import { continuityFrom, continuityParts, type ContinuityKeys, type LoadedContinuity } from './continuity.js';
 
@@ -36,6 +36,8 @@ export interface TurnContextReads {
   readonly presence: personasRepo.PersonaPresence;
   readonly memory: LoadedContinuity;
   readonly venture: venturesRepo.VentureRecord | null;
+  /** The founder path's rows and the record it is read from (`core path/`). */
+  readonly path: pathRepo.PathReads;
 }
 
 /**
@@ -51,15 +53,24 @@ export async function readTurnContext(tx: AppExecutor, keys: TurnContextKeys): P
     privacy: keys.privacy,
   };
   // One statement (one round trip): every read depends only on the keys.
-  const { presence, venture, ...memory } = await readTogether(tx, {
-    presence: personasRepo.personaPresencePart({
-      personaId: keys.personaId,
-      assignedEirProfileId: keys.assignedEirProfileId,
-    }),
-    venture: venturesRepo.venturePart(keys.ventureId),
-    ...continuityParts(continuity),
-  });
-  return { presence, memory: continuityFrom(continuity, memory), venture };
+  const { presence, venture, pathRow, pathSteps, pathCriteria, pathMemory, ...memory } = await readTogether(
+    tx,
+    {
+      presence: personasRepo.personaPresencePart({
+        personaId: keys.personaId,
+        assignedEirProfileId: keys.assignedEirProfileId,
+      }),
+      venture: venturesRepo.venturePart(keys.ventureId),
+      ...pathRepo.pathParts(keys.ventureId),
+      ...continuityParts(continuity),
+    },
+  );
+  return {
+    presence,
+    memory: continuityFrom(continuity, memory),
+    venture,
+    path: pathRepo.pathReadsFrom({ pathRow, pathSteps, pathCriteria, pathMemory }),
+  };
 }
 
 export function sameTurnContextKeys(a: TurnContextKeys, b: TurnContextKeys): boolean {

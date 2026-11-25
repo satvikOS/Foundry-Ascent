@@ -668,11 +668,11 @@ test.describe('vEIR calls', () => {
       await test.step('"do you remember what we talked about last time?" is answered from the first call', async () => {
         const second = created[1] ?? '';
         const recall = await sayOnCall(second, 'Do you remember what we talked about last time?', 1);
-        // Specific (it names what the first call was about, in any wording), spoken as speech, and it hands the
-        // turn back with a question.
+        // Specific (it names what the first call was about, in any wording), spoken as speech, and it ends with the
+        // step they are on (or hands the turn back with a question).
         const spoken = recall.spoken ?? recall.answer;
         expect(spoken).toMatch(/pric/i);
-        expect(spoken.trim()).toMatch(/\?$/);
+        expect(spoken.trim()).toMatch(/\?$|\bnext step\b[^.]*\.$/i);
         // No report artefacts in what is said or in the call's transcript.
         for (const text of [spoken, recall.answer]) {
           expect(text).not.toMatch(/\[E\d|Limited evidence|caveat/i);

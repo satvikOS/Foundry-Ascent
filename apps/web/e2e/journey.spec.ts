@@ -25,7 +25,8 @@ const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'a
 
 /**
  * Slow the response download (Chromium DevTools network emulation) while a turn streams, so the progress
- * steps stay on screen long enough to assert deterministically. The mock model answers in milliseconds.
+ * steps stay on screen long enough to assert deterministically. The mock model answers in milliseconds; the step of the
+ * founder path (its sub-steps, template and sources) is most of what a turn sends first.
  */
 async function withSlowNetwork<T>(page: Page, run: () => Promise<T>): Promise<T> {
   const cdp = await page.context().newCDPSession(page);
@@ -33,7 +34,7 @@ async function withSlowNetwork<T>(page: Page, run: () => Promise<T>): Promise<T>
   await cdp.send('Network.emulateNetworkConditions', {
     offline: false,
     latency: 150,
-    downloadThroughput: 1_500,
+    downloadThroughput: 6_000,
     uploadThroughput: 1_000_000,
   });
   try {

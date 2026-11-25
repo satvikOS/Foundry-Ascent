@@ -1,9 +1,11 @@
 import {
   CoachMode,
   CoachResponse,
+  EvidenceCitation,
   EvidenceKind,
   EvidenceSourceScope,
   TurnChannel,
+  TurnGuidance,
   TurnStatus,
   ValidatorResults,
   type EvidenceItem,
@@ -11,7 +13,7 @@ import {
   type TurnBlockedDetail,
   type TurnView,
 } from '@foundry/contracts';
-import { type z } from 'zod';
+import { z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor } from '../executor.js';
@@ -37,6 +39,7 @@ type ValidatorResultsValue = z.infer<typeof ValidatorResults>;
 type EvidenceItemValue = z.infer<typeof EvidenceItem>;
 type TurnStatusValue = z.infer<typeof TurnStatus>;
 type TurnChannelValue = z.infer<typeof TurnChannel>;
+type TurnGuidanceValue = z.infer<typeof TurnGuidance>;
 
 export interface TurnRecord {
   readonly id: string;
@@ -64,14 +67,16 @@ export interface TurnRecord {
   readonly sampledForReview: boolean;
   /** Typed in chat or spoken during a call. */
   readonly channel: TurnChannelValue;
+  /** What the founder path decided for the turn (null on social turns and older ones). */
+  readonly guidance: TurnGuidanceValue | null;
   readonly createdAt: string;
   readonly completedAt: string | null;
 }
 
 const COLUMNS = `t.id, t.tenant_id, t.venture_id, t.session_id, t.ordinal, t.author_id, t.mode, t.founder_text, t.response,
   t.status, t.risk_label, t.risk_categories, t.validator_results, t.model_id, t.fallback_used, t.input_tokens,
-  t.output_tokens, t.cost_usd, t.latency_ms, t.first_token_ms, t.sampled_for_review, t.channel, t.created_at,
-  t.completed_at`;
+  t.output_tokens, t.cost_usd, t.latency_ms, t.first_token_ms, t.sampled_for_review, t.channel, t.guidance,
+  t.created_at, t.completed_at`;
 
 function safeJson<T>(schema: z.ZodType<T>, raw: unknown, column: string): T | null {
   const value = col.json().nullable.decode(raw, column);
@@ -105,6 +110,7 @@ function decodeTurn(r: RawRow): TurnRecord {
     firstTokenMs: col.int.nullable.decode(r.first_token_ms, 'first_token_ms'),
     sampledForReview: col.bool.decode(r.sampled_for_review, 'sampled_for_review'),
     channel: col.enum(TurnChannel.options).decode(r.channel, 'channel'),
+    guidance: safeJson(TurnGuidance, r.guidance, 'guidance'),
     createdAt: col.ts.decode(r.created_at, 'created_at'),
     completedAt: col.ts.nullable.decode(r.completed_at, 'completed_at'),
   };
@@ -529,6 +535,8 @@ export interface FinishTurnInput {
   readonly sampledForReview?: boolean;
   /** Mode actually used (the model may switch e.g. to route). */
   readonly mode?: CoachModeValue;
+  /** What the founder path decided for the turn. */
+  readonly guidance?: TurnGuidanceValue | null;
 }
 
 /** Completes, blocks or fails a pending turn. Returns null when the turn is not pending/visible. */
@@ -550,6 +558,7 @@ export function finishTurn(ex: SqlExecutor, input: FinishTurnInput): Promise<Tur
        latency_ms = :latencyMs,
        first_token_ms = :firstTokenMs,
        sampled_for_review = :sampled,
+       guidance = :guidance,
        completed_at = now()
      WHERE t.id = :id AND t.status = 'pending'
      RETURNING ${COLUMNS}`,
@@ -569,6 +578,7 @@ export function finishTurn(ex: SqlExecutor, input: FinishTurnInput): Promise<Tur
       latencyMs: p.nullable.int(input.latencyMs),
       firstTokenMs: p.nullable.int(input.firstTokenMs),
       sampled: p.bool(input.sampledForReview ?? false),
+      guidance: p.nullable.json(input.guidance),
     },
     decodeTurn,
   );
@@ -654,6 +664,14 @@ export interface TurnEvidenceInput {
   readonly ventureId?: string | null;
   /** Knowledge source of a passage (`chunk`, `doctrine`), recorded with the answer (migration 0011). */
   readonly source?: EvidenceSource | null;
+  /**
+   * What a shared citation showed (migration 0034): kept for a play and for passages of the programme's or the public
+   * corpora, so the answer keeps what it cited when the passage is reworded or gone; never for a venture's own record
+   * or a persona's library (their owners may delete or withdraw the text). Absent or null: nothing is kept.
+   */
+  readonly citation?: EvidenceCitation | null;
+  /** The excerpt the item showed (`EvidenceItem.excerpt`), kept with its citation. */
+  readonly excerpt?: string;
 }
 
 /** Stores the evidence pack of a turn (one statement). */
@@ -664,11 +682,13 @@ export async function insertTurnEvidence(
 ): Promise<number> {
   if (items.length === 0) return 0;
   const result = await ex.query(
-    `INSERT INTO turn_evidence (turn_id, evidence_key, venture_id, kind, ref_id, score, title, source_id, source_scope)
-     SELECT :turnId, x.key, x.venture_id, x.kind, x.ref_id, x.score, x.title, x.source_id, x.source_scope
+    `INSERT INTO turn_evidence (turn_id, evidence_key, venture_id, kind, ref_id, score, title, source_id, source_scope,
+                                citation)
+     SELECT :turnId, x.key, x.venture_id, x.kind, x.ref_id, x.score, x.title, x.source_id, x.source_scope,
+            nullif(x.citation, 'null'::jsonb)
      FROM jsonb_to_recordset(:rows)
        AS x (key text, venture_id uuid, kind text, ref_id uuid, score real, title text, source_id uuid,
-             source_scope text)`,
+             source_scope text, citation jsonb)`,
     {
       turnId: p.uuid(turnId),
       rows: p.json(
@@ -684,12 +704,54 @@ export async function insertTurnEvidence(
             title: i.title,
             source_id: source?.id ?? null,
             source_scope: source?.scope ?? null,
+            citation: keptCitation(i, source),
           };
         }),
       ),
     },
   );
   return result.rowCount;
+}
+
+const KeptCitation = EvidenceCitation.extend({ excerpt: z.string() });
+
+/** The citation kept with the answer ({@link TurnEvidenceInput.citation}), or null. */
+function keptCitation(
+  i: TurnEvidenceInput,
+  source: EvidenceSource | null,
+): z.infer<typeof KeptCitation> | null {
+  if (
+    i.citation == null ||
+    i.excerpt === undefined ||
+    i.ventureId != null ||
+    (i.kind !== 'chunk' && i.kind !== 'doctrine')
+  )
+    return null;
+  const keeps =
+    i.citation.kind === 'play' ? source === null : source?.scope === 'program' || source?.scope === 'public';
+  return keeps ? { ...i.citation, excerpt: i.excerpt.slice(0, 2_000) } : null;
+}
+
+/** A citation as stored; null when none was kept (or it is not readable any more). */
+function decodeCitation(value: unknown): z.infer<typeof KeptCitation> | null {
+  const raw = col.json().nullable.decode(value, 'citation');
+  const parsed = KeptCitation.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+/** Where a passage can be checked, from its source as it is now (a citation from before migration 0034). */
+function currentCitation(r: RawRow): EvidenceCitation | null {
+  const locator = col.text.nullable.decode(r.locator, 'locator');
+  const url = col.text.nullable.decode(r.url, 'url');
+  if (locator === null && url === null) return null;
+  return {
+    kind: 'passage',
+    locator,
+    url,
+    licence: col.text.nullable.decode(r.licence, 'licence'),
+    attribution: col.text.nullable.decode(r.attribution, 'attribution'),
+    sources: [],
+  };
 }
 
 /**
@@ -704,7 +766,8 @@ function decodeEvidenceSource(r: RawRow): EvidenceSource | null {
 
 /**
  * Evidence items of the given turns (contract `EvidenceItem` with current excerpt, freshness and status
- * joined from the referenced object; an object no longer visible yields an empty excerpt). `source` is the
+ * joined from the referenced object, or the excerpt and citation kept with the answer; an object no longer visible
+ * yields an empty excerpt). `source` is the
  * knowledge source a passage was cited from, as recorded with the answer.
  */
 export async function listTurnEvidence(
@@ -731,7 +794,9 @@ async function readTurnEvidence(
             coalesce(${excerptSql('m.content')}, ${excerptSql('c.content')}, ${excerptSql('r.description')},
                      ${excerptSql('pt.signal')}, '') AS excerpt,
             coalesce(m.updated_at, s.freshness_at, r.freshness_at, pt.created_at) AS freshness_at,
-            coalesce(m.status, s.status, r.status, pt.status) AS status
+            coalesce(m.status, s.status, r.status, pt.status) AS status,
+            te.citation, coalesce(c.locator, CASE WHEN s.url IS NULL THEN NULL ELSE c.heading END) AS locator,
+            s.url, s.license AS licence, s.attribution
      FROM turn_evidence te
      LEFT JOIN memory_objects m ON te.kind = 'memory' AND m.id = te.ref_id
      LEFT JOIN knowledge_chunks c ON te.kind IN ('chunk', 'doctrine') AND c.id = te.ref_id
@@ -741,20 +806,28 @@ async function readTurnEvidence(
      WHERE te.turn_id = ANY (:ids)
      ORDER BY te.turn_id, length(te.evidence_key), te.evidence_key`,
     { ids: p.uuidArray(turnIds) },
-    (r) => ({
-      turnId: col.uuid.decode(r.turn_id, 'turn_id'),
-      item: {
-        key: col.text.decode(r.evidence_key, 'evidence_key'),
-        kind: col.enum(EvidenceKind.options).decode(r.kind, 'kind'),
-        refId: col.uuid.decode(r.ref_id, 'ref_id'),
-        title: col.text.decode(r.title, 'title'),
-        excerpt: col.text.decode(r.excerpt, 'excerpt'),
-        score: col.num.decode(r.score, 'score'),
-        freshnessAt: col.ts.nullable.decode(r.freshness_at, 'freshness_at'),
-        status: col.text.nullable.decode(r.status, 'status'),
-        source: decodeEvidenceSource(r),
-      } satisfies EvidenceItemValue,
-    }),
+    (r) => {
+      const kept = decodeCitation(r.citation);
+      const source = decodeEvidenceSource(r);
+      const citation: EvidenceCitation | null =
+        kept === null ? currentCitation(r) : EvidenceCitation.parse({ ...kept, excerpt: undefined });
+      return {
+        turnId: col.uuid.decode(r.turn_id, 'turn_id'),
+        item: {
+          key: col.text.decode(r.evidence_key, 'evidence_key'),
+          kind: col.enum(EvidenceKind.options).decode(r.kind, 'kind'),
+          refId: col.uuid.decode(r.ref_id, 'ref_id'),
+          title: col.text.decode(r.title, 'title'),
+          // What the answer cited, as it was cited; else the row's text now.
+          excerpt: kept === null ? col.text.decode(r.excerpt, 'excerpt') : kept.excerpt,
+          score: col.num.decode(r.score, 'score'),
+          freshnessAt: col.ts.nullable.decode(r.freshness_at, 'freshness_at'),
+          status: col.text.nullable.decode(r.status, 'status'),
+          source,
+          citation,
+        } satisfies EvidenceItemValue,
+      };
+    },
   );
   for (const { turnId, item } of rows) {
     const list = out.get(turnId) ?? [];
@@ -870,6 +943,7 @@ export function toTurnView(
     channel: turn.channel,
     author: extras?.author ?? null,
     myFeedback: extras?.myFeedback ?? null,
+    guidance: turn.guidance,
   };
 }
 

@@ -29,7 +29,8 @@ import {
 import { type AuditEvent, useAuditLog } from '@/lib/api/hooks/admin';
 import { formatDateTime, formatNumber, formatRelative } from '@/lib/format';
 
-import { AUDIT_OUTCOMES, OutcomeBadge, outcomeLabel, type AuditOutcome } from './outcome-badge';
+import { OutcomeBadge, outcomeLabel } from './outcome-badge';
+import { AUDIT_OUTCOMES, type AuditOutcome } from './outcomes';
 
 export interface AuditSearch {
   action?: string | undefined;

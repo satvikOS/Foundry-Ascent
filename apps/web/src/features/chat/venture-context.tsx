@@ -1,13 +1,18 @@
-import type { MemoryObjectView, VentureOverview } from '@foundry/contracts';
+import type { MemoryObjectView, VentureOverview, VenturePath } from '@foundry/contracts';
 import { Link } from '@tanstack/react-router';
 import {
   AlarmClock,
   CalendarClock,
   ChevronRight,
+  CircleCheck,
+  CircleHelp,
   FlaskConical,
   Info,
   Lightbulb,
+  ListChecks,
   Mic,
+  Play,
+  Signpost,
   Swords,
   Target,
   type LucideIcon,
@@ -18,11 +23,14 @@ import { AboutVeirDialog } from '@/components/faces/about-veir-dialog';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StageChip } from '@/components/ui/stage-chip';
+import { useVenturePath } from '@/lib/api/hooks/path';
 import { useVentureOverview } from '@/lib/api/hooks/ventures';
 import { formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { VeirName } from '@/lib/veir';
 import { actionAttributes, formatIsoDate, milestoneAttributes } from '@/features/memory/typed/attributes';
+import { PathSection } from '@/features/path/path-section';
+import { pathSuggestions } from '@/features/path/start';
 
 import {
   CallsSection,
@@ -52,6 +60,11 @@ const ACTION_ICONS: Record<SuggestionIcon, LucideIcon> = {
   idea: Lightbulb,
   challenge: Swords,
   rehearse: Mic,
+  continue: Play,
+  finished: CircleCheck,
+  stuck: CircleHelp,
+  next: Signpost,
+  organise: ListChecks,
 };
 
 /** The memory row: the choice on New chat, or how the open conversation is kept. */
@@ -90,6 +103,7 @@ export function VentureContext({
   onAskPerson,
 }: VentureContextProps) {
   const overview = useVentureOverview(ventureId);
+  const path = useVenturePath(ventureId);
   const [aboutOpen, setAboutOpen] = useState(false);
 
   return (
@@ -113,12 +127,15 @@ export function VentureContext({
           tenant={tenant}
           ventureId={ventureId}
           onPrompt={onPrompt}
+          path={<PathSection tenant={tenant} ventureId={ventureId} path={path.data ?? null} />}
         />
       )}
 
       <HelpSection tenant={tenant} ventureId={ventureId} sessionId={sessionId} onAskPerson={onAskPerson} />
 
-      {overview.data && onPrompt ? <QuickStarts overview={overview.data} onPrompt={onPrompt} /> : null}
+      {overview.data && onPrompt ? (
+        <QuickStarts overview={overview.data} path={path.data ?? null} onPrompt={onPrompt} />
+      ) : null}
 
       <CollapsibleSection id="memory" title="Memory">
         <div className="grid gap-3">
@@ -213,11 +230,14 @@ function OverviewSections({
   tenant,
   ventureId,
   onPrompt,
+  path,
 }: {
   overview: VentureOverview;
   tenant: string;
   ventureId: string;
   onPrompt: ((suggestion: PromptSuggestion) => void) | undefined;
+  /** The path's current step, between where the venture stands and what is due. */
+  path: ReactNode;
 }) {
   const venture = overview.venture;
   const goal =
@@ -252,6 +272,8 @@ function OverviewSections({
           </Link>
         </p>
       </div>
+
+      {path}
 
       <CollapsibleSection id="due" title="Due" meta={due.length > 0 ? due.length : undefined}>
         {due.length === 0 ? (
@@ -340,15 +362,18 @@ function OverviewSections({
 /** Ways to start (they fill the composer, ready to edit): only where the founder can send a message. */
 function QuickStarts({
   overview,
+  path,
   onPrompt,
 }: {
   overview: VentureOverview;
+  /** With a path, its own ways to start take the place of the general ones. */
+  path: VenturePath | null;
   onPrompt: (suggestion: PromptSuggestion) => void;
 }) {
   const goal =
     [overview.currentGoal, overview.venture.currentGoal].map((g) => g?.trim() ?? '').find((g) => g !== '') ??
     null;
-  const actions = quickActions(goal);
+  const actions = path ? pathSuggestions(path) : quickActions(goal);
   if (actions.length === 0) return null;
   return (
     <CollapsibleSection id="start" title="Start with">

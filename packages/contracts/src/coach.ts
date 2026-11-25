@@ -14,6 +14,7 @@ import {
   Timestamp,
 } from './domain.js';
 import { ConversationDigest, TurnChannel } from './knowledge.js';
+import { PathReport, TurnGuidance } from './path.js';
 
 /**
  * The structured response contract the reasoning model must return before anything is shown
@@ -98,6 +99,11 @@ export const CoachResponse = z.object({
    * nullable property (`toStrictJsonSchema`), and the validator always sets it (null or text).
    */
   spoken: z.string().nullable().optional(),
+  /*
+   * What the founder's message reports about their path (annotation call only). Additive and optional like `spoken`;
+   * the server keeps only what their own words support (`PathReport`).
+   */
+  path_report: PathReport.nullable().optional(),
 });
 export type CoachResponse = z.infer<typeof CoachResponse>;
 
@@ -187,6 +193,8 @@ export const TurnView = z.object({
     .object({ rating: z.number().int().min(1).max(5) })
     .nullable()
     .default(null),
+  /** The step the path chose for this turn (`TurnGuidance`), or null on social turns and older payloads. Additive. */
+  guidance: TurnGuidance.nullable().default(null),
 });
 export type TurnView = z.infer<typeof TurnView>;
 
@@ -265,6 +273,12 @@ export const TurnStreamEvent = z.discriminatedUnion('event', [
     detail: z.string().nullable(),
     evidenceCount: z.number().int().nullable(),
   }),
+  /**
+   * The step the path chose for this turn, sent before the first text of the reply so its card shows at once; the
+   * completed turn carries the same (`TurnView.guidance`). Not sent on social turns, rehearsals and crisis support.
+   * Additive: older clients ignore it.
+   */
+  z.object({ event: z.literal('turn.guidance'), turnId: Id, guidance: TurnGuidance }),
   /**
    * A validated unit of the answer prose (sentence-gated: identity, cross-venture and markdown checks ran
    * on it), streamed before the turn completes. `turn.completed` stays authoritative and replaces the

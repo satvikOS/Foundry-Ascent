@@ -106,11 +106,12 @@ describe('streamed-turn prompts', () => {
 
   it('writes a call reply as speech that hands the turn back, never as a cut-down written answer', () => {
     const voice = answerSystemPrompt(SYSTEM, { channel: 'voice', mode: 'coach', allowedModes: ['coach'] });
+    // The reply contract on a call (founder path, 2026-11-24): the answer first, the step last.
     expect(voice).toContain(
-      'Write it as speech, not cut from a longer answer: short sentences with contractions',
+      'Write it as speech: short sentences with contractions, a short first sentence that is the answer',
     );
-    expect(voice).toContain('(when they asked for something, most of the reply is that thing)');
-    expect(voice).toContain('Ask a follow-up only if its answer would materially');
+    expect(voice).toContain('then the next step and by when in one sentence');
+    expect(voice).toContain('A question only if its answer would change the step, last');
     expect(voice).toContain('caveats or labels read out');
     // The general "a reply need not end with a question" is for typed replies only.
     expect(voice).not.toContain('need not end');
@@ -127,12 +128,10 @@ describe('streamed-turn prompts', () => {
     const voice = answerSystemPrompt(SYSTEM, { channel: 'voice', mode: null, allowedModes: ['coach'] });
     const text = answerSystemPrompt(SYSTEM, { channel: 'text', mode: null, allowedModes: ['coach'] });
     expect(voice).toContain(line);
-    expect(voice).toContain('your first sentence or two are the help itself');
     // Social turns keep their short reply; typed replies are as they were.
     expect(voice).toContain('a social turn gets a short, natural reply, not advice.');
     expect(voice).toContain('at most 70 words');
     expect(text).not.toContain('spend those words on the help itself');
-    expect(text).not.toContain('your first sentence or two are the help itself');
   });
 
   it('stops the streamed reply at its end: no mode name, claims or notes after it (the production leak)', () => {

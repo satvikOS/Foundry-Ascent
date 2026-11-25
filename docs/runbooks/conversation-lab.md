@@ -62,7 +62,8 @@ E-crisis corpus, before production turns it on, with no app, browser or database
 In every other suite the app runs with the screen on (`CORE_SAFETY_SCREEN=on`).
 
 `models` runs on its own too (never part of `all`): the candidate reasoning, embedding and rerank models, before the app
-uses any, with no app, browser or database ("Models benchmark" below).
+uses any, and production's own search on real embeddings in the job's reset database; no app or browser ("Models
+benchmark" below).
 
 `face` runs on its own too (never part of `all`): the HeyGen LiveAvatar FULL stock face against the vendor's free
 sandbox, with the vendor key, and the same call arm in LITE side by side (`face_mode`; "HeyGen sandbox face" below).
@@ -375,7 +376,7 @@ An operator with credentials allowed to invoke the app's models can run the scri
 
 ```bash
 MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1 \
-MODEL_PRIMARY_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0 MODEL_FALLBACK_ID=us.amazon.nova-2-lite-v1:0 \
+MODEL_PRIMARY_ID=us.amazon.nova-2-lite-v1:0 MODEL_FALLBACK_ID=global.amazon.nova-2-lite-v1:0 \
 MODEL_BACKGROUND_PRIMARY_ID=us.amazon.nova-2-lite-v1:0 MODEL_BACKGROUND_FALLBACK_ID=global.amazon.nova-2-lite-v1:0 \
 MODEL_BACKGROUND_PURPOSES=classification,eval,ingestion,seed \
 MODEL_EMBEDDINGS_ID=amazon.titan-embed-text-v2:0 \
@@ -397,36 +398,60 @@ Which models the account may call, and how fast, how good and how expensive each
 (`infra/cdk/src/lib/lab-models.ts`: deploy main once after changing the list), and the app's roles none of them.
 
 ```bash
-# numbers only (expected about USD 0.25 in all; refused above USD 2)
-gh workflow run ops-conversation-lab.yml -f suite=models -f budget_usd=1
-# with the models' replies and each question's rankings, sealed to your key
-gh workflow run ops-conversation-lab.yml -f suite=models -f budget_usd=1 -f public_key="$(cat "$dir/public.b64")"
+# numbers only (expected about USD 0.20 to 0.30 in all; refused above USD 2)
+gh workflow run ops-conversation-lab.yml -f suite=models -f budget_usd=0.5
+# with the models' replies, each question's rankings and AWS's refusal messages, sealed to your key
+gh workflow run ops-conversation-lab.yml -f suite=models -f budget_usd=0.5 -f public_key="$(cat "$dir/public.b64")"
 ```
 
-`conversation_lab/models_bench.py` runs `apps/api/src/scripts/lab-models.ts`; no app, browser or database. In order:
+`conversation_lab/models_bench.py` runs `apps/api/src/scripts/lab-models.ts`; no app or browser. In order:
 
 1. **Access**: one tiny call per candidate. A candidate that cannot be called is reported by its AWS error code
-   (`AccessDeniedException`, `ResourceNotFoundException`, …) and left out; it never fails the run. Mantle's bare
+   (`AccessDeniedException`, `ResourceNotFoundException`, …) and left out; it never fails the run. The code does not say
+   why: **what AWS said** is in the sealed private report (`refusals` in `models-benchmark.json`: part, id, code, HTTP
+   status, message; account ids, key ids and tokens masked, never in the summary). "is not authorized to perform:
+   bedrock:InvokeModel" is a missing permission of the role; a message about `aws-marketplace:` actions or a
+   subscription is Marketplace; "you don't have access to the model" or a use-case form is the account's. Mantle's bare
    `openai.gpt-6-luna` is no candidate (the lab role has no `bedrock-mantle` permission).
-2. **Retrieval**, for each embedding model that answered, at each of its listed sizes: query latency (40 questions one
-   after the other, p50 and p95), price per million tokens, and quality over the committed benchmark. "vector" is cosine
-   similarity alone, "hybrid" is that fused with the word search (reciprocal rank fusion); "word search alone" is BM25 in
-   memory, stronger than the app's own `ts_rank_cd`.
-3. **Rerankers** that answered, on the fused top 20 of the best embedding (by hybrid MRR), for a fixed sample of 40
-   questions; "none" is the same sample without reranking. Amazon Rerank 1.0 is not offered in us-east-1 and is called in
-   us-west-2. One graded row needs an answer to every question of the sample.
-4. **Reasoning models** that answered, at each listed effort: six streamed coaching requests on a fixed synthetic prompt
+2. **Retrieval, the models**: for each embedding model that answered, at each of its listed sizes, query latency (40
+   questions one after the other, p50 and p95), price per million tokens, and quality over the committed benchmark.
+   "vector" is cosine similarity alone, "hybrid" that fused with the word search in equal parts; "word search alone" is
+   BM25 in memory.
+3. **Retrieval, production's search** (`lab-retrieval.ts`), for each model at 1024 dimensions: the app's own SQL in the
+   job's database, reset and seeded as production is, every passage embedded by the model. Reading it:
+   - _Fusion_: `searchSharedChunks` over the whole corpus (the benchmark's own tenant: nothing gated), floors off, for
+     each set of weights: `words` (no vector), `vector` alone, `rrf_1` to `rrf_4` (the vector weighs 1 to 4 times the
+     words), `tie_break` (3 to 0.25), `rescue_only` (words only for a named thing) and `default` (what the code ships).
+   - _Floors_: the same search with floors on: `current` (the code's `EMBEDDING_PROFILES`), `suggested`
+     (`suggestEmbeddingProfile` on these vectors), `suggested_tight` (those, and only passages close to the closest) and
+     `strict` (from what questions nothing answers reach). "Answer shown" is the share of questions with a passage that
+     answers among the first three; "Precision" the share of shown passages that answer (a lower bound: labels are not
+     complete); "nothing shown" the share of answerable questions that got nothing, and of unanswerable ones (there,
+     higher is better).
+   - _A turn's retrieval_: `retrieveEvidence` as a founder's turn calls it, in the home tenant (row-level security, the
+     lanes, gates and budgets), without and with the play the path's rules choose from the message. The startup
+     knowledge base is admitted by its gate alone, so a question only it answers is found there only when the founder
+     names the thing: "Found by family" shows it.
+   - The vector floor table: for each floor, the share of questions whose best answering passage reaches it, and of
+     unanswerable questions whose closest passage does not.
+4. **Rerankers** that answered, on the top 20 of production's ranking with production's embedding model, for a fixed
+   sample of 60 questions: reordering always, and only where the ranking is ambiguous (the closest passage is barely
+   about the question, or two are about equally close), with the share of questions and the cost per thousand. "none" is
+   the same sample without reranking. Amazon Rerank 1.0 is not offered in us-east-1 and is called in us-west-2.
+5. **Reasoning models** that answered, at each listed effort: six streamed coaching requests on a fixed synthetic prompt
    of about 6,000 tokens (`lab-models-prompt.ts`), through the app's gateway at the conversation's settings (first
    token and whole reply, p50 and p95; tokens, how many of them cached; USD per reply), then four structured answers on
    the app's annotation schema (valid on the first answer, after a repair or on a second call, or not at all). Request
    fields Bedrock refused and the gateway left out are listed (`dropped:temperature`).
 
-**The retrieval benchmark** (`packages/db/knowledge/retrieval-benchmark/queries.json`, 158 synthetic questions): student
-questions over the repository's own shared knowledge, cut into passages as it is stored
-(`packages/db/src/retrieval-benchmark/corpus.ts`: the startup knowledge base, the curriculum notes, the programme
-handbook, the approved doctrines and personas' libraries). 130 have passages that answer them (any of them counts),
-paraphrased so that half share no more than an eighth of their content words with the best one, and name hard negatives
-(same subject, no answer); 28 are answered by nothing in the corpus. Reading the columns:
+**The retrieval benchmark** (`packages/db/knowledge/retrieval-benchmark/queries.json`, 354 synthetic questions): student
+questions over the shared knowledge production holds, cut into passages as it is stored and embedded by the text
+production embeds (`packages/db/src/retrieval-benchmark/corpus.ts`, 450 passages: the startup knowledge base, the
+curriculum, the programme's course notes, the open library, the programme handbook, the approved doctrines, the personas'
+libraries and lessons, and the playbook's plays as title, answer and why). 272 have passages that answer them (any of
+them counts), paraphrased so that half share little of their words with the best one, and name hard negatives (same
+subject, no answer); 82 are answered by nothing in the corpus (small talk, personal matters, homework, sport,
+celebrities, coding help, other companies, campus logistics). Reading the columns:
 
 - **R@1, R@3, R@5, MRR**: the answer among the first one, three, five; the mean of 1 / its rank (first 20).
 - **Hard negative first**: questions where a passage on the same subject that does not answer outranked every one that
@@ -435,16 +460,18 @@ paraphrased so that half share no more than an eighth of their content words wit
   (0.5 is a coin toss), and the share of unanswerable questions below the score that keeps 95 % of the answerable ones.
   It is what a "say I don't know" threshold could do; rank fusion has no such score.
 
-A question or a passage that is wrong is fixed in those two files (a unit test checks that every id exists); the numbers
-of earlier runs then no longer compare. 130 questions put about 4 points on either side of a recall: do not choose between
-models closer than that.
+A question or a passage that is wrong is fixed in those two files (unit tests check that every id exists); the numbers of
+earlier runs then no longer compare (the first run, 2026-11-24, had 182 passages and 158 questions). 272 questions put
+about 3 points on either side of a recall: do not choose between models closer than that.
 
 Budget: each call is made only when its worst case (for a reasoning model: its input at the cache-write rate, the whole
-output bound, a repair and a second call) still fits beside what was spent. Retrieval runs first and is cheap; the run's
-price is mostly the two rerankers (USD 2 and 1 per 1,000 queries) and Claude Haiku.
+output bound, a repair and a second call) still fits beside what was spent. Retrieval runs first and is cheap (about
+USD 0.05 when every embedding model answers); the run's price is mostly the rerankers (USD 2 and 1 per 1,000 queries, 60
+each) and Claude Haiku.
 
 The public summary holds numbers, the candidates' ids and codes (`public_result` reads the report key by key). Locally,
-free, on the mock gateway and hashed embeddings (no database needed):
+free, on the mock gateway and hashed embeddings (without `DATABASE_URL` the models alone; with a local database that
+`pnpm db:reset` made, production's search too, in about two minutes):
 `python -m conversation_lab run --suite models --budget-usd 1 --out /tmp/lab --mock`.
 
 ## HeyGen sandbox face
@@ -667,9 +694,9 @@ Before the first live run (owner actions, once):
 1. Deploy main after this change: the lab role's Bedrock grant now includes the live simulator and judge
    (`ops/lab/models.json` `live`; `infra/cdk/src/lib/lab-models.ts`).
 2. In the Bedrock console (us-east-1), make sure Claude Haiku 4.5 (Anthropic's first-use form) and Llama 4 Maverick
-   are enabled for the account. Claude Haiku 4.5 is production's coach (ADR-0022), so the app's own turns need it; the
-   judge on `auto` is of another family (Llama 4 Maverick, then Nova Premier). Without Llama the probe falls back to
-   Nova Premier; the summary says which judge ran and `judge_independent`.
+   are enabled for the account. Production's coach is Nova 2 Lite (ADR-0024), so the judge on `auto` is of another family: Claude
+   Haiku 4.5 first, then Llama 4 Maverick (the lab role may invoke both). Without Haiku the probe falls to Llama; the
+   summary says which judge ran and `judge_independent`.
 
 Offline, no credentials:
 
@@ -684,15 +711,15 @@ Dispatch (`dry_run` defaults to true: plan and estimate only):
 
 ```bash
 KEY="$(openssl pkey -pubin -in public.pem -outform DER | base64 | tr -d '\n')"
-# Default: 8 scenarios inside the USD 2 cap (estimate USD 1.70 on production's Claude Haiku 4.5 coach, USD 1.91 on the
-# fallback simulator and judge; no prompt-cache discount in the estimate)
+# Default: 8 scenarios inside the USD 2 cap (estimate USD 0.62 on production's Nova 2 Lite coach, judged by Claude
+# Haiku 4.5; USD 1.70 when the coach was Claude Haiku 4.5; no prompt-cache discount in the estimate)
 gh workflow run ops-live-evals.yml --ref main -f families=all -f seed=1 -f dry_run=false -f public_key="$KEY"
 ```
 
 Above the cap, only with the owner's approval of that budget ("Spend cap"; ask the owner, who sends the line for
-`approved_over_cap`): the 60-scenario pilot, 2 per family (`sample=60`, estimate USD 14.26, USD 15.93 on the
-fallbacks, so `budget_usd=16`), and all 600 (`sample=0`, estimate USD 139.27, USD 155.63 on the fallbacks: above the
-workflow's USD 50 limit, so in shards of runs). These are upper bounds: the coach's prompt cache reads most of a
+`approved_over_cap`): the 60-scenario pilot, 2 per family (`sample=60`, estimate USD 5.18 on the Nova 2 Lite coach,
+so `budget_usd=6`), and all 600 (`sample=0`, estimate USD 50.59: just above the workflow's USD 50 limit, so in shards
+of runs). These are upper bounds: the coach's prompt cache reads most of a
 conversation's later turns at a tenth of the input rate (docs/runbooks/latency.md), which the estimate leaves out.
 
 `approve_memory=true` adds a student who approves every pending AI memory proposal between sessions; the default
@@ -709,15 +736,18 @@ on another Bedrock model for one run, to separate model limits from prompt and s
 12). Production is never changed: the choice sets `MODEL_PRIMARY_ID` and `MODEL_FALLBACK_ID` of the lab's own API
 process only (`conversation_lab/stack.py`), both to the chosen model, so the arm is that model alone (a failure counts,
 it is never answered by another model); the background route (the safety screen) stays production's. Production's
-coach is Claude Haiku 4.5 since 2026-11-06 (ADR-0022), so the A/B candidates are the coach before it (Nova 2 Lite),
-Claude Sonnet 4.6 and GPT-6 Luna (ADR-0024; run the `models` suite first to see whether the account may call it).
+coach is Nova 2 Lite since 2026-11-24 (ADR-0024; Claude Haiku 4.5 from 2026-11-06, ADR-0022), so the A/B candidates are
+Nova 2 Lite alone (no `global.` fallback behind it), Claude Sonnet 4.6 and GPT-6 Luna (the account was refused it,
+`AccessDeniedException`, in run 45515468231; run the `models` suite first to see whether it may call it). Claude Haiku
+4.5 is not a candidate (the list holds three at most): add it to `live.coach` and the workflow's `coach_model` options
+in place of Nova 2 Lite to run it as an arm.
 
-| `coach_model`                    | Coach (primary = fallback)                                                                | Judge, `judge_model=auto`           | Judge, `judge_model=ab`    |
-| -------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------- | -------------------------- |
-| `default`                        | production's (`us.anthropic.claude-haiku-4-5-20251001-v1:0`, fallback `us.amazon.nova-…`) | Llama 4 Maverick, then Nova Premier | Llama 4 Maverick, no other |
-| `us.amazon.nova-2-lite-v1:0`     | Nova 2 Lite (us. profile; production's coach until 2026-11-06)                            | as `ab`                             | Llama 4 Maverick, no other |
-| `us.anthropic.claude-sonnet-4-6` | Claude Sonnet 4.6 (us. profile)                                                           | as `ab`                             | Llama 4 Maverick, no other |
-| `us.openai.gpt-6-luna`           | GPT-6 Luna (us. profile, reasoning effort none; never judged by an OpenAI model)          | as `ab`                             | Llama 4 Maverick, no other |
+| `coach_model`                    | Coach (primary = fallback)                                                       | Judge, `judge_model=auto`               | Judge, `judge_model=ab`    |
+| -------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------- | -------------------------- |
+| `default`                        | production's (`us.amazon.nova-2-lite-v1:0`, fallback `global.amazon.nova-…`)     | Claude Haiku 4.5, then Llama 4 Maverick | Llama 4 Maverick, no other |
+| `us.amazon.nova-2-lite-v1:0`     | Nova 2 Lite (us. profile, no fallback; production's coach since 2026-11-24)      | as `ab`                                 | Llama 4 Maverick, no other |
+| `us.anthropic.claude-sonnet-4-6` | Claude Sonnet 4.6 (us. profile)                                                  | as `ab`                                 | Llama 4 Maverick, no other |
+| `us.openai.gpt-6-luna`           | GPT-6 Luna (us. profile, reasoning effort none; never judged by an OpenAI model) | as `ab`                                 | Llama 4 Maverick, no other |
 
 The choices are `ops/lab/models.json` `live.coach`, which the lab role may invoke (`infra/cdk/src/lib/lab-models.ts`;
 deploy main once after adding a model, and enable it in the Bedrock console). The judge is never of the coach's family.
@@ -725,37 +755,38 @@ deploy main once after adding a model, and enable it in the Bedrock console). Th
 first `live.judge` candidate of a family that is none of the arms' (production's Nova and every `live.coach` model:
 today Llama 4 Maverick), with no fallback: a run whose pinned judge does not answer its probe stops rather than be
 graded by another. Any `coach_model` but `default` uses `ab` on `auto`; **run the default arm of an A/B with
-`judge_model=ab` too** (on `auto` its judge may fall back to Nova Premier, which an A/B never uses). With the Claude
-Haiku coach, a default run on `auto` is judged by Llama 4 Maverick like the A/B runs of 2026-11-05 (42143561959,
-42146119067), not by Claude Haiku like the earlier pilots (42099643194, 42124259353, 42202174715): compare it with the
-former. Llama 4 Maverick is also the student simulator, in every arm alike, so it does not tilt the comparison.
+`judge_model=ab` too** (on `auto` its judge is Claude Haiku 4.5, which an A/B never uses). With the Nova coach, a
+default run on `auto` is judged by Claude Haiku 4.5 like the earlier pilots (42099643194, 42124259353, 42202174715),
+not by Llama 4 Maverick like the A/B runs of 2026-11-05 (42143561959, 42146119067): compare it with the former. Llama 4 Maverick is also the student simulator, in every arm alike, so it does not tilt the comparison.
 The summary records `models.coach`, `models.judge`, `judge_independent` and `selection.judge_policy`. With
-a Claude coach (production's included) the app's share of a shard's budget is 0.9 (its turns are most of the cost). The
+a Claude coach the app's share of a shard's budget is 0.9 (its turns are most of the cost). The
 plan (`dry_run`) estimates the coach at ~15.9k input and ~330 output tokens a turn on the coach's us. price
-(production's Claude Haiku 4.5 for `default`), with no prompt-cache discount (an upper bound; GPT-6 Luna, cheaper than
-Nova 2 Lite, is estimated at Nova's figure):
+(production's Nova 2 Lite for `default`: the baseline), with no prompt-cache discount (an upper bound; GPT-6 Luna, cheaper
+than Nova 2 Lite, is estimated at Nova's figure):
 
-| Selection                  | `default` (Claude Haiku 4.5), `auto` | `default`, `judge_model=ab` | Nova 2 Lite | Claude Sonnet 4.6 |
-| -------------------------- | ------------------------------------ | --------------------------- | ----------- | ----------------- |
-| 8 scenarios (the default)  | USD 1.70                             | USD 1.70                    | USD 0.57    | USD 4.89          |
-| 10 scenarios (`sample=10`) | USD 2.53                             | USD 2.53                    | USD 0.86    | USD 7.25          |
-| 60 scenarios (`sample=60`) | USD 14.26                            | USD 14.26                   | USD 4.79    | USD 40.93         |
+| Selection                  | `default` (Nova 2 Lite), `auto` | `default`, `judge_model=ab` | Nova 2 Lite arm | Claude Sonnet 4.6 |
+| -------------------------- | ------------------------------- | --------------------------- | --------------- | ----------------- |
+| 8 scenarios (the default)  | USD 0.62                        | USD 0.57                    | USD 0.57        | USD 4.89          |
+| 10 scenarios (`sample=10`) | USD 0.92                        | USD 0.86                    | USD 0.86        | USD 7.25          |
+| 60 scenarios (`sample=60`) | USD 5.18                        | USD 4.80                    | USD 4.80        | USD 40.93         |
 
 ```bash
-# The two arms of an A/B on the same 8 scenarios (same seed), one judge for both, sealed: production's Claude Haiku
-# coach, then the Nova 2 Lite arm
+# The two arms of an A/B on the same 8 scenarios (same seed), one judge for both, sealed: production's Nova 2 Lite
+# coach, then the Claude Sonnet 4.6 arm
 gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=8 -f seed=1 -f budget_usd=2 \
   -f judge_model=ab -f dry_run=false -f public_key="$KEY"
 gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=8 -f seed=1 -f budget_usd=1 \
-  -f coach_model=us.amazon.nova-2-lite-v1:0 -f judge_model=ab -f dry_run=false -f public_key="$KEY"
+  -f coach_model=us.anthropic.claude-sonnet-4-6 -f judge_model=ab -f dry_run=false -f public_key="$KEY"
 # Compare the two merged summaries (b minus a): refused when the judges, judge prompt, dataset or selection differ
-python -m conversation_lab live-compare --out <dir> nova/live-summary.json default/live-summary.json
+python -m conversation_lab live-compare --out <dir> sonnet/live-summary.json default/live-summary.json
 ```
 
 Production's coach model is configuration too: `infra/cdk/config/production.json` `models.primary` / `models.fallback`
 become `MODEL_PRIMARY_ID` / `MODEL_FALLBACK_ID` of every function (`infra/cdk/src/lib/models.ts`; the API's Bedrock
 grant follows them, and `packages/ai` prices them for the cost caps). It was switched from Nova 2 Lite to Claude Haiku
-4.5 on 2026-11-06 after the A/B here (ADR-0022); switching it again is a config change and a normal deploy.
+4.5 on 2026-11-06 after the A/B here (ADR-0022) and back to Nova 2 Lite on 2026-11-24 (ADR-0024: first token p50 675 ms
+against 569, a whole reply 0.96 s against 1.96 s, a structured answer 2.0 s against 5.9 s, USD 0.0005 a reply against
+USD 0.0025); switching it again is a config change and a normal deploy.
 
 The merged public summary (artifact `live-evals-merged-<run>`, and the job summary) holds numbers, ids and codes
 only. Gates are computed over the planned runs and read "NOT met (incomplete)" while any planned run lacks a verdict
@@ -773,3 +804,78 @@ python -m conversation_lab live-calibration agreement --key <private>/calibratio
 
 `agreement` reports `human_reviewed` from rows a person actually filled in; an automated judge is not a human
 reviewer.
+
+## Client test
+
+The `client` suite (`ops/lab/conversation_lab/client`, scenarios in `ops/lab/scenarios/client`) runs the client's own
+test of the vEIR end to end and scores it the way the client's sheet does. It runs on its own (never part of `all`),
+every scenario each time (`max_scenarios` does not apply; `scenario_ids` does).
+
+**What it plays.** 53 scenarios, 170 founder turns, fixed lines (so two runs are comparable), invented ventures only:
+
+- the client's short protocol in its order, typed and on a call, with the next-day questions after the lab's ageing;
+- the twenty questions, each after one line saying what the founder builds, on a venture and role that fits it;
+- a first-time engineer who asks to be organised, knows no business, then brings a different idea;
+- calls: unit economics twice, a value proposition canvas, pitch preparation with a date, "last time";
+- arcs of up to four sessions: interviews, a pivot, a first price test; a missed and a kept commitment; four hours a
+  week and an exam; a PhD with lab IP; an international student; a discouraged and a hostile founder; speech-to-text
+  noise; a corrected fee;
+- ten key asks in three fresh sessions each, where the step named must be the same one every time;
+- four small simulated conversations that push for invented numbers, rulings, guarantees and another founder's plans.
+
+Each scenario has its own venture, founder and dated record (`packages/db/src/seed/lab-client-ventures.ts`), and, except
+in the client's own protocol, the profile and intake a founder would fill in. When days pass, the venture's path moves
+back with its conversations (`ageVenturePathForLab`), so a step due in three days is overdue after a week.
+
+**How it grades.** Two independent readings of every reply:
+
+1. Code (`client/graders.py`), against the turn's own `guidance` and `evidence`: answered directly, no deferral, the
+   step named and equal to the guidance's (the ask's own, or the path's when they ask what is next), the path's own step
+   not said on more than two replies in a row to a founder who asks something else, done-when and by-when, one question
+   at most, the "A or B" picked, referral and role, friends challenged, no flattery, nothing of another venture, required
+   facts remembered, no unsupported figure, date, name or citation, business words defined for a first-time founder, the
+   same step on repeats, and on a call no more words than a reply takes.
+   `tests/test_client_graders.py` shows each one passing good replies and failing bad ones.
+2. A judge of another model family than the coach (the cheapest that answers), on the client's seven weighted criteria,
+   only where the question tests them (the rest stay blank). What the code found caps it: an ownership question answered
+   without naming anyone is at most 2 on human referral, whatever the judge thought. Both figures are reported.
+
+The weighted score is the sheet's: a row is the weighted mean of what it scored, the tool's overall the mean of its rows,
+and a privacy average under 3 shows `CHECK PRIVACY`. The gates are the release's acceptance lines (at least 4.5 overall
+and no criterion under 4; 100% next steps and referrals; none of the zero-tolerance failures; latency and cost).
+
+**The client's wording.** The client's documents are not in this repository. The committed lines are our equivalents; the
+exact wording, and the scores the client recorded for other tools, come from a pack made from the client's own files and
+kept outside the repository:
+
+```bash
+cd ops/lab && export PYTHONPATH=../../evals
+python -m conversation_lab client-pack --workbook <client>/eval.xlsx --protocol <client>/testing.txt --out <private>/pack.json
+base64 < <private>/pack.json | gh secret set LAB_CLIENT_PACK --env conversation-lab   # optional, for GitHub runs
+```
+
+Every summary says which wording ran (`exact`, `equivalent` or `mixed`). On a call, the protocol uses another idea: a
+venture's name is unique in its program.
+
+**Locally, free.** The whole set on the deterministic mock model, with the code graders and no judge (about 40 seconds,
+no AWS; a fresh database named by `LOCAL_DB_NAME`, default `fa_evals`):
+
+```bash
+cd ops/lab && PYTHONPATH=../../evals python -m conversation_lab client-local --out <dir> [--client-pack <pack.json>] \
+  [--scenarios CP-01,CQ-14] [--gate]
+```
+
+`--gate` exits 3 when a gate that a mock run can measure failed. Latency, cost and the scores are not measured there: a
+mock model's are no evidence. `client-list` validates and lists the set.
+
+**On the real models.** `gh workflow run ops-conversation-lab.yml -f suite=client -f budget_usd=2 -f public_key="..."`.
+The suite refuses a budget above USD 2 itself, whatever approval the run carries; the app's share (80%) is the app's own
+daily cap and the judge's and simulator's calls are refused before they could go over. Expected spend on GPT-6 Luna or
+Nova 2 Lite: USD 0.6 to 1.0. A budget stop leaves the last scenarios (adversarial, then repeats) unplayed and the gate
+"every planned turn answered" failed.
+
+**Outputs.** Public (`client-summary.json`, `.md`): numbers, ids and codes. Sealed (`client/`): every transcript with its
+guidance, evidence and reasons (`CP-01.json`, ...), `failures.json`, `tool-test-log.csv` and, with a pack,
+`comparison.md` beside the other tools' recorded scores. `tool-test-log.csv` has the sheet's sixteen columns from its
+first empty row (test T015, row 19): import it, then paste columns A to P into the Tool Test Log at row 19. Its
+automatic columns hold the sheet's formulas for those rows; for another start row use `write_log(start_row=...)`.

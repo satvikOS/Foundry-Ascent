@@ -498,6 +498,8 @@ export function CallScreen() {
           }}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
+            // Escape in the step's own form closes that form only.
+            if (event.target instanceof Element && event.target.closest('[data-slot="step-form"]')) return;
             if (snapshot.phase === 'live' && snapshot.activity === 'speaking') engine.interrupt();
             else hideCall({ replace: !live });
           }}

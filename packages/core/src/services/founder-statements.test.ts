@@ -21,6 +21,20 @@ describe('statedMemory (LAB-K1: what the founder states is kept with the turn)',
   });
 
   it.each([
+    ['Change it: the fee is 450 now, not 300.', 'The fee is 450 now, not 300.'],
+    ['Actually, our price is 12 dollars, not 10.', 'The price is 12 dollars now, not 10.'],
+  ])('a corrected figure is kept as what it is now: %s', (said, content) => {
+    expect(statedMemory(said, none)).toMatchObject([{ type: 'decision', content }]);
+  });
+
+  it.each(['Is the fee 450, not 300?', 'The plan is good, not bad.', 'Maybe the fee is 450, not 300.'])(
+    'corrects nothing: %s',
+    (said) => {
+      expect(statedMemory(said, none)).toEqual([]);
+    },
+  );
+
+  it.each([
     ['So we settled on per-library pricing.', 'The team settled on per-library pricing.'],
     [
       "I've decided to run the pilot in two libraries, not four.",

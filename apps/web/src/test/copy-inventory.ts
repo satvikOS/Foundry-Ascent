@@ -432,6 +432,7 @@ export function screenOf(file: string): string {
     [/^features\/documents\//, 'Documents'],
     [/^features\/escalations\//, 'Human help'],
     [/^features\/venture\/(?:team|invite)/, 'Team'],
+    [/^features\/path\//, 'Path'],
     [/^features\/student\//, 'Student development'],
     [/^features\/venture\//, 'Venture settings'],
     [/^features\/eir\//, 'Studio'],

@@ -25,6 +25,18 @@ export const BackfillEmbeddingsJob = z.object({
 });
 
 /**
+ * Worker-only job: a change of embedding model, sent by an operator (docs/runbooks/embedding-model.md). Embeds again, in
+ * batches, the rows another model embedded; sent again until its log line says nothing remains.
+ */
+export const ReembedJob = z.object({
+  type: z.literal('reembed_embeddings'),
+  requestId: z.string().max(128).nullable().optional(),
+  /** The model rows without a recorded one were embedded with. */
+  previous: z.string().min(3).max(128),
+  maxItems: z.number().int().min(1).max(5_000).optional(),
+});
+
+/**
  * Daily maintenance, sent by the FoundryAscent-App EventBridge schedule (one rule, `rate(1 day)`) to the
  * jobs queue: ends ephemeral sessions idle for 24 h and erases their content, settles the AI memory proposals
  * left from before automatic memory and runs the distillation backstop (core.maintenance.runDaily). The message carries no data;
@@ -50,13 +62,21 @@ export const DistillSweepJob = z.object({
 export { DAILY_MAINTENANCE_MESSAGE, DISTILL_SWEEP_MESSAGE } from '../lambda-contract.js';
 
 /** Every message type the worker understands: core's jobs plus the scheduled and operator jobs. */
-export const WorkerJob = z.union([JobMessage, BackfillEmbeddingsJob, MaintenanceJob, DistillSweepJob]);
+export const WorkerJob = z.union([
+  JobMessage,
+  BackfillEmbeddingsJob,
+  ReembedJob,
+  MaintenanceJob,
+  DistillSweepJob,
+]);
 export type WorkerJob = z.infer<typeof WorkerJob>;
 
 export interface WorkerDeps {
   readonly ingestion: Pick<IngestionProcessor, 'process'>;
   readonly distill: Pick<DistillService, 'distillSession' | 'backstop' | 'backfillOpeners'>;
   readonly backfill: (options: Omit<BackfillOptions, 'purpose'>) => Promise<BackfillReport>;
+  /** The embedding model the gateway uses now (`reembed_embeddings`). Absent: such a job is refused. */
+  readonly embeddingsModelId?: string;
   readonly maintenance: (options: {
     readonly requestId: string;
     readonly deadline?: number;
@@ -189,6 +209,24 @@ export async function dispatchJob(
         log.info('worker.backfill_done', { ...report });
       } catch (err) {
         log.warn('worker.backfill_failed', errorFields(err));
+      }
+      return { outcome: 'done', ingested: false };
+
+    case 'reembed_embeddings':
+      if (deps.embeddingsModelId === undefined || deps.embeddingsModelId === job.previous) {
+        log.warn('worker.reembed_refused', { reason: 'same_or_unknown_model' });
+        return { outcome: 'done', ingested: false };
+      }
+      try {
+        const report = await deps.backfill({
+          requestId,
+          maxItems: job.maxItems ?? 1_000,
+          deadline,
+          reembed: { target: deps.embeddingsModelId, previous: job.previous },
+        });
+        log.info('worker.reembed_done', { ...report });
+      } catch (err) {
+        log.warn('worker.reembed_failed', errorFields(err));
       }
       return { outcome: 'done', ingested: false };
 

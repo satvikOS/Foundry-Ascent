@@ -189,6 +189,7 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
         first_token_ms: NULL,
         sampled_for_review: b(false),
         channel: s('voice'),
+        guidance: NULL,
       });
       const turn = await db.withContext(ctx, (tx) =>
         turnsRepo.createTurn(tx, {
@@ -238,6 +239,7 @@ describe('Data API typed records: every RETURNING statement with arrays, jsonb, 
       latency_ms: n(900),
       first_token_ms: n(420),
       sampled_for_review: b(true),
+      guidance: NULL,
       channel: s('text'),
       completed_at: s(TS),
     });

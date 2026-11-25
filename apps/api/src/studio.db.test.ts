@@ -228,7 +228,8 @@ describe('EIR studio test bench', () => {
     expect(second.status).toBe(200);
     expect(second.headers.get('idempotency-replayed')).toBeNull();
     await second.text();
-    expect(api.h.gateway.calls.length - calls).toBe(6);
+    // Its query is embedded already (the same words in the same process): one call fewer than the first three.
+    expect(api.h.gateway.calls.length - calls).toBe(5);
     const keys = await api.h.t.db.system((sx) =>
       sx.query(`SELECT count(*)::int AS n FROM idempotency_keys WHERE key = :key`, {
         key: p.text('test-bench-key-0001'),

@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useCallback } from 'react';
 
 import { AuditPage, type AuditSearch } from '@/features/admin/audit/audit-page';
-import { isAuditOutcome } from '@/features/admin/audit/outcome-badge';
+import { isAuditOutcome } from '@/features/admin/audit/outcomes';
 
 export const Route = createFileRoute('/$tenant/app/admin/audit')({
   validateSearch: (search: Record<string, unknown>): AuditSearch => ({

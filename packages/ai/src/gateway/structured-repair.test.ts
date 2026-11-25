@@ -480,7 +480,7 @@ describe('repairStructured: each failure mode of hand-written structured output'
   it('changes nothing that is already valid', () => {
     for (const [schema, value] of [
       [DistillDraft, DRAFT],
-      [CoachAnnotations, ANNOTATIONS],
+      [CoachAnnotations, { ...ANNOTATIONS, path_report: null }],
     ] as const) {
       const strict = toStrictJsonSchema(schema);
       const input = clone(value);

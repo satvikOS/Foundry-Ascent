@@ -2,13 +2,15 @@
 expensive each is, before the app uses any (ADR-0024).
 
 apps/api ``src/scripts/lab-models.ts`` makes every call itself, under the lab's role, on the candidates of
-``ops/lab/models.json`` ``benchmark`` (the role may invoke exactly those and the app's): no app, no browser, no database.
-Its budget is the run's, as a hard cap (a call is made only when its worst case still fits), and never above
-``MODELS_MAX_BUDGET_USD``.
+``ops/lab/models.json`` ``benchmark`` (the role may invoke exactly those and the app's): no app, no browser. With the
+job's own reset database (``DATABASE_URL``, local only) it measures production's own search on real embeddings; without
+one, the models alone. Its budget is the run's, as a hard cap (a call is made only when its worst case still fits), and
+never above ``MODELS_MAX_BUDGET_USD``.
 
-The script's full report, the models' replies to the synthetic coaching prompt and each question's rankings go to the
-private folder (sealed or deleted, like every suite's content). The public summary keeps numbers, the candidates' ids
-and error codes only (``public_result`` reads the report key by key against the committed candidates).
+The script's full report, the models' replies to the synthetic coaching prompt, each question's rankings and what AWS
+said when it refused a candidate (account ids masked) go to the private folder (sealed or deleted, like every suite's
+content). The public summary keeps numbers, the candidates' ids, fixed names and error codes only (``public_result``
+reads the report key by key against the committed candidates).
 """
 
 from __future__ import annotations
@@ -45,13 +47,38 @@ QUALITY = {
     "noAnswerCaught": "no_answer_caught",
 }
 
+SELECTION = {
+    "recall": "recall",
+    "precision": "precision",
+    "perQuery": "per_query",
+    "answerableEmpty": "answerable_empty",
+    "noAnswerEmpty": "no_answer_empty",
+    "perNoAnswer": "per_no_answer",
+}
+#: The fusion weights, floors and passage families lab-retrieval.ts measures, by the names the summary may print.
+FUSIONS = (
+    "words",
+    "vector",
+    "rrf_1",
+    "rrf_2",
+    "rrf_3",
+    "rrf_4",
+    "tie_break",
+    "rescue_only",
+    "default",
+)
+FLOORS = ("current", "suggested", "suggested_tight", "strict")
+FAMILIES = ("knowledge_base", "corpus", "programme", "coach", "play")
+#: Variables of the job the script does not need: the app's access code is not its to hold.
+NOT_THE_SCRIPTS = frozenset({"E2E_OWNER_ACCESS_CODE"})
+
 Runner = Callable[..., subprocess.CompletedProcess[bytes]]
 
 
 def models_env(base: Mapping[str, str], *, mock: bool, region: str = "us-east-1") -> dict[str, str]:
     """The script's environment: Bedrock, or the mock gateway (``mock``: a dry run, no AWS call at all)."""
     return {
-        **base,
+        **{k: v for k, v in base.items() if k not in NOT_THE_SCRIPTS},
         "APP_ENV": "development",
         "MODEL_PROVIDER": "mock" if mock else "bedrock",
         "BEDROCK_REGION": region,
@@ -145,6 +172,63 @@ def _quality(source: Any) -> dict[str, int | float | None] | None:
     )
 
 
+def _measured(source: Any) -> dict[str, int | float | None] | None:
+    """What a search returned: selection numbers, and how its order ranks."""
+    if not isinstance(source, Mapping):
+        return None
+    quality = _map(source.get("quality"))
+    return {
+        **{name: _num(source.get(key)) for key, name in SELECTION.items()},
+        "recall_at_1": _num(quality.get("recallAt1")),
+        "recall_at_3": _num(quality.get("recallAt3")),
+        "mrr": _num(quality.get("mrr")),
+    }
+
+
+def _profile(source: Any) -> dict[str, int | float | None]:
+    data = _map(source)
+    return {"floor": _num(data.get("floor")), "weak": _num(data.get("weak"))}
+
+
+def _nums(source: Any, count: int) -> list[int | float | None]:
+    items = source if isinstance(source, list) else []
+    return [_num(v) for v in items[:count]]
+
+
+def _search(row: Mapping[str, Any]) -> dict[str, Any]:
+    calibration, production = _map(row.get("calibration")), _map(row.get("production"))
+    ranking, floors = _map(row.get("ranking")), _map(row.get("floors"))
+    retrieval, families = _map(production.get("retrieval")), _map(production.get("families"))
+    return {
+        "id": row["id"],
+        "dimensions": _num(row.get("dimensions")),
+        "search_ms": _ms(row.get("searchMs")),
+        "calibration": {
+            "current": _profile(calibration.get("current")),
+            "suggested": _profile(calibration.get("suggested")),
+            "strict": _profile(calibration.get("strict")),
+            "related": _nums(calibration.get("related"), 3),
+            "unrelated": _nums(calibration.get("unrelated"), 3),
+            "curve": [
+                {key: _num(point.get(key)) for key in ("floor", "answered", "caught")}
+                for point in _rows(calibration.get("curve"))[:20]
+            ],
+        },
+        "ranking": {name: _quality(ranking.get(name)) for name in FUSIONS},
+        "floors": {name: _measured(floors.get(name)) for name in FLOORS},
+        "production": {
+            "questions": _num(production.get("questions")),
+            "play_answers": _num(production.get("playAnswers")),
+            "retrieval": {name: _measured(retrieval.get(name)) for name in ("equal_weights", *FLOORS)},
+            "pack": _measured(production.get("pack")),
+            "families": {
+                name: {key: _num(_map(families.get(name)).get(key)) for key in ("questions", "found")}
+                for name in FAMILIES
+            },
+        },
+    }
+
+
 def public_result(
     report: Mapping[str, Any] | None, *, exit_code: int, ids: frozenset[str] | None = None
 ) -> dict[str, Any]:
@@ -221,9 +305,14 @@ def public_result(
             }
             for r in listed(report.get("embeddings"))
         ],
+        "search": [_search(r) for r in listed(report.get("search"))],
         "rerank": {
             "base": (
-                {"id": base["id"], "dimensions": _num(base.get("dimensions"))}
+                {
+                    "id": base["id"],
+                    "dimensions": _num(base.get("dimensions")),
+                    "by": base.get("by") if base.get("by") in ("search", "fused") else None,
+                }
                 if base.get("id") in known
                 else None
             ),
@@ -236,6 +325,15 @@ def public_result(
                     "ms": _ms(r.get("ms")),
                     "usd_per_thousand_queries": _num(r.get("usdPerThousandQueries")),
                     "quality": _quality(r.get("quality")),
+                    "ambiguous_only": (
+                        {
+                            "share": _num(only.get("share")),
+                            "usd_per_thousand_questions": _num(only.get("usdPerThousandQuestions")),
+                            "quality": _quality(only.get("quality")),
+                        }
+                        if isinstance(only := r.get("ambiguousOnly"), Mapping)
+                        else None
+                    ),
                 }
                 for r in listed(rerank.get("models"))
             ],
@@ -266,6 +364,71 @@ def _quality_cells(q: Mapping[str, Any] | None) -> str:
         "no_answer_caught",
     )
     return " | ".join(_cell((q or {}).get(k)) for k in keys)
+
+
+def _measured_cells(m: Mapping[str, Any] | None) -> str:
+    keys = (
+        "recall_at_1",
+        "recall_at_3",
+        "mrr",
+        "recall",
+        "precision",
+        "per_query",
+        "answerable_empty",
+        "no_answer_empty",
+        "per_no_answer",
+    )
+    return " | ".join(_cell((m or {}).get(k)) for k in keys)
+
+
+def search_tables(rows: list[Mapping[str, Any]]) -> list[str]:
+    """Production's own search with each model's vectors: the order, the floors, and what a turn is given."""
+    out: list[str] = []
+    for r in rows:
+        cal, prod = r["calibration"], r["production"]
+        out += [
+            "",
+            f"Production's search with {r['id']} ({_cell(r['dimensions'])}), {_spread(r['search_ms'])} ms a search. "
+            f"Floors (floor / weak): code {_cell(cal['current']['floor'])} / {_cell(cal['current']['weak'])}, "
+            f"suggested {_cell(cal['suggested']['floor'])} / {_cell(cal['suggested']['weak'])}, "
+            f"strict {_cell(cal['strict']['floor'])} / {_cell(cal['strict']['weak'])}. Cosine p10 / p50 / p90: "
+            f"answer {' / '.join(_cell(v) for v in cal['related'])}, "
+            f"no answer {' / '.join(_cell(v) for v in cal['unrelated'])}.",
+            "",
+            "| Fusion (whole corpus, no floor) | R@1 | R@3 | R@5 | MRR | Hard negative first |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+        for name in FUSIONS:
+            q = r["ranking"].get(name) or {}
+            cells = (
+                q.get(k) for k in ("recall_at_1", "recall_at_3", "recall_at_5", "mrr", "hard_negative_first")
+            )
+            out.append(f"| {name} | " + " | ".join(_cell(c) for c in cells) + " |")
+        out += [
+            "",
+            "| Search | R@1 | R@3 | MRR | Answer shown | Precision | Items | Answerable, nothing shown "
+            "| No answer, nothing shown | Items when no answer |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+        for name in FLOORS:
+            out.append(f"| whole corpus, first 3, floors {name} | {_measured_cells(r['floors'].get(name))} |")
+        for name in ("equal_weights", *FLOORS):
+            out.append(f"| a turn's retrieval, {name} | {_measured_cells(prod['retrieval'].get(name))} |")
+        out.append(f"| a turn's evidence with its play | {_measured_cells(prod['pack'])} |")
+        families = ", ".join(
+            f"{name} {_cell(f['found'])} of {_cell(f['questions'])}" for name, f in prod["families"].items()
+        )
+        out += [
+            "",
+            f"Of {_cell(prod['questions'])} questions production could answer or must not; the path's rules choose a "
+            f"play that answers for {_cell(prod['play_answers'])} of the answerable ones. Found by family: {families}.",
+            "",
+            "| Vector floor | " + " | ".join(_cell(p["floor"]) for p in cal["curve"]) + " |",
+            "| --- |" + " --- |" * len(cal["curve"]),
+            "| answers kept | " + " | ".join(_cell(p["answered"]) for p in cal["curve"]) + " |",
+            "| no-answer caught | " + " | ".join(_cell(p["caught"]) for p in cal["curve"]) + " |",
+        ]
+    return out
 
 
 def tables(result: Mapping[str, Any]) -> list[str]:
@@ -316,11 +479,12 @@ def tables(result: Mapping[str, Any]) -> list[str]:
                 f"| {e['id']} ({label}) | {_cell(e['dimensions'])} | {_spread(e['query_ms'])} | "
                 f"{_cell(e['usd_per_million_tokens'])} | {_quality_cells(e[label])} |"
             )
+    out += search_tables(result.get("search") or [])
     rerank = result.get("rerank") or {}
     base = rerank.get("base") or {}
     out += [
         "",
-        f"Reranking the fused top 20 of {_cell(base.get('id'))} ({_cell(base.get('dimensions'))}) on "
+        f"Reranking the top 20 of {_cell(base.get('id'))} ({_cell(base.get('dimensions'))}) on "
         f"{_cell(rerank.get('sample'))} questions:",
         "",
         "| Reranker | p50 / p95 (ms) | USD per 1,000 | R@1 | R@3 | R@5 | MRR | Hard negative first | No-answer AUC "
@@ -333,6 +497,12 @@ def tables(result: Mapping[str, Any]) -> list[str]:
         out.append(
             f"| {name} | {_spread(m['ms'])} | {_cell(m['usd_per_thousand_queries'])} | {_quality_cells(m['quality'])} |"
         )
+        only = m.get("ambiguous_only")
+        if only is not None:
+            out.append(
+                f"| {m['id']}, only when ambiguous ({_cell(only['share'])} of questions) | {_spread(m['ms'])} | "
+                f"{_cell(only['usd_per_thousand_questions'])} | {_quality_cells(only['quality'])} |"
+            )
     cost = result.get("cost_usd") or {}
     out += [
         "",

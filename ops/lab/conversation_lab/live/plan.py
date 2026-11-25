@@ -28,7 +28,7 @@ COACH_USD_PER_TURN = 0.006
 COACH_USD_PER_SESSION = 0.003
 #: The model those two figures were measured on (the coach until 2026-11-06), and the tokens one coach turn sends and
 #: receives (live pilot 42099643194's API log: a median of ~15.9k prompt tokens a turn, both calls; ~330 out). Any other
-#: coach, production's own (Claude Haiku 4.5 since 2026-11-06) or an A/B one (``coach_model``), is estimated at those
+#: coach, production's own (Nova 2 Lite since 2026-11-24, the baseline itself) or an A/B one (``coach_model``), is estimated at those
 #: tokens on its own prices, with no prompt-cache discount (conservative: the hard caps never under-count it).
 COACH_BASELINE_MODEL = "amazon.nova-2-lite-v1:0"
 COACH_INPUT_TOKENS_PER_TURN = 15_900

@@ -75,6 +75,11 @@ export const CoreConfig = z.object({
      * conversation-lab.md, "Safety screen evaluation").
      */
     safetyScreen: z.boolean(),
+    /**
+     * The founder path decides every coaching turn's step (core `path/`; `CORE_FOUNDER_PATH=on|off`, on by default): off,
+     * a turn runs without one (no guidance, no step in the prompt, nothing stored), as before the path.
+     */
+    founderPath: z.boolean(),
   }),
   retrieval: z.object({
     memory: z.number().int().min(0).max(50),
@@ -166,10 +171,13 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
     modelTimeoutMs: 25_000,
     traceStreamText: false,
     safetyScreen: false,
+    founderPath: true,
   },
   // The persona's library gives two items, not four (live pilot 42099643194: its method notes were injected on almost
-  // every turn, whatever the topic, and replies on grants, leases and tutoring cited the interview guide).
-  retrieval: { memory: 8, chunks: 6, doctrine: 2, resources: 4, patterns: 2 },
+  // every turn, whatever the topic, and replies on grants, leases and tutoring cited the interview guide). The path's
+  // play is the turn's first evidence, so the rest is what the founder's record and one or two passages add to it
+  // (2026-11-24: a typed turn carried about 3,100 tokens of evidence).
+  retrieval: { memory: 6, chunks: 3, doctrine: 2, resources: 1, patterns: 1 },
   ingestion: { chunkTokens: 800, overlapRatio: 0.15, embedBatchSize: 16, maxChunks: 2_000 },
   uploads: { presignTtlSeconds: 5 * 60 },
   escalations: { businessTimeZone: 'America/New_York' },
@@ -224,7 +232,8 @@ function intFrom(env: EnvLike, name: string, fallback: number): number {
 /**
  * The single place where packages/core reads environment variables (runtime contract): APP_ENV,
  * APP_VERSION, HOME_TENANT_SLUG, SITE_ORIGIN, plus optional tuning knobs
- * (CORE_TURN_RATE_LIMIT, CORE_REVIEW_SAMPLE_RATE_PCT, CORE_SESSION_CACHE_SECONDS, CORE_SAFETY_SCREEN=on|off, and
+ * (CORE_TURN_RATE_LIMIT, CORE_REVIEW_SAMPLE_RATE_PCT, CORE_SESSION_CACHE_SECONDS, CORE_SAFETY_SCREEN=on|off,
+ * CORE_FOUNDER_PATH=on|off, and
  * for local demos CORE_DISTILL_DELAY_SECONDS / CORE_DISTILL_ACTIVE_SECONDS).
  */
 export function loadConfig(env: EnvLike): CoreConfig {
@@ -248,6 +257,7 @@ export function loadConfig(env: EnvLike): CoreConfig {
         intFrom(env, 'CORE_REVIEW_SAMPLE_RATE_PCT', DEFAULT_CORE_CONFIG.turns.reviewSampleRate * 100) / 100,
       traceStreamText: env.LAB_TRACE_STREAM === '1' && appEnv !== 'production',
       safetyScreen: switchFrom(env, 'CORE_SAFETY_SCREEN', DEFAULT_CORE_CONFIG.turns.safetyScreen),
+      founderPath: switchFrom(env, 'CORE_FOUNDER_PATH', DEFAULT_CORE_CONFIG.turns.founderPath),
     },
     distillation: {
       turnDelaySeconds: intFrom(

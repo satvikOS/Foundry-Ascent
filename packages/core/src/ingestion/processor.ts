@@ -11,6 +11,7 @@ import {
   documentsRepo,
   knowledgeRepo,
   settingsRepo,
+  tagEmbedding,
   usageRepo,
   venturesRepo,
   type SystemExecutor,
@@ -237,7 +238,9 @@ export function createIngestionProcessor(kit: Kit): IngestionProcessor {
         });
         for (let j = 0; j < batch.length; j += 1) {
           const v = result.vectors[j];
-          vectors.push(v?.length === knowledgeRepo.EMBEDDING_DIMENSIONS ? v : null);
+          vectors.push(
+            v?.length === knowledgeRepo.EMBEDDING_DIMENSIONS ? tagEmbedding(v, result.modelId) : null,
+          );
         }
       }
       while (vectors.length < chunks.length) vectors.push(null);

@@ -161,6 +161,7 @@ export function createSessionsService(
         otherVentureMemberNames: guards.others.memberNames,
       },
       team: guards.team,
+      today: kit.now().toISOString().slice(0, 10),
     });
   }
 
@@ -210,7 +211,7 @@ export function createSessionsService(
 
   /** The `GET /ventures/:id/opener` body for a chosen opener. */
   function previewOf(chosen: Awaited<ReturnType<typeof openerFor>>, at: Date): ConversationOpenerResponse {
-    const { opener, latest, missing } = chosen;
+    const { opener, latest, missing, checkIn } = chosen;
     return {
       opener: opener?.text ?? null,
       at: at.toISOString(),
@@ -224,6 +225,7 @@ export function createSessionsService(
               title: latest.title,
             },
       ...(missing === null ? {} : { missing: true }),
+      ...(checkIn === null ? {} : { checkIn }),
     };
   }
 

@@ -7,6 +7,7 @@ import { Kit } from './internal/kit.js';
 import { createOrchestrator, type Orchestrator } from './orchestrator/run-turn.js';
 import { createTestBench, type TestBench } from './orchestrator/test-turn.js';
 import { TurnContextKeyring } from './orchestrator/turn-context.js';
+import { createPathService, type PathService } from './path/service.js';
 import { createAdminService, type AdminService } from './services/admin.js';
 import { createCallsService, type CallsService } from './services/calls.js';
 import { createDistillService, type DistillService } from './services/distill.js';
@@ -38,6 +39,8 @@ export interface Core {
   readonly auth: AuthService;
   readonly me: MeService;
   readonly student: StudentService;
+  /** The founder path: a venture's stage, steps, intake and story. */
+  readonly path: PathService;
   readonly ventures: VenturesService;
   readonly sessions: SessionsService;
   readonly orchestrator: Orchestrator;
@@ -103,11 +106,17 @@ export function createCore(deps: CoreDeps): Core {
     auth,
     me: createMeService(kit),
     student: createStudentService(kit),
+    path: createPathService(kit, deps.playbook),
     ventures: createVenturesService(kit, directory),
     sessions: createSessionsService(kit, directory, distill),
     // One key cache signs the turn engine's speech units and verifies them for calls and /speech. A spoken turn on
     // a call with a live FULL face admits each unit to the face as it signs it (the speech service's checks).
-    orchestrator: createOrchestrator(kit, directory, { speechKeys, facePreapproval: speech, turnContexts }),
+    orchestrator: createOrchestrator(kit, directory, {
+      speechKeys,
+      facePreapproval: speech,
+      turnContexts,
+      ...(deps.playbook === undefined ? {} : { playbook: deps.playbook }),
+    }),
     testBench: createTestBench(kit, directory),
     memory: createMemoryService(kit),
     documents: createDocumentsService(kit),

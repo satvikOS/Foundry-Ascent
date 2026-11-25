@@ -1,0 +1,170 @@
+# Ten key asks, each asked in three fresh sessions of the same venture: the step named must be the same one every time.
+group: repeats
+scenarios:
+  - id: RP-01
+    title: help me get organised
+    role: undergrad
+    founder: Iris Calloway
+    first_time: true
+    venture:
+      {
+        name: SockSub,
+        oneLiner: Monthly odd-sock boxes.,
+        stage: idea,
+        domain: consumer,
+        goal: Find a first buyer.,
+      }
+    repeat: 3
+    sessions: [{ turns: [{ say: 'Help me get organised.' }] }]
+  - id: RP-02
+    title: what should I do next
+    role: undergrad
+    founder: Dario Conti
+    first_time: true
+    venture:
+      {
+        name: StageMic,
+        oneLiner: Rents microphones to student bands.,
+        stage: discovery,
+        domain: consumer,
+        goal: Talk to bands.,
+      }
+    repeat: 3
+    sessions: [{ turns: [{ say: 'What should I do next?' }] }]
+  - id: RP-03
+    title: how do I price it
+    role: undergrad
+    founder: Freya Dalgaard
+    first_time: true
+    venture:
+      {
+        name: KiteKit,
+        oneLiner: Kite kits for beach clubs.,
+        stage: validation,
+        domain: consumer,
+        goal: Set a price.,
+      }
+    repeat: 3
+    sessions: [{ turns: [{ say: 'How should I set my price?' }] }]
+  - id: RP-04
+    title: who is my customer
+    role: undergrad
+    founder: Samir Nasser
+    first_time: true
+    venture:
+      {
+        name: MapMates,
+        oneLiner: Walking buddies for night classes.,
+        stage: idea,
+        domain: social,
+        goal: Choose a first customer.,
+      }
+    repeat: 3
+    sessions: [{ turns: [{ say: 'Who is my customer?' }] }]
+  - id: RP-05
+    title: how do I find people to interview
+    role: undergrad
+    founder: Linnea Berg
+    first_time: true
+    venture:
+      {
+        name: PawPass,
+        oneLiner: Pet sitting between roommates.,
+        stage: discovery,
+        domain: consumer,
+        goal: Interview pet owners.,
+      }
+    repeat: 3
+    sessions: [{ turns: [{ say: 'How do I find people to interview?' }] }]
+  - id: RP-06
+    title: prepare a pitch
+    role: grad
+    founder: Wanjiru Kamau
+    venture:
+      {
+        name: RootRadar,
+        oneLiner: Finds tree roots near water pipes.,
+        stage: validation,
+        domain: hardware,
+        goal: Prepare a pitch.,
+      }
+    repeat: 3
+    sessions: [{ turns: [{ say: 'Help me prepare a pitch.' }] }]
+  - id: RP-07
+    title: unit economics
+    role: undergrad
+    founder: Eamon Doyle
+    first_time: true
+    venture:
+      {
+        name: ScarfSet,
+        oneLiner: Scarves knitted from campus wool.,
+        stage: business_model,
+        domain: consumer,
+        goal: Know if a scarf makes money.,
+      }
+    record:
+      - {
+          type: fact,
+          title: Costs,
+          content: 'A scarf sells for 28 dollars; wool is 9 dollars and knitting 8 dollars.',
+          days_ago: 5,
+        }
+    repeat: 3
+    sessions: [{ turns: [{ say: 'What are my unit economics?' }] }]
+  - id: RP-08
+    title: first customers
+    role: undergrad
+    founder: Noor Rahimi
+    first_time: true
+    venture:
+      {
+        name: DeskDrop,
+        oneLiner: Snack boxes for study groups.,
+        stage: commercialization,
+        domain: consumer,
+        goal: Get the first ten customers.,
+      }
+    repeat: 3
+    sessions: [{ turns: [{ say: 'How do I get my first customers?' }] }]
+  - id: RP-09
+    title: who owns the lab work
+    role: phd
+    founder: Beatriz Monteiro
+    venture:
+      {
+        name: FiberFold,
+        oneLiner: A folding fiber sensor from a lab.,
+        stage: discovery,
+        domain: hardware,
+        goal: Sort out ownership.,
+      }
+    repeat: 3
+    sessions:
+      [{ turns: [{ say: 'I made this in a university lab. Who owns it?', expect: { referral: [ip] } }] }]
+  - id: RP-10
+    title: should I quit or keep going
+    role: undergrad
+    founder: Ruben Aalto
+    first_time: true
+    venture:
+      {
+        name: QuizQuay,
+        oneLiner: Quiz nights run by students.,
+        stage: validation,
+        domain: consumer,
+        goal: Decide whether to continue.,
+      }
+    repeat: 3
+    sessions:
+      [
+        {
+          turns:
+            [
+              {
+                say: 'Should I keep going with this or stop?',
+                expect: { pick: [keep, stop, 'continue', go on, carry on] },
+              },
+            ],
+        },
+      ]

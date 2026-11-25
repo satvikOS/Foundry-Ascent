@@ -8,7 +8,12 @@ export type {
 } from './system.js';
 export { buildEvidenceBlock, evidenceIdsInBlock, REFERENCE_RULES } from './evidence.js';
 export type { EvidenceBlockOptions } from './evidence.js';
-export { bringsOwnSubject, buildMessages, leavesAgendaOut } from './messages.js';
+export { PATH_TAG, guidanceText, renderGuidance } from './guidance.js';
+export type { PromptGuidance, ReplyContractFinding, ReplyContractResult } from './guidance.js';
+export { longDay, sayDay, weekdayOf } from './due-day.js';
+export { PATH_OPENER_REPLIES, pathOpener } from './path-opener.js';
+export type { PathOpenerInput } from './path-opener.js';
+export { GUIDED_CONTINUITY_CHARS, bringsOwnSubject, buildMessages, leavesAgendaOut } from './messages.js';
 export type { BuildMessagesOptions, HistoryTurn } from './messages.js';
 export {
   MAX_PROMPT_DIGESTS,
@@ -42,6 +47,7 @@ export {
   STOCK_OPENERS,
   WHERE_YOU_LEFT_OFF_HEADING,
   conversationCraftRules,
+  replyContractRules,
 } from './craft.js';
 export {
   aboutOthersOf,

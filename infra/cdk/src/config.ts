@@ -37,8 +37,8 @@ export interface PlatformConfig {
   };
   readonly models: {
     /**
-     * The conversation's reasoning model while Luna is disabled (a Bedrock inference profile id: the coach, Claude
-     * Haiku 4.5 through `us.anthropic.claude-haiku-4-5-20251001-v1:0`), and its fallback. Every purpose not in
+     * The conversation's reasoning model while Luna is disabled (a Bedrock inference profile id: the coach, Amazon
+     * Nova 2 Lite through `us.amazon.nova-2-lite-v1:0`, ADR-0024), and its fallback. Every purpose not in
      * `background` uses them: a turn, a recap, the distillation (which writes the next opener), a test conversation.
      */
     readonly primary: string;

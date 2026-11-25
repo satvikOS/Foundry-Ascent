@@ -2,7 +2,7 @@
  * Model selection and the Bedrock resources each model needs, derived from `config.models`.
  *
  * While `models.luna.enabled` is false (AWS gates GPT-6 Luna per account), the configured `primary` and
- * `fallback` (the coach, Claude Haiku 4.5, with Amazon Nova 2 Lite behind it) are used as-is. Once enabled, Luna
+ * `fallback` (the coach, Amazon Nova 2 Lite, with its global profile behind it) are used as-is. Once enabled, Luna
  * becomes primary and the configured `primary` becomes the fallback. The background route (`models.background`) is
  * never changed by Luna. The runtime contract (MODEL_PRIMARY_ID / MODEL_FALLBACK_ID / MODEL_EMBEDDINGS_ID and
  * MODEL_BACKGROUND_PRIMARY_ID / MODEL_BACKGROUND_FALLBACK_ID / MODEL_BACKGROUND_PURPOSES) carries the effective ids.
@@ -95,7 +95,7 @@ export interface BedrockRuntimeAccess {
   readonly globalFoundationModels: readonly string[];
   /**
    * Foundation models reached only through geography profiles with checked destinations: granted in those regions
-   * alone (Claude Haiku 4.5 behind `us.`: us-east-1, us-east-2, us-west-2).
+   * alone (GPT-6 Luna behind `us.`: us-east-1, us-east-2, us-west-2).
    */
   readonly regionalFoundationModels: readonly {
     readonly modelId: string;

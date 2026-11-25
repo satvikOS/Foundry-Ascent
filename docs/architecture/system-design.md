@@ -48,9 +48,8 @@ CloudFront ──/*──► S3 site bucket (OAC)              CDK → CloudForm
                      │
                      ├── RDS Data API ──► Aurora Serverless v2 PostgreSQL 16.13 (pgvector, FTS, RLS)
                      │                      min 0 ACU (auto-pause, 30 min) · max 2 ACU · isolated subnets
-                     ├── Bedrock Runtime ──► us.anthropic.claude-haiku-4-5-20251001-v1:0 (the coach)
-                     │                   ├─► us.amazon.nova-2-lite-v1:0     (coach fallback; background primary)
-                     │                   ├─► global.amazon.nova-2-lite-v1:0 (background fallback)
+                     ├── Bedrock Runtime ──► us.amazon.nova-2-lite-v1:0     (the coach; background primary)
+                     │                   ├─► global.amazon.nova-2-lite-v1:0 (coach and background fallback)
                      │                   └─► amazon.titan-embed-text-v2:0   (embeddings, 1024-d)
                      ├╌╌ Bedrock Mantle  ╌╌► openai.gpt-6-luna  (gated by AWS for this account;
                      │                       disabled: models.luna.enabled = false, see §7)
@@ -339,23 +338,23 @@ critique} | null }`.
    when they are what the founder said or explicitly took up, never the coach's own advice and never
    something the founder made the vEIR forget; a temporary (Private) conversation keeps nothing.
 
-**Model routing (packages/ai, ADR-0014, ADR-0022):** each purpose has a primary and a fallback: the coach's
-(`MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`: Claude Haiku 4.5, then Nova 2 Lite) for everything a founder reads (`turn`,
-`recap`, `distill`, `test_bench`), and the background route's (`MODEL_BACKGROUND_*`: Nova 2 Lite `us.`, then `global.`)
+**Model routing (packages/ai, ADR-0014, ADR-0024):** each purpose has a primary and a fallback: the coach's
+(`MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`: Nova 2 Lite `us.`, then `global.`; Claude Haiku 4.5 until 2026-11-24, ADR-0022) for everything a founder reads (`turn`,
+`recap`, `distill`, `test_bench`), and the background route's (`MODEL_BACKGROUND_*`: Nova 2 Lite `us.`, then `global.`, the same models)
 for `classification`, `eval`, `ingestion`, `seed` and `embedding`. The gateway picks the adapter by model id:
 `openai.*` → Bedrock Mantle Chat Completions (SigV4, `response_format: json_schema` strict); anything else → Bedrock
 Runtime Converse with a single tool whose input schema is the response schema (forced for Nova; requested for Claude,
 whose newer models refuse a forced tool), with prompt-cache checkpoints after the prompt's unchanging prefix for the
-models whose cache rates are priced (Nova, Claude Haiku 4.5). Inference-profile
+models whose cache rates are priced (Nova; Claude Haiku 4.5 too, were it configured). Inference-profile
 ids (`us.`, `global.`) are passed through unchanged. Each attempt has a 25 s timeout and one repair retry
 on invalid JSON, then the fallback runs. Embeddings: `amazon.titan-embed-text-v2:0` (1024-d, normalized).
 `MODEL_PROVIDER=mock` gives a deterministic provider for tests and offline dev. Per-model prices are
 configuration (`packages/ai/src/pricing.ts`); every billable attempt writes `usage_ledger`.
 
-| `models.luna.enabled` (`infra/cdk/config/production.json`)                                            | `MODEL_PRIMARY_ID`                            | `MODEL_FALLBACK_ID`                           | Mantle permission                |
-| ----------------------------------------------------------------------------------------------------- | --------------------------------------------- | --------------------------------------------- | -------------------------------- |
-| `false` — **production today**: AWS lists GPT-6 Luna but answers 401 "not available for this account" | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | `us.amazon.nova-2-lite-v1:0`                  | none                             |
-| `true` — after AWS grants Luna access                                                                 | `openai.gpt-6-luna`                           | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | `bedrock-mantle:CreateInference` |
+| `models.luna.enabled` (`infra/cdk/config/production.json`)                                                                                                | `MODEL_PRIMARY_ID`           | `MODEL_FALLBACK_ID`              | Mantle permission                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | -------------------------------- | -------------------------------- |
+| `false` — **production today**: AWS lists GPT-6 Luna but refuses the account (401 on Mantle, `AccessDeniedException` on the runtime, lab run 45515468231) | `us.amazon.nova-2-lite-v1:0` | `global.amazon.nova-2-lite-v1:0` | none                             |
+| `true` — after AWS grants Luna access                                                                                                                     | `openai.gpt-6-luna`          | `us.amazon.nova-2-lite-v1:0`     | `bedrock-mantle:CreateInference` |
 
 **Enabling Luna later** is a reviewed config change, not code: (1) probe GPT-6 Luna with
 `apps/api/src/scripts/bedrock-probe.ts` and credentials allowed to invoke it (ADR-0014); (2) run the evals workflow to record a

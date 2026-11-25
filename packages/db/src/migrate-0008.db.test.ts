@@ -66,16 +66,21 @@ async function writeLegacyData(db: Db): Promise<typeof legacy> {
     });
     const turns: string[] = [];
     for (const channel of ['text', 'voice'] as const) {
-      const turn = await turnsRepo.createTurn(tx, {
-        tenantId: seed.tenantId,
-        ventureId: quietquad.id,
-        sessionId: session.id,
-        authorId: maya.principalId,
-        mode: 'coach',
-        founderText: `A ${channel} message`,
-        channel,
-      });
-      turns.push(turn.id);
+      // As the previous code wrote it: today's repository also reads columns later migrations add.
+      const inserted = await tx.query(
+        `INSERT INTO turns (tenant_id, venture_id, session_id, ordinal, author_id, mode, founder_text, channel)
+         VALUES (:tenant, :venture, :session, :ordinal, :author, 'coach', :text, :channel) RETURNING id`,
+        {
+          tenant: p.uuid(seed.tenantId),
+          venture: p.uuid(quietquad.id),
+          session: p.uuid(session.id),
+          ordinal: p.int(turns.length + 1),
+          author: p.uuid(maya.principalId),
+          text: p.text(`A ${channel} message`),
+          channel: p.text(channel),
+        },
+      );
+      turns.push(String(inserted.rows[0]?.id));
     }
     return { session: session.id, turns };
   });

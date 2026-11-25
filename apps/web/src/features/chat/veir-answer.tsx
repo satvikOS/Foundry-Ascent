@@ -6,7 +6,7 @@ import type {
   TurnView,
 } from '@foundry/contracts';
 import { HandHelping, ShieldAlert } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Markdown } from '@/components/ui/markdown';
@@ -45,6 +45,11 @@ export interface VeirAnswerProps {
   canEdit: boolean;
   onOpenSource: (key: string) => void;
   onShowSources: () => void;
+  /**
+   * The path's step for this reply (`TurnStepCard`), right under the prose: in the place it already had while the
+   * reply was written. With one, the reply's own suggested steps are not listed: there is one next step.
+   */
+  step?: ReactNode;
   nextActions: NextActionControls;
   /**
    * What the vEIR kept from this answer (saved to Knowledge automatically), shown as one quiet line. Null for
@@ -79,6 +84,7 @@ export function VeirAnswer({
   canEdit,
   onOpenSource,
   onShowSources,
+  step = null,
   nextActions,
   saved,
   escalation,
@@ -104,6 +110,8 @@ export function VeirAnswer({
 
       {response.rehearsal ? <Rehearsal rehearsal={response.rehearsal} personaName={personaName} /> : null}
 
+      {step ? <div className="mt-5">{step}</div> : null}
+
       <ReasoningDisclosure
         response={reasoning}
         evidence={turn.evidence}
@@ -112,7 +120,7 @@ export function VeirAnswer({
         onShowSources={onShowSources}
       />
 
-      {response.next_actions.length > 0 && !summarised ? (
+      {response.next_actions.length > 0 && !summarised && turn.guidance?.step == null ? (
         <NextSteps actions={response.next_actions} controls={canEdit ? nextActions : null} />
       ) : null}
 

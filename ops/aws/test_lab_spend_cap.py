@@ -151,8 +151,8 @@ def test_the_default_budget_is_the_owner_cap(workflow: str) -> None:
 
 
 def test_the_live_evaluation_samples_8_scenarios_by_default() -> None:
-    # On production's Claude Haiku 4.5 coach (ADR-0022) 8 scenarios fit the USD 2 cap (estimate USD 1.70, USD 1.91 on the
-    # fallback simulator and judge); 20 did on Nova 2 Lite.
+    # On production's Nova 2 Lite coach (ADR-0024) 8 scenarios cost an estimated USD 0.62, well inside the USD 2 cap
+    # (USD 1.70 on the Claude Haiku 4.5 coach, ADR-0022).
     assert input_default(LIVE, "sample") == "8"
 
 

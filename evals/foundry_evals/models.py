@@ -11,7 +11,7 @@ API views use camelCase JSON (exposed here as snake_case attributes); the model 
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter
 from pydantic.alias_generators import to_camel
@@ -34,6 +34,7 @@ ESCALATION_CATEGORIES: tuple[str, ...] = (
 TURN_STREAM_EVENTS: tuple[str, ...] = (
     "turn.accepted",
     "turn.status",
+    "turn.guidance",
     "turn.delta",
     "turn.speech",
     "turn.audio",
@@ -133,6 +134,8 @@ class CoachResponse(_Snake):
     rehearsal: RehearsalBlock | None
     # What a call speaks aloud (voice turns only; absent from responses stored before calls existed).
     spoken: str | None = None
+    # What the founder's message reports about their path (absent from responses stored before the path existed).
+    path_report: dict[str, Any] | None = None
 
 
 # API views --------------------------------------------------------------------------------------------
@@ -154,6 +157,8 @@ class EvidenceItem(_Camel):
     status: str | None = None
     # The knowledge source of a cited passage, by id (absent from older APIs and stored answers).
     source: EvidenceSource | None = None
+    # Where a cited passage or play comes from: locator, link, licence, sources (absent from older APIs).
+    citation: dict[str, Any] | None = None
 
 
 class ValidatorResults(_Camel):
@@ -217,6 +222,8 @@ class TurnView(_Camel):
     author: PrincipalRef | None = None
     # The viewer's own rating of the answer (absent from older APIs).
     my_feedback: TurnFeedback | None = None
+    # The step the path chose for this turn; null on social turns (absent from older APIs).
+    guidance: dict[str, Any] | None = None
 
 
 class SessionView(_Camel):
@@ -251,6 +258,8 @@ class ConversationOpener(_Camel):
     #: The notebook leaves threads open with no line for this conversation: ``POST`` has one written (``GET`` writes
     #: nothing).
     missing: bool | None = None
+    #: The step the opening asks about, when the person was given one before today (absent from older APIs).
+    check_in: dict[str, Any] | None = None
 
 
 class SessionDetail(_Camel):
@@ -506,6 +515,14 @@ class TurnStatus(_Camel):
     evidence_count: int | None = None
 
 
+class TurnGuidance(_Camel):
+    """The step the founder path chose for the turn, sent before its first text (contracts path.ts)."""
+
+    event: Literal["turn.guidance"]
+    turn_id: str
+    guidance: dict[str, Any]
+
+
 class TurnDelta(_Camel):
     event: Literal["turn.delta"]
     turn_id: str
@@ -549,7 +566,14 @@ class TurnError(_Camel):
 
 
 TurnStreamEvent = Annotated[
-    TurnAccepted | TurnStatus | TurnDelta | TurnSpeech | TurnCompleted | TurnBlocked | TurnError,
+    TurnAccepted
+    | TurnStatus
+    | TurnGuidance
+    | TurnDelta
+    | TurnSpeech
+    | TurnCompleted
+    | TurnBlocked
+    | TurnError,
     Field(discriminator="event"),
 ]
 TURN_STREAM_EVENT_ADAPTER: TypeAdapter[TurnStreamEvent] = TypeAdapter(TurnStreamEvent)

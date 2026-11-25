@@ -229,6 +229,7 @@ export const AD_TURN: TurnView = {
   channel: 'text',
   author: null,
   myFeedback: null,
+  guidance: null,
 };
 
 const ATTRIBUTES: Record<string, (item: (typeof session.record)[number]) => Record<string, unknown>> = {

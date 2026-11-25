@@ -47,6 +47,8 @@ export const queryKeys = {
     escalations: (ventureId: string) => [ROOT, 'venture', ventureId, 'escalations'] as const,
     team: (ventureId: string) => [ROOT, 'venture', ventureId, 'team'] as const,
     notebook: (ventureId: string) => [ROOT, 'venture', ventureId, 'notebook'] as const,
+    /** `GET /ventures/:id/path`: the founder path (stages, steps, story, intake). */
+    path: (ventureId: string) => [ROOT, 'venture', ventureId, 'path'] as const,
     /** `GET /ventures/:id/opener`: how the vEIR would open a new conversation now (New chat's greeting). */
     opener: (ventureId: string) => [ROOT, 'venture', ventureId, 'opener'] as const,
     /** `POST /ventures/:id/opener`: that greeting once a missing line was written (under `opener`, removed with it). */

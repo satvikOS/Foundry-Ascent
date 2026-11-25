@@ -53,6 +53,7 @@ export function makeVoiceTurn(overrides: Partial<TurnView> = {}): TurnView {
     channel: 'voice',
     author: null,
     myFeedback: null,
+    guidance: null,
     ...overrides,
   };
 }

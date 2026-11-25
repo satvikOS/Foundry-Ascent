@@ -21,8 +21,9 @@ name: Ops - conversation lab
 #           "benchmark", before the app uses any (ADR-0024): apps/api/src/scripts/lab-models.ts probes which the account
 #           may call (its AWS error code when it may not: reported, never fatal), times streamed coaching replies and
 #           structured answers through the app's gateway, and measures retrieval over the committed synthetic benchmark
-#           (packages/db/knowledge/retrieval-benchmark). No app, browser or database. At most USD 2 a run (expected about
-#           0.25). The summary prints numbers, the candidates' ids and codes; the models' replies are sealed.
+#           (packages/db/knowledge/retrieval-benchmark): each embedding model alone, and production's own search with its
+#           vectors in the job's reset database. No app or browser. At most USD 2 a run (expected about 0.30). The summary
+#           prints numbers, the candidates' ids and codes; the models' replies and AWS's refusal messages are sealed.
 #   face    (on its own, never in `all`) the HeyGen LiveAvatar FULL stock face against the vendor's free SANDBOX
 #           (the Wayne avatar, sessions of about a minute, no credits): the app runs with the face wired as for the
 #           presentation (provider heygen-liveavatar, mode full, sandbox, audience admins), the seeded founder is
@@ -48,6 +49,13 @@ name: Ops - conversation lab
 #           with an explicit Origin header; without either, a stand-in origin whose answer is reported, never graded).
 #           The summary keeps numbers, codes, field and event type names, the ws_url host (id-like labels masked) and
 #           the design's hypotheses confirmed / refuted; ws_url itself is never written.
+#   client  (on its own, never in `all`) the client's own test (ops/lab/conversation_lab/client): its short protocol and
+#           twenty questions, a first-time founder, calls, arcs over days, repeats, and a small adversarial set; every
+#           reply graded by code against its own guidance and evidence, the questions scored by a judge of another
+#           family on the client's seven weighted criteria. Runs every scenario (max_scenarios does not apply;
+#           scenario_ids does). Capped at USD 2. The exact wording of the client's questions and the other tools'
+#           recorded scores come from the optional repository secret LAB_CLIENT_PACK (never committed, run step
+#           only); without it our equivalent wording is used and the summary says so.
 # The app runs with CORE_SAFETY_SCREEN=on in every suite (ops/lab conversation_lab/stack.py).
 #
 # Runs only from main, in the `conversation-lab` GitHub environment, whose OIDC subject is the only one the
@@ -72,7 +80,7 @@ on:
       suite:
         description: Which suite to run (all = every suite, in parallel jobs)
         type: choice
-        options: [recall, matrix, voice, ui, agenda, safety, models, face, all]
+        options: [recall, matrix, voice, ui, agenda, safety, models, face, client, all]
         default: recall
       budget_usd:
         description: Hard cap in USD for the whole run, split across the suites (0.5 to 2; up to 50 only with approved_over_cap)
@@ -91,7 +99,7 @@ on:
         type: string
         default: ''
       scenario_ids:
-        description: matrix only - run just these scenarios (comma-separated ids, e.g. SM-13,SM-39); empty = all up to max_scenarios
+        description: matrix and client - run just these scenarios (comma-separated ids, e.g. SM-13,SM-39 or CP-01,CQ-14); empty = all up to max_scenarios (client, all)
         type: string
         default: ''
       repeat:
@@ -152,7 +160,7 @@ jobs:
           PRODUCTION_ORIGIN: ${{ inputs.production_origin }}
         run: |
           # Values are checked, never echoed (except the suite and the numbers, which are public).
-          case "${SUITE}" in recall|matrix|voice|ui|agenda|safety|models|face|all) ;; *) echo "::error::suite must be recall, matrix, voice, ui, agenda, safety, models, face or all."; exit 1;; esac
+          case "${SUITE}" in recall|matrix|voice|ui|agenda|safety|models|face|client|all) ;; *) echo "::error::suite must be recall, matrix, voice, ui, agenda, safety, models, face, client or all."; exit 1;; esac
           if [[ ! "${BUDGET}" =~ ^[0-9]{1,2}(\.[0-9]{1,2})?$ ]] || ! awk -v b="${BUDGET}" 'BEGIN { exit !(b >= 0.5 && b <= 50) }'; then
             echo "::error::budget_usd must be a number from 0.5 to 50."
             exit 1
@@ -315,17 +323,18 @@ jobs:
         run: python -m pip install -r ops/lab/requirements.txt
 
       - name: Install Playwright Chromium
-        if: matrix.suite != 'matrix' && matrix.suite != 'agenda' && matrix.suite != 'safety' && matrix.suite != 'models'
+        if: matrix.suite != 'matrix' && matrix.suite != 'agenda' && matrix.suite != 'safety' && matrix.suite != 'models' && matrix.suite != 'client'
         run: pnpm --filter @foundry/web exec playwright install --with-deps chromium
 
       - name: Build the web app
-        if: matrix.suite != 'matrix' && matrix.suite != 'agenda' && matrix.suite != 'safety' && matrix.suite != 'models'
+        if: matrix.suite != 'matrix' && matrix.suite != 'agenda' && matrix.suite != 'safety' && matrix.suite != 'models' && matrix.suite != 'client'
         run: pnpm --filter @foundry/web build
 
       # Creates database "foundry", migrates it and seeds the synthetic tenant with a fresh owner access code
-      # (masked; handed to the harness, never printed). The safety and models suites start no app and need none.
+      # (masked; handed to the harness, never printed). The safety suite needs none; the models suite starts no app and
+      # measures production's own search in it.
       - name: Reset and seed the lab database
-        if: matrix.suite != 'safety' && matrix.suite != 'models'
+        if: matrix.suite != 'safety'
         run: |
           SEED_OWNER_RELEASES="$(jq -r '(.homeTenant.ownerReleases // []) | join(",")' infra/cdk/config/production.json)"
           export SEED_OWNER_RELEASES
@@ -406,6 +415,8 @@ jobs:
           # for the lite probe's L10 only: Playwright serves a blank page at it itself, so nothing is requested from
           # production. Unset: a production-shaped stand-in, reported but not graded as the production origin.
           LAB_PRODUCTION_ORIGIN: ${{ matrix.suite == 'face' && (inputs.production_origin || vars.FA_SITE_URL) || '' }}
+          # The client's wording and the other tools' scores (conversation_lab/client/pack.py), client suite only.
+          LAB_CLIENT_PACK: ${{ matrix.suite == 'client' && secrets.LAB_CLIENT_PACK || '' }}
           LAB_PRODUCTION_ORIGIN_SOURCE: ${{ matrix.suite == 'face' && (inputs.production_origin != '' && 'input' || (vars.FA_SITE_URL != '' && 'repository' || '')) || '' }}
         run: |
           python -m conversation_lab run --suite "${LAB_SUITE}" --budget-usd "${LAB_BUDGET_USD}" \

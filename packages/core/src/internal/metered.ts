@@ -6,6 +6,7 @@ import {
   type ModelAttempt,
   type ModelPurpose,
 } from '@foundry/ai';
+import { tagEmbedding } from '@foundry/db';
 
 import { type RequestContext } from '../context.js';
 import { type Kit } from './kit.js';
@@ -67,6 +68,7 @@ export async function meteredEmbed(kit: Kit, meter: Meter, texts: readonly strin
       purpose: meter.purpose,
       requestId: meter.ctx.requestId,
     });
+    for (const vector of embedded.vectors) tagEmbedding(vector, embedded.modelId);
     return {
       ...embedded,
       attempts: [{ modelId: embedded.modelId, usage: embedded.usage, costUsd: embedded.costUsd }],

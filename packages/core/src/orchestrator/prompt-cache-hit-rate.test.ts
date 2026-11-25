@@ -1,12 +1,11 @@
 /**
- * Bedrock prompt caching on the production coach (Claude Haiku 4.5, docs/runbooks/latency.md "Prompt caching"): a
- * conversation's turns, built exactly as the turn engine builds them (the Thomas release's system prompt, its cached
- * prefix, the conversation so far and phase B's messages), sent through the real gateway and Converse adapter to a
- * stand-in for Bedrock's prompt cache. The stand-in keeps what Bedrock documents for Claude Haiku 4.5: a checkpoint
- * caches the whole prefix before it (`tools`, then `system`, then `messages`) once that prefix reaches 4,096 tokens, a
- * read is the longest cached prefix, an entry lives 5 minutes after its last use, and what the request writes past the
- * read is billed as a cache write. Tokens are estimated at 4 characters each (Claude's tokenizer counts English at
- * fewer characters a token, so real prefixes are longer and cache at least as readily).
+ * Bedrock prompt caching over a conversation (docs/runbooks/latency.md "Prompt caching"): its turns, built exactly as the
+ * turn engine builds them (the Thomas release's system prompt, its cached prefix, the conversation so far and phase B's
+ * messages), sent through the real gateway and Converse adapter to a stand-in for Bedrock's prompt cache. The stand-in
+ * keeps what Bedrock documents for Amazon Nova: a checkpoint caches the whole prefix before it once that prefix reaches
+ * 1,024 tokens, a read is the longest cached prefix, an entry lives 5 minutes after its last use, and a write costs
+ * nothing. Tokens are estimated at 4 characters each. (The compact guide-first policy, 2026-11-24, is about 3,300 tokens
+ * with the Thomas doctrine: under the 4,096 Claude Haiku 4.5 needs before it caches, which is no longer the coach.)
  *
  * It measures the hit rate (the share of input tokens read from the cache) and checks that the meter prices those
  * tokens at the cache rates.
@@ -30,9 +29,9 @@ import { describe, expect, it } from 'vitest';
 import { assembleContext } from './context-budget.js';
 import { annotationMessages, answerSystemPrompt } from './turn-prompts.js';
 
-const HAIKU = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
-/** Bedrock's model card for Claude Haiku 4.5: the fewest tokens before a checkpoint that caches. */
-const MIN_CACHED_TOKENS = 4_096;
+const NOVA = 'us.amazon.nova-2-lite-v1:0';
+/** Amazon Nova: the fewest tokens before a checkpoint that caches. */
+const MIN_CACHED_TOKENS = 1_024;
 const TTL_MS = 5 * 60_000;
 const CHARS_PER_TOKEN = 4;
 
@@ -191,8 +190,8 @@ async function converse(turns: number, secondsBetweenTurns: number) {
   const gateway = createModelGateway({
     provider: 'bedrock',
     region: 'us-east-1',
-    primaryModelId: HAIKU,
-    fallbackModelId: 'us.amazon.nova-2-lite-v1:0',
+    primaryModelId: NOVA,
+    fallbackModelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
     embeddingsModelId: 'amazon.titan-embed-text-v2:0',
     credentials: { accessKeyId: 'AKIDEXAMPLE', secretAccessKey: 'secret' },
     transports,
@@ -276,8 +275,8 @@ function hitRate(calls: readonly { usage: Required<ModelUsage> }[]): number {
   return input === 0 ? 0 : read / input;
 }
 
-describe('prompt caching on Claude Haiku 4.5, over a conversation', () => {
-  it('caches the Thomas prompt’s unchanging prefix: it is above the model’s 4,096-token minimum', async () => {
+describe('prompt caching on Nova 2 Lite, over a conversation', () => {
+  it('caches the Thomas prompt’s unchanging prefix: it is above the model’s 1,024-token minimum', async () => {
     const { calls, stable } = await converse(2, 20);
     expect(tokens(stable.length)).toBeGreaterThan(MIN_CACHED_TOKENS);
     // The first turn writes (each call its own prefix: phase B carries its tool before the system prompt)...
@@ -307,20 +306,18 @@ describe('prompt caching on Claude Haiku 4.5, over a conversation', () => {
     const { calls } = await converse(8, 20);
     for (const c of calls) {
       const { inputTokens, outputTokens, cacheReadInputTokens: read, cacheWriteInputTokens: write } = c.usage;
-      // The us. profile's rates (pricing.ts): input 1.10, output 5.50, cache write 1.375, cache read 0.11 per million.
-      const expected =
-        ((inputTokens - read - write) * 1.1 + read * 0.11 + write * 1.375 + outputTokens * 5.5) / 1e6;
+      // The us. profile's rates (pricing.ts): input 0.33, output 2.75, cache write 0, cache read 0.0825 per million.
+      const expected = ((inputTokens - read - write) * 0.33 + read * 0.0825 + outputTokens * 2.75) / 1e6;
       expect(c.costUsd).toBeCloseTo(expected, 5);
       expect(c.costUsd).toBeGreaterThanOrEqual(expected - 1e-6);
     }
     const metered = calls.reduce((acc, c) => acc + c.costUsd, 0);
     const uncached = calls.reduce(
       (acc, c) =>
-        acc + costFor(HAIKU, { inputTokens: c.usage.inputTokens, outputTokens: c.usage.outputTokens }),
+        acc + costFor(NOVA, { inputTokens: c.usage.inputTokens, outputTokens: c.usage.outputTokens }),
       0,
     );
-    // Measured with this stand-in: USD 0.059 against 0.132 for the same 8 turns without the cache (55 % less).
-    expect(metered).toBeLessThan(uncached * 0.5);
+    expect(metered).toBeLessThan(uncached * 0.75);
   });
 
   it('writes again once the conversation was idle past the cache’s 5 minutes', async () => {

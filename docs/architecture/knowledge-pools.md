@@ -148,8 +148,8 @@ separate; this is the common pool's `public` scope.
   options, framework mapping), each headed as such; frameworks are method summaries; stages are editorial
   recommendations. A passage's heading names the publisher of its references and, for an account, the date its
   evidence is as of, so the evidence title carries the citation (title + publisher); the References section lists
-  title, authors, publisher, year, URL, review date and the audit's limitation. The coach reads a passage's first
-  600 characters, so a framework summary puts its **limitations** right after its evidence-type line and a
+  title, authors, publisher, year, URL, review date and the audit's limitation. The coach reads a reference
+  passage's first 600 characters (any other item's sentences about the message, at most 350: `excerptWindow`), so a framework summary puts its **limitations** right after its evidence-type line and a
   documented account opens with its **evidence limits**; the viewer's text has the same order (it marks a cited
   passage by finding its text). The pack's five RAG documents are exactly the rendering of five items
   (`ragTemplate`, SHA-256 checked), so they are ingested once, not as near-duplicates.
@@ -219,6 +219,30 @@ separate; this is the common pool's `public` scope.
   (68 of 68, each first). `knowledge-pack.db.test.ts` runs the pack's `rag_eval_questions.json` through the real
   retrieval: every expected document for Q01–Q04, and Q05 (an interview-to-sale conversion rate the source does not
   report) retrieves no figure and the account whose excerpt opens with that gap.
+
+### 3.6 Cited corpus: course notes and the open library
+
+Short notes (at most 550 characters, read whole) in our own words, each with the place it comes from, a page to read, a
+licence, an attribution and the day it was read, so an answer can show exactly what supports it
+(`packages/db/src/knowledge-pack/corpus.ts`).
+
+- **The programme's course notes** (`seed/programme-notes.ts`): what the Ain Foundry videos of Modules 1 to 3 teach, by
+  module, unit and timestamp. Paraphrased; presenters, their companies and biographies are left out; an opinion is
+  called one, and a note near a requirement, a fee or the law says first who decides. Home tenant only, scope `program`.
+- **The open library** (`knowledge/open-library`): U.S. government pages (SBA, USPTO, IRS, SEC, NSF) and CC BY-SA
+  textbooks, every tenant, scope `public`. Each licence was read on the publisher's page (LICENSE.md beside the data);
+  books under copyright are cited by the playbook and never stored.
+- **Asked for, not pushed** (C1 still holds). A note is a candidate only when the founder's own message asks for something,
+  and then (a) the message names one of its source's topics (`knowledge-pack/topics.ts`), (b) the caller names the topic
+  or the play the path chose cites the source, or (c) for a question in words no table foresees, its vector is at the
+  model's floor and near the closest (or it covers most of the message's words). Two notes a typed turn, one on a call,
+  one per source, in slots of their own beside the persona's library and the handbook.
+- **The play as evidence.** `retrieveEvidence({play, topics})` puts the turn's play first (`E1`, kind `doctrine`, its
+  published sources in `citation.sources`) and always includes the best note of each corpus source it cites;
+  `EvidencePack.playKeys` names them. A programme citation means the notes of the unit its locator names
+  (`Module 2, Unit 1`); a government one, the page its locator names.
+- **Citations.** `EvidenceItem.citation` carries locator, url, licence, attribution; `turn_evidence.citation` keeps what a
+  play or a shared passage showed when it was cited (never the venture's own record or a persona's library).
 
 ## 4. Specific pool
 

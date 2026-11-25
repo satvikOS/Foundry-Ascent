@@ -106,6 +106,7 @@ export function makeTurn(overrides: Partial<TurnView> = {}): TurnView {
     channel: 'text',
     author: null,
     myFeedback: null,
+    guidance: null,
     ...overrides,
   };
 }

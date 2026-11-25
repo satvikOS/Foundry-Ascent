@@ -18,11 +18,11 @@ describe('config', () => {
       reviewSampleRate: 0.3,
     });
     expect(DEFAULT_CORE_CONFIG.retrieval).toEqual({
-      memory: 8,
-      chunks: 6,
+      memory: 6,
+      chunks: 3,
       doctrine: 2,
-      resources: 4,
-      patterns: 2,
+      resources: 1,
+      patterns: 1,
     });
     expect(DEFAULT_CORE_CONFIG.ingestion).toMatchObject({ chunkTokens: 800, overlapRatio: 0.15 });
   });

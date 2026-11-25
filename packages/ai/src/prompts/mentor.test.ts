@@ -107,7 +107,7 @@ describe('Thomas: a mentor under his own name', () => {
     // "hows your personal life going on.." got "Thanks, Amara. I'm good, thanks for asking. What do you think?".
     const prompt = buildSystemPrompt(INPUT);
     expect(prompt).toMatch(
-      /a personal question \("how's\s+your life going\?"\): a light, warm line as yourself/,
+      /a personal question \("how's\s+your life going\?"\): a light,\s+warm line as yourself/,
     );
     expect(prompt).toMatch(/never identity talk or a made-up life, then turn to them/);
   });

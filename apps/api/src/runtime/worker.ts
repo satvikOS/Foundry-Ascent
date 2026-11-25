@@ -31,6 +31,7 @@ export function workerDepsFor(
     ingestion: core.ingestion,
     distill: core.distill,
     backfill: (options) => backfillEmbeddings({ db, gateway, logger }, { ...options, purpose: 'embedding' }),
+    embeddingsModelId: gateway.info.embeddingsModelId,
     maintenance: (options) => core.maintenance.runDaily(options),
     logger,
     maxReceiveCount: args.maxReceiveCount,
