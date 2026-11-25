@@ -111,7 +111,7 @@ scenarios:
           days_ago: 5,
         }
     repeat: 3
-    sessions: [{ turns: [{ say: 'What are my unit economics?' }] }]
+    sessions: [{ turns: [{ say: 'What are my unit economics?', expect: { number: ['11'] } }] }]
   - id: RP-08
     title: first customers
     role: undergrad

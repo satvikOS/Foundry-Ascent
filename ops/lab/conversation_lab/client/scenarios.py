@@ -23,7 +23,22 @@ from conversation_lab.config import SCENARIOS_DIR
 
 CLIENT_DIR = SCENARIOS_DIR / "client"
 #: Run order: the client's own protocol and questions first, so a budget stop cuts the least important.
-GROUPS: tuple[str, ...] = ("protocol", "questions", "organise", "calls", "arcs", "repeats", "adversarial")
+GROUPS: tuple[str, ...] = (
+    "protocol",
+    "questions",
+    "organise",
+    "calls",
+    "arcs",
+    "numbers",
+    "news",
+    "followups",
+    "novice",
+    "odd",
+    "memory",
+    "hard",
+    "repeats",
+    "adversarial",
+)
 KINDS = frozenset({"coaching", "report", "recall", "social", "rehearsal", "new_idea", "crisis", "privacy"})
 #: Kinds whose reply must carry a next step (the reply contract's exemptions: social, recall, rehearsal, crisis).
 STEP_KINDS = frozenset({"coaching", "report", "new_idea"})
@@ -85,6 +100,12 @@ class Expect:
     must_answer: bool = True
     #: The step must fit the founder's stated hours per week.
     fits_hours: int | None = None
+    #: The figure asked for, computable from the conversation or the record: any one of these values must be said.
+    number: tuple[str, ...] = ()
+    #: The founder brings a result: the reply must name at least one of these facts and say what it means.
+    news: tuple[str, ...] = ()
+    #: The founder is new to this and says so (or said so before): plain words, on their own idea.
+    adapt: bool = False
 
 
 @dataclass(frozen=True)
@@ -134,6 +155,8 @@ class Scenario:
     facts: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     neighbour: Mapping[str, Any] | None = None
     repeat: int = 1
+    #: Turns (``1.2``) that ask the same thing in other words: the step they get must be the same one.
+    same_step: tuple[str, ...] = ()
     #: What a passing conversation does, for the judge.
     passing: str = ""
 
@@ -220,6 +243,14 @@ def _facts_named(value: Any, facts: Mapping[str, Any], where: str) -> tuple[str,
     return names
 
 
+def _numbers(value: Any, where: str) -> tuple[str, ...]:
+    found = _strings(value, where)
+    for n in found:
+        if not re.fullmatch(r"\d[\d,]*(?:\.\d+)?", n):
+            raise ScenarioError(f"{where}: not a number")
+    return found
+
+
 def _expect(raw: Any, facts: Mapping[str, Any], where: str) -> Expect:
     e = _take(
         raw,
@@ -237,6 +268,9 @@ def _expect(raw: Any, facts: Mapping[str, Any], where: str) -> Expect:
             "advances",
             "must_answer",
             "fits_hours",
+            "number",
+            "news",
+            "adapt",
         ),
     )
     referral = _strings(e.get("referral", []), f"{where}.referral")
@@ -255,6 +289,9 @@ def _expect(raw: Any, facts: Mapping[str, Any], where: str) -> Expect:
         advances=bool(e.get("advances", False)),
         must_answer=bool(e.get("must_answer", True)),
         fits_hours=int(e["fits_hours"]) if e.get("fits_hours") is not None else None,
+        number=_numbers(e.get("number", []), f"{where}.number"),
+        news=_facts_named(e.get("news", []), facts, f"{where}.news"),
+        adapt=bool(e.get("adapt", False)),
     )
 
 
@@ -313,6 +350,7 @@ def parse_scenario(raw: Any, group: str) -> Scenario:
             "facts",
             "neighbour",
             "repeat",
+            "same_step",
             "passing",
         ),
     )
@@ -348,6 +386,10 @@ def parse_scenario(raw: Any, group: str) -> Scenario:
         raise ScenarioError(f"{head}.sessions: the first session has no gap")
     if repeat > 1 and len(sessions) != 1:
         raise ScenarioError(f"{head}: a repeated scenario has one session")
+    same_step = _strings(s.get("same_step", []), f"{head}.same_step")
+    positions = {f"{i}.{n}" for i, x in enumerate(sessions, 1) for n in range(1, len(x.turns) + 1)}
+    if len(same_step) == 1 or set(same_step) - positions:
+        raise ScenarioError(f"{head}.same_step: not two or more turns of the scenario")
     return Scenario(
         id=head,
         group=group,
@@ -363,6 +405,7 @@ def parse_scenario(raw: Any, group: str) -> Scenario:
         facts=facts,
         neighbour=neighbour,
         repeat=repeat,
+        same_step=same_step,
         passing=str(s.get("passing", "")),
     )
 

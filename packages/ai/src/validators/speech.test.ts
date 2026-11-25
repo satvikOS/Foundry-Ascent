@@ -83,3 +83,12 @@ describe('deriveSpoken', () => {
     expect(deriveSpoken('')).toBe('');
   });
 });
+
+describe('toSpeakable — a line that ends in a quoted sentence', () => {
+  it('is ended already', () => {
+    expect(toSpeakable('Open with: “Imagine a full room.”\nThen give the price.')).toBe(
+      'Open with: “Imagine a full room.” Then give the price.',
+    );
+    expect(toSpeakable('Say "yes"\nThen stop')).toBe('Say "yes". Then stop.');
+  });
+});

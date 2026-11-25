@@ -46,13 +46,19 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       'amazon.nova-premier-v1:0',
       'amazon.nova-pro-v1:0',
       'amazon.titan-embed-text-v2:0',
+      // Claude Haiku 5.5 behind its US and global profiles (the models suite, and the client suite's A/B coach).
+      'anthropic.claude-haiku-5-5',
       'anthropic.claude-sonnet-4-6',
       'cohere.embed-v4:0',
       'meta.llama4-maverick-17b-instruct-v1:0',
       // Behind its global profile (the models suite) too, so in every region and region-less.
       'openai.gpt-6-luna',
     ]);
-    expect(access.globalFoundationModels).toEqual(['amazon.nova-2-lite-v1:0', 'openai.gpt-6-luna']);
+    expect(access.globalFoundationModels.slice().sort()).toEqual([
+      'amazon.nova-2-lite-v1:0',
+      'anthropic.claude-haiku-5-5',
+      'openai.gpt-6-luna',
+    ]);
     // Claude Haiku 4.5 (the coach, and a judge) is reached only through its US profile: granted where it routes.
     expect(access.regionalFoundationModels).toEqual([
       {
@@ -65,11 +71,13 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
     ]);
     expect(access.inferenceProfiles.slice().sort()).toEqual([
       'global.amazon.nova-2-lite-v1:0',
+      'global.anthropic.claude-haiku-5-5',
       'global.openai.gpt-6-luna',
       'us.amazon.nova-2-lite-v1:0',
       'us.amazon.nova-premier-v1:0',
       'us.amazon.nova-pro-v1:0',
       'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      'us.anthropic.claude-haiku-5-5',
       'us.anthropic.claude-sonnet-4-6',
       'us.cohere.embed-v4:0',
       'us.meta.llama4-maverick-17b-instruct-v1:0',
@@ -83,12 +91,14 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       ...reasoningAccess(app).inferenceProfiles,
       ...reasoningAccess(app).foundationModels,
     ].join(' ');
-    expect(granted).not.toMatch(/openai|cohere|rerank|multimodal/);
+    expect(granted).not.toMatch(/openai|cohere|rerank|multimodal|haiku-5/);
     expect(LAB_MODELS.benchmark.reasoning).toEqual([
       'us.openai.gpt-6-luna',
       'global.openai.gpt-6-luna',
       'us.amazon.nova-2-lite-v1:0',
       'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      'us.anthropic.claude-haiku-5-5',
+      'global.anthropic.claude-haiku-5-5',
     ]);
     expect(LAB_MODELS.benchmark.embeddings).toContain('us.cohere.embed-v4:0');
     const { benchmark: _benchmark, ...without } = raw();
@@ -131,6 +141,44 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
     ).toThrow(/no price/);
   });
 
+  it("grants the client suite's judge and A/B coaches (client.judge, client.coach) to the lab only, priced", () => {
+    expect(LAB_MODELS.client).toEqual({
+      judge: [
+        'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+        'us.amazon.nova-pro-v1:0',
+        'us.meta.llama4-maverick-17b-instruct-v1:0',
+      ],
+      coach: [
+        'us.amazon.nova-2-lite-v1:0',
+        'us.anthropic.claude-haiku-5-5',
+        'global.anthropic.claude-haiku-5-5',
+        'us.openai.gpt-6-luna',
+      ],
+    });
+    expect(LAB_MODELS.usdPerMillionTokens['anthropic.claude-haiku-5-5']).toEqual({
+      input: 0.1375,
+      output: 0.55,
+    });
+    const models = Object.values(effectiveModels(loadConfig().models));
+    expect(JSON.stringify(models)).not.toMatch(/haiku-5|openai/);
+    const { client: _client, ...without } = raw();
+    expect(parseLabModels(without).client).toEqual({ judge: [], coach: [] });
+    const { client } = LAB_MODELS;
+    expect(() =>
+      parseLabModels({ ...raw(), client: { ...client, judge: ['us.anthropic.claude-opus-9-9'] } }),
+    ).toThrow(/no price/);
+    expect(() =>
+      parseLabModels({
+        ...raw(),
+        client: { ...client, coach: [...client.coach, 'us.amazon.nova-pro-v1:0'] },
+      }),
+    ).toThrow(/1 to 4 model ids/);
+    expect(() => parseLabModels({ ...raw(), client: { ...client, coach: ['openai.gpt-6-luna'] } })).toThrow(
+      /Mantle/,
+    );
+    expect(() => parseLabModels({ ...raw(), client: [] })).toThrow(/must be an object/);
+  });
+
   it("lists the live evaluation's simulator and judge from other model families first, Nova as fallback", () => {
     expect(LAB_MODELS.live.simulator).toEqual([
       'us.meta.llama4-maverick-17b-instruct-v1:0',
@@ -153,7 +201,7 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       LAB_MODELS,
     );
     // The bare (Mantle) id adds nothing: without the lab's own Luna profiles, no OpenAI model is granted.
-    const { benchmark: _benchmark, live: _live, ...own } = raw();
+    const { benchmark: _benchmark, live: _live, client: _client, ...own } = raw();
     const appOnly = conversationLabAccess(
       effectiveModels({ ...models, luna: { modelId: 'openai.gpt-6-luna', enabled: true } }),
       parseLabModels(own),

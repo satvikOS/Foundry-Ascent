@@ -24,6 +24,8 @@ scenarios:
       pivot: [thermos, soup*, reheat*, microwave*]
       price: ['6', six]
       sold: ['11', eleven]
+      microwave: [microwave*, reheat*, heat, cold food]
+      rate: ['55', more than half, over half, most of]
     sessions:
       - turns:
           - {
@@ -41,7 +43,8 @@ scenarios:
         turns:
           - {
               say: 'I did eight interviews. Six of them said the problem is no microwave on the ward, not the food itself.',
-              expect: { kind: report, advances: true, history: [nurses, interviews, pivot] },
+              expect:
+                { kind: report, advances: true, history: [nurses, interviews, pivot], news: [microwave] },
               judge: [memory, relevance, critical],
             }
           - {
@@ -65,12 +68,12 @@ scenarios:
         turns:
           - {
               say: 'I ran a price test. 20 jars offered at 6 dollars, 11 sold in one day.',
-              expect: { kind: report, history: [pivot, nurses] },
+              expect: { kind: report, history: [pivot, nurses], news: [rate, sold] },
               judge: [memory, relevance, critical],
             }
           - {
               say: 'Is that good, and what now?',
-              expect: { history: [sold, price] },
+              expect: { history: [sold, price], news: [rate, sold] },
               judge: [critical, actionability],
             }
           - {
@@ -131,7 +134,12 @@ scenarios:
         domain: consumer,
         goal: Learn if teaching assistants would pay.,
       }
-    facts: { assistants: [teaching assistant*, TA*, assistants], count: ['10', ten, '4', four] }
+    facts:
+      {
+        assistants: [teaching assistant*, TA*, assistants],
+        count: ['10', ten, '4', four],
+        interest: [pay*, paid, '40', not money, not a sale],
+      }
     sessions:
       - turns:
           - {
@@ -146,7 +154,7 @@ scenarios:
         turns:
           - {
               say: 'Done. I talked to all ten teaching assistants and four asked when they could start.',
-              expect: { kind: report, advances: true, history: [assistants, count] },
+              expect: { kind: report, advances: true, history: [assistants, count], news: [interest] },
               judge: [memory, critical, actionability],
             }
           - {
@@ -286,7 +294,12 @@ scenarios:
         domain: consumer,
         goal: Sell the first tours.,
       }
-    facts: { tours: [tour*, walk*], sold: ['3', three, '40', forty] }
+    facts:
+      {
+        tours: [tour*, walk*],
+        sold: ['3', three, '40', forty],
+        low: ['7.5', one in thirteen, 1 in 13, '37', thirty-seven, too few, weak, low, small, '24'],
+      }
     record:
       - {
           type: evidence,
@@ -298,7 +311,7 @@ scenarios:
       - turns:
           - {
               say: 'Honestly I feel stupid. I asked 40 people and only 3 bought. I think I should just stop the venture.',
-              expect: { history: [tours, sold] },
+              expect: { history: [tours, sold], news: [low] },
               judge: [relevance, critical, actionability],
             }
           - { say: 'Everyone else in the program seems to be flying.', judge: [relevance, actionability] }
@@ -406,7 +419,7 @@ scenarios:
       - turns:
           - {
               say: 'One application takes me about nine hours and I charge 300 dollars. Is the fee right?',
-              expect: { history: [schools, hours] },
+              expect: { history: [schools, hours], number: ['33', '33.3', '33.33'] },
               judge: [relevance, critical, actionability],
             }
           - { say: 'Change it: the fee is 450 now, not 300.', expect: { kind: report } }
@@ -414,13 +427,13 @@ scenarios:
         turns:
           - {
               say: "What's my fee per application, and what's my hourly rate at that?",
-              expect: { kind: recall, remember: [newfee] },
+              expect: { kind: recall, remember: [newfee], number: ['50'] },
               judge: [memory, relevance],
             }
       - gap_days: 14
         turns:
           - {
               say: 'Two schools said yes at the new fee. What do I do next?',
-              expect: { kind: report, history: [schools, newfee] },
+              expect: { kind: report, history: [schools, newfee], news: [newfee] },
               judge: [memory, actionability],
             }

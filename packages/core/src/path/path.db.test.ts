@@ -114,16 +114,22 @@ function scripted(options: {
   readonly reply?: string;
   readonly report?: (founderText: string) => object | null;
   readonly told?: string[];
+  /** What the call for the reply's fields was told. */
+  readonly fieldsTold?: { system: string; messages: string }[];
+  /** Runs when the model starts to write. */
+  readonly onStream?: () => void;
   readonly playbook?: Playbook;
 }): { core: Core; orchestrator: Orchestrator; kit: Kit } {
   const gateway = new MockModelGateway({
     streamDelayMs: 0,
     streamFixture: (context: MockGenerateContext) => {
+      options.onStream?.();
       options.told?.push(JSON.stringify([context.system, context.messages]));
       return options.reply ?? mockCoachResponse(context).answer;
     },
     fixtures: {
       [COACH_ANNOTATIONS_SCHEMA_NAME]: (context: MockGenerateContext) => {
+        options.fieldsTold?.push({ system: context.system, messages: JSON.stringify(context.messages) });
         const { answer: _answer, spoken: _spoken, ...fields } = mockCoachResponse(context);
         return { ...fields, path_report: options.report?.(context.founderText) ?? null };
       },
@@ -194,6 +200,54 @@ describe('a conversation like the client’s (synthetic wording)', () => {
     expect(await audits('path.step_given', h.ventures.benchtally.id)).toBe(1);
   });
 
+  it('what must be exact is the server’s: it opens the reply before the model writes, and ends it with one step line', async () => {
+    const told: string[] = [];
+    const fieldsTold: { system: string; messages: string }[] = [];
+    const events: TurnStreamEvent[] = [];
+    let shownAtStart = '';
+    const deltas = (): string => events.flatMap((e) => (e.event === 'turn.delta' ? [e.text] : [])).join('');
+    const { core } = scripted({
+      told,
+      fieldsTold,
+      onStream: () => {
+        shownAtStart = deltas();
+      },
+      reply:
+        'Your two pilots are the proof that a lab pays, so let them open the next doors for you.\n\nNext: build an app by Friday. Done when it is live.\n\n1. Open a spreadsheet.\n2. Email everyone.',
+    });
+    const session = await newSession(priya, h.ventures.benchtally, core);
+    await core.orchestrator.runTurn(priya, session, { text: 'Can you help me get organised?' }, (e) => {
+      events.push(TurnStreamEvent.parse(e));
+    });
+    const last = events.find((e) => e.event === 'turn.completed');
+    if (last?.event !== 'turn.completed') throw new Error('not completed');
+    const answer = last.turn.response?.answer ?? '';
+    // Where they stand, on screen before the model wrote a word.
+    expect(shownAtStart).toMatch(/^You are on stage 3 of 7 with BenchTally, proving someone wants it\./);
+    expect(answer.startsWith(shownAtStart.trim())).toBe(true);
+    expect(deltas().trim()).toBe(answer);
+    expect(answer).toContain('let them open the next doors for you.');
+    // The model's own step goes, whole; the path's is the last line, once.
+    for (const gone of ['build an app', 'it is live', 'Open a spreadsheet', 'Email everyone'])
+      expect(answer).not.toContain(gone);
+    expect(answer).toMatch(
+      /\n\n\*\*Next:\*\* Sign two paid pilots by [A-Z][^.]+\. Done when [a-z0-9][^\n]+\.$/,
+    );
+    expect(answer.match(/Next:/g)).toHaveLength(1);
+    expect(last.turn.response?.follow_up_questions).toEqual([
+      'How do I do the first part?',
+      'That is too much this week. Can you make it smaller?',
+    ]);
+    // The reply's prompt holds no step to copy; the fields' call holds neither the path nor the conversation's notes.
+    expect(told.join('')).not.toContain('Done when:');
+    expect(fieldsTold).toHaveLength(1);
+    expect(fieldsTold[0]?.system).not.toContain('\n<path>\n');
+    expect(fieldsTold[0]?.system).toContain('- path_report:');
+    expect(fieldsTold[0]?.system).not.toContain('- follow_up_questions:');
+    expect(fieldsTold[0]?.messages).not.toContain('<your_notes>');
+    expect(JSON.stringify(fieldsTold[0]).length).toBeLessThan((told[0] ?? '').length * 0.9);
+  });
+
   it('the same step, with the same id, on three more conversations', async () => {
     const ids: (string | undefined)[] = [];
     for (let i = 0; i < 3; i += 1) {
@@ -230,7 +284,9 @@ describe('a conversation like the client’s (synthetic wording)', () => {
     const prompt = told.join('\n');
     // This venture's name and one concrete fact of it, beside the new idea's two options (either form of the prompt).
     expect(prompt).toMatch(/new idea: not BenchTally|<new_idea venture=\\"BenchTally\\" fact=/);
-    expect(prompt).toMatch(/change of direction/);
+    // Which venture it is, and both ways on, are the program's sentence, not the model's to word.
+    expect(run.turn.response?.answer).toMatch(/BenchTally/);
+    expect(run.turn.response?.answer).toMatch(/change of direction/);
     expect(prompt).toContain('choose between: service business | consulting | some of each');
     expect(prompt).toContain('Start as a service');
     expect(run.turn.guidance).toMatchObject({
@@ -504,7 +560,7 @@ describe('work reported, the idea and a change of it', () => {
     const run = await say(core, amara, session, text);
     expect(run.turn.guidance).toMatchObject({
       stage: 'discovery',
-      step: { title: 'Interview ten people about the last time: 2 more' },
+      step: { title: 'Hold 2 more customer talks' },
     });
     const kept = await reads(amara, venture().id);
     expect(kept.path?.stage).toBe('discovery');
@@ -518,7 +574,7 @@ describe('work reported, the idea and a change of it', () => {
       'Interview ten people about the last time',
     );
     const path = await h.core.path.get(amara, venture().id);
-    expect(path.now?.title).toBe('Interview ten people about the last time: 2 more');
+    expect(path.now?.title).toBe('Hold 2 more customer talks');
     expect(path.arc.some((a) => a.kind === 'result' && a.title.startsWith('I did eight interviews'))).toBe(
       true,
     );
@@ -589,7 +645,7 @@ describe('on a call', () => {
     });
     const units = run.events.flatMap((e) => (e.event === 'turn.speech' ? [e] : []));
     const last = units.at(-1);
-    expect(last?.text).toMatch(/Your next step: .+, by .+\.$/);
+    expect(last?.text).toMatch(/Your next step: .+ by .+\.$/);
     expect(units.filter((u) => u.text.includes('Your next step'))).toHaveLength(1);
     const key = await new PlatformKeyCache(kit, 3600).signingKey();
     expect(

@@ -3,8 +3,10 @@ import {
   COACH_RESPONSE_SCHEMA_NAME,
   CoachAnnotations,
   MIN_KEPT_WORDS,
+  PathAnnotations,
   SPOKEN_MAX_WORDS,
   SentenceGate,
+  annotationsOfPath,
   clampWords,
   cutMetaNarration,
   isOnlyLeadIn,
@@ -282,6 +284,14 @@ export interface GenerateArgs {
   /** What the annotation call is asked about the founder path (`pathReportRequest`). */
   readonly pathReport?: readonly string[];
   /**
+   * A reply on the path: its second call has its own, short prompt and asks for fewer fields (`PathAnnotations`). Absent:
+   * the turn's own prompt and every field.
+   */
+  readonly pathAnnotations?: {
+    readonly system: string;
+    readonly messages: (answer: string) => ChatMessage[];
+  } | null;
+  /**
    * The conversation's earlier replies (and opener) a reply never says again, or null when it may (the founder asked to
    * hear it again, or sincerely asked who or what the coach is). A whole reply that says one again is written once more
    * with what was already said (`repeat_regenerated`): left out by the validator alone, the sentences around it would
@@ -329,6 +339,8 @@ export const EARLY_REPEAT_WORDS = 20;
  * (the gateway's default is 4,096) well before the annotation time budget.
  */
 export const ANNOTATION_MAX_TOKENS = 2_000;
+/** The same for a reply on the path, whose fields are few. */
+export const PATH_ANNOTATION_MAX_TOKENS = 900;
 const SPOKEN_UNIT_CHARS = 280;
 
 function wordCount(text: string): number {
@@ -607,6 +619,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
    */
   const open = (): boolean =>
     a.signal?.aborted !== true &&
+    // A reply on the path is completed by the server (the answer, the step): once something of it was shown, nothing goes on.
+    !(gate.guided && said.shown.trim() !== '') &&
     !said.full &&
     !gate.full &&
     (a.gate.replyBudget ?? null) === null &&
@@ -647,6 +661,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       // from a moment ago. Which part do you want to dig into?"). Adding nothing, the reply stands as it was shown. Their
       // news parked again still gets its line ("That's real news. How did it come about?"), as before.
       repeatFallback: false,
+      leadSaid: true,
     });
     const extractor = new ReplyExtractor();
     const halt = new AbortController();
@@ -700,6 +715,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
             mode: a.mode,
             allowedModes: a.allowedModes,
             stableChars: a.promptCache?.systemChars ?? 0,
+            guided: gate.guided,
           }),
           messages: continuationMessages(a.messages, soFar, leftOut),
           // The conversation so far is the same prefix: the continuation reads it back from the cache.
@@ -762,6 +778,11 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     return added;
   };
 
+  // What the server says first (a sum, what their news means, where they stand), before the model writes anything.
+  const opened = gate.open();
+  await release(opened);
+  if (opened.blocked !== null) return blockedBy(opened.blocked, 'none', 0);
+
   // Phase A: the reply, streamed through the gate. The reply extractor reads the stream first: it hands on
   // prose as it comes, and the reply field of an answer written as structured output (reply-extract.ts).
   const phaseAStarted = performance.now();
@@ -781,6 +802,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
           mode: a.mode,
           allowedModes: a.allowedModes,
           stableChars: a.promptCache?.systemChars ?? 0,
+          guided: gate.guided,
         }),
         messages: a.messages,
         ...(a.promptCache ? { promptCache: a.promptCache } : {}),
@@ -1021,17 +1043,37 @@ function startAnnotations(a: StreamArgs, replyText: string): PendingAnnotations 
   const started = performance.now();
   const result = (async (): Promise<AnnotationsResult> => {
     try {
-      const out = await a.kit.deps.gateway.generateStructured({
+      const request = {
         purpose: a.meter.purpose,
+        schemaName: COACH_ANNOTATIONS_SCHEMA_NAME,
+        requestId: a.ctx.requestId,
+        timeoutMs: budget,
+        signal: AbortSignal.any([stop.signal, AbortSignal.timeout(budget)]),
+      };
+      const path = a.pathAnnotations ?? null;
+      if (path !== null) {
+        const out = await a.kit.deps.gateway.generateStructured({
+          ...request,
+          system: path.system,
+          messages: path.messages(replyText),
+          zodSchema: PathAnnotations,
+          maxOutputTokens: PATH_ANNOTATION_MAX_TOKENS,
+        });
+        await record(a, out.attempts);
+        return {
+          value: annotationsOfPath(out.value),
+          attempts: out.attempts,
+          latencyMs: Math.round(out.latencyMs),
+          note: null,
+        };
+      }
+      const out = await a.kit.deps.gateway.generateStructured({
+        ...request,
         system: a.system,
         messages: annotationMessages(a.messages, replyText, a.pathReport),
         ...(a.promptCache ? { promptCache: a.promptCache } : {}),
-        schemaName: COACH_ANNOTATIONS_SCHEMA_NAME,
         zodSchema: CoachAnnotations,
-        requestId: a.ctx.requestId,
         maxOutputTokens: ANNOTATION_MAX_TOKENS,
-        timeoutMs: budget,
-        signal: AbortSignal.any([stop.signal, AbortSignal.timeout(budget)]),
       });
       await record(a, out.attempts);
       return { value: out.value, attempts: out.attempts, latencyMs: Math.round(out.latencyMs), note: null };

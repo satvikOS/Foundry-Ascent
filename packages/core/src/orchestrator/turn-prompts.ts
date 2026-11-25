@@ -1,12 +1,13 @@
 import {
   COACH_ANNOTATIONS_SCHEMA_NAME,
   SPOKEN_REGISTER,
+  buildEvidenceBlock,
   escapeData,
   truncate,
   type ChatMessage,
   type CoachAnnotations,
 } from '@foundry/ai';
-import { type CoachMode, type TurnChannel } from '@foundry/contracts';
+import { type CoachMode, type EvidenceItem, type TurnChannel } from '@foundry/contracts';
 
 /**
  * Prompts of a streamed turn. The answer is written in two steps from the same context:
@@ -43,6 +44,8 @@ export interface AnswerPromptOptions {
   readonly mode: CoachMode | null;
   /** Modes the model may choose from in auto mode. */
   readonly allowedModes: readonly CoachMode[];
+  /** The reply is on the path: the server says the step after it (fewer words of a call are the model's). */
+  readonly guided?: boolean;
 }
 
 /**
@@ -87,7 +90,7 @@ export function answerSystemPrompt(system: string, options: AnswerPromptOptions)
   if (options.channel === 'voice') {
     // Production: a spoken reply cut from a written answer handed the turn back in 2 of 9 replies.
     lines.push(
-      '- This is a voice call: write only what you will say aloud, at most 70 words. No Markdown, lists, headings,',
+      `- This is a voice call: write only what you will say aloud, at most ${options.guided === true ? '45' : '70'} words. No Markdown, lists, headings,`,
       '  citation ids like [E1], URLs, caveats or labels read out.',
       "- The founder's message is a speech transcript and may contain recognition errors: read it charitably, and ask",
       '  when something important is unclear.',
@@ -209,6 +212,61 @@ export function annotationMessages(
         'cite ids from the <evidence> block), uncertainty, challenge, next actions, escalation, memory candidates,',
         'follow-up questions and rehearsal, following your instructions. Do not change or repeat the reply.',
         ...pathReport,
+        '</annotation_request>',
+      ].join('\n'),
+    },
+  ];
+}
+
+/** Characters of the evidence the second call reads: what the reply cites, and the start of the rest. */
+const CITED_CHARS = 260;
+const OTHER_CHARS = 110;
+
+/**
+ * Phase B conversation of a reply on the path: the last exchange, the evidence cut to what the claims need, the founder's
+ * message and the reply. What the first call answered from (the notes, the earlier turns, where the last conversation was)
+ * is not needed to say what the reply claims and what the message reports.
+ */
+export function pathAnnotationMessages(args: {
+  readonly lastFounder: string | null;
+  readonly lastReply: string | null;
+  readonly evidence: readonly EvidenceItem[];
+  readonly founderText: string;
+  readonly answer: string;
+}): ChatMessage[] {
+  const cited = new Set(
+    [...args.answer.matchAll(/\[\s*(E\d+(?:\s*[,;]\s*E\d+)*)\s*\]/gi)].flatMap((m) =>
+      (m[1] ?? '').split(/[,;]/).map((k) => k.trim().toUpperCase()),
+    ),
+  );
+  const evidence = args.evidence.map((e) => ({
+    ...e,
+    excerpt: truncate(e.excerpt, cited.has(e.key.toUpperCase()) ? CITED_CHARS : OTHER_CHARS),
+  }));
+  return [
+    ...(args.lastFounder === null || args.lastReply === null
+      ? []
+      : [
+          {
+            role: 'user' as const,
+            content: `<founder_message>\n${escapeData(truncate(args.lastFounder, 400))}\n</founder_message>`,
+          },
+          { role: 'assistant' as const, content: truncate(args.lastReply, 500) },
+        ]),
+    {
+      role: 'user',
+      content: [
+        ...(evidence.length === 0 ? [] : [buildEvidenceBlock(evidence)]),
+        `<founder_message>\n${escapeData(args.founderText)}\n</founder_message>`,
+      ].join('\n\n'),
+    },
+    { role: 'assistant', content: args.answer },
+    {
+      role: 'user',
+      content: [
+        '<annotation_request>',
+        `The founder has read that reply. Return its fields as one ${COACH_ANNOTATIONS_SCHEMA_NAME} object, following your`,
+        'instructions. Do not change or repeat the reply.',
         '</annotation_request>',
       ].join('\n'),
     },

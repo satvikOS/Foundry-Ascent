@@ -49,8 +49,9 @@ export interface NovaProviderOptions {
   /** Sampling temperature of requests that name none of their own. Default 0.2. */
   temperature?: number;
   /**
-   * OpenAI models only ({@link isOpenAiModelId}): how much they reason before answering. Default `none`, the fastest
-   * and the only effort at which they take a sampling temperature. Other models ignore it.
+   * OpenAI models ({@link isOpenAiModelId}) and Claude models that think by default ({@link thinksByDefault}): how much
+   * they reason before answering. Default `none`, the fastest (for an OpenAI model, the only effort at which it takes a
+   * sampling temperature). Other models ignore it.
    */
   reasoningEffort?: ConverseReasoningEffort;
   /** Repair re-asks after invalid tool input. Default 1. */
@@ -73,7 +74,7 @@ const PROFILE_REQUIRED = /on-demand throughput|inference profile/i;
 /**
  * Anthropic Claude ids on Bedrock (`anthropic.…`, also behind `us.`/`global.` inference profiles). Current Claude
  * models reject sampling parameters, so Converse requests for any Claude id send none. This, {@link isOpenAiModelId},
- * {@link forcesTool} and {@link usesCachePoints} are the only places that tell model families apart: nothing outside
+ * {@link forcesTool}, {@link thinksByDefault} and {@link usesCachePoints} are the only places that tell model families apart: nothing outside
  * this adapter knows which family the coach is.
  */
 export function isClaudeModelId(modelId: string): boolean {
@@ -164,6 +165,28 @@ const FORCED_TOOL_CLAUDE = /^(?:[a-z-]+\.)?anthropic\.claude-(?:3-|haiku-4-5)/;
 /** Whether a structured call to `modelId` forces its one tool (every non-Claude model on Converse does). */
 export function forcesTool(modelId: string): boolean {
   return !isClaudeModelId(modelId) || FORCED_TOOL_CLAUDE.test(modelId);
+}
+
+/**
+ * Claude models that think before they answer unless a request says otherwise and that take `thinking: disabled`:
+ * Claude Haiku 5.5 (Anthropic's migration guide, checked 2026-11-25: adaptive thinking is on when the request does not
+ * set it, its tokens count against `maxTokens`, and `disabled` is accepted at effort `high` or below). The later Opus
+ * and Sonnet models refuse `disabled`; none is configured anywhere. Benchmark and lab A/B only: production's coach is
+ * no such model.
+ */
+export function thinksByDefault(modelId: string): boolean {
+  return /^(?:[a-z-]+\.)?anthropic\.claude-haiku-5-5/.test(modelId);
+}
+
+/** The thinking fields of a Claude model that thinks by default: off at effort `none`, adaptive at the effort otherwise. */
+function claudeThinking(
+  effort: ConverseReasoningEffort,
+):
+  | { thinking: { type: 'disabled' } }
+  | { thinking: { type: 'adaptive' }; output_config: { effort: ConverseReasoningEffort } } {
+  return effort === 'none'
+    ? { thinking: { type: 'disabled' } }
+    : { thinking: { type: 'adaptive' }, output_config: { effort } };
 }
 
 /**
@@ -348,6 +371,8 @@ export class NovaProvider implements StructuredProvider {
   readonly #promptCache: boolean;
   /** The optional request fields of an OpenAI model, without those Bedrock refused; null for every other model. */
   #openAi: OpenAiRequestFields | null;
+  /** How much a Claude model that thinks by default thinks; null for every other model. */
+  readonly #claudeEffort: ConverseReasoningEffort | null;
   /** Bedrock refused a request with cache checkpoints: this instance sends none from then on. */
   #cacheRefused = false;
   #useProfile = false;
@@ -371,6 +396,7 @@ export class NovaProvider implements StructuredProvider {
     this.#openAi = isOpenAiModelId(options.modelId)
       ? { temperature: true, effort: options.reasoningEffort ?? 'none', forcedTool: true }
       : null;
+    this.#claudeEffort = thinksByDefault(options.modelId) ? (options.reasoningEffort ?? 'none') : null;
   }
 
   /** The id currently used for calls (the inference profile after a profile retry). */
@@ -391,7 +417,8 @@ export class NovaProvider implements StructuredProvider {
     openAi: OpenAiRequestFields | null,
   ): {
     inferenceConfig: InferenceConfiguration;
-    additionalModelRequestFields?: { reasoning: { effort: ConverseReasoningEffort } };
+    additionalModelRequestFields?:
+      { reasoning: { effort: ConverseReasoningEffort } } | ReturnType<typeof claudeThinking>;
   } {
     const sampling = { maxTokens, temperature: temperature ?? this.#temperature };
     if (openAi !== null) {
@@ -400,6 +427,12 @@ export class NovaProvider implements StructuredProvider {
         ...(openAi.effort === null
           ? {}
           : { additionalModelRequestFields: { reasoning: { effort: openAi.effort } } }),
+      };
+    }
+    if (this.#claudeEffort !== null) {
+      return {
+        inferenceConfig: { maxTokens },
+        additionalModelRequestFields: claudeThinking(this.#claudeEffort),
       };
     }
     return { inferenceConfig: isClaudeModelId(modelId) ? { maxTokens } : sampling };
@@ -507,8 +540,11 @@ export class NovaProvider implements StructuredProvider {
               outcome,
               opened,
               cancelledBeforeSend,
-              // An OpenAI model's reasoning is billed as output and reaches the stream as a summary at most.
-              reasoning: openAi !== null && openAi.effort !== 'none',
+              // An OpenAI model's reasoning is billed as output and reaches the stream as a summary at most; a Claude
+              // model's thinking text is omitted from the stream by default.
+              reasoning:
+                (openAi !== null && openAi.effort !== 'none') ||
+                (this.#claudeEffort !== null && this.#claudeEffort !== 'none'),
             }),
           ...(prompt.cachePoints > 0 ? { cachePoints: prompt.cachePoints } : {}),
           errorName,

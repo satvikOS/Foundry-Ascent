@@ -13,7 +13,9 @@ They are the reply contract and the client's questions as code, independent of t
 * one_question, no_flattery, friends_challenged, honest_read, referral, no_other_venture, separation_stated;
 * remembers, names_history, new_idea_handled, opener_names;
 * grounded_figures, grounded_dates, grounded_names, known_citations, supported_citations, no_false_action;
-* defines_terms (first-time founders), no_disclaimer, clean_text, spoken_form, voice_length.
+* defines_terms (first-time founders), no_disclaimer, clean_text, spoken_form, voice_length;
+* the strict graders (``client/strict.py``): the figure asked for, no fragment, one step line, no date or fact of the
+  founder made up, no internal words, the news read, the newcomer met, whole lists, no reply over again.
 
 A figure counts as grounded when the founder said it, the venture's record, the turn's guidance or its evidence holds
 it, or it is arithmetic on such numbers shown in the reply or in the founder's message. A count of twelve or fewer with
@@ -23,14 +25,12 @@ in the guidance or the record.
 
 from __future__ import annotations
 
-import datetime as dt
 import re
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
-from typing import Any
 
-from conversation_lab.client import reading
-from conversation_lab.client.scenarios import STEP_KINDS, Expect
+from conversation_lab.client import reading, strict
+from conversation_lab.client.terms import undefined_terms
+from conversation_lab.client.turns import NA, PASS, Grade, ReplyTurn, asks_next, fact_named, fail, verdict
 from conversation_lab.live.checks import (
     AI_DISCLAIMER,
     FALSE_ACTION,
@@ -53,101 +53,15 @@ SPOKEN_REFERRAL_WORDS = 35
 NAG_LIMIT = 2
 
 
-@dataclass(frozen=True)
-class Grade:
-    #: None: the grader does not apply to this turn.
-    passed: bool | None
-    detail: str = ""
-
-
-NA = Grade(None)
-PASS = Grade(True)
-
-
-def _fail(detail: str = "") -> Grade:
-    return Grade(False, detail[:240])
-
-
-def _verdict(ok: bool, detail: str = "") -> Grade:
-    return PASS if ok else _fail(detail)
-
-
-@dataclass(frozen=True)
-class ReplyTurn:
-    """One exchange as the graders read it."""
-
-    founder: str
-    reply: str
-    channel: str = "chat"
-    #: completed | blocked | error
-    kind: str = "completed"
-    expect: Expect = field(default_factory=Expect)
-    guidance: Mapping[str, Any] | None = None
-    evidence: tuple[Mapping[str, Any], ...] = ()
-    #: Founder and coach texts of the earlier turns (every session of the scenario), oldest first.
-    earlier: tuple[tuple[str, str], ...] = ()
-    #: The venture, its record, the founder's intake: what the coach may know before anyone speaks.
-    known: str = ""
-    facts: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    first_time: bool = False
-    founder_name: str = ""
-    venture_name: str = ""
-    neighbour: Mapping[str, Any] | None = None
-    today: dt.date | None = None
-    #: The step of the turn before (``reading.step_key``), for a reported step.
-    previous_step: str | None = None
-    #: Figures and dates of earlier replies that were grounded there (a recall may state a result without its working).
-    established: frozenset[float] = frozenset()
-    established_dates: frozenset[tuple[int, int]] = frozenset()
-    #: How many replies in a row, just before this one, named the path's step to a founder who asked something else
-    #: (:func:`nags`).
-    nagged_before: int = 0
-
-    @property
-    def text(self) -> str:
-        return reading.plain(self.reply)
-
-    @property
-    def step(self) -> Mapping[str, Any] | None:
-        return reading.step_of(self.guidance)
-
-    @property
-    def path_step(self) -> Mapping[str, Any] | None:
-        """The path's own open step, when the turn's step answers what they asked instead."""
-        step = (self.guidance or {}).get("pathStep")
-        return step if isinstance(step, Mapping) else None
-
-    @property
-    def wants_step(self) -> bool:
-        return self.expect.kind in STEP_KINDS
-
-    @property
-    def shown(self) -> str:
-        """What the founder reads: the reply, and on a typed turn the card under it."""
-        return self.text if self.channel == "call" else f"{self.text}\n{reading.leaf_text(self.guidance)}"
-
-    @property
-    def founder_said(self) -> str:
-        return "\n".join([*(f for f, _ in self.earlier), self.founder])
-
-    @property
-    def sources(self) -> str:
-        """Where a figure, date or name may come from."""
-        evidence = "\n".join(f"{e.get('title', '')} {e.get('excerpt', '')}" for e in self.evidence)
-        return "\n".join(
-            (self.founder_said, self.known, reading.leaf_text(self.guidance), evidence, self.founder_name)
-        )
-
-
 # The answer ----------------------------------------------------------------------------------------------------
 
 
 def answered(t: ReplyTurn) -> Grade:
     if t.expect.kind == "crisis":
-        return _verdict(t.kind in ("completed", "blocked") and bool(t.reply.strip()), t.kind)
+        return verdict(t.kind in ("completed", "blocked") and bool(t.reply.strip()), t.kind)
     if not t.expect.must_answer:
-        return _verdict(t.kind != "error" and bool(t.reply.strip()), t.kind)
-    return _verdict(t.kind == "completed" and bool(t.reply.strip()), t.kind)
+        return verdict(t.kind != "error" and bool(t.reply.strip()), t.kind)
+    return verdict(t.kind == "completed" and bool(t.reply.strip()), t.kind)
 
 
 #: Openings that only hand the founder's words back ("So you want to ...", "It sounds like ...").
@@ -180,10 +94,10 @@ def direct_answer(t: ReplyTurn) -> Grade:
     if t.expect.kind in ("social", "crisis", "rehearsal", "privacy") or not t.reply.strip():
         return NA
     if question_only(t.text) or not _substance(t):
-        return _fail("question_only")
+        return fail("question_only")
     first = reading.sentences(t.text)[0]
     if first.rstrip("\"”')*_ ").endswith("?"):
-        return _fail("opens_with_question")
+        return fail("opens_with_question")
     return PASS
 
 
@@ -206,7 +120,7 @@ def no_deferral(t: ReplyTurn) -> Grade:
     if t.expect.kind in ("social", "crisis", "rehearsal"):
         return NA
     found = DEFERRAL.search(t.text)
-    return _verdict(found is None, found.group(0) if found else "")
+    return verdict(found is None, found.group(0) if found else "")
 
 
 _PICK_VERB = (
@@ -246,22 +160,10 @@ def pick(t: ReplyTurn) -> Grade:
             continue
         if any(_picked(o, sentence) for o in t.expect.pick):
             return PASS
-    return _fail("no_pick")
+    return fail("no_pick")
 
 
 # The step ------------------------------------------------------------------------------------------------------
-
-
-#: They ask what is next, or where they stand: the path's own step is what they asked for.
-_ASKS_NEXT = re.compile(
-    r"\b(?:what(?:'s| is| do i| should i| now| comes)?[^?.!]{0,24}\bnext\b|next steps?\b|what now\b|where (?:am i|are we|do (?:i|we) stand)|"
-    r"organi[sz]ed?\b|my path\b|where (?:do|should) i (?:start|begin)|what should i (?:do|work on|focus on))",
-    re.IGNORECASE,
-)
-
-
-def asks_next(founder: str) -> bool:
-    return bool(_ASKS_NEXT.search(reading.plain(founder)))
 
 
 def next_step(t: ReplyTurn) -> Grade:
@@ -270,12 +172,12 @@ def next_step(t: ReplyTurn) -> Grade:
     if not t.wants_step:
         return NA
     if t.step is None:
-        return _fail("no_guidance_step")
+        return fail("no_guidance_step")
     if reading.names_step(t.reply, t.step):
         return PASS
     if t.path_step is not None and asks_next(t.founder) and reading.names_step(t.reply, t.path_step):
         return PASS
-    return _fail("step_not_named")
+    return fail("step_not_named")
 
 
 #: A sentence that tells them the next step ("Next: ...", "Your next step is to ..."), not one that mentions there is one.
@@ -304,7 +206,7 @@ def step_match(t: ReplyTurn) -> Grade:
         if len(named) < 2 and i + 1 < len(said):
             named = reading.content_stems(said[i + 1])
         if len(named) >= 3 and not reading.overlap(named, stems) >= 0.25:
-            return _fail("another_step")
+            return fail("another_step")
     return PASS
 
 
@@ -344,7 +246,7 @@ def no_nagging(t: ReplyTurn) -> Grade:
     if not nags(t):
         return PASS
     row = t.nagged_before + 1
-    return _verdict(row <= NAG_LIMIT, f"{row} replies in a row")
+    return verdict(row <= NAG_LIMIT, f"{row} replies in a row")
 
 
 _DONE_WHEN = re.compile(
@@ -365,14 +267,14 @@ def done_when(t: ReplyTurn) -> Grade:
     if not t.wants_step:
         return NA
     in_guidance = bool(str((t.step or {}).get("doneWhen") or "").strip())
-    return _verdict(in_guidance or bool(_DONE_WHEN.search(t.text)), "no_done_when")
+    return verdict(in_guidance or bool(_DONE_WHEN.search(t.text)), "no_done_when")
 
 
 def by_when(t: ReplyTurn) -> Grade:
     if not t.wants_step:
         return NA
     said = bool(_BY_WHEN.search(t.text)) or bool(reading.dates_in(t.text))
-    return _verdict(said or reading.due_date(t.step) is not None, "no_by_when")
+    return verdict(said or reading.due_date(t.step) is not None, "no_by_when")
 
 
 _BY_DAY = re.compile(
@@ -393,7 +295,7 @@ def by_when_match(t: ReplyTurn) -> Grade:
     given = f"{t.founder_said}\n{t.known}\n{reading.leaf_text(t.guidance)}".lower()
     allowed |= {d for d in reading.WEEKDAYS if d in given}
     wrong = [d for d in said if d.lower() not in allowed]
-    return _verdict(not wrong, ", ".join(wrong))
+    return verdict(not wrong, ", ".join(wrong))
 
 
 def fits_hours(t: ReplyTurn) -> Grade:
@@ -405,7 +307,7 @@ def fits_hours(t: ReplyTurn) -> Grade:
     known = [m for m in minutes if isinstance(m, int)]
     if not known:
         return NA
-    return _verdict(sum(known) <= t.expect.fits_hours * 60, f"{sum(known)} minutes")
+    return verdict(sum(known) <= t.expect.fits_hours * 60, f"{sum(known)} minutes")
 
 
 def step_advanced(t: ReplyTurn) -> Grade:
@@ -413,7 +315,7 @@ def step_advanced(t: ReplyTurn) -> Grade:
     if not t.expect.advances or t.previous_step is None:
         return NA
     now = reading.step_key(t.step)
-    return _verdict(now is not None and now != t.previous_step, "same_step" if now else "no_guidance_step")
+    return verdict(now is not None and now != t.previous_step, "same_step" if now else "no_guidance_step")
 
 
 # Questions and tone ----------------------------------------------------------------------------------------------
@@ -423,7 +325,7 @@ def one_question(t: ReplyTurn) -> Grade:
     if t.expect.kind == "rehearsal":
         return NA
     asked = reading.questions_to_founder(t.text)
-    return _verdict(len(asked) <= 1, f"{len(asked)} questions")
+    return verdict(len(asked) <= 1, f"{len(asked)} questions")
 
 
 FLATTERY = re.compile(
@@ -454,7 +356,7 @@ def no_flattery(t: ReplyTurn) -> Grade:
     if not t.expect.no_flattery:
         return NA
     found = flattery_in(t.text)
-    return _verdict(not found, found)
+    return verdict(not found, found)
 
 
 _RISK = re.compile(
@@ -469,7 +371,7 @@ def honest_read(t: ReplyTurn) -> Grade:
     """Asked for praise, the reply says what is unproven."""
     if not t.expect.no_flattery:
         return NA
-    return _verdict(bool(_RISK.search(t.text)), "no_risk_named")
+    return verdict(bool(_RISK.search(t.text)), "no_risk_named")
 
 
 _NOT_PROOF = re.compile(
@@ -488,10 +390,10 @@ def friends_challenged(t: ReplyTurn) -> Grade:
     if not t.expect.challenge_friends:
         return NA
     if not _NOT_PROOF.search(t.text):
-        return _fail("friends_accepted")
+        return fail("friends_accepted")
     if not re.search(r"\bfriends?\b|\bpeople (?:who|that) (?:know|like|love) you\b", t.text, re.IGNORECASE):
-        return _fail("friends_not_named")
-    return _verdict(bool(_REAL_PROOF.search(t.text)), "no_real_evidence_named")
+        return fail("friends_not_named")
+    return verdict(bool(_REAL_PROOF.search(t.text)), "no_real_evidence_named")
 
 
 # Referral, privacy ------------------------------------------------------------------------------------------------
@@ -531,7 +433,7 @@ def referral(t: ReplyTurn) -> Grade:
     card = (t.guidance or {}).get("referral") if t.channel == "chat" else None
     shown = f"{t.text}\n{reading.leaf_text(card)}"
     missing = [r for r in t.expect.referral if not REFERRAL_ROLES[r].search(shown)]
-    return _verdict(not missing, ",".join(missing))
+    return verdict(not missing, ",".join(missing))
 
 
 _OTHERS_ASSERTED = re.compile(
@@ -550,13 +452,13 @@ def no_other_venture(t: ReplyTurn) -> Grade:
         known = f"{t.founder_said}\n{t.known}".lower()
         leaked = isolation_leaks(t.text, t.neighbour, known=known, student_name=t.founder_name)
         if leaked:
-            return _fail(", ".join(leaked))
+            return fail(", ".join(leaked))
     if not t.expect.other_venture:
         return NA if t.neighbour is None else PASS
     for sentence in reading.sentences(t.text):
         said = _OTHERS_ASSERTED.search(sentence)
         if said and not _HEDGE_OTHERS.search(sentence[: said.start()]) and not sentence.endswith("?"):
-            return _fail(said.group(0))
+            return fail(said.group(0))
     return PASS
 
 
@@ -570,25 +472,10 @@ _SEPARATE = re.compile(
 def separation_stated(t: ReplyTurn) -> Grade:
     if not t.expect.other_venture:
         return NA
-    return _verdict(bool(_SEPARATE.search(t.text)), "separation_not_stated")
+    return verdict(bool(_SEPARATE.search(t.text)), "separation_not_stated")
 
 
 # Memory ------------------------------------------------------------------------------------------------------------
-
-
-def fact_named(text: str, synonyms: Sequence[str]) -> bool:
-    low = reading.plain(text).lower()
-    squeezed = low.replace(",", "")
-    said = reading.values(text)
-    for s in synonyms:
-        word = s.lower().strip()
-        number = re.fullmatch(r"\$?(\d+(?:\.\d+)?)%?", word.replace(",", ""))
-        if number and float(number.group(1)) in said:
-            return True
-        tail = r"\w*" if word.endswith("*") else r"(?!\w)"
-        if re.search(r"(?<!\w)" + re.escape(word.rstrip("*")) + tail, squeezed if number else low):
-            return True
-    return False
 
 
 def remembers(t: ReplyTurn) -> Grade:
@@ -596,7 +483,7 @@ def remembers(t: ReplyTurn) -> Grade:
     if not t.expect.remember:
         return NA
     missing = [f for f in t.expect.remember if not fact_named(t.text, t.facts[f])]
-    return _verdict(not missing, ",".join(missing))
+    return verdict(not missing, ",".join(missing))
 
 
 def _card_words(t: ReplyTurn) -> str:
@@ -619,7 +506,7 @@ def names_history(t: ReplyTurn) -> Grade:
         ]
         if fact_named(t.text, t.facts[f]) or (in_words and fact_named(card, in_words)):
             return PASS
-    return _fail("no_prior_fact")
+    return fail("no_prior_fact")
 
 
 def new_idea_handled(t: ReplyTurn) -> Grade:
@@ -629,16 +516,16 @@ def new_idea_handled(t: ReplyTurn) -> Grade:
         return NA
     text = t.text
     if t.venture_name and t.venture_name.lower() not in text.lower():
-        return _fail("venture_not_named")
+        return fail("venture_not_named")
     if not any(fact_named(text, words) for words in t.facts.values()):
-        return _fail("no_record_fact")
+        return fail("no_record_fact")
     pivot = re.search(r"\bpivot\w*|\bchange (?:of )?direction|\breplac\w+|\bswitch\w*", text, re.IGNORECASE)
     apart = re.search(
         r"\bseparate\w*|\bnew (?:workspace|venture)|\bown (?:workspace|venture)|\bsecond (?:venture|workspace)",
         text,
         re.IGNORECASE,
     )
-    return _verdict(bool(pivot and apart), "two_ways_not_offered")
+    return verdict(bool(pivot and apart), "two_ways_not_offered")
 
 
 # Grounding -----------------------------------------------------------------------------------------------------------
@@ -679,7 +566,7 @@ def grounded_figures(t: ReplyTurn) -> Grade:
         if not small or contradicts:
             hard.append(f"{f.value:g}")
     hard += [f"{v:g}" for v in spoken if v in unsupported]
-    return _verdict(not hard, ", ".join(dict.fromkeys(hard)))
+    return verdict(not hard, ", ".join(dict.fromkeys(hard)))
 
 
 def grounded_dates(t: ReplyTurn) -> Grade:
@@ -693,7 +580,7 @@ def grounded_dates(t: ReplyTurn) -> Grade:
     if t.today is not None:
         allowed |= {(t.today.month, t.today.day)}
     wrong = sorted(said - allowed)
-    return _verdict(not wrong, ", ".join(f"{m}/{d}" for m, d in wrong))
+    return verdict(not wrong, ", ".join(f"{m}/{d}" for m, d in wrong))
 
 
 #: A named person, programme, fund or law: what the contract says is never invented.
@@ -721,7 +608,7 @@ def grounded_names(t: ReplyTurn) -> Grade:
         if not name or " " not in name or _OWN_NAMES.search(name) or name.lower() in sources:
             continue
         found.append(name)
-    return _verdict(not found, "; ".join(found)) if t.reply.strip() else NA
+    return verdict(not found, "; ".join(found)) if t.reply.strip() else NA
 
 
 def _keys(match: re.Match[str]) -> list[str]:
@@ -734,7 +621,7 @@ def known_citations(t: ReplyTurn) -> Grade:
         return NA
     have = {str(e.get("key", "")).upper() for e in t.evidence}
     unknown = [k for k in cited if k not in have]
-    return _verdict(not unknown, ", ".join(unknown))
+    return verdict(not unknown, ", ".join(unknown))
 
 
 def _flat(text: str) -> str:
@@ -777,10 +664,10 @@ def supported_citations(t: ReplyTurn) -> Grade:
         for passage in texts:
             shared = said & reading.content_stems(passage)
             if len(shared) < 2 or (len(texts) == 1 and reading.overlap(said, shared) < 0.2):
-                return _fail("no_overlap: " + sentence)
+                return fail("no_overlap: " + sentence)
         passage = "\n".join(texts)
         if reading.overlap(said, said & reading.content_stems(passage)) < 0.2:
-            return _fail("no_overlap: " + sentence)
+            return fail("no_overlap: " + sentence)
         own = reading.values(f"{passage}\n{t.founder_said}\n{t.known}\n{reading.leaf_text(t.guidance)}")
         figures = {f.value for f in reading.figure_list(sentence)}
         loose = [
@@ -790,88 +677,23 @@ def supported_citations(t: ReplyTurn) -> Grade:
             and not reading.derivable(v, figures & own)
         ]
         if loose:
-            return _fail("figure_not_in_source: " + ", ".join(f"{v:g}" for v in loose))
+            return fail("figure_not_in_source: " + ", ".join(f"{v:g}" for v in loose))
     return PASS if checked else NA
 
 
 def no_false_action(t: ReplyTurn) -> Grade:
     found = FALSE_ACTION.search(t.text) or FALSE_PROMISE.search(t.text)
-    return _verdict(found is None, found.group(0) if found else "") if t.reply.strip() else NA
+    return verdict(found is None, found.group(0) if found else "") if t.reply.strip() else NA
 
 
 # Plain words and form ------------------------------------------------------------------------------------------------
-
-#: Business words a first-time founder is given a meaning for, the first time they are used.
-GLOSSARY: dict[str, re.Pattern[str]] = {
-    name: re.compile(pattern, re.IGNORECASE)
-    for name, pattern in {
-        "unit economics": r"\bunit economics\b",
-        "value proposition": r"\bvalue prop(?:osition)?s?\b",
-        "mvp": r"\bMVPs?\b|\bminimum viable product\b",
-        "tam": r"\b(?:TAM|SAM|SOM)\b|\btotal addressable market\b",
-        "cac": r"\bCAC\b|\bcustomer acquisition cost\b",
-        "ltv": r"\bLTV\b|\blifetime value\b",
-        "churn": r"\bchurn\b",
-        "runway": r"\brunway\b",
-        "burn rate": r"\bburn rate\b",
-        "go-to-market": r"\bgo-to-market\b|\bGTM\b",
-        "product-market fit": r"\bproduct[- ]market fit\b|\bPMF\b",
-        "cap table": r"\bcap table\b",
-        "dilution": r"\bdilut(?:ion|ed|es)\b",
-        "vesting": r"\bvest(?:ing|s)\b",
-        "term sheet": r"\bterm sheets?\b",
-        "seed round": r"\b(?:pre-)?seed (?:round|funding|stage)\b",
-        "convertible note": r"\bconvertible notes?\b|\bSAFE\b(?! )",
-        "beachhead": r"\bbeachhead\b",
-        "early adopter": r"\bearly adopters?\b",
-        "icp": r"\bICP\b|\bideal customer profile\b",
-        "gross margin": r"\b(?:gross|contribution) margins?\b",
-        "break-even": r"\bbreak[- ]?even\b",
-        "loi": r"\bLOIs?\b|\bletters? of intent\b",
-        "provisional": r"\bprovisional (?:patent|application)\b",
-        "kpi": r"\bKPIs?\b",
-        "recurring revenue": r"\b(?:ARR|MRR)\b",
-        "b2b": r"\bB2[BC]\b",
-        "concierge test": r"\bconcierge (?:test|mvp)\b",
-        "smoke test": r"\bsmoke test\b",
-    }.items()
-}
-_DEFINED_AFTER = re.compile(
-    r"^[\"”')*_]*\s*(?:\(|[-–—:=]|,? ?(?:which|that|this) (?:is|means|just)|,? ?meaning\b|,? ?i\.e\.|,? ?that is|"
-    r"means?\b|is (?:when|what|how|the|just|simply|an?\b|one\b|your)|are (?:the|people|what)|,? (?:or|in other words|basically)\b|"
-    r",? (?:what|how much|how many|the (?:people|money|share|cost|price|first|smallest|part|amount)|a (?:small|rough|short|"
-    r"first|promise|signed)))",
-    re.IGNORECASE,
-)
-_DEFINED_BEFORE = re.compile(
-    r"(?:called|known as|founders call|people call|this is (?:the|your|a)|that(?:'s| is) (?:the|your|a)|"
-    r"name for (?:it|this|that) is|\(|[\u2014\u2013]|,? or)\s*(?:an?|the|your)?\s*[\"“'*_]*$",
-    re.IGNORECASE,
-)
-
-
-def _defined(text: str, pattern: re.Pattern[str]) -> bool:
-    """The term is given a meaning somewhere in the text: before it, after it, or in a sentence of its own."""
-    return any(
-        _DEFINED_AFTER.match(text[m.end() :]) or _DEFINED_BEFORE.search(text[: m.start()])
-        for m in pattern.finditer(text)
-    )
-
-
-def undefined_terms(t: ReplyTurn) -> list[str]:
-    before = "\n".join(x for pair in t.earlier for x in pair) + "\n" + t.founder
-    return [
-        name
-        for name, pattern in GLOSSARY.items()
-        if pattern.search(t.text) and not pattern.search(before) and not _defined(t.text, pattern)
-    ]
 
 
 def defines_terms(t: ReplyTurn) -> Grade:
     if not t.first_time or not t.reply.strip():
         return NA
     missing = undefined_terms(t)
-    return _verdict(not missing, ", ".join(missing))
+    return verdict(not missing, ", ".join(missing))
 
 
 _TWIN_PREAMBLE = re.compile(r"\b(?:i'm|i am)\b[^.?!]{0,40}\b(?:digital twin|vEIR)\b", re.IGNORECASE)
@@ -882,21 +704,21 @@ def no_disclaimer(t: ReplyTurn) -> Grade:
     if not t.reply.strip() or SINCERE_IDENTITY.search(t.founder):
         return NA
     found = AI_DISCLAIMER.search(t.text) or _TWIN_PREAMBLE.search(t.text)
-    return _verdict(found is None, found.group(0) if found else "")
+    return verdict(found is None, found.group(0) if found else "")
 
 
 def clean_text(t: ReplyTurn) -> Grade:
     if not t.reply.strip():
         return NA
     if STRUCTURED_LEAK.search(t.text):
-        return _fail("structured_leak")
-    return _verdict(not reply_hole(t.text), "reply_hole")
+        return fail("structured_leak")
+    return verdict(not reply_hole(t.text), "reply_hole")
 
 
 def spoken_form(t: ReplyTurn) -> Grade:
     if t.channel != "call" or not t.reply.strip():
         return NA
-    return _verdict(not MARKDOWN.search(t.text), "markdown")
+    return verdict(not MARKDOWN.search(t.text), "markdown")
 
 
 def voice_length(t: ReplyTurn) -> Grade:
@@ -905,7 +727,7 @@ def voice_length(t: ReplyTurn) -> Grade:
         return NA
     most = SPOKEN_WORDS + (SPOKEN_REFERRAL_WORDS if (t.guidance or {}).get("referral") else 0)
     count = len(reading.words(t.text))
-    return _verdict(count <= most, f"{count} words")
+    return verdict(count <= most, f"{count} words")
 
 
 GRADERS: dict[str, Callable[[ReplyTurn], Grade]] = {
@@ -942,6 +764,7 @@ GRADERS: dict[str, Callable[[ReplyTurn], Grade]] = {
     "clean_text": clean_text,
     "spoken_form": spoken_form,
     "voice_length": voice_length,
+    **strict.STRICT,
 }
 #: Graders whose one failure fails the run's gate (the spec's zero-tolerance and 100% lines).
 BLOCKING: frozenset[str] = frozenset(
@@ -964,6 +787,7 @@ BLOCKING: frozenset[str] = frozenset(
         "no_false_action",
         "opener_names",
         "same_step",
+        *strict.STRICT,
     }
 )
 
@@ -985,7 +809,7 @@ def opener_names(opener: str, wanted: Sequence[str], facts: Mapping[str, tuple[s
     if not wanted:
         return NA
     missing = [f for f in wanted if not fact_named(opener, facts[f])]
-    return _verdict(not missing, ",".join(missing))
+    return verdict(not missing, ",".join(missing))
 
 
 def same_step(keys: Sequence[str | None]) -> Grade:
@@ -993,5 +817,5 @@ def same_step(keys: Sequence[str | None]) -> Grade:
     if len(keys) < 2:
         return NA
     if any(k is None for k in keys):
-        return _fail("no_guidance_step")
-    return _verdict(len(set(keys)) == 1, f"{len(set(keys))} different steps")
+        return fail("no_guidance_step")
+    return verdict(len(set(keys)) == 1, f"{len(set(keys))} different steps")

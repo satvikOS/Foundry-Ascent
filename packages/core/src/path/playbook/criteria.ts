@@ -83,14 +83,6 @@ export const CRITERIA: readonly PathCriterion[] = [
     playId: 'read-results',
   },
   {
-    id: 'model-canvas',
-    stage: 'business_model',
-    title: 'The Business Model Canvas is ready to submit',
-    evidence:
-      'All nine boxes filled for one customer group, each marked proven or guess, for the Module 1 capstone.',
-    playId: 'ain-canvas-capstone',
-  },
-  {
     id: 'model-price',
     stage: 'business_model',
     title: 'A price has been tried on buyers',
@@ -111,6 +103,14 @@ export const CRITERIA: readonly PathCriterion[] = [
     title: 'You know the money to get going',
     evidence: 'A list of one-time and monthly costs, with the money to reach the next proof point.',
     playId: 'money-to-start',
+  },
+  {
+    id: 'model-canvas',
+    stage: 'business_model',
+    title: 'The Business Model Canvas is ready to submit',
+    evidence:
+      'All nine boxes filled for one customer group, each marked proven or guess, for the Module 1 capstone.',
+    playId: 'ain-canvas-capstone',
   },
   {
     id: 'sales-ten-customers',

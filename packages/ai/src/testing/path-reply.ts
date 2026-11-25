@@ -9,8 +9,8 @@ import { unitsOf, wordsIn } from '../validators/units.js';
 /**
  * For the mock gateway (gateway/mock*.ts): a reply shaped as the path asks, read from the `<path>` block of the turn's
  * system prompt as a model reads it (never from the turn's own objects): the play's answer with its key, one thing the
- * venture's record holds, who decides and what to bring, the step with its day and what done means; asked what it
- * remembers, the record itself. Deterministic.
+ * venture's record holds, who decides and what to bring. Never the step, nor what the reply already opens with: the server
+ * writes those. Deterministic.
  */
 
 function unescapeData(text: string): string {
@@ -23,7 +23,7 @@ function unescapeData(text: string): string {
 
 /** What a `<path>` block says, as far as a reply needs it. */
 export interface PathBlock {
-  readonly kind: 'coaching' | 'report' | 'recall' | 'social' | 'rehearsal' | 'new_idea';
+  readonly kind: 'coaching' | 'report' | 'news' | 'recall' | 'social' | 'rehearsal' | 'new_idea';
   /** The `<who>` brief, line by line. */
   readonly brief: readonly string[];
   readonly firstTime: boolean;
@@ -31,11 +31,11 @@ export interface PathBlock {
   readonly why: string | null;
   readonly evidenceKeys: readonly string[];
   readonly stepTitle: string | null;
-  readonly by: string | null;
-  readonly items: readonly string[];
-  readonly doneWhen: string | null;
-  /** A step that is not about what they asked: said as what stands on their path, or not at all. */
-  readonly stepRole: 'standing' | 'quiet' | null;
+  /** What the reply already opens with. */
+  readonly opens: string | null;
+  /** The one prior fact to build on, and the sums given. */
+  readonly prior: string | null;
+  readonly sums: string | null;
   readonly referral: { readonly who: string; readonly bring: string } | null;
   readonly newIdea: { readonly venture: string; readonly fact: string | null } | null;
   readonly social: boolean;
@@ -53,7 +53,6 @@ export function pathBlockIn(system: string): PathBlock | null {
     return value === undefined ? null : unescapeData(value.trim());
   };
   const who = /<who>\n([\s\S]*?)\n<\/who>/.exec(block)?.[1] ?? '';
-  const step = /<step title=[\s\S]*?<\/step>/.exec(block)?.[0] ?? '';
   const referral = /^<referral>.*?Say who, and what to bring, once: (.+?)\. Bring: (.*?)\. Then help/m.exec(
     block,
   );
@@ -67,30 +66,25 @@ export function pathBlockIn(system: string): PathBlock | null {
         ? 'rehearsal'
         : venture !== null
           ? 'new_idea'
-          : block.includes('they report on their step')
+          : block.includes('They report on their work')
             ? 'report'
-            : block.includes('they ask what you remember')
-              ? 'recall'
-              : 'coaching',
+            : block.includes('They bring news and ask nothing')
+              ? 'news'
+              : block.includes('They ask what you remember')
+                ? 'recall'
+                : 'coaching',
     brief: who
       .split('\n')
       .map((l) => unescapeData(l.trim()))
       .filter((l) => l !== ''),
     firstTime: block.includes('First-time founder:'),
-    answer: of(
-      /^(?:(?:If this is what they asked, s|S)ay this pick first, in your own words|Tell them this first, with its names, figures and dates): (.+)$/m,
-    ),
+    answer: of(/^(?:If this is what they asked, s|S)ay this pick first, in your own words: (.+)$/m),
     why: of(/^Why: (.+)$/m),
     evidenceKeys: (of(/^Cite: \[([^\]]*)\]$/m) ?? '').split(/,\s*/).filter((k) => k !== ''),
     stepTitle: of(/^<step title="([^"]*)"/m),
-    by: of(/^<step title="[^"]*" by="([^"]*)"/m),
-    items: [...step.matchAll(/^\d+\. ([^:\n]+?)(?::.*)?$/gm)].map((m) => unescapeData(m[1] ?? '').trim()),
-    doneWhen: of(/^Done when: (.+)$/m),
-    stepRole: step.includes('as what stands on their path')
-      ? 'standing'
-      : step.includes('do not name it')
-        ? 'quiet'
-        : null,
+    opens: of(/^<opens>(.*)<\/opens>$/m),
+    prior: of(/^<prior>(.*)<\/prior>$/m),
+    sums: of(/^<sums>(.*)<\/sums>$/m),
     referral:
       referral === null
         ? null
@@ -238,8 +232,8 @@ export interface PathReplyOptions {
   readonly question?: string;
 }
 
-/** Words of a spoken reply (the prompt asks for 65). */
-const SPOKEN_WORDS = 68;
+/** Words of a spoken reply (the prompt asks for 45). */
+const SPOKEN_WORDS = 46;
 
 /** Lower-cases a clause's first letter, unless it is a name or an acronym. */
 function asClause(text: string): string {
@@ -257,45 +251,25 @@ export function mockPathReply(
 ): string | null {
   const path = pathBlockIn(system);
   if (path === null || path.social || path.rehearsal) return null;
-  if (path.answer === null && path.stepTitle === null) return null;
+  if (path.answer === null && path.stepTitle === null && path.opens === null) return null;
   const voice = channel === 'voice';
   const recall = path.kind === 'recall';
-  const record = path.answer ?? (recall ? recalled(path, options.told ?? []) : '');
+  const record = path.answer ?? (recall && path.opens === null ? recalled(path, options.told ?? []) : '');
   const told = [recall ? (options.lastTime ?? '') : '', record]
     .filter((t) => t !== '')
     .join(' ')
     .replace(/\s+How: 1\)[\s\S]*$/u, '');
   const key = path.evidenceKeys[0];
-  const answer =
+  const helps =
     told === ''
       ? ''
       : voice
-        ? shortAnswer({ answer: told }, channel, recall)
+        ? shortAnswer({ answer: told }, channel)
         : key === undefined
           ? told
           : withKey(told, key);
-  const idea = path.newIdea;
-  const helps = [
-    idea === null
-      ? ''
-      : `This is a different idea from ${idea.venture}${idea.fact === null ? '' : ` (${withoutStop(idea.fact)})`}. Make it a change of direction for ${idea.venture}, or ask your program lead for a separate workspace.`,
-    answer,
-  ]
-    .filter((p) => p !== '')
-    .join(voice ? ' ' : '\n\n');
-  const title = withoutStop(path.stepTitle ?? '');
-  const day = path.by === null ? '' : ` by ${path.by === 'today' ? 'the end of today' : path.by}`;
-  const named = title !== '' && helps.toLowerCase().includes(title.toLowerCase());
-  const step =
-    title === '' || path.stepRole === 'quiet' || (named && (recall || /\bNext: /u.test(helps)))
-      ? ''
-      : path.stepRole === 'standing'
-        ? `On your path, next is: ${asClause(title)}${day}.`
-        : voice
-          ? `Your next step: ${asClause(title)}${day === '' ? '' : `,${day}`}.`
-          : `Next: ${title}${day}. Done when ${asClause(withoutStop(path.doneWhen ?? 'it is written down'))}.`;
   const asks = options.founderText ?? '';
-  const held = recall ? null : factIn(path, asks, options.told, options.said);
+  const held = recall ? null : (path.prior ?? factIn(path, asks, options.told, options.said));
   const nearest =
     recall || voice ? null : quoteIn(options.evidence ?? [], asks, `${options.said ?? ''} ${helps}`);
   // The shown sentence, when it is nearer what they ask than what the brief holds.
@@ -312,12 +286,15 @@ export function mockPathReply(
             (coverage(stemsOf(fact), stemsOf(`${e.title} ${e.text}`)) >= 0.7 ||
               (stemsOf(e.title).size >= 3 && coverage(stemsOf(e.title), stemsOf(fact)) >= 0.8)),
         ));
-  const first = path.items[0];
   const parts = {
-    opening: options.opening ?? '',
-    report: path.kind === 'report' ? 'Good, that counts as evidence.' : '',
+    opening: path.opens === null ? (options.opening ?? '') : '',
     helps,
-    body: helps === '' ? (options.body ?? '') : '',
+    body:
+      helps !== ''
+        ? ''
+        : path.opens === null
+          ? (options.body ?? '')
+          : 'That is what the next part of your work builds on.',
     fact:
       fact === null
         ? ''
@@ -327,13 +304,11 @@ export function mockPathReply(
         ? ''
         : `That one is for ${asClause(withoutStop(path.referral.who))}. Bring ${asClause(withoutStop(path.referral.bring))}.`,
     note: options.note ?? '',
-    how: helps === '' && first !== undefined && !voice ? `Start with this: ${withoutStop(first)}.` : '',
     meaning: '',
-    step,
-    question: helps === '' ? (options.question ?? '') : '',
+    question: helps === '' && path.opens === null ? (options.question ?? '') : '',
   };
   if (path.firstTime && !voice)
-    parts.meaning = MEANINGS.find(([word]) => word.test(`${helps} ${step}`))?.[1] ?? '';
+    parts.meaning = MEANINGS.find(([word]) => word.test(`${helps} ${path.stepTitle ?? ''}`))?.[1] ?? '';
   if (!voice)
     return Object.values(parts)
       .filter((p) => p !== '')

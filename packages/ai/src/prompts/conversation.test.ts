@@ -312,17 +312,14 @@ describe('how the persona talks', () => {
     );
     // Founder path (2026-11-24): the answer, why, the step, at most one question, in that order.
     const flat = prompt.replace(/\s+/g, ' ');
-    expect(flat).toContain('Every coaching reply gives, in this order: 1. The answer:');
+    expect(flat).toContain('A coaching reply is the answer, in this order: 1. The answer:');
     expect(flat).toContain(
       'Never a question or promise instead, never "before we…"; "it depends" only with the rule that decides it.',
     );
     expect(flat).toContain(
-      "3. The next step: <path>'s, in its own words (no <path>: one small step you choose): what, how, done when, by when.",
+      'The step, its day, its sub-steps and what done means are added under your reply from <path>: never write them.',
     );
-    expect(flat).toContain(
-      '4. At most one question per reply, last, never stacked, only when its answer would change the step.',
-    );
-    expect(flat).toContain('how-to as numbered steps. Last line: "Next: … by <day>. Done when …."');
+    expect(flat).toContain('3. At most one question, last, only when its answer would change the advice.');
     expect(flat).toContain('No headings, report sections or bold labels.');
     expect(prompt).toContain('Be direct: say plainly what you think and why, and name the gap first.');
     // The style's feedback structure is no longer rendered: replies echoed its wording (live pilot 42099643194).
@@ -361,7 +358,7 @@ describe('auto mode', () => {
   it('lets the model choose among the allowed modes and lists their instructions', () => {
     const p = buildSystemPrompt({ ...BASE, mode: 'auto', allowedModes: ['coach', 'diagnose', 'teach'] });
     expect(p).toContain('Mode: AUTO. Silently pick the mode that fits their latest message;');
-    expect(p).toContain('- TEACH (how something works, a goal or step ahead)');
+    expect(p).toContain('- TEACH (how something works)');
     expect(p).toContain(MODE_INSTRUCTIONS.diagnose);
     expect(p).toContain(MODE_INSTRUCTIONS.coach);
     expect(p).toContain(MODE_INSTRUCTIONS.teach);

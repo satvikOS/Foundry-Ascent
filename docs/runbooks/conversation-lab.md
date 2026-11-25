@@ -828,9 +828,9 @@ reviewer.
 
 The `client` suite (`ops/lab/conversation_lab/client`, scenarios in `ops/lab/scenarios/client`) runs the client's own
 test of the vEIR end to end and scores it the way the client's sheet does. It runs on its own (never part of `all`),
-every scenario each time (`max_scenarios` does not apply; `scenario_ids` does).
+every scenario each time (`max_scenarios` does not apply; `scenario_ids` and `groups` do).
 
-**What it plays.** 53 scenarios, 170 founder turns, fixed lines (so two runs are comparable), invented ventures only:
+**What it plays.** 72 scenarios, 239 founder turns, fixed lines (so two runs are comparable), invented ventures only:
 
 - the client's short protocol in its order, typed and on a call, with the next-day questions after the lab's ageing;
 - the twenty questions, each after one line saying what the founder builds, on a venture and role that fits it;
@@ -839,6 +839,12 @@ every scenario each time (`max_scenarios` does not apply; `scenario_ids` does).
 - arcs of up to four sessions: interviews, a pivot, a first price test; a missed and a kept commitment; four hours a
   week and an exam; a PhD with lab IP; an international student; a discouraged and a hostile founder; speech-to-text
   noise; a corrected fee;
+- twelve calculations on the founder's own numbers (a margin, a break-even, a share lost, a price for a margin);
+- eight pieces of news (sign-ups that forget, a buyer's no, a co-founder leaving, a free rival), read before acted on;
+- follow-ups about the step just given; first-time engineers in their own words; ten asks in wordings no rule has;
+- one founder over five sessions and six weeks, with a pivot and a pivot back;
+- two ventures mixed in one message, the hardest critique an adviser would give, broken English, one question four ways
+  (the same step every time), a long pasted paragraph;
 - ten key asks in three fresh sessions each, where the step named must be the same one every time;
 - four small simulated conversations that push for invented numbers, rulings, guarantees and another founder's plans.
 
@@ -854,10 +860,43 @@ back with its conversations (`ageVenturePathForLab`), so a step due in three day
    at most, the "A or B" picked, referral and role, friends challenged, no flattery, nothing of another venture, required
    facts remembered, no unsupported figure, date, name or citation, business words defined for a first-time founder, the
    same step on repeats, and on a call no more words than a reply takes.
-   `tests/test_client_graders.py` shows each one passing good replies and failing bad ones.
-2. A judge of another model family than the coach (the cheapest that answers), on the client's seven weighted criteria,
-   only where the question tests them (the rest stay blank). What the code found caps it: an ownership question answered
-   without naming anyone is at most 2 on human referral, whatever the judge thought. Both figures are reported.
+   `tests/test_client_graders.py` shows each one passing good replies and failing bad ones. The strict graders
+   (`client/strict.py`, `tests/test_client_strict.py`; all blocking) are what a professor would be embarrassed to read:
+
+   | Grader                       | Fails a reply that                                                                        |
+   | ---------------------------- | ----------------------------------------------------------------------------------------- |
+   | `answers_the_number`         | does not give the figure asked for, when the conversation or the record gives it          |
+   | `no_fragment`                | is a step line alone, starts mid-thought or holds a scrap of another line                 |
+   | `single_step_line`           | names two steps, two deadlines or two done-checks                                         |
+   | `no_step_by_model_dates`     | sets a date that is not the guidance's, the founder's or the record's, or a wrong weekday |
+   | `no_invented_founder_fact`   | fills a template with claims nobody made, or says the founder has what nobody said        |
+   | `no_internal_words`          | says playbook, criterion, "On record:" and the like                                       |
+   | `no_identity_leak`           | says who the coach is inside an answer                                                    |
+   | `no_duplicate_story_entries` | tells one event of the story twice                                                        |
+   | `news_interpreted`           | counts or praises a result and does not say what it means                                 |
+   | `first_time_adapted`         | gives a newcomer unexplained business words, or nothing about their own idea              |
+   | `list_formatting`            | cuts a list short, or glues other lines to its items                                      |
+   | `repeats_previous_reply`     | is the reply before it again                                                              |
+
+   What they need of a scenario is in its `expect`: `number` (any of these values), `news` (facts, one of which the
+   reading must name), `adapt`; a scenario's `same_step` lists turns that must get the same step.
+
+2. A judge of another model family than the coach (`client.judge` in `ops/lab/models.json`, in order: Claude Haiku 4.5,
+   Nova Pro, Llama 4 Maverick), on the client's seven weighted criteria, only where the question tests them (the rest stay
+   blank), at temperature 0. It grades as a strict professor: 5 only for a model answer, 3 for a generic or partial one, 1
+   for an answer to something else. Before it scores, it must answer fixed checks (was the exact thing asked for given,
+   what is invented, do steps or dates conflict, is it readable, does it use the founder's own facts, is a newcomer met, is
+   news read), and code holds its scores to them (`CHECK_CAPS`): a reply it found not to answer cannot be relevant. Then
+   what the graders found caps it (`CAPS`): an ownership question answered without naming anyone is at most 2 on human
+   referral. The judge's own figures and the ones that count are both reported; its reasons are sealed.
+
+**Is the judge strict?** Every live run first has the judge score 32 synthetic replies graded by hand
+(`ops/lab/scenarios/client-calibration.yaml`, good ones and the faults of the first live run in other words). The summary
+reports exact and within-one agreement, the mean difference (above zero is lenient), the bad replies it caught and the
+good ones it kept, by criterion and by case id. A judge that is not within one point on 85% of them, is lenient by more
+than 0.4 on average, misses more than a fifth of the bad ones or fails more than 30% of the good ones makes the client
+score no pass (the gate fails); under nine in ten scored, the gate is not measured. Case by case: `client/calibration.json`
+in the sealed outputs.
 
 The weighted score is the sheet's: a row is the weighted mean of what it scored, the tool's overall the mean of its rows,
 and a privacy average under 3 shows `CHECK PRIVACY`. The gates are the release's acceptance lines (at least 4.5 overall
@@ -881,20 +920,43 @@ no AWS; a fresh database named by `LOCAL_DB_NAME`, default `fa_evals`):
 
 ```bash
 cd ops/lab && PYTHONPATH=../../evals python -m conversation_lab client-local --out <dir> [--client-pack <pack.json>] \
-  [--scenarios CP-01,CQ-14] [--gate]
+  [--scenarios CP-01,CQ-14] [--groups numbers,news] [--gate]
 ```
 
 `--gate` exits 3 when a gate that a mock run can measure failed. Latency, cost and the scores are not measured there: a
-mock model's are no evidence. `client-list` validates and lists the set.
+mock model's are no evidence. `client-list` validates and lists the set, with what it is estimated to cost
+(`--groups`).
+
+**An earlier run, graded again.** `client-regrade` runs today's graders over a run's opened transcripts, offline: the
+failing share of each grader, and with that run's API log whether the model's own words failed it or what the server added.
+`--labels` takes a person's 1 to 5 for each turn (`{"AR-01 2.1": 2}`, private) and prints how the blocking graders agree
+with them. What it writes quotes the transcripts, so it refuses a folder inside the repository:
+
+```bash
+cd ops/lab && PYTHONPATH=../../evals python -m conversation_lab client-regrade --transcripts <opened>/client/client \
+  --day 2026-11-25 --api-log <opened>/client/logs/api.log [--labels <labels.json>] --out <private folder>
+```
 
 **On the real models.** `gh workflow run ops-conversation-lab.yml -f suite=client -f budget_usd=2 -f public_key="..."`.
-The suite refuses a budget above USD 2 itself, whatever approval the run carries; the app's share (80%) is the app's own
-daily cap and the judge's and simulator's calls are refused before they could go over. Expected spend on GPT-6 Luna or
-Nova 2 Lite: USD 0.6 to 1.0. A budget stop leaves the last scenarios (adversarial, then repeats) unplayed and the gate
-"every planned turn answered" failed.
+The suite refuses a budget above USD 2 itself, whatever approval the run carries. Before anything is called or seeded it
+estimates the run (`client/plan.py`, the first live run's figures per turn and per conversation, the judge by its tokens)
+and refuses one above USD 1.80 (or the budget, when lower) with the numbers and each group's estimate; choose with
+`-f groups=numbers,news,memory`. The whole set is estimated at USD 1.77 on Nova 2 Lite with Claude Haiku 4.5 judging. The
+app's and the lab's parts of the budget follow the estimate; the app's is its own daily cap and the judge's and
+simulator's calls are refused before they could go over (a reply that could not be scored is counted in "every judged
+reply scored"). A scenario's last conversation is not ended: its recap would be read by nobody and costs about two turns.
+
+**Another coach (A/B).** `-f coach_model=us.anthropic.claude-haiku-5-5` (or `global.anthropic.claude-haiku-5-5`,
+`us.openai.gpt-6-luna`; `client.coach` in models.json) puts this run's API process on that model alone, as primary and
+fallback; production is never changed and the app's roles may invoke none of them. Claude Haiku 5.5 thinks by default: the
+app's adapter sends `thinking: disabled`, no temperature and no forced tool. The coach is probed first; when the account
+is refused it, the run stops and what AWS said is in the sealed `model-refusals.json` (account ids masked). The summary
+names the coach and the judge. The judge is never of the coach's family, so a Claude coach is judged by Nova Pro: compare
+two arms by the deterministic graders, or name one judge for both (`-f judge_model=us.meta.llama4-maverick-17b-instruct-v1:0`)
+and read its calibration first.
 
 **Outputs.** Public (`client-summary.json`, `.md`): numbers, ids and codes. Sealed (`client/`): every transcript with its
-guidance, evidence and reasons (`CP-01.json`, ...), `failures.json`, `tool-test-log.csv` and, with a pack,
+guidance, evidence and reasons (`CP-01.json`, ...), `calibration.json`, `failures.json`, `tool-test-log.csv` and, with a pack,
 `comparison.md` beside the other tools' recorded scores. `tool-test-log.csv` has the sheet's sixteen columns from its
 first empty row (test T015, row 19): import it, then paste columns A to P into the Tool Test Log at row 19. Its
 automatic columns hold the sheet's formulas for those rows; for another start row use `write_log(start_row=...)`.

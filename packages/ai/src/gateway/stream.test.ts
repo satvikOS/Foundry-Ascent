@@ -15,7 +15,7 @@ import { Deadline } from './deadline.js';
 import { ModelRefusalError, ModelUnavailableError, isModelGatewayError } from './errors.js';
 import { LunaProvider } from './luna.js';
 import { MOCK_MODEL_ID, MockModelGateway, mockStreamChunks } from './mock.js';
-import { NovaProvider, SUBMIT_TOOL_NAME, forcesTool, isClaudeModelId } from './nova.js';
+import { NovaProvider, SUBMIT_TOOL_NAME, forcesTool, isClaudeModelId, thinksByDefault } from './nova.js';
 import type { ProviderStreamRequest, ProviderStreamResult, StructuredProvider } from './provider.js';
 import { DEFAULT_MODEL_IDS, createModelGateway } from './router.js';
 import {
@@ -378,6 +378,67 @@ describe('Claude on Converse', () => {
     expect(inputs[0]?.inferenceConfig).toEqual({ maxTokens: 512 });
     expect(inputs[0]?.toolConfig?.toolChoice).toEqual({ auto: {} });
     expect(streamInputs[0]?.inferenceConfig).toEqual({ maxTokens: 400 });
+    // Thinking is set only for a model that thinks by default and can be told not to.
+    expect(inputs[0]?.additionalModelRequestFields).toBeUndefined();
+  });
+
+  it('turns the thinking of Claude Haiku 5.5 off unless an effort is asked for, with no temperature and no forced tool', async () => {
+    expect(thinksByDefault('us.anthropic.claude-haiku-5-5')).toBe(true);
+    expect(thinksByDefault('global.anthropic.claude-haiku-5-5')).toBe(true);
+    for (const other of [
+      'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      'us.anthropic.claude-sonnet-5-5',
+      'us.amazon.nova-2-lite-v1:0',
+      'us.openai.gpt-6-luna',
+    ]) {
+      expect(thinksByDefault(other)).toBe(false);
+    }
+    const ask = async (reasoningEffort?: 'none' | 'low') => {
+      const inputs: ConverseCommandInput[] = [];
+      const streamInputs: ConverseStreamCommandInput[] = [];
+      const provider = new NovaProvider({
+        modelId: 'us.anthropic.claude-haiku-5-5',
+        region: 'us-east-1',
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+        converse: (input) => {
+          inputs.push(structuredClone(input));
+          return Promise.resolve({
+            $metadata: {},
+            output: {
+              message: {
+                role: 'assistant',
+                content: [
+                  { toolUse: { toolUseId: 't1', name: SUBMIT_TOOL_NAME, input: { ...VALID_ANSWER } } },
+                ],
+              },
+            },
+            stopReason: 'tool_use',
+            usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
+            metrics: { latencyMs: 1 },
+          } as ConverseCommandOutput);
+        },
+        converseStream: (input) => {
+          streamInputs.push(structuredClone(input));
+          return Promise.resolve(events([textDelta('Hi.'), stop('end_turn'), metadata]));
+        },
+      });
+      await provider.generate(providerRequest(Answer));
+      await provider.streamText(streamRequest(() => undefined));
+      return { structured: inputs[0], streamed: streamInputs[0] };
+    };
+    for (const effort of [undefined, 'none'] as const) {
+      const { structured, streamed } = await ask(effort);
+      for (const sent of [structured, streamed]) {
+        expect(sent?.additionalModelRequestFields).toEqual({ thinking: { type: 'disabled' } });
+        expect(sent?.inferenceConfig).not.toHaveProperty('temperature');
+      }
+      expect(structured?.toolConfig?.toolChoice).toEqual({ auto: {} });
+    }
+    const low = await ask('low');
+    expect(low.streamed?.additionalModelRequestFields).toEqual({
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'low' },
+    });
   });
 });
 

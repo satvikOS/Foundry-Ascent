@@ -106,12 +106,12 @@ describe('streamed-turn prompts', () => {
 
   it('writes a call reply as speech that hands the turn back, never as a cut-down written answer', () => {
     const voice = answerSystemPrompt(SYSTEM, { channel: 'voice', mode: 'coach', allowedModes: ['coach'] });
-    // The reply contract on a call (founder path, 2026-11-24): the answer first, the step last.
+    // The reply contract on a call (founder path, 2026-11-24): the answer first; the step is said after it.
     expect(voice).toContain(
       'Write it as speech: short sentences with contractions, a short first sentence that is the answer',
     );
-    expect(voice).toContain('then the next step and by when in one sentence');
-    expect(voice).toContain('A question only if its answer would change the step, last');
+    expect(voice).toContain('then one reason. The next step of <path> is said after it: never say one.');
+    expect(voice).toContain('A question only if its answer would change the advice, last');
     expect(voice).toContain('caveats or labels read out');
     // The general "a reply need not end with a question" is for typed replies only.
     expect(voice).not.toContain('need not end');

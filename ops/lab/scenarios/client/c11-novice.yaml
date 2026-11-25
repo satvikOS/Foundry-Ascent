@@ -1,0 +1,67 @@
+# First-time engineers in their own words: plain answers on their own idea, every business word explained.
+group: novice
+scenarios:
+  - id: NV-01
+    title: a computer engineer with no business background
+    role: undergrad
+    founder: Tobias Lindqvist
+    studies: senior in computer engineering
+    first_time: true
+    venture:
+      {
+        name: FaultFinch,
+        oneLiner: Listens to elevators and warns before they stop.,
+        stage: discovery,
+        domain: hardware,
+        goal: Find out who would pay for a warning.,
+      }
+    facts: { elevators: [elevator*, lift*, building*], engineer: [engineer*, sensor*, signal*, debug*] }
+    passing: Business is explained through engineering (test, input, output, fault), one thing at a time, on elevators.
+    sessions:
+      - turns:
+          - {
+              say: "First company for me. I'm a computer engineer and I have zero business background. What does a founder actually do all day?",
+              expect: { adapt: true, history: [elevators, engineer] },
+              judge: [relevance, ease],
+            }
+          - {
+              say: 'You lost me. What is a customer segment, in engineer terms?',
+              expect: { adapt: true, history: [elevators, engineer] },
+            }
+          - {
+              say: 'Right. So what is the first experiment I run?',
+              expect: { adapt: true, history: [elevators] },
+              judge: [relevance, actionability],
+            }
+  - id: NV-02
+    title: a chemical engineer who wants the business explained
+    role: grad
+    founder: Samira Nouri
+    studies: master's student in chemical engineering
+    first_time: true
+    venture:
+      {
+        name: BrineBack,
+        oneLiner: Recovers salt from cheese makers' waste water.,
+        stage: idea,
+        domain: energy,
+        goal: Know whether a cheese maker would pay.,
+      }
+    facts: { cheese: [cheese*, dair*, maker*], salt: [salt, brine, water] }
+    passing: A money question is answered in plain words on salt and cheese makers, with no unexplained term.
+    sessions:
+      - turns:
+          - {
+              say: "I can run the process, but I'm new to business and I don't understand the money side. How do people like me set a price?",
+              expect: { adapt: true, history: [cheese, salt] },
+              judge: [relevance, ease],
+            }
+          - {
+              say: 'Is a pilot the same as a sale?',
+              expect: { adapt: true, pick: ['no', 'yes', paid, free] },
+            }
+          - {
+              say: 'Okay. Give me one thing to do before Monday that a chemist can do.',
+              expect: { adapt: true, history: [cheese, salt] },
+              judge: [actionability, ease],
+            }

@@ -1130,7 +1130,7 @@ STRUCTURED_LEAK = re.compile(
 #: A numbered list item, a bullet, and a reply whose last line announces something and stops.
 _LIST_ITEM = re.compile(r"(?m)^\s*(\d{1,2})[.)]\s+\S")
 _ANY_ITEM = re.compile(
-    r"(?m)^\s*(?:[-*+•]|\d{1,2}[.)]|(?:one|two|three|four|five|six|first|second|third|fourth|"
+    r"(?m)^\s*(?:[-+•]|\*(?!\*)|\d{1,2}[.)]|(?:one|two|three|four|five|six|first|second|third|fourth|"
     r"fifth|sixth)\s*[:.)-])\s*\S",
     re.IGNORECASE,
 )

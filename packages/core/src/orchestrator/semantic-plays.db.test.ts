@@ -40,7 +40,7 @@ const SHORT = 'A figure for the sticker?';
 const MEANS: Readonly<Record<string, readonly number[]>> = {
   [STICKER]: vector({ 'price-it': 0.95, 'unit-economics': 0.2 }),
   [SHORT]: vector({ 'price-it': 0.95, 'unit-economics': 0.2 }),
-  [LAWYERLY]: vector({ 'who-owns-it': 0.55, 'price-it': 0.2 }),
+  [LAWYERLY]: vector({ 'who-owns-it': 0.37, 'price-it': 0.2 }),
   [UNSURE]: vector({ 'price-it': 0.3, 'unit-economics': 0.29 }),
 };
 
@@ -249,9 +249,9 @@ describe('a question nothing of the program answers', () => {
       expect(run.guidance[0]?.step, text).not.toBeNull();
       said.push(run.turn.response?.answer ?? '');
     }
-    const standing = said.map((answer) => answer.includes('On your path, next is: '));
+    const standing = said.map((answer) => answer.includes('**On your path, next is:** '));
     expect(standing).toEqual([true, false, false, true]);
-    for (const answer of said) expect(answer).not.toMatch(/^Next: |\nNext: |Done when/);
+    for (const answer of said) expect(answer).not.toMatch(/Next:\*{0,2} |Done when/);
     for (const answer of said) expect(answer.split(/On your path/)[0]?.trim()).not.toBe('');
   });
 });

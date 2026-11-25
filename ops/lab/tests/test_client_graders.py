@@ -13,6 +13,7 @@ from conversation_lab.client import graders as g
 from conversation_lab.client import reading
 from conversation_lab.client.graders import GRADERS, ReplyTurn, grade_turn, opener_names, same_step
 from conversation_lab.client.scenarios import Expect
+from conversation_lab.client.strict import STRICT
 
 STEP: dict[str, Any] = {
     "id": "0b7a2c3e-58a6-4b7e-9c1a-2f6f1d6f0a11",
@@ -544,7 +545,9 @@ CASES: dict[str, tuple[list[ReplyTurn], list[ReplyTurn]]] = {
 
 
 def test_every_grader_has_a_good_and_a_bad_reply() -> None:
-    assert set(CASES) == set(GRADERS)
+    # The strict graders' cases are in test_client_strict.py.
+    assert set(CASES) | set(STRICT) == set(GRADERS)
+    assert not set(CASES) & set(STRICT)
     assert all(good and bad for good, bad in CASES.values())
 
 

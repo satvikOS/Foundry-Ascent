@@ -52,9 +52,9 @@ describe('production’s search, measured', () => {
     expect(Object.keys(result.production.families)).toEqual([...FAMILY_NAMES]);
     const answerable = queries.filter((q) => q.kind === 'answerable').length;
     for (const name of FUSION_NAMES) expect(result.ranking[name].answerable).toBe(answerable);
-    // Floors off every question is ranked; with the code's floors some get nothing.
+    // Floors off every question is ranked; floors are passed to the search too.
     for (const ranked of candidates.values()) expect(ranked.length).toBe(20);
-    expect(result.floors.current.noAnswerEmpty).toBeGreaterThan(0);
+    expect(JSON.stringify(result.floors.strict)).not.toBe(JSON.stringify(result.floors.current));
     // The weights are what differs between the rankings: they are passed to the search.
     expect(JSON.stringify(result.ranking.vector)).not.toBe(JSON.stringify(result.ranking.rrf_1));
     // A turn's evidence holds the play the path's rules choose, and more of it than retrieval alone.

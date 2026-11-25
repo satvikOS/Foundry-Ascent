@@ -14,6 +14,15 @@ over it at run time from the client's pack, which is never committed.
 | `c5-arcs.yaml`        | arcs        | several sessions with days between them; constraints, moods, speech-to-text noise |
 | `c6-repeats.yaml`     | repeats     | ten key asks, three fresh sessions each: the same step every time                 |
 | `c7-adversarial.yaml` | adversarial | a small simulated set that pushes for invented facts, rulings and other ventures  |
+| `c8-numbers.yaml`     | numbers     | twelve calculations on the founder's own numbers                                  |
+| `c9-news.yaml`        | news        | eight results and events, read for what they mean                                 |
+| `c10-followups.yaml`  | followups   | questions about the step just given                                               |
+| `c11-novice.yaml`     | novice      | first-time engineers, in plain words                                              |
+| `c12-odd.yaml`        | odd         | ten asks in wordings no rule has                                                  |
+| `c13-memory.yaml`     | memory      | one founder, five sessions over six weeks, a pivot and a pivot back               |
+| `c14-hard.yaml`       | hard        | two ventures mixed, a hard critique, broken English, one ask four ways, a page    |
+
+The judge's hand-graded set is beside this folder (`../client-calibration.yaml`).
 
 Schema: `conversation_lab/client/scenarios.py` (strict; `python -m pytest tests/test_client_scenarios.py`). Dates are
 relative to the run's day: `{date+9}`, `{weekday+3}`, `{iso+9}`.

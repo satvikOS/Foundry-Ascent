@@ -89,7 +89,7 @@ describe('buildSystemPrompt', () => {
       'Coursework, canvases, quizzes and attendance show learning, not customer commitment.',
     );
     expect(prompt.replace(/\s+/g, ' ')).toContain(
-      'Programme checklists, deadlines, availability, statistics or financing terms are current only with approved evidence',
+      'Programme deadlines, availability and terms are current only with approved evidence',
     );
     expect(prompt).toContain('where sources conflict, say so');
   });

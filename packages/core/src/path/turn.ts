@@ -1,4 +1,4 @@
-import { type PromptContinuity } from '@foundry/ai';
+import { termsIn, withMeanings, type PromptContinuity } from '@foundry/ai';
 import { type EvidenceItem, type Play, type TurnGuidance } from '@foundry/contracts';
 import { type pathRepo } from '@foundry/db';
 
@@ -7,13 +7,12 @@ import {
   arcOf,
   briefOf,
   dayOf,
-  factOf,
   firstSentence,
   isReference,
   standingDecisions,
   type BriefSource,
 } from './brief.js';
-import { monthDay, sayDue } from './dates.js';
+import { sayDue, sayPast } from './dates.js';
 import {
   concreteFact,
   decide,
@@ -23,8 +22,26 @@ import {
   type DecideInput,
   type Decision,
 } from './engine.js';
-import { meaningWords, refersBack } from './match.js';
+import { asksFor } from './kinds.js';
+import { doneWhenOf } from './steps.js';
+import { meaningWords, pointsBack, refersBack } from './match.js';
+import { readResult } from './news.js';
+import { CRITERION_NAMES, STAGE_DOING } from './playbook/phrases.js';
+import {
+  bare,
+  dated,
+  distinct,
+  listed,
+  lowerFirst,
+  priorFact,
+  sameThing,
+  storyLines,
+  toYou,
+  toldAs,
+  upperFirst,
+} from './tell.js';
 import { type Playbook } from './types.js';
+import { wordsOfEvidence } from './state.js';
 import { contentStems, numberOf, plain } from './words.js';
 
 /** The path of one turn: what was decided, what is kept with the turn, and what the prompt is given. */
@@ -127,13 +144,20 @@ export function pathTurn(input: PathTurnInput): PathTurn {
 
 /** Replies since a standing step was said before it may be said again: once in three turns. */
 const STANDING_EVERY = 3;
+/** "… help?" at the end of what they tell. */
+const BARE_HELP = /[,.!;:\s]+(?:(?:please|pls|can you|could you)\s+)?help(?:\s+me)?(?:\s+please)?\s*[?.!]*$/i;
 /** Words of its own a follow-up has at most ("just give me your best estimate"). */
 const FOLLOW_UP_WORDS = 3;
 
 /** How what they asked was found, as the prompt and the reply contract take it: what is only near it may be set aside. */
-function matchedOf(decision: Decision, asked: Ask): NonNullable<PathPromptGuidance['matched']> {
+function matchedOf(
+  decision: Decision,
+  asked: Ask,
+  answered: boolean,
+): NonNullable<PathPromptGuidance['matched']> {
   if (decision.matched === 'semantic' || decision.matched === 'lexical') return 'semantic';
-  return decision.matched === null && asked === null ? 'none' : 'phrase';
+  if (decision.kind === 'recall') return 'phrase';
+  return decision.matched === null && asked === null && !answered ? 'none' : 'phrase';
 }
 
 /**
@@ -148,6 +172,10 @@ function stepRoleOf(
 ): PathPromptGuidance['stepRole'] {
   const { step } = decision;
   if (matched !== 'none' || decision.kind !== 'coaching' || step === null) return undefined;
+  // They tell, and ask nothing but help: what comes next is the step.
+  if (decision.idea !== null) return undefined;
+  const asks = input.message.replace(BARE_HELP, '.');
+  if (!asksFor(asks) && !pointsBack(input.message)) return undefined;
   // A follow-up is about what was just said, in few words of its own or pointing back at it.
   if (decision.carried && (refersBack(input.message) || meaningWords(input.message) <= FOLLOW_UP_WORDS))
     return undefined;
@@ -167,14 +195,41 @@ function stepRoleOf(
 }
 
 function promptOf(input: PathTurnInput, decision: Decision): PathPromptGuidance {
-  const { step, choice, pathStep } = decision;
-  const asked = askOf(input, decision);
-  const matched = matchedOf(decision, asked);
-  const stepRole = stepRoleOf(input, decision, matched);
+  const { step, choice, pathStep, calc } = decision;
+  // Who has not said they know the words is told what one means, the first time it is used.
+  const terms = ['experienced', 'some'].includes(input.reads.path?.intake?.experience ?? '')
+    ? null
+    : termsIn([...input.earlierMessages, input.message, ...(input.earlierReplies ?? [])].join('\n'));
+  const plainLead = leadOf(input, decision);
+  const lead =
+    plainLead === null || terms === null
+      ? plainLead
+      : {
+          text: withMeanings(plainLead.text, new Set(terms)),
+          voice: withMeanings(plainLead.voice, new Set(terms), true),
+        };
+  // A step cut to one part is said as that part.
+  const doing = step?.view.items.filter((i) => !i.done) ?? [];
+  const title =
+    doing.length === 1 && ONE_PART.test(step?.view.doneWhen ?? '')
+      ? bare(doing[0]?.do ?? '')
+      : (step?.view.title ?? '');
+  const saidTitle =
+    step === null || terms === null
+      ? title
+      : withMeanings(title, new Set([...terms, ...termsIn(lead?.text ?? '')]));
+  const asked = askOf(input, decision, lead);
+  const matched = matchedOf(decision, asked, lead !== null);
+  // A sum is no answer of the step's: a step that is not about it still only stands on their path.
+  const stepRole =
+    lead === null || decision.calc.ask !== null ? stepRoleOf(input, decision, matched) : undefined;
+  const facts = templateFacts(input, decision);
+  const kind = decision.kind === 'crisis' ? 'coaching' : decision.kind;
+  const talks = kind !== 'social' && kind !== 'rehearsal';
   return {
     matched,
     ...(stepRole === undefined ? {} : { stepRole }),
-    kind: decision.kind === 'crisis' ? 'coaching' : decision.kind,
+    kind,
     brief: briefOf(
       briefSource(input, decision),
       choice.length > 0
@@ -187,18 +242,29 @@ function promptOf(input: PathTurnInput, decision: Decision): PathPromptGuidance 
       count: decision.stageCount,
     },
     firstTime: decision.firstTime,
+    ...(talks && decision.firstTimeNow ? { firstTimeNow: true } : {}),
     ask: asked,
+    ...(lead === null ? {} : { lead }),
+    ...(talks && calc.lines.length > 0 ? { calc: calc.lines } : {}),
+    ...(talks && calc.missing !== null ? { askBack: calc.missing } : {}),
+    ...(talks ? { prior: priorOf(input, decision, lead) } : {}),
+    ...(talks ? { said: saidText(input, decision) } : {}),
+    ...(decision.howTo ? { howTo: true } : {}),
     step:
       step === null
         ? null
         : {
             title: step.view.title,
+            ...(saidTitle === step.view.title ? {} : { said: saidTitle }),
             items: step.view.items
               .filter((i) => !i.done)
               .map((i) => ({ do: i.do, how: i.how, minutes: i.minutes })),
-            doneWhen: step.view.doneWhen,
+            doneWhen: doneSaid(step.view.doneWhen),
             dueOn: step.view.dueOn,
-            template: step.view.template,
+            template:
+              step.view.template === null
+                ? null
+                : { title: step.view.template.title, body: fillTemplate(step.view.template.body, facts) },
           },
     pathStep: pathStep === null ? null : { title: pathStep.title, dueOn: pathStep.dueOn },
     then: decision.then.map((s) => s.title),
@@ -213,7 +279,20 @@ function promptOf(input: PathTurnInput, decision: Decision): PathPromptGuidance 
   };
 }
 
+const ONE_PART = /^This one part is done: (.+?)[.\s]*$/;
+
+/** When a step cut to one part is done, said so it can be checked ("You have emailed one of the five theatre groups…"). */
+function doneSaid(doneWhen: string): string {
+  const part = ONE_PART.exec(doneWhen)?.[1];
+  if (part === undefined) return doneWhen;
+  const minutes = /^first (\d+) minutes of: (.+)$/i.exec(part);
+  return minutes === null
+    ? doneWhenOf(part.replace(/^the first part of: /i, ''))
+    : `You have spent ${minutes[1] ?? ''} minutes on it and kept what you made.`;
+}
+
 type Ask = PathPromptGuidance['ask'];
+type Lead = NonNullable<PathPromptGuidance['lead']>;
 
 const ask = (title: string, answer: string, why: string, traps: readonly string[] = []): Ask => ({
   title,
@@ -222,65 +301,365 @@ const ask = (title: string, answer: string, why: string, traps: readonly string[
   traps,
   evidenceKeys: [],
 });
-const bare = (text: string): string => text.replace(/[\s.!?;]+$/u, '').trim();
-const lowerFirst = (text: string): string =>
-  /^[A-Z][a-z]/.test(text) ? `${text.charAt(0).toLowerCase()}${text.slice(1)}` : text;
-/** A step with its day, as the record says it. */
-const withDay = (input: PathTurnInput, title: string, dueOn: string | null): string =>
-  dueOn === null ? bare(title) : `${bare(title)}, due ${sayDue(input.today, dueOn)}`;
+const flat = (text: string): string => text.replace(/[ \t]+/g, ' ').trim();
+const sentence = (text: string): string => (text === '' ? '' : `${upperFirst(bare(text))}.`);
+const joined = (...parts: readonly string[]): string => flat(parts.filter((p) => p !== '').join(' '));
 
-/** What the reply must say first, from the program and the record: whatever the turn is. */
-function askOf(input: PathTurnInput, decision: Decision): Ask {
-  const { play, kind } = decision;
+// What the server says first ---------------------------------------------------------------------------------------
+
+/**
+ * What must be exact and comes first, whatever the model writes after it: their sum, what their news means, where they
+ * stand, what is on record, what a change of direction changes. Null: the model's own answer opens the reply.
+ */
+function leadOf(input: PathTurnInput, decision: Decision): Lead | null {
+  const { kind } = decision;
   if (kind === 'social' || kind === 'rehearsal' || kind === 'crisis') return null;
-  if (kind === 'recall') return recallAsk(input, decision);
-  if (decision.pivot !== null) return pivotAsk(decision, decision.pivot);
+  const sum =
+    decision.calc.ask !== null && decision.calc.lines.length > 0 ? sumLead(decision.calc.lines) : null;
+  if (kind === 'recall') return sum ?? recallLead(input, decision);
+  if (kind === 'new_idea') return null;
+  if (decision.pivot !== null) return pivotLead(input, decision.pivot);
+  if (sum !== null) return sum;
+  if (decision.result !== null) return resultLead(input, decision.result);
+  if (kind === 'news')
+    return decision.news === null ? null : { text: decision.news.means, voice: decision.news.spoken };
+  if (kind === 'report') return reportLead(decision);
+  if (decision.overview && decision.play === null) return overviewLead(input, decision);
+  return null;
+}
+
+/** A sum as it is heard ("40 boxes times $3.50 left per box is $140"). */
+export function heardSum(line: string): string {
+  return line
+    .replace(/ x /g, ' times ')
+    .replace(/ \/ /g, ' divided by ')
+    .replace(/ = -/g, ' is minus ')
+    .replace(/ = /g, ' is ')
+    .replace(/ - /g, ' minus ');
+}
+
+function sumLead(lines: readonly string[]): Lead {
+  return { text: lines.join(' '), voice: lines.slice(0, 2).map(heardSum).join(' ') };
+}
+
+function resultLead(input: PathTurnInput, result: NonNullable<Decision['result']>): Lead {
+  const read = readResult(result, [...input.earlierMessages, ...input.reads.memory.map((m) => m.content)]);
+  return { text: read.text, voice: read.spoken };
+}
+
+const nameOf = (c: { readonly id: string; readonly title: string }): string =>
+  CRITERION_NAMES[c.id] ?? lowerFirst(bare(c.title));
+
+/** The same without its own count ("customer talks"). */
+const countedName = (c: { readonly id: string; readonly title: string }): string =>
+  nameOf(c).replace(/^(?:ten|five|three|twenty|\d+) /i, '');
+
+/** Where they stand and what is missing, said by a mentor: the answer to "get me organized". */
+function overviewLead(input: PathTurnInput, decision: Decision): Lead {
+  const { state, missing, step, then } = decision;
+  const name = bare(input.venture.name);
+  const fact = concreteFact(input.reads.memory);
+  const have = state.criteria
+    .filter((c) => c.status !== 'open' && (c.by === 'path' || c.by === 'record'))
+    .slice(-3)
+    .map((c) => nameOf(c.criterion));
+  const first = step?.view.items.find((i) => !i.done);
+  const stage = `You are on stage ${String(state.stageIndex + 1)} of ${String(decision.stageCount)}${name === '' ? '' : ` with ${name}`}, ${STAGE_DOING[state.stage]}.`;
+  const misses = missing.length > 0 ? `Still missing: ${listed(missing.map(nameOf))}.` : '';
+  const starts = first === undefined ? '' : `Start with this: ${lowerFirst(bare(first.do))}.`;
+  const opens = decision.firstTimeNow ? 'Never having done this is fine: we take it one part at a time.' : '';
+  const plan =
+    asksForPlan(input.message) && step !== null ? `\n\n${planLines(input, decision).join('\n')}` : '';
+  // Where they stand was just said: only where to start, with how.
+  if ((input.earlierReplies ?? []).slice(-2).some((r) => r.includes(stage))) {
+    const how = first === undefined || first.how === '' ? '' : sentence(first.how);
+    return {
+      text: `${joined(opens, plan === '' ? `${starts} ${how}` : 'In this order:')}${plan}`,
+      voice: joined(
+        opens === '' ? '' : 'First time is fine.',
+        starts,
+        plan === '' || then.length === 0 ? how : `Then ${lowerFirst(bare(then[0]?.title ?? ''))}.`,
+      ),
+    };
+  }
+  return {
+    text: `${joined(
+      opens,
+      stage,
+      have.length > 0 ? `You already have ${listed(have)}.` : '',
+      fact === null ? '' : `What you know so far: ${fact}.`,
+      misses,
+      plan === '' ? starts : 'In this order:',
+    )}${plan}`,
+    voice: joined(
+      opens === '' ? '' : 'First time is fine.',
+      stage,
+      missing.length > 0 ? `Still missing: ${listed(missing.slice(0, 2).map(nameOf))}.` : '',
+      plan === '' || then.length === 0 ? starts : `${starts} Then ${lowerFirst(bare(then[0]?.title ?? ''))}.`,
+    ),
+  };
+}
+
+const PLAN_ASKED = /\b(?:plan|road ?map|schedule|to ?do list|checklist|steps)\b/;
+const asksForPlan = (message: string): boolean => PLAN_ASKED.test(plain(message));
+
+/** The open step's parts and what follows, as a numbered list. */
+function planLines(input: PathTurnInput, decision: Decision): string[] {
+  const { step, then } = decision;
+  if (step === null) return [];
+  const items = step.view.items
+    .filter((i) => !i.done)
+    .map((i) => `${bare(i.do)}${i.minutes === null ? '' : ` (${String(i.minutes)} min)`}.`);
+  const by = step.view.dueOn === null ? '' : ` by ${sayDue(input.today, step.view.dueOn)}`;
+  const own = items.length === 0 ? [`${bare(step.view.title)}${by}.`] : items;
+  return [...own, ...then.map((t) => `Then: ${lowerFirst(bare(t.title))}.`)].map(
+    (l, i) => `${String(i + 1)}. ${l}`,
+  );
+}
+
+/** What a report changed, as a mentor says it: how far it gets them, and what it shows. */
+function reportLead(decision: Decision): Lead | null {
+  const { completes, work, news } = decision;
+  const parts: string[] = [];
+  for (const w of work)
+    if (w.progress !== null) {
+      const left = w.progress.of - w.progress.done;
+      parts.push(
+        `That is ${String(w.progress.done)} of the ${String(w.progress.of)} ${countedName(w.criterion)}, ${String(left)} to go.`,
+      );
+    }
+  const shows = work.filter((w) => w.progress === null).map((w) => nameOf(w.criterion));
+  if (shows.length > 0) parts.push(`So you now have ${listed(shows)}.`);
+  if (completes !== null && parts.length === 0 && news === null)
+    parts.push(
+      completes.rest === null
+        ? `That finishes it: ${lowerFirst(bare(completes.step.title))}.`
+        : 'That part is done, and the rest of it comes next.',
+    );
+  if (decision.applied?.stage != null)
+    parts.push(
+      `That puts you on stage ${String(decision.state.stageIndex + 1)}, ${STAGE_DOING[decision.state.stage]}.`,
+    );
+  if (news === null && parts.length === 0) return null;
+  return {
+    text: joined(news?.means ?? '', ...parts),
+    voice: joined(news?.spoken ?? '', ...(news === null ? parts : parts.slice(0, 1))),
+  };
+}
+
+/** A new direction without what it ends ("No more lunches, I'll rent jars" → "I'll rent jars"). */
+const startsNew = (to: string): string =>
+  to.replace(
+    /^(?:no more|no longer|not|stop\w*(?: \w+ing)?) [^,.;]{2,60}[,.;]\s*(?:but |and |now |instead )?/i,
+    '',
+  );
+
+/** A change of direction: what the idea is from today, what brought it, and what has to be shown again. */
+function pivotLead(input: PathTurnInput, pivot: AppliedPivot): Lead {
+  const reopened = pivot.reopened.slice(0, 3).map(nameOf);
+  const to = toYou(bare(startsNew(bare(pivot.to))));
+  const now = /^you\b/i.test(to)
+    ? `From today ${lowerFirst(to)}.`
+    : `From today the idea is ${lowerFirst(to)}.`;
+  const from =
+    pivot.from === ''
+      ? ''
+      : `The first idea (${lowerFirst(shortOf(toYou(pivot.from)))}) stays in your story.`;
+  const reason = [...input.reads.criteria]
+    .filter((c) => c.evidence !== null && c.sourceSessionId !== null)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .map((c) => lowerFirst(toYou(bare(wordsOfEvidence(c.evidence ?? '')))))
+    .find((t) => t !== '' && t.length <= 200);
+  const why = reason === undefined ? '' : `What brought you here stays true: ${reason}.`;
+  const again =
+    reopened.length === 0
+      ? 'You had shown nothing about the old customer yet, so nothing is lost.'
+      : `What you showed was about the old customer, so you show it again for the new one: ${listed(reopened)}.`;
+  return { text: joined(now, from, why, again), voice: joined(now, again) };
+}
+
+const shortOf = (text: string): string =>
+  text.length <= 120 ? bare(text) : `${bare(text.slice(0, 117))}...`;
+
+/** The idea in their own words: what they just said, what is kept, else what the venture's record calls it. */
+function ideaOf(input: PathTurnInput, decision: Decision): string | null {
+  const kept = decision.idea ?? (input.reads.path?.intake?.idea ?? '').trim();
+  if (kept !== '') return bare(kept);
+  const line = input.venture.oneLiner.trim();
+  return line === '' ? null : bare(line);
+}
+
+const STORY =
+  /\bhow (?:we|i) got (?:here|to (?:this|where))\b|\bfrom the (?:start|beginning)\b|\b(?:whole|full|entire) (?:story|history|journey)\b|\bour (?:story|history|journey)\b/;
+
+/** How they got here, from the record's own dated entries, as a story. */
+function storyLead(input: PathTurnInput, decision: Decision): Lead | null {
+  const lines = storyLines(arcOf(briefSource(input, decision)));
+  const first = (input.reads.path?.pivots ?? []).find((x) => x.from !== '')?.from;
+  const start = first ?? ideaOf(input, decision);
+  const opens = start === null ? '' : `You started with this idea: ${lowerFirst(shortOf(toYou(start)))}.`;
+  if (opens === '' && lines.length === 0) return null;
+  return {
+    text: [opens, ...lines.map((l) => `- ${dated(l)}`)].filter((l) => l !== '').join('\n'),
+    voice: joined(opens, ...lines.slice(-3).map(dated)),
+  };
+}
+
+const ASKS_IDEA = /\b(?:idea|startup|venture|business|company|product)\b/;
+const ASKS_LAST =
+  /\b(?:last|talk|talked|discuss|discussed|speak|spoke|session|call|yesterday|cover|covered|leave off|left off|agree|agreed|said|say)\b/;
+const ASKS_DECIDED =
+  /\b(?:decide|decided|decision|agree|agreed|pivot|plan|change|changes|changed|direction)\b/;
+const ASKS_TODO =
+  /\b(?:something to do|anything to do|supposed to|going to do|meant to|tell me to do|to do next|next|plan|decide|decided|agree|agreed)\b/;
+
+/** What is on record, as they asked for it: the idea, what was decided and when, what they told, the step they have. */
+function recallLead(input: PathTurnInput, decision: Decision): Lead | null {
+  const said = plain(input.message);
+  if (STORY.test(said)) return storyLead(input, decision);
+  const name = bare(input.venture.name);
+  const idea = ideaOf(input, decision);
+  const asksIdea = ASKS_IDEA.test(said);
+  const asksLast = ASKS_LAST.test(said);
+  const asksDecided = ASKS_DECIDED.test(said);
+  const asksTodo = ASKS_TODO.test(said);
+  const standing = new Set(standingDecisions(input.reads.memory).map((m) => m.id));
+  const told = input.reads.memory.filter(
+    (m) => m.status === 'confirmed' && !isReference(m) && (m.type !== 'decision' || standing.has(m.id)),
+  );
+  // What they ask about, by its own words ("what's my fee?").
+  const about = new Set(contentStems(input.message).filter((w) => !GENERIC_ASK.has(w)));
+  const facts = distinct(
+    told
+      .filter((m) => m.type !== 'decision' || !asksDecided)
+      .map((m) => ({
+        m,
+        shared: contentStems(`${m.title}. ${m.content}`).filter((w) => about.has(w)).length,
+      }))
+      .filter((x) => x.shared > 0)
+      .sort((a, b) => b.shared - a.shared || b.m.createdAt.localeCompare(a.m.createdAt))
+      .map((x) => toldAs(x.m)),
+    (t) => t,
+  ).slice(0, 2);
+  const parts: string[] = [];
+  const general = !asksLast && !asksDecided && !asksTodo && !asksIdea && facts.length === 0;
+  if (idea !== null && (asksIdea || general))
+    parts.push(
+      `Your idea is ${name === '' || idea.toLowerCase().startsWith(name.toLowerCase()) ? '' : `${name}: `}${lowerFirst(toYou(idea))}.`,
+    );
+  const latest = (input.reads.path?.pivots ?? []).filter((p) => p.to !== '').at(-1);
+  if (latest !== undefined && (asksDecided || asksLast || general)) {
+    const to = toYou(bare(latest.to));
+    parts.push(
+      `${upperFirst(sayPast(input.today, latest.on))} you changed direction${latest.from === '' ? '' : `, from ${lowerFirst(shortOf(toYou(latest.from)))}`}: ${lowerFirst(to)}.`,
+    );
+  }
+  for (const f of facts) parts.push(sentence(f));
+  if (asksDecided || asksLast || general) {
+    const decided = standingDecisions(input.reads.memory)
+      .filter((m) => latest === undefined || !sameThing(toldAs(m), `${latest.to} ${latest.from}`, 0.5))
+      .slice(0, 2);
+    for (const m of distinct(decided, toldAs)) {
+      const what = toldAs(m);
+      parts.push(
+        `${upperFirst(sayPast(input.today, dayOf(m, 'decided_on')))} ${/^you\b/.test(what) ? what : `you decided: ${what}`}.`,
+      );
+    }
+  }
+  const last = (input.continuity.recentDigests ?? [])[0];
+  if (last !== undefined && last.digest.summary.trim() !== '' && asksLast) {
+    const first = input.continuity.founderFirstName ?? '';
+    const summary = firstSentence(last.digest.summary).replace(/…$/u, '');
+    const what = lowerFirst(
+      toYou(bare(first === '' ? summary : summary.replace(new RegExp(`^${first}\\b`, 'u'), 'you'))),
+    );
+    const day = sayPast(input.today, last.date.slice(0, 10));
+    parts.push(
+      /^you\b/.test(what)
+        ? `${upperFirst(day)} ${what}.`
+        : `${upperFirst(day)} we talked about this: ${what}.`,
+    );
+  }
+  // A conversation is placed by the idea it was about.
+  if (
+    asksLast &&
+    !asksDecided &&
+    !asksIdea &&
+    idea !== null &&
+    parts.length > 0 &&
+    !parts.some((p) => sameThing(p, idea))
+  )
+    parts.push(`It was about your idea: ${lowerFirst(shortOf(toYou(idea)))}.`);
+  const progress = decision.state.criteria.find((c) => c.progress !== null);
+  if (progress?.progress != null && (asksLast || asksTodo || general))
+    parts.push(
+      `You have ${String(progress.progress.done)} of the ${String(progress.progress.of)} ${countedName(progress.criterion)}.`,
+    );
+  const done = input.reads.steps.find((s) => s.status === 'done');
+  if (done !== undefined && (asksLast || general))
+    parts.push(
+      `You finished one step: ${lowerFirst(bare(done.title))}${done.evidence === null ? '' : ` (${lowerFirst(shortOf(toYou(done.evidence)))})`}.`,
+    );
+  // The step they are on ends the reply, as on every turn (ai `reply-contract.ts`).
+  if (parts.length === 0 && idea !== null) parts.push(`Your idea is ${lowerFirst(toYou(idea))}.`);
+  const once = distinct(parts, (t) => t, 0.8);
+  if (once.length === 0) return null;
+  let text = '';
+  for (const part of once) if (joined(text, part).length <= RECALL_CHARS) text = joined(text, part);
+  return { text, voice: once.slice(0, 3).join(' ') };
+}
+
+/** Words of a recall question that name no fact of the record. */
+const GENERIC_ASK = new Set(
+  'remember remind again talk discuss decide decided idea startup venture plan last week change record agree session per what'.split(
+    ' ',
+  ),
+);
+
+/** Most characters of a recall. */
+const RECALL_CHARS = 690;
+
+// What the model answers from ----------------------------------------------------------------------------------------
+
+/** The program's answer the model gives in its own words; null when the lead is the answer, or the model has to find one. */
+function askOf(input: PathTurnInput, decision: Decision, lead: Lead | null): Ask {
+  const { play, kind } = decision;
+  if (kind === 'social' || kind === 'rehearsal' || kind === 'crisis' || kind === 'recall') return null;
+  if (decision.pivot !== null || kind === 'news') return null;
   if (decision.pushes && decision.referral !== null) return pushAsk(decision);
-  if (kind === 'report') return reportAsk(input, decision);
+  if (kind === 'report') return reportAsk(input, decision, lead);
+  if (decision.howTo) return howToAsk(input, decision);
   if (play !== null) return playAsk(play);
   if (decision.smaller !== null && !decision.overview) return smallerAsk(decision);
-  return decision.overview ? overviewAsk(input, decision) : null;
+  return null;
 }
 
 /** The play's answer: its steps are the turn's own. */
 const playAsk = (play: Play): Ask => ask(play.title, play.answer, play.why, play.traps);
 
-/** Who decides and what to take, to a push for a ruling. */
-function pushAsk(decision: Decision): Ask {
-  const { referral, step } = decision;
-  return ask(
-    'Who decides this, and what to take',
-    `I cannot decide this for you, and I will not say yes or no to it: ${lowerFirst(bare(referral?.who ?? ''))} can. Take with you: ${lowerFirst(bare(referral?.bring ?? ''))}.` +
-      (step === null ? '' : ` What you can do now is the step: ${lowerFirst(bare(step.view.title))}.`),
-    'A wrong yes here is hard to undo, and they answer questions like this for free or early.',
+/** How to do the first part of the step, with its template filled in from what they told. */
+function howToAsk(input: PathTurnInput, decision: Decision): Ask {
+  const view = decision.step?.view;
+  const first = view?.items.find((i) => !i.done);
+  if (view === undefined || first === undefined) return null;
+  const time = first.minutes === null ? '' : ` It takes about ${String(first.minutes)} minutes.`;
+  const made = ask(
+    `How to start: ${view.title}`,
+    `Start with the first part: ${lowerFirst(bare(first.do))}. ${first.how}${time}`,
+    'One part you can finish today moves more than a plan for all of them.',
   );
+  return made === null || view.template === null
+    ? made
+    : { ...made, block: fillTemplate(view.template.body, templateFacts(input, decision)) };
 }
 
-/** Where they stand and what comes next, in order, with what is on record: the answer to "get me organized". */
-function overviewAsk(input: PathTurnInput, decision: Decision): Ask {
-  const { state, missing, step, then } = decision;
-  const idea = ideaOf(input, decision);
-  const fact = concreteFact(input.reads.memory);
-  const shown = state.criteria.filter(
-    (c) => c.status !== 'open' && (c.criterion.stage === state.stage || c.by === 'path' || c.by === 'record'),
-  );
-  const parts = [
-    `${bare(input.venture.name)} is at stage ${String(state.stageIndex + 1)} of ${String(decision.stageCount)}: ${decision.stageTitle}.`,
-    fact === null ? (idea === null ? '' : `Your idea: ${idea}.`) : `On record: ${bare(fact)}.`,
-    shown.length > 0
-      ? `Already shown: ${shown
-          .slice(-3)
-          .map((c) => c.criterion.title)
-          .join('; ')}.`
-      : '',
-    missing.length > 0 ? `Still to show: ${missing.map((c) => c.title).join('; ')}.` : '',
-    step === null ? '' : `Now: ${withDay(input, step.view.title, step.view.dueOn)}.`,
-    then.length > 0 ? `Then: ${then.map((s) => s.title).join('; then ')}.` : '',
-  ];
+/** Who decides and what to take, to a push for a ruling. */
+function pushAsk(decision: Decision): Ask {
+  const { referral } = decision;
   return ask(
-    'Where you are and what comes next',
-    parts.filter((p) => p !== '').join(' '),
-    'Each step produces the evidence the stage still needs, so the next one is worth doing.',
+    'Who decides this, and what to take',
+    `This one is for ${lowerFirst(bare(referral?.who ?? ''))}. Bring ${lowerFirst(bare(referral?.bring ?? ''))}. I cannot decide it for you, and a yes or no from me would be a guess.`,
+    'A wrong yes here is hard to undo, and they answer questions like this for free or early.',
   );
 }
 
@@ -297,163 +676,119 @@ function smallerAsk(decision: Decision): Ask {
   );
 }
 
-/** What a report changed: counted, how far it gets them, moved, or finished; never asked for again. */
-function reportAsk(input: PathTurnInput, decision: Decision): Ask {
+/** A step not done, a commitment made: said when the lead says nothing of it. Never asks for what they reported. */
+function reportAsk(input: PathTurnInput, decision: Decision, lead: Lead | null): Ask {
+  const { report, commitment, step } = decision;
   const parts: string[] = [];
-  const { completes, work, report, commitment, step, then } = decision;
-  if (completes !== null)
-    parts.push(
-      completes.rest === null
-        ? `That finishes "${bare(completes.step.title)}", in your words.`
-        : `That part of "${bare(completes.step.title)}" is done, and the rest of it is next.`,
-    );
-  for (const w of work)
-    parts.push(
-      w.progress === null
-        ? `That counts as "${bare(w.criterion.title)}".`
-        : `That is ${String(w.progress.done)} of ${String(w.progress.of)} towards "${bare(w.criterion.title)}": ${String(w.progress.of - w.progress.done)} more to go.`,
-    );
-  if (decision.applied?.stage != null)
-    parts.push(`So you are at stage ${String(decision.state.stageIndex + 1)}: ${decision.stageTitle}.`);
   if (report?.state === 'not_yet') {
     parts.push(
       decision.movedTo === null
-        ? 'That is fine, and nothing is lost: the step stands.'
-        : `That is fine, and nothing is lost: it moves to ${sayDue(input.today, decision.movedTo)}.`,
+        ? 'That happens, and nothing is lost: the step stands.'
+        : `That happens, and nothing is lost: the step moves to ${sayDue(input.today, decision.movedTo)}.`,
     );
     const offer = decision.smallerOffer?.items.find((i) => !i.done);
     if (offer !== undefined)
-      parts.push(`If that is still too much, do only this: ${lowerFirst(bare(offer.do))}.`);
+      parts.push(`If it is still too much, do one thing only: ${lowerFirst(bare(offer.do))}.`);
+  } else if (lead === null && commitment !== null && step !== null) {
+    const first = step.view.items.find((i) => !i.done);
+    parts.push(
+      'Good, that is a clear commitment.',
+      first === undefined || first.do === step.view.title
+        ? 'Write one line for each answer, in their words, the same day.'
+        : `Begin with this: ${lowerFirst(bare(first.do))}.`,
+    );
   }
-  if (parts.length === 0 && commitment !== null && step !== null)
-    parts.push(`Set: ${withDay(input, step.view.title, step.view.dueOn)}.`);
-  if (parts.length === 0) return null;
   if (decision.smaller !== null) {
     const less = smallerAsk(decision)?.answer;
     if (less !== undefined) parts.push(less);
-  } else if (step !== null && report?.state !== 'not_yet' && (completes !== null || work.length > 0))
-    parts.push(
-      `Next: ${withDay(input, step.view.title, step.view.dueOn)}.${then[0] === undefined ? '' : ` Then: ${then[0].title}.`}`,
-    );
-  return ask(
-    'What you did, and what it changes',
-    parts.join(' '),
-    'What you report in your own words is kept as the evidence, so nobody asks you for it twice.',
-  );
-}
-
-/** A change of direction: the idea kept, what no longer carries, and why. */
-function pivotAsk(decision: Decision, pivot: AppliedPivot): Ask {
-  const reopened = pivot.reopened.slice(0, 4).map((c) => bare(c.title));
-  return ask(
-    'What the change of direction changes',
-    `Kept: the idea is now "${bare(pivot.to)}"${pivot.from === '' ? '' : `, and the old one ("${shortOf(pivot.from)}") stays in your story with today's date`}. ` +
-      (reopened.length === 0
-        ? 'Nothing you had shown was about the old customer, so nothing is taken back.'
-        : `What you showed about the old customer does not carry over by itself, so these are open again: ${reopened.join('; ')}.`) +
-      ` You are at stage ${String(decision.state.stageIndex + 1)}: ${decision.stageTitle}.`,
-    'The old talks and tests were with other people about another problem; what you know about the work itself stays.',
-  );
-}
-
-const shortOf = (text: string): string =>
-  text.length <= 120 ? bare(text) : `${bare(text.slice(0, 117))}...`;
-
-/** The idea in their own words: what they just said, what is kept, else what the venture's record calls it. */
-function ideaOf(input: PathTurnInput, decision: Decision): string | null {
-  const kept = decision.idea ?? (input.reads.path?.intake?.idea ?? '').trim();
-  if (kept !== '') return `"${bare(kept)}"`;
-  const line = input.venture.oneLiner.trim();
-  return line === '' ? null : bare(line);
-}
-
-const STORY =
-  /\bhow (?:we|i) got (?:here|to (?:this|where))\b|\bfrom the (?:start|beginning)\b|\b(?:whole|full|entire) (?:story|history|journey)\b|\bour (?:story|history|journey)\b/;
-
-/** How they got here, from the record's own dated entries: what was reported, decided, changed and finished. */
-function storyAsk(input: PathTurnInput, decision: Decision): Ask {
-  const arc = arcOf(briefSource(input, decision)).filter((e) =>
-    ['result', 'setback', 'decision', 'pivot', 'milestone', 'step_done', 'experiment'].includes(e.kind),
-  );
-  const first = (input.reads.path?.pivots ?? []).find((x) => x.from !== '')?.from;
-  const idea = ideaOf(input, decision);
-  const start =
-    first !== undefined
-      ? `You started with "${shortOf(first)}".`
-      : idea === null
-        ? ''
-        : `You started with ${idea}.`;
-  const { step } = decision;
-  const end = step === null ? '' : `Open step now: ${withDay(input, step.view.title, step.view.dueOn)}.`;
-  let answer = start;
-  const room = RECALL_CHARS - end.length - 1;
-  for (const e of arc) {
-    const line = `${monthDay(e.on)}: ${shortOf(e.title)}.`;
-    if (`${answer} ${line}`.length <= room) answer = `${answer} ${line}`.trim();
   }
-  answer = `${answer} ${end}`.trim();
-  return answer === ''
-    ? null
-    : ask(
-        'How you got here',
-        answer,
-        'This is what you told me and what the venture holds, with its dates; nothing is added to it.',
-      );
+  return parts.length === 0 ? null : ask('What they report, and what it changes', parts.join(' '), '');
 }
 
-/** What is on record, as facts: the idea, what was decided and when, what they told, and the open step with its day. */
-function recallAsk(input: PathTurnInput, decision: Decision): Ask {
-  const said = plain(input.message);
-  if (STORY.test(said)) return storyAsk(input, decision);
-  const idea = ideaOf(input, decision);
-  const name = input.venture.name.trim();
-  const parts: string[] = [];
-  if (idea !== null) parts.push(`Your idea${name === '' ? '' : `, ${bare(name)}`}: ${idea}.`);
-  const about = new Set(contentStems(input.message));
-  const told = input.reads.memory.filter((m) => m.status === 'confirmed' && !isReference(m));
-  const pivots = (input.reads.path?.pivots ?? []).filter((p) => p.to !== '');
-  const latest = pivots.at(-1);
-  if (latest !== undefined)
-    parts.push(
-      `On ${monthDay(latest.on)} you changed direction${latest.from === '' ? '' : ` from "${shortOf(latest.from)}"`} to "${shortOf(latest.to)}".`,
-    );
-  const decisions = standingDecisions(input.reads.memory).slice(0, 2);
-  for (const m of decisions) parts.push(`Decided on ${monthDay(dayOf(m, 'decided_on'))}: ${factOf(m)}.`);
-  // What they ask about, by its own words ("what's my fee?"), before the rest.
-  const asked = told
-    .filter((m) => m.type !== 'decision')
-    .filter((m) => contentStems(`${m.title}. ${m.content}`).some((w) => about.has(w)))
-    .slice(0, 2);
-  for (const m of asked) parts.push(`On record: ${factOf(m)}.`);
-  const progress = decision.state.criteria.find((c) => c.progress !== null);
-  if (progress?.progress != null)
-    parts.push(
-      `So far: ${String(progress.progress.done)} of ${String(progress.progress.of)} towards "${bare(progress.criterion.title)}".`,
-    );
-  const last = (input.continuity.recentDigests ?? [])[0];
-  if (
-    last !== undefined &&
-    last.digest.summary.trim() !== '' &&
-    /\b(?:last|talk|discuss|speak|spoke|session|call|got here|from the start|yesterday)/.test(said)
-  )
-    parts.push(`Last conversation (${monthDay(last.date)}): ${bare(firstSentence(last.digest.summary))}.`);
-  for (const row of input.reads.steps.filter((s) => s.status === 'done').slice(0, 1))
-    parts.push(`Done: ${bare(row.title)}${row.evidence === null ? '' : ` ("${shortOf(row.evidence)}")`}.`);
-  const { step } = decision;
-  if (step !== null) parts.push(`Open step: ${withDay(input, step.view.title, step.view.dueOn)}.`);
-  if (parts.length === 0) return null;
-  let answer = '';
-  for (const part of parts)
-    if (`${answer} ${part}`.length <= RECALL_CHARS) answer = `${answer} ${part}`.trim();
-  return ask(
-    'What is on record',
-    answer,
-    'This is what you told me and what the venture holds, with its dates; nothing is added to it.',
-  );
+// Their own facts --------------------------------------------------------------------------------------------------
+
+/** Everything they said or that is on record of them, as one text: what a line written for them may claim. */
+function saidText(input: PathTurnInput, decision: Decision): string {
+  const { continuity, reads, venture } = input;
+  const intake = reads.path?.intake ?? null;
+  const profile = continuity.studentProfile ?? null;
+  return [
+    ...input.earlierMessages,
+    input.message,
+    venture.name,
+    venture.oneLiner,
+    venture.currentGoal ?? '',
+    intake === null
+      ? ''
+      : [intake.idea, intake.customer, intake.studies, intake.doneSoFar, intake.block].join('. '),
+    profile === null ? '' : [profile.background, profile.learningGoal, profile.constraints].join('. '),
+    ...reads.memory
+      .filter((m) => m.status === 'confirmed' && !isReference(m))
+      .map(
+        (m) =>
+          `${m.title}. ${m.content}. ${typeof m.attributes.result === 'string' ? m.attributes.result : ''}`,
+      ),
+    ...reads.criteria.map((c) => c.evidence ?? ''),
+    ...reads.steps.map((s) => s.evidence ?? ''),
+    ...(reads.path?.pivots ?? []).flatMap((p) => [p.from, p.to]),
+    ...(continuity.notebook?.founderProfile ?? []).map((e) => e.text),
+    decision.calc.lines.join(' '),
+  ]
+    .filter((t) => t.trim() !== '')
+    .join('\n')
+    .slice(0, SAID_CHARS);
 }
 
-/** Most characters of a recall's answer (the prompt shows at most 700). */
-const RECALL_CHARS = 690;
+const SAID_CHARS = 12_000;
+
+/** The one thing on record the answer builds on; none where the lead is the record itself. */
+function priorOf(input: PathTurnInput, decision: Decision, lead: Lead | null): PathPromptGuidance['prior'] {
+  const { kind } = decision;
+  if (kind === 'recall' || kind === 'social' || kind === 'rehearsal' || kind === 'new_idea') return null;
+  const found = priorFact({
+    oneLiner: input.venture.oneLiner,
+    reads: input.reads,
+    intake: input.reads.path?.intake ?? null,
+    earlier: input.earlierMessages,
+    message: input.message,
+    about: `${decision.play?.title ?? ''} ${decision.step?.view.title ?? ''} ${decision.play?.answer ?? ''}`,
+    said: [(input.earlierReplies ?? []).at(-1) ?? '', lead?.text ?? ''].join(' '),
+    applies: kind === 'coaching' && lead === null && decision.referral === null && decision.play !== null,
+  });
+  return found;
+}
+
+interface TemplateFacts {
+  readonly idea: string | null;
+  readonly customer: string | null;
+  readonly venture: string | null;
+  readonly founder: string | null;
+}
+
+function templateFacts(input: PathTurnInput, decision: Decision): TemplateFacts {
+  const customer = input.reads.path?.intake?.customer.trim() ?? '';
+  const name = bare(input.venture.name);
+  return {
+    idea: ideaOf(input, decision),
+    customer: customer === '' ? null : bare(customer),
+    venture: name === '' || /^new venture\b/i.test(name) ? null : name,
+    founder: input.continuity.founderFirstName ?? null,
+  };
+}
+
+/** A template with what they told in its brackets, and the brackets of what they did not. */
+export function fillTemplate(body: string, facts: TemplateFacts): string {
+  return body.replace(/\[([^\]\n]{2,80})\]/g, (whole, slot: string) => {
+    const t = slot.toLowerCase();
+    if (/^your (?:first )?name$|^my name$/.test(t)) return facts.founder ?? whole;
+    if (/\b(?:what (?:i|we) would (?:do|make|offer|build)|(?:my|the|your) (?:idea|offer|product)\b)/.test(t))
+      return facts.idea === null ? whole : lowerFirst(facts.idea);
+    if (/^(?:one )?type of person|^(?:the )?customer$|^who (?:it is for|has (?:it|the problem))/.test(t))
+      return facts.customer === null ? whole : lowerFirst(facts.customer);
+    if (/^(?:venture|venture name|product name|company)$/.test(t)) return facts.venture ?? whole;
+    return whole;
+  });
+}
 
 /** The shown evidence that is the play's own sources (by their titles), for its citations. */
 export function evidenceKeysOf(
@@ -492,3 +827,16 @@ export function nextActionsOf(
   if (decision.step === null) return null;
   return [{ owner: 'founder', action: decision.step.view.title, target_date: decision.step.view.dueOn }];
 }
+
+/** What they might send next about the step, as tap-to-send messages the path answers by itself. */
+export function followUpsOf(decision: Decision): string[] {
+  const { kind, step } = decision;
+  if (step === null || !['coaching', 'report', 'news', 'new_idea'].includes(kind)) return [];
+  return [
+    ...(decision.howTo ? [] : [HOW_FOLLOW_UP]),
+    ...(decision.smaller === null ? [SMALLER_FOLLOW_UP] : []),
+  ];
+}
+
+const HOW_FOLLOW_UP = 'How do I do the first part?';
+const SMALLER_FOLLOW_UP = 'That is too much this week. Can you make it smaller?';

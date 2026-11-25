@@ -8,10 +8,10 @@ export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
   diagnose:
     'DIAGNOSE (unclear where they stand): your tentative read and recommendation, then what would change it.',
   challenge:
-    'CHALLENGE (a plan or claim to test): the belief it leans on hardest, what would show it wrong, a proportionate test.',
-  coach: 'COACH (a decision, or what to do next): your pick and why, its key risk, the first step.',
+    'CHALLENGE (a plan or claim to test): the belief it leans on hardest, what would show it wrong, a small test.',
+  coach: 'COACH (a decision, or what to do next): your pick and why, and its key risk.',
   teach:
-    'TEACH (how something works, a goal or step ahead): plainly, from the program guidance in the evidence when it covers\n' +
+    'TEACH (how something works): plainly, from the program guidance in the evidence when it covers\n' +
     'it, with a short example from their venture.',
   // Live pilot 42124259353 (pitch rehearsal 1.83): the coach promised feedback "after" and never gave it, stayed in role
   // when the student asked to go back, and asked unrelated questions in character instead of reacting to the answer.
@@ -39,7 +39,7 @@ export function autoModes(allowed: readonly CoachMode[] | undefined): CoachMode[
 export function autoModeInstructions(allowed: readonly CoachMode[]): string {
   const modes = autoModes(allowed);
   return [
-    'Mode: AUTO. Silently pick the mode that fits their latest message; a social turn keeps the last one, without its steps.',
+    'Mode: AUTO. Silently pick the mode that fits their latest message; a social turn keeps the last one.',
     ...modes.map((m) => `- ${MODE_INSTRUCTIONS[m]}`),
   ].join('\n');
 }

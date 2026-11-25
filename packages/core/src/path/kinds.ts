@@ -182,6 +182,30 @@ export function asksOverview(text: string): boolean {
   return sentences(text).some((s) => !ABOUT_THAT.test(s) && OVERVIEW.some((r) => r.test(s)));
 }
 
+const THAT = '(?:that|this|it|them|those|these|(?:the|that|this) (?:first )?(?:step|part|thing|bit))';
+const HOW_TO: readonly RegExp[] = [
+  new RegExp(
+    `\\bhow (?:exactly )?(?:do|would|should|can|could|am|will) (?:i|we) (?:even |actually |exactly |best |go about |supposed to )*(?:do|doing|start|starting|begin|run|running|make|write|go about|tackle|approach) (?:with |on )?${THAT}\\b(?! (?:faster|cheaper|better|without|if|when|for))`,
+  ),
+  new RegExp(
+    `\\bwhat (?:would|do|should|will|must|can) (?:i|we) (?:have to )?(?:do|start with) first (?:for|with|on|of) ${THAT}\\b`,
+  ),
+  new RegExp(
+    `\\bwhat (?:is|would be) the (?:very )?first (?:thing|part|bit|step|move) (?:of|for|with|in|on) ${THAT}\\b`,
+  ),
+  new RegExp(`\\bwhere (?:do|would|should) (?:i|we) (?:start|begin) with ${THAT}\\b`),
+  new RegExp(`\\b(?:walk|talk|take|guide) me through ${THAT}\\b`),
+  new RegExp(
+    `\\b(?:can|could|will) you (?:help me (?:do|start|with)|show me how to do|do) ${THAT}(?: with me)?\\s*[?.!]*$`,
+  ),
+  /\b(?:show me how|how exactly|how so|like how|how would that work|how does that work)\s*[?.!]*$/,
+];
+
+/** They ask how to do the step just given ("how do I do that?", "what would I do first for that?"). */
+export function asksHowTo(text: string): boolean {
+  return sentences(text).some((s) => HOW_TO.some((r) => r.test(s)));
+}
+
 // ------------------------------------------------------------------------------------------------
 // Too big for the time they have
 // ------------------------------------------------------------------------------------------------
@@ -282,7 +306,7 @@ const ACTED_BY_THEM = new RegExp(
   `\\b(?:i|we|my cofounder|my co-founder|my team|our team) (?:(?:have|had|just|already|finally|also|actually|only|even|then|now) )*${ACTED}\\b`,
 );
 const NOT_YET =
-  /^(?:(?:hi|hey|sorry|honestly|no|nope)[,:.! ]+)*not yet\b|^(?:no|nope)(?:[,.! ]|$)|\b(?:have|had|did|could|was|were) not (?:yet |really |quite |even )*(?:do|done|get|got|gotten|manage|managed|finish|finished|start|started|send|sent|reach|reached|call|called|talk|talked|able|had (?:time|a chance)|have (?:time|a chance)|it|that|them)\b|\b(?:ran out of|no|not enough) time\b|\b(?:i|we) (?:forgot|missed (?:it|that|the))\b/;
+  /^(?:(?:hi|hey|sorry|honestly|no|nope)[,:.! ]+)*not yet\b|^(?:no|nope)(?=[,.! ]|$)(?![,.! ]+(?:i mean|wait|what i|that is|it is|the|not that|actually|more)\b)|\b(?:have|had|did|could|was|were) not (?:yet |really |quite |even )*(?:do|done|get|got|gotten|manage|managed|finish|finished|start|started|send|sent|reach|reached|call|called|talk|talked|able|had (?:time|a chance)|have (?:time|a chance)|it|that|them)\b|\b(?:ran out of|no|not enough) time\b|\b(?:i|we) (?:forgot|missed (?:it|that|the))\b/;
 const BLOCKED =
   /\b(?:(?:i|we) (?:am|are|was|were|got|get) (?:stuck|blocked)|(?:no ?one|nobody|none of them) (?:has |have |had )?(?:replied|answered|responded|showed|wants?|wanted)|(?:still )?waiting (?:on|for) (?:a |an |the |their |his |her )?(?:reply|answer|response|approval|permission)|(?:could|can) not (?:find|reach|get) (?:anyone|any|them|a single))\b/;
 const DROPPED =
@@ -409,7 +433,7 @@ export function choiceOf(text: string): string[] {
 }
 
 const FIRST_TIME =
-  /\b(?:never (?:done|started|built|run|had|tried) (?:this|that|anything|one|it|a (?:startup|business|venture|company))|first[- ]time (?:founder|entrepreneur)|(?:this is )?(?:my|our) first (?:startup|venture|business|company|time)|(?:do not|did not) know (?:anything|much|a thing|the first thing) about (?:business|startups?|entrepreneurship|running)|know nothing about (?:business|startups?)|new to (?:business|startups?|entrepreneurship|commerciali[sz]ation|this)|no (?:business|startup) (?:experience|background|knowledge)|(?:complete |total )?beginner)\b/;
+  /\b(?:never (?:ever )?(?:done|started|built|run|had|tried) (?:this|that|anything|one|it|a (?:startup|business|venture|company))|first[- ]time (?:founder|entrepreneur)|(?:this is )?(?:my|our) first (?:startup|venture|business|company|time)|(?:do not|did not) know (?:anything|much|a thing|the first thing) about (?:business|startups?|entrepreneurship|running)|know nothing about (?:business|startups?)|new to (?:business|startups?|entrepreneurship|commerciali[sz]ation|this)|no (?:business|startup) (?:experience|background|knowledge)|(?:complete |total )?beginner)\b/;
 
 /** They say they have never done this before. */
 export function saysFirstTime(text: string): boolean {

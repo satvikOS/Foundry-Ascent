@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -115,6 +115,9 @@ class Context:
     live_seeded: dict[str, Any] = field(default_factory=dict)
     #: The client suite (conversation_lab/client/suite.py): the client's pack file, and the run's prepared state.
     client_pack: str = ""
+    #: Only these groups of the client suite (comma-separated; empty: all), and the coach its replies come from.
+    client_groups: str = ""
+    coach_primary: str = ""
     client: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -173,6 +176,13 @@ def browser_env(
         "LAB_APP_BUDGET_USD": f"{app_budget:.2f}",
         "LAB_APP_BASELINE_USD": f"{baseline:.6f}",
     }
+
+
+def _write_refusals(ctx: Context, lab_client: Any) -> None:
+    """What AWS said when it refused a lab model (private, sealed; account and key ids masked)."""
+    if lab_client.refusals:
+        rows = [asdict(r) for r in lab_client.refusals]
+        (ctx.private / "model-refusals.json").write_text(json.dumps(rows, indent=1), encoding="utf-8")
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -245,6 +255,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         coach_model=str(getattr(args, "coach_model", DEFAULT_COACH) or DEFAULT_COACH),
         judge_model=str(getattr(args, "judge_model", JUDGE_AUTO) or JUDGE_AUTO),
         client_pack=str(getattr(args, "client_pack", "") or ""),
+        client_groups=str(getattr(args, "groups", "") or ""),
     )
     ctx.private.mkdir(parents=True, exist_ok=True)
     ctx.public.mkdir(parents=True, exist_ok=True)
@@ -252,15 +263,45 @@ def cmd_run(args: argparse.Namespace) -> int:
     lab = lab_models()
     try:
         # Production's models, or the A/B coach for the lab's API process only (never production's configuration).
-        models = coach_app_models(ctx.coach_model, lab)
-        judge_policy, _, live_judge_candidates = live_judges(ctx.coach_model, ctx.judge_model, lab)
+        models = coach_app_models(
+            ctx.coach_model, lab, offered=lab.client_coach if suite == "client" else None
+        )
+        if suite == "client":
+            from conversation_lab.client.judge import judge_candidates
+            from conversation_lab.client.suite import check_plan, planned
+
+            judge_policy, live_judge_candidates = ctx.judge_model, ()
+            client_judges = judge_candidates(models.primary, lab, ctx.judge_model)
+        else:
+            judge_policy, _, live_judge_candidates = live_judges(ctx.coach_model, ctx.judge_model, lab)
     except ValueError as exc:
         print(f"run: {exc}", file=sys.stderr)
         return 2
+    ctx.coach_primary = models.primary
     claude_coach = model_family(models.primary) == "anthropic"
-    app_budget, lab_budget = budget_parts(
-        suite, budget, LIVE_APP_SHARE_CLAUDE_COACH if suite == "live" and claude_coach else None
-    )
+    app_share = LIVE_APP_SHARE_CLAUDE_COACH if suite == "live" and claude_coach else None
+    if suite == "client":
+        from conversation_lab.client.scenarios import ScenarioError
+        from conversation_lab.client.suite import PlanRefusedError
+
+        try:
+            scenarios = planned(ctx.scenario_ids, ctx.client_groups)
+            if not args.mock:
+                # Before anything is called or seeded: a run that would not fit is refused with the numbers.
+                plan = check_plan(
+                    scenarios,
+                    budget_usd=budget,
+                    prices=lab.prices,
+                    coach=models.primary,
+                    judge=client_judges[0],
+                    simulator=lab.live_simulator[0],
+                )
+                app_share = plan.app_share
+                ctx.client["plan"] = plan.public()
+        except (ScenarioError, PlanRefusedError) as exc:
+            print(f"run: client: {exc}", file=sys.stderr)
+            return 2
+    app_budget, lab_budget = budget_parts(suite, budget, app_share)
     ledger = Ledger(ctx.public / "lab-ledger.jsonl")
     guard = SpendGuard(app_budget=app_budget, lab_budget=lab_budget, ledger=ledger)
     session = boto3.Session(region_name=os.environ.get("AWS_REGION", "us-east-1"))
@@ -293,11 +334,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             result = lab_client.probe(lab.judge)
             probes.update(result.outcomes)
             judge_model = result.chosen
-        if suite == "live" and not args.mock and ctx.coach_model != DEFAULT_COACH:
+        if suite in ("live", "client") and not args.mock and ctx.coach_model != DEFAULT_COACH:
             # An A/B coach the account has not enabled would fail every turn: stop before anything runs.
             result = lab_client.probe((models.primary,))
             probes.update(result.outcomes)
             if result.chosen is None:
+                _write_refusals(ctx, lab_client)
                 print(
                     f"run: the coach model {models.primary} did not answer a probe ({result.outcomes}); enable it "
                     "in the Bedrock console (us-east-1) or run with --coach-model default",
@@ -322,14 +364,20 @@ def cmd_run(args: argparse.Namespace) -> int:
                 )
                 return 2
         if suite == "client" and not args.mock:
-            from conversation_lab.client.judge import judge_candidates
-
             result = lab_client.probe(lab.live_simulator)
             probes.update(result.outcomes)
             simulator_model = result.chosen
-            result = lab_client.probe(judge_candidates(models.primary, lab))
+            result = lab_client.probe(client_judges)
             probes.update(result.outcomes)
             judge_model = result.chosen
+            if judge_model is None:
+                _write_refusals(ctx, lab_client)
+                print(
+                    f"run: no client judge of {', '.join(client_judges)} answered a probe ({result.outcomes}); "
+                    "enable one in the Bedrock console (us-east-1)",
+                    file=sys.stderr,
+                )
+                return 2
     except BudgetExceededError as exc:
         summary["stopped_by"] = f"budget_{exc.side}"
     summary["models"].update({"simulator": simulator_model, "judge": judge_model, "probes": probes})
@@ -439,6 +487,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from conversation_lab.logstats import from_file
 
     summary["app_logs"] = from_file(ctx.private / "logs" / "api.log")
+    _write_refusals(ctx, lab_client)
     spend = guard.snapshot()
     spend["app_by_purpose"] = summary.pop("spend_app_by_purpose", [])
     spend["lab_by_purpose"] = ledger.by_purpose()
@@ -1281,20 +1330,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument(
         "--coach-model",
         default=DEFAULT_COACH,
-        help="the app's coach model for this run: default (production's) or one of models.json live.coach; the "
-        "lab's API process only. A Claude coach is judged by another family (live suite)",
+        help="the app's coach model for this run: default (production's) or one of models.json live.coach (the live "
+        "suite) or client.coach (the client suite); the lab's API process only. Never judged by its own family",
     )
     run.add_argument(
         "--judge-model",
         default=JUDGE_AUTO,
         help="live: auto (another family than the coach; an A/B arm uses ab), ab (one judge independent of every "
-        "A/B arm, for the default arm of an A/B too) or one of models.json live.judge",
+        "A/B arm, for the default arm of an A/B too) or one of models.json live.judge; client: auto or one of "
+        "client.judge",
     )
     run.add_argument(
         "--live-approve-memory",
         action="store_true",
         help="live: the student approves every pending AI memory proposal between sessions (default: left as "
         "the product leaves them)",
+    )
+    run.add_argument(
+        "--groups",
+        default="",
+        help="client: only these groups of scenarios, comma-separated (client-list names them)",
     )
     run.add_argument(
         "--client-pack",

@@ -9,10 +9,12 @@ import {
 } from '@foundry/contracts';
 import { type pathRepo, type retrievalRepo } from '@foundry/db';
 
-import { factOf, isReference } from './brief.js';
+import { isReference } from './brief.js';
+import { calcAsked, calcOf, type CalcAsk, type CalcResult, type Ratio } from './calc.js';
 import { addDays, dueOnFor } from './dates.js';
 import {
   asksFor,
+  asksHowTo,
   asksOverview,
   asksRecall,
   bringsNewIdea,
@@ -48,6 +50,7 @@ import {
   type Asking,
   type IntentMatch,
 } from './match.js';
+import { asksIfGood, lastResult, newsOf, type News } from './news.js';
 import { reportedWork, withWork, type AppliedWork, type ReportedWork } from './progress.js';
 import { referralForRisk } from './referrals.js';
 import { pickPlay, playMatchProfile, type Openness, type SemanticMatch } from './semantic.js';
@@ -76,6 +79,7 @@ import {
   type ChosenStep,
   type StepContext,
 } from './steps.js';
+import { toldAs } from './tell.js';
 import { type PathIntent, type Playbook } from './types.js';
 import { contentStems, countsIn, plain, sentences, subjectStems } from './words.js';
 
@@ -90,7 +94,8 @@ export { stepView, type ChosenStep, type StepContext } from './steps.js';
  * becomes the path's step when it shows what the stage still asks for, else it is offered), the step of the turn before
  * when they go on about it, and the path's own step when they ask what is next, report, or open the conversation.
  */
-export type TurnKind = 'coaching' | 'report' | 'recall' | 'social' | 'rehearsal' | 'new_idea' | 'crisis';
+export type TurnKind =
+  'coaching' | 'report' | 'news' | 'recall' | 'social' | 'rehearsal' | 'new_idea' | 'crisis';
 
 export interface DecideInput extends PathSource {
   readonly playbook: Playbook;
@@ -112,6 +117,8 @@ export interface DecideInput extends PathSource {
   readonly recordText: string;
   /** The founder's earlier messages in this conversation and what is known of their background. */
   readonly background: readonly string[];
+  /** The founder's earlier messages in this conversation alone, oldest first. */
+  readonly earlierMessages?: readonly string[];
   /** The conversation is already under way (a check-in is asked once, at its start). */
   readonly started: boolean;
   /**
@@ -195,6 +202,16 @@ export interface Decision {
   readonly choice: readonly string[];
   readonly newIdea: { readonly ventureName: string; readonly fact: string | null } | null;
   readonly firstTime: boolean;
+  /** They say in this message that they have never done this. */
+  readonly firstTimeNow: boolean;
+  /** What the message tells without asking, and what it means (news.ts); null: nothing of the kind. */
+  readonly news: News | null;
+  /** They ask whether the result they told last is any good: that result. */
+  readonly result: Ratio | null;
+  /** The sums of their own numbers (calc.ts). */
+  readonly calc: CalcResult;
+  /** They ask how to do the step just given: its first item is the answer. */
+  readonly howTo: boolean;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -239,7 +256,31 @@ function candidates(context: StepContext, state: PathState): Candidate[] {
       });
     }
   }
-  return out;
+  return capstonesLast(context, out);
+}
+
+/** A capstone of the curriculum ("ain-canvas-capstone"). */
+const CAPSTONE = /^ain-.*-capstone$/;
+const COURSE_DEADLINE =
+  /\b(?:capstone|canvas|module|course|class|assignment|submission|submit|program(?:me)?|business plan|pitch deck)\b/i;
+
+/**
+ * The venture's own next evidence before a curriculum capstone of the same stage, unless the deadline they gave is the
+ * capstone's: then it comes first.
+ */
+function capstonesLast(context: StepContext, all: Candidate[]): Candidate[] {
+  const deadline = context.reads.path?.intake?.deadline ?? null;
+  const due = deadline !== null && deadline.on >= context.today && COURSE_DEADLINE.test(deadline.what);
+  const order = stageOrder(context.playbook);
+  return all
+    .map((c, i) => ({
+      c,
+      i,
+      stage: order.indexOf(c.criterion.stage),
+      last: !CAPSTONE.test(c.play.id) ? 0 : due ? -1 : 1,
+    }))
+    .sort((a, b) => a.stage - b.stage || a.last - b.last || a.i - b.i)
+    .map((x) => x.c);
 }
 
 /**
@@ -463,9 +504,9 @@ export function concreteFact(memory: readonly pathRepo.PathMemory[]): string | n
       ['evidence', 'fact', 'milestone', 'decision'].includes(m.type) &&
       !isReference(m),
   );
-  const figure = ranked.find((m) => m.type !== 'decision' && /\d/.test(factOf(m)));
+  const figure = ranked.find((m) => m.type !== 'decision' && /\d/.test(toldAs(m)));
   const told = figure ?? ranked[0];
-  return told === undefined ? null : factOf(told);
+  return told === undefined ? null : toldAs(told);
 }
 
 /** The words that name the venture, and everything its record says. */
@@ -631,6 +672,30 @@ function asksForRecorded(message: string, memory: readonly pathRepo.PathMemory[]
   });
 }
 
+const NO_CALC: CalcResult = { ask: null, lines: [], missing: null };
+
+/** The plays whose answer is a sum of their numbers. */
+const SUM_PLAYS: Readonly<Record<string, CalcAsk>> = { 'unit-economics': 'contribution' };
+
+/** What the record and the intake hold, as the calculator and a pass line read it: oldest first. */
+function recordTexts(input: DecideInput): string[] {
+  const intake = input.reads.path?.intake;
+  const memory = input.reads.memory
+    .filter((m) => m.status === 'confirmed' && !isReference(m))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  return [
+    intake?.doneSoFar ?? '',
+    ...memory.map((m) => {
+      const result = typeof m.attributes.result === 'string' ? m.attributes.result : '';
+      return [m.content.trim() === '' ? m.title : m.content, result]
+        .filter((t) => t.trim() !== '')
+        .join('. ');
+    }),
+    ...input.reads.criteria.map((c) => c.evidence ?? ''),
+    ...input.reads.steps.map((s) => s.evidence ?? ''),
+  ].filter((t) => t.trim() !== '');
+}
+
 /** What this turn is and what it must say next. */
 export function decide(input: DecideInput): Decision {
   const { playbook } = input;
@@ -673,6 +738,11 @@ export function decide(input: DecideInput): Decision {
     choice: [],
     newIdea: null,
     firstTime,
+    firstTimeNow: saysFirstTime(input.message),
+    news: null,
+    result: null,
+    calc: NO_CALC,
+    howTo: false,
   } as const;
 
   if (input.crisis) return { ...base, kind: 'crisis' };
@@ -726,6 +796,9 @@ export function decide(input: DecideInput): Decision {
     referralMatch === null && !recallAsked && pivot === null && bringsNewIdea(message, recordOf(input));
 
   // The founder's explicit ask: a phrase of the playbook (a plain report that happens to hold one asks nothing).
+  const told = { record: recordTexts(input), earlier: input.earlierMessages ?? [] };
+  const howTo = earlier !== null && !recallAsked && asksHowTo(message);
+  const result = asksIfGood(message) ? lastResult([...told.record, ...told.earlier]) : null;
   const heldIntent = heldBy(playbook, previous);
   const upset = needsAPerson(message);
   const smaller = smallerOf(message);
@@ -742,14 +815,15 @@ export function decide(input: DecideInput): Decision {
   if (referralMatch === null && !recallAsked) {
     // A report of their step or of the path's work, or a commitment, asks nothing, whatever phrase it holds; another
     // thing they tell (what is in the way, what happened) may be what they ask about.
-    const told =
+    const reports =
       commitment !== null ||
       (report !== null &&
         report.state !== 'blocked' &&
         (report.state !== 'done' ||
           reportedWork(before, message).length > 0 ||
           (onRow !== null && reportFinishes(message, report, onRow))));
-    if ((askLike || !told) && !reacts) match = phraseIntent(playbook, message, (i) => !isNote(i));
+    if ((askLike || !reports) && !reacts && !howTo)
+      match = phraseIntent(playbook, message, (i) => !isNote(i));
     // In passing, a word of a play ("the pricing page is blue") asks nothing: a statement says more of it than that.
     if (asking === 'statement' && match !== null && match.score < STATEMENT_PHRASE) match = null;
   }
@@ -781,6 +855,8 @@ export function decide(input: DecideInput): Decision {
     (askLike || (work.length === 0 && commitment === null)) &&
     (smaller === null || (askLike && !smaller.strict)) &&
     !recorded &&
+    !howTo &&
+    result === null &&
     !reacts &&
     !vents &&
     !upset &&
@@ -874,6 +950,10 @@ export function decide(input: DecideInput): Decision {
   const own = currentStep(now, state);
 
   const asks = intent !== null || overview;
+  const news =
+    recall || newIdea || pivot !== null || support
+      ? null
+      : newsOf({ message, before: [...told.record, ...told.earlier] });
   const kind: TurnKind = newIdea
     ? 'new_idea'
     : recall
@@ -882,7 +962,9 @@ export function decide(input: DecideInput): Decision {
           (!asks && (reported !== null || (commitment !== null && !askLike) || work.length > 0)) ||
           (asksPath && (completes !== null || work.length > 0))
         ? 'report'
-        : 'coaching';
+        : news !== null && !asks && !askLike
+          ? 'news'
+          : 'coaching';
 
   // The turn's step.
   const carriable = earlier !== null && completes === null && pivot === null;
@@ -914,6 +996,8 @@ export function decide(input: DecideInput): Decision {
       }
       smallerOffer = smallerStep(own.view, { minutes: null, strict: true, today: false }, input.today);
     }
+  } else if (kind === 'news') {
+    // What they tell moves nothing by itself: the path's own step stands.
   } else if (carriable && !support) {
     turn = earlier;
     carried = true;
@@ -932,6 +1016,10 @@ export function decide(input: DecideInput): Decision {
     if (again !== null) turn = { step: again, offered: turn.offered };
   }
   if (support) turn = { step: null, offered: false };
+  const calc =
+    recall && !calcAsked(message)
+      ? NO_CALC
+      : calcOf({ message, ...told, ask: SUM_PLAYS[play?.id ?? ''] ?? null });
   const explicit = play !== null && !pushes;
   const due = checkInOf(input, input.reads.steps);
   const checkIn =
@@ -985,6 +1073,11 @@ export function decide(input: DecideInput): Decision {
     choice: choiceOf(message),
     newIdea: newIdea ? { ventureName: input.venture.name, fact: concreteFact(input.reads.memory) } : null,
     firstTime,
+    firstTimeNow: base.firstTimeNow,
+    news,
+    result,
+    calc,
+    howTo: howTo && carried,
   };
 }
 

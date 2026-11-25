@@ -764,7 +764,8 @@ pnpm --filter @foundry/api latency --profile production --set dbRoundTripMs=65 -
 ### Phase B after the turn (2026-11-06)
 
 - `turn.completed` is sent once the reply is validated, with `fieldsPending: true`; phase B starts at the same moment
-  (from the same prompt and the reply as shown), and the same turn with its fields (claims, next steps, follow-ups,
+  (from the same prompt and the reply as shown; on the founder path from its own short prompt, `SystemPromptParts.annotation`,
+  with the message, the reply and the cited evidence only), and the same turn with its fields (claims, next steps, follow-ups,
   what it kept, the mode the model chose, a model-proposed escalation) follows in the same stream as a second
   `turn.completed` once they are stored (`turnsRepo.annotateTurn`, audit `turn.annotated`). The answer is unchanged.
 - Nothing the founder waits on waits for phase B: the turn is no longer pending (the next message is admitted), a call

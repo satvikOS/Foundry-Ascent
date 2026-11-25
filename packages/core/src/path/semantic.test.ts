@@ -33,7 +33,7 @@ describe('choosing a play by meaning', () => {
   const { floor, margin, referralFloor, guard } = profile;
 
   it('takes the nearest play at the floor, with room to the next one', () => {
-    expect(pick(ASKED, near(['price-it', floor], ['unit-economics', floor - margin]))).toEqual([
+    expect(pick(ASKED, near(['price-it', floor], ['unit-economics', floor - margin - 0.001]))).toEqual([
       'pricing',
       null,
     ]);

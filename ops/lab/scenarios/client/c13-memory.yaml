@@ -1,0 +1,81 @@
+# One founder over six weeks: two pivots, the second one back. Gaps add up to 42 days.
+group: memory
+scenarios:
+  - id: MM-01
+    title: five sessions, a pivot and a pivot back
+    role: undergrad
+    founder: Maren Toft
+    studies: junior in education
+    first_time: true
+    venture:
+      {
+        name: ReadRoost,
+        oneLiner: Reading corners that travel between kindergartens.,
+        stage: discovery,
+        domain: social,
+        goal: Find who pays for a reading corner.,
+      }
+    facts:
+      corners: [corner*, kindergarten*, reading]
+      teachers: [teacher*, nine, '9']
+      space: [space, room, no room, storage]
+      apps: [app*, parent*, evening*]
+      parents: ['2', two, '30', thirty]
+      back: [back, again, return*, kindergarten*]
+      libraries: [librar*]
+    passing: >-
+      Every session starts from the last; the app is never mixed up with the corners; at the end the story has the corners,
+      the app, why it was dropped and the return, each once and in order.
+    sessions:
+      - turns:
+          - {
+              say: 'ReadRoost is a reading corner that travels: one week in each kindergarten. Only an idea so far.',
+              judge: [relevance],
+            }
+          - {
+              say: "I'll ask nine teachers about it this week.",
+              expect: { kind: report, history: [corners, teachers] },
+            }
+      - gap_days: 7
+        turns:
+          - {
+              say: 'I asked the nine teachers. Seven love it, but six of those have no space to put it anywhere.',
+              expect: { kind: report, news: [space] },
+              judge: [critical, memory],
+            }
+          - { say: 'So what did I learn?', expect: { history: [space, teachers] } }
+      - gap_days: 10
+        turns:
+          - {
+              say: "I'm changing direction. No corners: an app with a story a night for parents instead.",
+              expect: { kind: report, history: [corners, apps, space] },
+              judge: [memory],
+            }
+          - { say: 'What do I do with what the teachers told me?', expect: { history: [teachers, space] } }
+      - gap_days: 12
+        turns:
+          - {
+              say: 'I offered the app to 30 parents at 4 dollars a month. 2 paid.',
+              expect: { kind: report, news: [parents] },
+            }
+          - {
+              say: 'What share is that, and is it enough?',
+              expect: { number: ['6.7', '6.67', '7'] },
+              judge: [critical],
+            }
+      - gap_days: 13
+        turns:
+          - {
+              say: "I'm going back to the reading corners. A library will lend us its side room, so space is solved.",
+              expect: { kind: report, history: [corners, space, libraries], news: [libraries, space] },
+              judge: [memory, critical],
+            }
+          - {
+              say: 'Tell me the whole story so far, in order, and why we are where we are.',
+              expect: { kind: recall, remember: [corners, teachers, space, apps, parents, libraries] },
+              judge: [memory],
+            }
+          - {
+              say: 'Which of the two ideas are we on now, and what is my step?',
+              expect: { history: [corners, back], remember: [corners] },
+            }

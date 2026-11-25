@@ -198,7 +198,7 @@ const BASE_PATTERNS: readonly IdentityPattern[] = [
       ].join('|'),
     ),
     acceptIn: (text, m, ctx) =>
-      assertive(text, m.index, m.index + m[0].length) && !inDraft(text, m.index, ctx.addressees),
+      assertive(text, m.index, m.index + m[0].length) && !lifeDrafted(text, m.index, ctx),
     replacement: '',
   },
   // Claims to be live, or that a person is on the other end.
@@ -245,7 +245,7 @@ const BASE_PATTERNS: readonly IdentityPattern[] = [
       ].join('|'),
     ),
     acceptIn: (text, m, ctx) =>
-      assertive(text, m.index, m.index + m[0].length) && !inDraft(text, m.index, ctx.addressees),
+      assertive(text, m.index, m.index + m[0].length) && !lifeDrafted(text, m.index, ctx),
   },
   // Claims a life of its own (evals MX-0032: "ngl, how was ur weekend?" got "My weekend was good, thanks. How was
   // yours?"). The sentence is removed, not answered with what the coach is: banter gets a light line that turns to the
@@ -1089,8 +1089,15 @@ const SALUTATION =
   /(?:^|\n)[ \t]*(?:[Hh]i|[Hh]ello|[Hh]ey|[Dd]ear|[Gg]ood[ \t]+(?:[Mm]orning|[Aa]fternoon|[Ee]vening))[ \t]+(\p{Lu}[\p{L}'’.-]*)(?:[ \t]+\p{Lu}[\p{L}'’-]*)?[ \t]*[,!:—–]/gu;
 
 /**
- * Whether `index` sits in a draft or a script the founder will send or say, not in the coach's own voice: inside
- * quotes or a blockquote, after a short lead naming one ("Here's a draft:", "Say:", "Email Dana:", "It could
+ * A line of a template written for the founder ("5. Why me: I am in the gym daily"): its "I" is theirs. First live run on
+ * Nova 2 Lite: such a line was replaced by what the coach is ("5. I'm Thomas, an AI mentor.").
+ */
+const FOUNDER_LINE =
+  /^[ \t]*(?:[-*+•][ \t]+|\d{1,3}[.)][ \t]+)?[*_]{0,2}(?:who|problem|today(?:[ \t]+they)?|(?:my[ \t]+)?idea|why[ \t]+(?:me|us)|about[ \t]+(?:me|us)|(?:my[ \t]+)?(?:offer|story|proof|promise|pitch|ask|goal|background)|(?:the[ \t]+)?(?:ask|team|hook|solution)|value[ \t]+proposition)[*_]{0,2}[ \t]*:/iu;
+
+/**
+ * Whether `index` sits in a draft or a script the founder will send or say, not in the coach's own voice: in a line of a
+ * template filled in for them, inside quotes or a blockquote, after a short lead naming one ("Here's a draft:", "Say:", "Email Dana:", "It could
  * read:"), or after a salutation to someone the reply does not address ("Hi Dana," in a reply to Maya). Read
  * within a bounded window before `index`.
  */
@@ -1100,6 +1107,7 @@ function inDraft(text: string, index: number, addressees: ReadonlySet<string>): 
   const before = text.slice(from, index);
   const line = before.slice(before.lastIndexOf('\n') + 1);
   if (/^[ \t]*>/u.test(line) && (before.includes('\n') || from === 0)) return true;
+  if (FOUNDER_LINE.test(line) && (before.includes('\n') || from === 0)) return true;
   const paragraph = from + before.lastIndexOf('\n\n') + 1;
   let quoted = false;
   let single = -1;
@@ -2499,7 +2507,7 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
     addressees,
     life,
     lifeAfterOpening: options.lifeAfterOpening === true,
-    before: life === null ? '' : (options.lifeBefore ?? '').slice(-DRAFT_SCAN_CHARS),
+    before: (options.lifeBefore ?? '').slice(-DRAFT_SCAN_CHARS),
     saysWhatItIs: (t) => saysWhatItIs(t, options.personaName, names.eirFirstName),
     round: 0,
   };

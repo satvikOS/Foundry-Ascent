@@ -1,0 +1,149 @@
+# Twelve calculations on the founder's own numbers: the figure must be in the reply (never only the method, or a step).
+group: numbers
+scenarios:
+  - id: NM-01
+    title: what one kit leaves, a fair, and when the table is paid
+    role: undergrad
+    founder: Aoife Keane
+    studies: junior in ceramics
+    first_time: true
+    venture:
+      {
+        name: KilnKit,
+        oneLiner: Pottery kits for students without a studio.,
+        stage: business_model,
+        domain: consumer,
+        goal: Know whether the winter fair is worth a table.,
+      }
+    facts: { kits: [kit, kits, pottery], costs: ['24', '6', '3', '2', '13'] }
+    record:
+      - {
+          type: fact,
+          title: Price and costs,
+          content: 'A kit sells for 24 dollars; clay is 6 dollars, glaze 3 and the box 2.',
+          days_ago: 9,
+        }
+    passing: Every figure is worked out from the record and said with its arithmetic; the step comes after it.
+    sessions:
+      - turns:
+          - { say: 'What do I make on one kit?', expect: { number: ['13'], history: [kits, costs] } }
+          - {
+              say: 'A table at the winter fair is 90 dollars. Say I sell 30 kits there. What would be left?',
+              expect: { number: ['300'], history: [kits, costs] },
+              judge: [relevance, actionability],
+            }
+          - {
+              say: 'And how many kits before the table has paid for itself?',
+              expect: { number: ['7', '6.9', '6.92'] },
+            }
+  - id: NM-02
+    title: customers lost, money left, and next month
+    role: grad
+    founder: Rafael Quintero
+    studies: master's student in sport management
+    venture:
+      {
+        name: RosterRay,
+        oneLiner: Schedules and fees for student sport clubs.,
+        stage: growth,
+        domain: software,
+        goal: Understand why clubs leave.,
+      }
+    facts: { clubs: [club*], churn: ['16', '4', '12', '25'] }
+    record:
+      - {
+          type: evidence,
+          title: Clubs last month,
+          content: 'Sixteen clubs paid 15 dollars a month in the first month of term; four of them cancelled in the second.',
+          days_ago: 6,
+        }
+    passing: The share, the money and the projection are the founder's own numbers worked out, not a definition of churn.
+    sessions:
+      - turns:
+          - {
+              say: 'What share of my clubs did I lose in the second month?',
+              expect: { number: ['25'], history: [clubs, churn] },
+            }
+          - {
+              say: "So what's coming in a month now?",
+              expect: { number: ['180'] },
+              judge: [relevance, critical],
+            }
+          - {
+              say: 'If the same share leaves again next month, how many clubs do I have?',
+              expect: { number: ['9'] },
+            }
+  - id: NM-03
+    title: a delivery's margin, a week and a fixed cost, on a call
+    role: undergrad
+    founder: Beatrix Holm
+    studies: sophomore in logistics
+    first_time: true
+    venture:
+      {
+        name: PedalPost,
+        oneLiner: Same-hour bike deliveries between campus buildings.,
+        stage: business_model,
+        domain: consumer,
+        goal: Decide whether to rent a cargo bike.,
+      }
+    facts: { deliveries: [deliver*], costs: ['9', '6', '2.5', '2.50'] }
+    record:
+      - {
+          type: fact,
+          title: One delivery,
+          content: 'A delivery is 9 dollars; the rider gets 6 and the payment fee is 50 cents.',
+          days_ago: 4,
+        }
+    passing: Each sum is said aloud in one breath with its numbers, then one step.
+    sessions:
+      - channel: call
+        turns:
+          - {
+              say: "What's left for me on one delivery?",
+              expect: { number: ['2.5'], history: [deliveries, costs] },
+            }
+          - { say: 'And if I do sixty a week?', expect: { number: ['150'] }, judge: [relevance] }
+          - {
+              say: 'A cargo bike is 300 a month to rent. How many deliveries a month pay for it?',
+              expect: { number: ['120'] },
+            }
+  - id: NM-04
+    title: what an order cost to win, a share, and a price for a margin
+    role: undergrad
+    founder: Emeka Duru
+    studies: junior in agriculture
+    first_time: true
+    venture:
+      {
+        name: SproutPost,
+        oneLiner: Seed packets by post for balcony gardens.,
+        stage: commercialization,
+        domain: consumer,
+        goal: Know whether flyers pay.,
+      }
+    facts: { seeds: [seed*, packet*, flyer*], flyers: ['80', '36', '3', three] }
+    record:
+      - {
+          type: experiment,
+          title: The flyer weekend,
+          content: 'Eighty flyers were handed out for 36 dollars; twelve people came to the page and three ordered at 18 dollars.',
+          days_ago: 5,
+        }
+    passing: The three figures come from the flyer weekend; nothing is asked that the record already says.
+    sessions:
+      - turns:
+          - {
+              say: 'What did it cost me to win one order?',
+              expect: { number: ['12'], history: [seeds, flyers] },
+              judge: [relevance, critical],
+            }
+          - {
+              say: 'What share of the flyers turned into an order?',
+              expect: { number: ['3.75', '3.8', '4'] },
+            }
+          - {
+              say: 'A packet costs me 7 dollars to make and post. What do I charge to keep 40 percent of the price?',
+              expect: { number: ['11.67', '11.66', '11.7'] },
+              judge: [relevance, actionability],
+            }

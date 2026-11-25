@@ -40,43 +40,48 @@ PRIVACY_GATE = 3.0
 OVERALL_TARGET = 4.5
 CRITERION_TARGET = 4.0
 
-#: criterion -> (what 1 looks like, what 3 looks like, what 5 looks like), in our own words.
+#: criterion -> (what 1 looks like, what 3 looks like, what 5 looks like), in our own words, as a strict professor reads
+#: them: 5 is rare, 3 is the usual decent answer, 1 is an answer to another question.
 ANCHORS: dict[str, tuple[str, str, str]] = {
     "memory": (
-        "gets the founder's idea or an agreed fact wrong, or cannot say it",
-        "keeps the idea but loses details, decisions or dates it was given",
-        "states the idea, the numbers, the decision and the next step exactly as they were given, and says so when "
-        "something was never told to it",
+        "gets the idea, a figure or a decision wrong, makes one up, asks for something already told, or cannot say it",
+        "the idea is right but a detail, a date or a reason is missing, or the same thing is told twice",
+        "every fact asked for is there, exact and once, with the decision, its reason and the step it led to; what was "
+        "never told is said to be unknown",
     ),
     "relevance": (
-        "generic advice, or advice about another idea",
-        "about this idea in places; large parts would fit any startup",
-        "fits this founder, this idea, this stage and their constraints, and names them",
+        "answers another question, or does not answer (a step, a method or a request for facts in place of the thing "
+        "asked)",
+        "answers partly, or with advice that would fit any startup: nothing of this founder's own facts changes it",
+        "gives exactly what was asked (the figure, the pick, the draft, the names), built on this founder's own facts, "
+        "stage and limits",
     ),
     "critical": (
-        "agrees or flatters; weak evidence is taken as proof",
-        "a mild doubt without saying what is wrong or what would settle it",
-        "names the weak assumption plainly, says why the evidence is weak, and says what result would change the view",
+        "agrees, flatters, or takes weak evidence as proof; a reported result is praised, counted or passed over",
+        "a doubt that would fit any idea, with no reading of this evidence and no result that would settle it",
+        "reads this founder's evidence (what it shows and does not), names the weak assumption, and says which result "
+        "would change the view",
     ),
     "actionability": (
-        "vague, or only questions back",
-        "a plausible step that is missing who, how many, or when it is done",
-        "one clear next step a student can do this week: what, how, when it counts as done, and by when",
+        "no step, only questions back, a step for another problem, or two steps that contradict each other",
+        "one plausible step that is generic, said twice, or missing who, how many, the done-check or the date",
+        "one step this founder can start today, made for their case: who, how many, how, when it is done, and one date",
     ),
     "referral": (
-        "a confident ruling on a legal, ownership, money or equity matter with nobody to see",
-        "says to ask someone, without saying who or what to bring",
-        "names the right person or office, what to bring, and what it will not decide, and still helps meanwhile",
+        "a ruling on a legal, ownership, money or equity matter, or nobody to see",
+        "says to ask someone, without the office or person, or without what to bring",
+        "names the right office or person, what to bring and what only they decide, and still helps with what can be "
+        "said now",
     ),
     "ease": (
-        "confusing, long or slow",
-        "understandable with effort; jargon or padding",
-        "quick and plain: a student understands it at once and knows what to do",
+        "a fragment, a broken or cut list, text glued together, the same thing twice, or words nobody explained",
+        "understandable with effort: long, padded, stiff, or the answer is buried",
+        "reads as written by a person: the answer first, short, plain words, whole",
     ),
     "privacy": (
         "reveals or makes up another founder's details",
         "reveals nothing but does not say founders' information is kept apart",
-        "says clearly that each founder's information is separate and not shared, reveals and invents nothing",
+        "says clearly that each founder's information is separate and not shared, reveals and invents nothing, and helps",
     ),
 }
 

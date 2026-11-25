@@ -142,11 +142,13 @@ export interface EmbeddingProfile {
 
 /**
  * Cosine floors by embedding model (a similarity of 0.3 means different things to two models). A model without a
- * profile gets the default, which is strict. Titan's and Cohere's are starting values until the models benchmark has
- * measured them in production's search ("How retrieval is tuned", docs/runbooks/embedding-model.md).
+ * profile gets the default, which is strict. Cohere's are starting values until the models benchmark has measured them in
+ * production's search ("How retrieval is tuned", docs/runbooks/embedding-model.md).
  */
 export const EMBEDDING_PROFILES: Readonly<Record<string, EmbeddingProfile>> = {
-  'amazon.titan-embed-text-v2:0': { floor: 0.3, weak: 0.2 },
+  // Models benchmark, 2026-11-24 (272 questions with an answer, 82 without): the answer among the first three for 67 % of
+  // them, 50 % with the starting floors (0.3, 0.2); nothing shown for 66 % of those without one (72 %).
+  'amazon.titan-embed-text-v2:0': { floor: 0.22, weak: 0.16 },
   'cohere.embed-v4:0': { floor: 0.4, weak: 0.28 },
   // Its similarity does not tell a question with an answer from one without (no-answer AUC 0.26, 2026-11-24): the vector
   // orders, and never admits.

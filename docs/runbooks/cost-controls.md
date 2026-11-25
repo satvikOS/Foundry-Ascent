@@ -39,8 +39,10 @@ reply fetched ahead), never more than 27,000 in a 30-minute call; a person's cal
 characters a day (15 a second over the 60-minute daily cap: about $0.86 neural, $1.62 generative); and the
 intro and each signed unit are synthesized once per call (whole sentences of a stored reply twice, the crisis
 support message five times). A
-streamed turn makes two model calls (the answer, then its annotations), about twice the input tokens of a
-whole reply (≈ $0.006 instead of ≈ $0.004 on Nova 2 Lite). A full 30-minute call meters about $0.72 of
+streamed turn makes two model calls (the answer, then its annotations). On the founder path the second has a short
+prompt of its own, so both are about 1.3 times the input tokens of a whole reply (the lab's fixtures, 170 turns on the
+mock: 5,126 tokens for the reply and 6,310 for its fields before, 4,808 and 1,508 since 2026-11-26, medians at 4 characters a
+token); with no path they are about twice (≈ $0.006 instead of ≈ $0.004 on Nova 2 Lite). A full 30-minute call meters about $0.72 of
 Transcribe at the app's $0.024 a minute (AWS's price list of 2026-09-11 gives $0.01; the app's figure errs
 high), plus its speech and turns.
 

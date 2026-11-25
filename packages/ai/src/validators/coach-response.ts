@@ -57,14 +57,20 @@ import {
 } from './social.js';
 import { guidanceText, type PromptGuidance } from '../prompts/guidance.js';
 import { checkCitationSupport, type SupportIndex } from './citation-support.js';
+import { ownFactsUnit } from './own-facts.js';
 import {
+  SPOKEN_REPLY_WORDS,
   carriesContract,
   checkReplyContract,
   contractApplies,
+  isServerText,
+  leadText,
   spokenReserve,
   fitSpoken,
   saidVerbatim,
+  withoutStart,
 } from './reply-contract.js';
+import { unitsOf } from './units.js';
 import { SPOKEN_MAX_CHARS, SPOKEN_MAX_WORDS, clampWords, deriveSpoken, toSpeakable } from './speech.js';
 
 export interface CoachResponseLimits {
@@ -580,6 +586,14 @@ export function validateCoachResponse(
   // Their news comes first: a sentence that parks it for the vEIR's own agenda is left out (LAB-R8).
   const news = options.founderText !== undefined && founderMoves(options.founderText).includes('news');
   const crafted = (text: string, note: boolean): string => {
+    // What the server said first is its own: only what follows it is read as the model's.
+    const lead = guidance === null ? '' : leadText(guidance, channel);
+    const after = lead === '' ? null : withoutStart(text, lead);
+    if (after === null) return craftedBody(text, note);
+    const body = after.trim() === '' ? '' : craftedBody(after.trim(), note, lead);
+    return body === '' ? lead : `${lead}${channel === 'voice' ? ' ' : '\n\n'}${body}`;
+  };
+  const craftedBody = (text: string, note: boolean, lead = ''): string => {
     let out = text;
     if (news) {
       const unparked = withoutAgendaPush(out);
@@ -642,7 +656,8 @@ export function validateCoachResponse(
     }
     if (knownFigures !== undefined) {
       // Asked for a number, the range Thomas reasons out is the answer: it stays (and is counted below).
-      const asked = options.founderText !== undefined && asksForNumber(options.founderText);
+      const asked =
+        guidance === null && options.founderText !== undefined && asksForNumber(options.founderText);
       const figures = withoutExampleFigures(out, knownFigures, asked);
       if (figures.removed > 0 && note) notes.push(`example_figure_removed:${figures.removed}`);
       out = figures.text;
@@ -678,15 +693,23 @@ export function validateCoachResponse(
       if (support.text !== '' || guidance !== null) out = support.text;
     }
     if (guidance !== null) {
+      const own = ownFactsText(out, guidance, knownFigures ?? '');
+      if (own.edits > 0 && note) notes.push(`own_facts:${own.edits}`);
+      out = own.text;
+      // Read with what the server said first, and given back without it.
       const contract = checkReplyContract({
-        reply: out,
+        reply: lead === '' ? out : `${lead}\n\n${out}`,
         guidance,
         channel,
         ...(options.today === undefined ? {} : { today: options.today }),
         ...(options.founderText === undefined ? {} : { founderText: options.founderText }),
       });
       if (note) for (const finding of contract.findings) notes.push(`reply_contract:${finding}`);
-      out = contract.repaired ?? out;
+      if (contract.repaired !== null)
+        out =
+          lead === ''
+            ? contract.repaired
+            : (withoutStart(contract.repaired, lead) ?? contract.repaired).trim();
     }
     return out;
   };
@@ -837,15 +860,17 @@ export function validateCoachResponse(
     notes.push(`unknown_evidence_ids_removed:${results.unknownEvidenceIdsRemoved}`);
   // The answer's identity check comes before a spoken reply is derived from it, so a call never says a
   // sentence the transcript replaced (step 6 checks the rest).
-  r.answer = fixIdentity(r.answer, limits.answerMaxChars, { disclaimers: 'reply' });
+  r.answer = fixIdentity(r.answer, limits.answerMaxChars, { disclaimers: 'reply' }).trim();
   // The step and who decides are never what a call's word budget cuts: they are said past it.
-  const spokenCap = limits.spokenMaxWords + spokenReserve(guidance, '', options.today);
+  const spokenMost =
+    guidance === null ? limits.spokenMaxWords : Math.min(limits.spokenMaxWords, SPOKEN_REPLY_WORDS);
+  const spokenCap = spokenMost + spokenReserve(guidance, '', options.today);
   // A call needs something to say: the model's spoken reply, or else the answer made speakable.
   if (channel === 'voice' && (r.spoken ?? '') === '') {
     const derived =
       guidance === null
         ? deriveSpoken(r.answer, limits.spokenMaxWords)
-        : clampWords(fitSpoken(toSpeakable(r.answer), guidance, limits.spokenMaxWords), spokenCap).text;
+        : clampWords(fitSpoken(toSpeakable(r.answer), guidance, spokenMost), spokenCap).text;
     r.spoken = derived === '' ? null : derived;
     notes.push('spoken_derived');
   }
@@ -994,7 +1019,7 @@ export function validateCoachResponse(
   }
   if (r.spoken) {
     // Within the budget, with the step: over it, what does not carry the contract goes first.
-    const fitted = saidAloud ? r.spoken : fitSpoken(r.spoken, guidance, limits.spokenMaxWords);
+    const fitted = saidAloud ? r.spoken : fitSpoken(r.spoken, guidance, spokenMost);
     const spoken = clampWords(fitted, spokenCap, limits.spokenMaxChars);
     if (fitted !== r.spoken) notes.push('spoken_fitted');
     if (spoken.truncated) notes.push('spoken_truncated');
@@ -1072,6 +1097,31 @@ export function validateCoachResponse(
   const final = CoachResponse.parse(r);
   if (identityBlocked) return { response: final, results, blocked: true, blockReason: 'identity' };
   return { response: final, results, blocked: false };
+}
+
+/** Every unit of a reply as it may be said of the founder (validators/own-facts.ts). */
+function ownFactsText(
+  text: string,
+  guidance: PromptGuidance,
+  known: string,
+): { readonly text: string; readonly edits: number } {
+  let edits = 0;
+  const kept = unitsOf(text).map((u) => {
+    if (isServerText(u.text, guidance, 'text')) return u.raw;
+    const out = ownFactsUnit(u.raw, guidance, { known });
+    if (out.findings.length > 0) edits += 1;
+    return out.text;
+  });
+  return {
+    text:
+      edits === 0
+        ? text
+        : kept
+            .join('')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim(),
+    edits,
+  };
 }
 
 function normalizeEscalation(escalation: EscalationProposal, notes: string[]): EscalationProposal {

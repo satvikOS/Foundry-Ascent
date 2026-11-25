@@ -374,9 +374,7 @@ describe('the relevance floor and diversity', () => {
           chunks: Array.from({ length: n }, (_, i) => ({
             ordinal: i,
             content:
-              i === 0
-                ? 'Marmalade  pricing at the FAIR.'
-                : `Marmalade pricing at the fair, day ${String(i)}.`,
+              i === 0 ? 'Marmalade  pricing at the FAIR.' : `Marmalade at the fair, stall ${String(i)}.`,
           })),
         });
         if (title === 'Marmalade notes B') {

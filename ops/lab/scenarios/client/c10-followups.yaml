@@ -1,0 +1,65 @@
+# Six questions about the step the coach has just given: answered about that step, not with it again.
+group: followups
+scenarios:
+  - id: FU-01
+    title: write it for me, what if they refuse, how do I know it is done
+    role: undergrad
+    founder: Jonas Wikander
+    studies: sophomore in music
+    first_time: true
+    venture:
+      {
+        name: StringShelf,
+        oneLiner: Rents instruments to beginners by the month.,
+        stage: discovery,
+        domain: consumer,
+        goal: Talk to beginners who gave up.,
+      }
+    facts: { instruments: [instrument*, violin*, guitar*, beginner*, rent*] }
+    passing: A message is written out ready to send, a refusal gets a line to say, and the done-check is said in numbers; none is the step repeated.
+    sessions:
+      - turns:
+          - { say: 'What should I be doing this week?', expect: { history: [instruments] } }
+          - {
+              say: 'Can you write the message I should send them?',
+              expect: { history: [instruments] },
+              judge: [relevance, actionability],
+            }
+          - { say: 'And if they say no?', judge: [relevance] }
+          - { say: "How will I know I've done enough?", expect: { kind: coaching } }
+  - id: FU-02
+    title: stuck on one part, worth the time, and somebody else doing it, on a call
+    role: grad
+    founder: Hanne Dahl
+    studies: master's student in architecture
+    venture:
+      {
+        name: RoofRest,
+        oneLiner: Shared roof terraces for old apartment blocks.,
+        stage: validation,
+        domain: social,
+        goal: Get one housing association to pay for a trial.,
+      }
+    facts: { roofs: [roof*, terrace*], association: [association*, housing, block*] }
+    record:
+      - {
+          type: evidence,
+          title: First talks,
+          content: 'Three housing associations were asked; one wants a price for a six-week trial.',
+          days_ago: 7,
+        }
+    passing: Each follow-up is answered in a sentence about the step just given, with its reason, then the step stands.
+    sessions:
+      - channel: call
+        turns:
+          - { say: "What's my next step with the association?", expect: { history: [roofs, association] } }
+          - {
+              say: 'Is that really worth my two free hours this week?',
+              expect: { history: [roofs, association] },
+              judge: [relevance, critical],
+            }
+          - {
+              say: 'Could my flatmate do that part instead of me?',
+              expect: { pick: ['yes', 'no', yourself, flatmate] },
+              judge: [relevance],
+            }

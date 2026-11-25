@@ -65,7 +65,14 @@ import { evidencePlayOf } from '../path/engine.js';
 import { PLAYBOOK } from '../path/playbook/index.js';
 import { guardReport } from '../path/report.js';
 import { PLAY_MATCH_TOP, PLAY_MATCH_WAIT_MS, playMatchProfile } from '../path/semantic.js';
-import { evidenceKeysOf, nextActionsOf, pathTurn, withEvidenceKeys, type PathTurn } from '../path/turn.js';
+import {
+  evidenceKeysOf,
+  followUpsOf,
+  nextActionsOf,
+  pathTurn,
+  withEvidenceKeys,
+  type PathTurn,
+} from '../path/turn.js';
 import { type Playbook } from '../path/types.js';
 import { createDraftEscalation, reviseDraftEscalation } from '../services/escalations.js';
 import { proposeMemoryCandidates, settleKeptMemory } from '../services/memory.js';
@@ -1429,6 +1436,9 @@ export function createOrchestrator(
             response: {
               ...c.response,
               ...(decidedActions === null ? {} : { next_actions: decidedActions }),
+              ...(c.response.follow_up_questions.length > 0
+                ? {}
+                : { follow_up_questions: followUpsOf(path.decision) }),
               // Only what the founder's own words support is kept, with the turn too.
               path_report: guardReport(c.response.path_report, turn.founderText, playbook),
             },

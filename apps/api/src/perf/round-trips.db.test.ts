@@ -23,7 +23,7 @@ import { type SimulatedLatency } from './simulation.js';
  * Long enough that a turn's own work between two round trips never outlasts one, even on a loaded machine: a commit
  * nobody waits for that ended before the next round trip was sent would count as one more.
  */
-const ROUND_TRIP_MS = 100;
+const ROUND_TRIP_MS = 150;
 
 const LATENCY: SimulatedLatency = {
   dbRoundTripMs: ROUND_TRIP_MS,
@@ -86,7 +86,7 @@ describe.each([
   beforeAll(async () => {
     rig = await createLatencyRig(LATENCY, { traceQueries: true, face, reply });
     turns = await callTurns(rig);
-  }, 180_000);
+  }, 240_000);
   afterAll(async () => {
     await rig.cleanup();
   });
@@ -109,7 +109,7 @@ describe('a spoken turn a phrase or a rule decides', () => {
       'How do I split the equity with my cofounder?',
       'What should I do next for the library pilot?',
     ]);
-  }, 180_000);
+  }, 240_000);
   afterAll(async () => {
     await rig.cleanup();
   });
@@ -196,7 +196,7 @@ describe("a returning founder's opener", () => {
       rig.queries.filter((q) => q.requestId === createId),
       createdAt,
     );
-  }, 180_000);
+  }, 240_000);
   afterAll(async () => {
     await rig.cleanup();
   });

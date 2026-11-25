@@ -36,6 +36,11 @@ export interface LabModels {
     readonly coach: readonly string[];
   };
   /**
+   * The client suite's own (`client` in models.json; ops/lab conversation_lab/client): its judges, and the coach models
+   * its runs may put the lab's API process on. Empty when the file has no section.
+   */
+  readonly client: { readonly judge: readonly string[]; readonly coach: readonly string[] };
+  /**
    * The models suite's candidates (`benchmark` in models.json; ops/lab conversation_lab/models_bench.py): reasoning
    * models, embedding models and rerankers compared before the app uses any. Empty when the file has no section.
    */
@@ -55,9 +60,9 @@ function fail(path: string, problem: string): never {
   throw new Error(`${LAB_MODELS_FILE}: ${path} ${problem}`);
 }
 
-function modelList(value: unknown, path: string): string[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 3)
-    fail(path, 'must list 1 to 3 model ids');
+function modelList(value: unknown, path: string, max = 3): string[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > max)
+    fail(path, `must list 1 to ${String(max)} model ids`);
   return value.map((id, index) => {
     if (typeof id !== 'string' || !MODEL_ID.test(id))
       fail(`${path}[${String(index)}]`, 'is not a Bedrock model id');
@@ -120,6 +125,16 @@ export function parseLabModels(raw: unknown): LabModels {
       coach: l.coach === undefined ? [] : modelList(l.coach, '$.live.coach'),
     };
   }
+  let client: LabModels['client'] = { judge: [], coach: [] };
+  if (root.client !== undefined) {
+    if (typeof root.client !== 'object' || root.client === null || Array.isArray(root.client))
+      fail('$.client', 'must be an object');
+    const c = root.client as Record<string, unknown>;
+    client = {
+      judge: modelList(c.judge, '$.client.judge'),
+      coach: modelList(c.coach, '$.client.coach', 4),
+    };
+  }
   const prices = root.usdPerMillionTokens;
   if (typeof prices !== 'object' || prices === null || Array.isArray(prices))
     fail('$.usdPerMillionTokens', 'must be an object');
@@ -138,11 +153,19 @@ export function parseLabModels(raw: unknown): LabModels {
     }
     usdPerMillionTokens[id] = { input: p.input, output: p.output };
   }
-  for (const id of [...simulator, ...judge, ...live.simulator, ...live.judge, ...live.coach]) {
+  for (const id of [
+    ...simulator,
+    ...judge,
+    ...live.simulator,
+    ...live.judge,
+    ...live.coach,
+    ...client.judge,
+    ...client.coach,
+  ]) {
     if (!Object.hasOwn(usdPerMillionTokens, foundationModelId(id)))
       fail('$.usdPerMillionTokens', `has no price for ${foundationModelId(id)}`);
   }
-  return { simulator, judge, live, benchmark: parseBenchmark(root.benchmark), usdPerMillionTokens };
+  return { simulator, judge, live, client, benchmark: parseBenchmark(root.benchmark), usdPerMillionTokens };
 }
 
 export const LAB_MODELS: LabModels = parseLabModels(
@@ -152,8 +175,8 @@ export const LAB_MODELS: LabModels = parseLabModels(
 /**
  * Every Bedrock resource the lab invokes: the app's effective reasoning and embeddings models (it runs the app
  * with the production model configuration) and the lab's simulator and judge models, the live evaluation's included,
- * the alternative coach models a lab run may run the app's coach on (`live.coach`: an A/B, the lab only) and the
- * models suite's candidates (`benchmark`). Each foundation model is granted where its profiles route (lib/models.ts
+ * the alternative coach models a lab run may run the app's coach on (`live.coach`, `client.coach`: an A/B, the lab
+ * only), the client suite's judges and the models suite's candidates (`benchmark`). Each foundation model is granted where its profiles route (lib/models.ts
  * `runtimeAccess`), the widest of its ways in; a reranker only in the region it is called in.
  */
 export function conversationLabAccess(
@@ -167,6 +190,8 @@ export function conversationLabAccess(
     ...lab.live.simulator,
     ...lab.live.judge,
     ...lab.live.coach,
+    ...lab.client.judge,
+    ...lab.client.coach,
     ...lab.benchmark.reasoning,
     ...lab.benchmark.embeddings,
   ];

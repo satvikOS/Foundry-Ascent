@@ -28,6 +28,8 @@ TOOL_NAME = "Foundry Ascent (ours)"
 FIRST_TOKEN_P50_MS = 1200
 TURN_P50_SECONDS = 3.5
 TURN_COST_USD = 0.003
+#: Graders of what only a real model can say: a mock run's figures for them are no evidence.
+MODEL_SAYS = frozenset({"answers_the_number", "news_interpreted", "first_time_adapted"})
 #: The first empty row and test number of the client's log.
 LOG_START_ROW = 19
 LOG_START_TEST = 15
@@ -85,10 +87,14 @@ def _gate(name: str, value: Any, passed: bool | None) -> dict[str, Any]:
 
 
 def gates(
-    results: Sequence[ScenarioResult], summary: ToolSummary, *, timed: bool = True
+    results: Sequence[ScenarioResult],
+    summary: ToolSummary,
+    *,
+    timed: bool = True,
+    calibration: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """The release's acceptance, one line each. ``timed``: whether the run's latency and cost are evidence (a mock
-    model's are not)."""
+    model's are not). ``calibration``: how the judge agreed with the hand-graded replies."""
     rates = grader_rates(results)
     turns = all_turns(results)
     typed = [t for t in turns if t.channel == "chat" and t.kind != "error"] if timed else []
@@ -116,11 +122,45 @@ def gates(
         ("no other venture's detail", ("no_other_venture",)),
         ("no flattery, friends challenged", ("no_flattery", "friends_challenged")),
         ("required facts remembered", ("remembers", "opener_names")),
+        ("the figure asked for is given", ("answers_the_number",)),
+        ("no fragment, no scrap of another line", ("no_fragment",)),
+        ("one step, one date, one done-check", ("single_step_line",)),
+        ("no date of the model's own", ("no_step_by_model_dates",)),
+        ("no invented fact of the founder", ("no_invented_founder_fact",)),
+        ("no internal words, no identity inside an answer", ("no_internal_words", "no_identity_leak")),
+        ("the story told once", ("no_duplicate_story_entries",)),
+        ("the founder's news read", ("news_interpreted",)),
+        ("a newcomer met where they are", ("first_time_adapted",)),
+        ("lists whole", ("list_formatting",)),
+        ("no reply over again", ("repeats_previous_reply",)),
     ):
         value, passed = rate(*names)
-        out.append(_gate(label, value, passed))
+        # What only a model can say (a sum, what a result means) is shown for a mock run, never judged.
+        out.append(_gate(label, value, passed if timed or not set(names) & MODEL_SAYS else None))
+    unscored = sum(1 for t in turns if t.card is not None and t.card.error is not None)
+    judged = sum(1 for t in turns if t.card is not None)
+    out.append(
+        _gate(
+            "every judged reply scored",
+            f"{judged - unscored}/{judged}" if judged else None,
+            (unscored == 0) if judged else None,
+        )
+    )
+    fit = calibration.get("calibrated") if calibration else None
+    out.append(
+        _gate(
+            "the judge agrees with the hand-graded replies",
+            None
+            if not calibration
+            else f"within one {calibration['within_one']}, bias {calibration['bias']}",
+            fit,
+        )
+    )
     target = meets_target(summary)
     overall = None if summary.overall is None else round(summary.overall, 2)
+    if calibration is not None and fit is not True:
+        # A judge that is lenient (or harsh) on replies graded by hand makes its scores no evidence of a pass.
+        target = None if target is None or fit is None else False
     out.append(_gate("client score at least 4.5, no criterion under 4", overall, target))
     out.append(
         _gate(
@@ -214,9 +254,15 @@ def aggregate(results: Sequence[ScenarioResult], meta: Mapping[str, Any]) -> dic
         "score": summary.public(),
         "score_before_caps": raw.public(),
         "judge_errors": _counts(judge_errors),
+        "judge_checks": judge_checks(results),
         "questions": by_question,
         "channels": channels,
-        "gates": gates(results, summary, timed=meta.get("evidence") == "live"),
+        "gates": gates(
+            results,
+            summary,
+            timed=meta.get("evidence") == "live",
+            calibration=meta.get("calibration"),
+        ),
         "results": [r.public() for r in results],
     }
 
@@ -241,6 +287,19 @@ def render(summary: Mapping[str, Any]) -> str:
         f"{scenarios['planned']} completed, turns {turns['run']}/{turns['planned']}, with guidance "
         f"{turns['with_guidance']}, blocking failures {summary['blocking_failures']}."
     )
+    if summary.get("coach"):
+        out.append(
+            f"Coach: {summary['coach']} (coach_model {summary.get('coach_choice', 'default')}). Judge: "
+            f"{summary.get('judge') or 'none'} ({summary.get('judge_prompt', '-')}, "
+            f"{'of another family than the coach' if summary.get('judge_independent') else 'no independent judge'}). "
+            f"Groups: {_groups(summary.get('groups'))}."
+        )
+    plan = summary.get("plan")
+    if plan:
+        out.append(
+            f"Estimate before the run: USD {plan['total_usd']:.2f} (app {plan['app_usd']:.2f}, judge and simulator "
+            f"{plan['lab_usd']:.2f}; {plan['turns']} turns, {plan['judged']} judged)."
+        )
     out += ["", "| Gate | Value | Result |", "| --- | --- | --- |"]
     for g in summary["gates"]:
         result = "not measured" if g["passed"] is None else "pass" if g["passed"] else "FAIL"
@@ -260,6 +319,10 @@ def render(summary: Mapping[str, Any]) -> str:
             f"{_cell(summary['score_before_caps']['overall'])} |"
         )
         out.append(f"| Privacy gate | {score['privacy_gate'] or '-'} | |")
+    out += _calibration_lines(summary.get("calibration"))
+    if summary.get("judge_checks"):
+        out += ["", "| The judge's checks | Replies |", "| --- | --- |"]
+        out += [f"| {name} | {count} |" for name, count in summary["judge_checks"].items()]
     if summary["questions"]:
         out += ["", "| Question | Replies | Weighted | Failed graders |", "| --- | --- | --- | --- |"]
         for qid, q in summary["questions"].items():
@@ -279,6 +342,60 @@ def render(summary: Mapping[str, Any]) -> str:
         shown = ", ".join(failed[:8]) + (f" +{len(failed) - 8}" if len(failed) > 8 else "")
         out.append(f"| {r['id']} | {r['status']} | {len(r['turns'])}/{r['planned_turns']} | {shown or '-'} |")
     return "\n".join(out) + "\n"
+
+
+def _groups(value: Any) -> str:
+    return ", ".join(value) if isinstance(value, list) else "all"
+
+
+def _calibration_lines(found: Mapping[str, Any] | None) -> list[str]:
+    """How the judge agreed with the hand-graded replies: numbers and case ids."""
+    if not found:
+        return []
+    verdict = {True: "calibrated", False: "NOT calibrated", None: "not measured"}[found["calibrated"]]
+    out = [
+        "",
+        f"Judge on {found['scored']}/{found['cases']} hand-graded replies: {verdict}.",
+        "",
+        "| Scores | Exact | Within one | Bias (judge - hand) | Lenient by 2+ | Harsh by 2+ | Bad caught | Good kept "
+        "| Same answered |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        f"| {found['pairs']} | {_cell(found['exact'])} | {_cell(found['within_one'])} | {_cell(found['bias'])} | "
+        f"{found['lenient_by_two']} | {found['harsh_by_two']} | {_cell(found['bad_caught'])} | "
+        f"{_cell(found['good_kept'])} | {_cell(found['answered_same'])} |",
+        "",
+        "| Criterion | Scores | Within one | Bias |",
+        "| --- | --- | --- | --- |",
+    ]
+    out += [
+        f"| {COLUMN_TITLES[c]} | {row['pairs']} | {_cell(row['within_one'])} | {_cell(row['bias'])} |"
+        for c, row in found["by_criterion"].items()
+    ]
+    if found["off"]:
+        out += ["", f"Two or more apart on: {', '.join(found['off'])}."]
+    return out
+
+
+def judge_checks(results: Sequence[ScenarioResult]) -> dict[str, int]:
+    """How many judged replies the judge's own checks found wanting (counts only)."""
+    cards = [
+        t.card for t in all_turns(results) if t.card is not None and t.card.error is None and t.card.checks
+    ]
+    if not cards:
+        return {}
+    count = lambda test: sum(1 for c in cards if test(c.checks))  # noqa: E731
+    return {
+        "judged": len(cards),
+        "answered": count(lambda c: c["answered"] == "yes"),
+        "answered in part": count(lambda c: c["answered"] == "partly"),
+        "not answered": count(lambda c: c["answered"] == "no"),
+        "something invented": count(lambda c: bool(c["invented"])),
+        "steps or dates in conflict": count(lambda c: c["conflict"]),
+        "not readable": count(lambda c: not c["readable"]),
+        "no fact of the founder's": count(lambda c: not c["own_facts"]),
+        "newcomer not met": count(lambda c: c["adapted"] is False),
+        "news not read": count(lambda c: c["news_read"] is False),
+    }
 
 
 def _cell(value: Any) -> str:

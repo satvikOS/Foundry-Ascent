@@ -272,12 +272,17 @@ continuity?, conversationGoal?, guidance? })` — trusted instructions: identity
   persona and founder first name. `buildSystemPromptParts` returns the same prompt as `{ stable, turn }`:
   `stable` (identity to notes) is the same on every turn of a conversation, `turn` opens with the control block,
   then the path's decision, the voice-call rules, the turn policy and the output section (Bedrock prompt caching).
+  `annotation` is the whole system prompt of the second call of a reply on the path: the rules that bind a record, who to
+  escalate, the control block and the few fields asked for (`prompts/annotations.ts`, `PathAnnotations`: mode, claims,
+  escalation, `path_report`, memory candidates), never how to talk.
   The rules of `stable` (without the doctrine and the founder's own data) stay within 2,200 tokens at 4 characters
   each (`craft.test.ts`).
 - `renderGuidance(guidance, channel, { today? })` — the `<path>` block: what the founder path (core `path/`) decided for
-  the turn (`PromptGuidance`: who they are, stage, the answer to their ask, the step with its items, done-when and day,
-  what comes after, check-in, referral, new idea). Code decides, the model explains; every field is escaped data. The
-  same object goes to `buildMessages({ guidance })` (short notes, no second agenda), the sentence gate and
+  the turn (`PromptGuidance`: who they are, stage, what the server says first, sums, the one prior fact, the answer to
+  their ask, the step's title, its template, check-in, referral, new idea). The step's parts, day and done-when are not in
+  it: the server writes them. Code decides, the model explains; every field is escaped data. The
+  same object goes to `buildMessages({ guidance })` (short notes, no second agenda, the last eight turns with all but two
+  shortened and no step line), the sentence gate and
   `validateCoachResponse` (`guidance`, `today`). `guidanceText(guidance, today?)` is all it states, as plain text.
 - `pathOpener({ step, next, today, founderFirstName?, seed })` — the line a conversation opens with when a step is open:
   written by code, so its due state is true; names the step, offers the next one, never judges.
@@ -307,18 +312,22 @@ so rewording a prompt without updating the grader fails a test instead of silent
 
 ### The reply contract and what may be stated
 
-Every coaching reply is the answer, why, the next step (what, done when, by when) and at most one question, last.
+Every coaching reply is the answer, why, the next step (what, done when, by when) and at most one question, last. The
+model writes the answer; the server says what must be exact: the lead (`guidance.lead`, released by `gate.open()` before
+the model is called), the prior fact a typed reply left out, who decides, the one step line and the one question.
 
 - `checkReplyContract({ reply, guidance, channel, today?, founderText? })` → `{ ok, findings, repaired }`
   (`validators/reply-contract.ts`): `question_only`, `deferral`, `missing_answer`, `missing_step`, `stacked_questions`,
-  `flattery`, `missing_referral` (who decides, or what to bring), `wrong_date`, `step_as_answer` (a step that is
-  not about what they asked, given as if it were), `other_step` (a "next step" that is not
-  the path's). `repaired` is written from the path, never by a second model call, and keeps the model's own help. Social
+  `flattery`, `missing_referral` (who decides, or what to bring), `wrong_date`, `step_talk` (a step, a deadline, "Next:", done-when or a list of the
+  step's parts of the model's own: dropped as whole blocks), `missing_lead`, `missing_prior`. `repaired` is written from the path, never by a second model call, and keeps the model's own help. Social
   turns, role-play, a founder in distress and turns with no path are exempt. What the server writes of an answer is up to
   four sentences (420 characters) on text and two on a call (`shortAnswer`), with no lead-in, under the play's own key
-  alone (`playKey`); a recall whose `ask.answer` holds the record is answered from it.
+  alone (`playKey`). A call's whole reply is at most 65 words, the step included. The check is idempotent: what the gate
+  released passes it unchanged.
 - `guidance.step` is the step that answers them; `guidance.pathStep`, the path's own open step beside it, is named only when
-  they ask what is next or it is overdue.
+  it is overdue.
+- `ownFactsUnit` (`validators/own-facts.ts`) and `withMeanings` (`validators/glossary.ts`) read every unit of a reply on the
+  path: only their facts, and each business word with its meaning once.
 - Streaming: `SentenceGate` with `guidance` and `today` holds a reply to it as it streams (`firstUnitVerdict`: a question is
   held until the help was released, a sentence that only puts the answer off is dropped, anything else goes out at once;
   `contractTail`: what the end adds). `gate.trace.rewritten` says the stored reply is what was released.

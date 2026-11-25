@@ -30,12 +30,12 @@ scenarios:
         turns:
           - {
               say: 'Can you work out my unit economics for one box?',
-              expect: { remember: [margin], history: [boxes] },
+              expect: { remember: [margin], history: [boxes], number: ['3.5'] },
               judge: [relevance, actionability, memory],
             }
           - {
               say: 'So what would I make in a month at forty boxes?',
-              expect: { history: [boxes] },
+              expect: { history: [boxes], number: ['140'] },
               judge: [relevance],
             }
           - {
@@ -48,7 +48,7 @@ scenarios:
         turns:
           - {
               say: 'What were my unit economics again, per box?',
-              expect: { kind: recall, remember: [margin] },
+              expect: { kind: recall, remember: [margin], number: ['3.5'] },
               judge: [memory],
             }
           - {
@@ -125,13 +125,19 @@ scenarios:
         goal: Talk to people in dorms.,
       }
     facts:
-      { herbs: [herb*, shelf, shelves, window*], resident: [resident*, RA, dorm*, hall*], count: ['6', six] }
+      {
+        herbs: [herb*, shelf, shelves, window*],
+        resident: [resident*, RA, dorm*, hall*],
+        count: ['6', six],
+        small: [too small, small window*, four of six, 4 of 6, most of them, two thirds, '67'],
+      }
     passing: The call names what was discussed (the six hall residents) and the agreed step, with nothing invented.
     sessions:
       - channel: call
         turns:
           - {
               say: 'I talked to six people in my hall about the herb shelves and four said the windows are too small.',
+              expect: { news: [small] },
             }
           - {
               say: 'So what do I do with that?',

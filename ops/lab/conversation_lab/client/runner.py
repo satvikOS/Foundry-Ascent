@@ -27,7 +27,7 @@ from conversation_lab.client.scenarios import FounderTurn, Scenario, SessionPlan
 from conversation_lab.live.runner import RETRY_CODES, RETRY_PAUSE_SECONDS, STOP_CODES, heard
 
 #: What one turn may plausibly cost the app, reserved per planned turn before a scenario starts.
-TURN_RESERVE_USD = 0.012
+TURN_RESERVE_USD = 0.008
 
 
 @dataclass
@@ -106,6 +106,8 @@ class TurnResult:
             "evidence": self.evidence,
             "why": {k: g.detail for k, g in self.grades.items() if g.passed is False},
             "judge_note": self.card.note if self.card else None,
+            "judge_checks": self.card.checks if self.card else None,
+            "judge_reasons": self.card.reasons if self.card else None,
             "weighted": weighted(self.card.scores) if self.card else None,
             "notes": self.notes,
         }
@@ -236,7 +238,8 @@ class ClientRunner:
                 r.notes.append("intake:" + save_intake(client, seed.venture_id, intake))
             sessions = list(s.sessions) * s.repeat
             for index, plan in enumerate(sessions, start=1):
-                session_id, ok = self._session(r, client, seed, index, plan)
+                last = index == len(sessions)
+                session_id, ok = self._session(r, client, seed, index, plan, last=last)
                 if not ok:
                     r.status = "failed"
                     r.reason = (
@@ -256,11 +259,18 @@ class ClientRunner:
         finally:
             with contextlib.suppress(Exception):
                 client.close()
-            self._grade(r)
+            self.grade(r)
         self._score(r)
 
     def _session(
-        self, r: ScenarioResult, client: Any, seed: Seeded, index: int, plan: SessionPlan
+        self,
+        r: ScenarioResult,
+        client: Any,
+        seed: Seeded,
+        index: int,
+        plan: SessionPlan,
+        *,
+        last: bool = False,
     ) -> tuple[str, bool]:
         voice = plan.channel == "call"
         with contextlib.suppress(Exception):
@@ -293,8 +303,11 @@ class ClientRunner:
             if call_id is not None:
                 with contextlib.suppress(Exception):
                     client.end_call(call_id)
-            with contextlib.suppress(Exception):
-                client.end_session(view.id)
+            # Ended when another conversation follows: its recap and memory are what that one is graded on. Nobody reads
+            # the last one's, and they cost about two turns each.
+            if not last:
+                with contextlib.suppress(Exception):
+                    client.end_session(view.id)
         return view.id, ok
 
     def _simulated(
@@ -408,6 +421,7 @@ class ClientRunner:
             established=frozenset(figures),
             established_dates=frozenset(dates),
             nagged_before=0 if last is None else last.nag_row,
+            same_session=tuple(t.reply for t in before if t.session == turn.session and t.reply),
         )
 
     @staticmethod
@@ -417,7 +431,7 @@ class ClientRunner:
             return 0
         return sum(plan.gap_days for plan in s.sessions[earlier:now])
 
-    def _grade(self, r: ScenarioResult) -> None:
+    def grade(self, r: ScenarioResult) -> None:
         for index, turn in enumerate(r.turns):
             seen = self.reply_turn(r, index)
             turn.grades = grade_turn(seen)
@@ -428,6 +442,10 @@ class ClientRunner:
                 at = [t for t in r.turns if t.at.split(".")[1] == str(number + 1)]
                 if len(at) == s.repeat:
                     r.grades["same_step"] = same_step([t.step_key for t in at])
+        if s.same_step:
+            asked = [t for t in r.turns if t.at in s.same_step]
+            if len(asked) == len(s.same_step):
+                r.grades["same_step"] = same_step([t.step_key for t in asked])
         for plan, opener in zip(s.sessions, r.openers, strict=False):
             if plan.opener:
                 found = opener_names(opener, plan.opener, s.facts)
@@ -464,6 +482,7 @@ class ClientRunner:
             seconds=turn.seconds,
             tests=tests,
             passing=s.passing,
+            first_time=s.first_time,
         )
 
 

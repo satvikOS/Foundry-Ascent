@@ -161,7 +161,7 @@ scenarios:
               say: 'How much money do I need before I can start?',
               q: Q6,
               wording: Q6,
-              expect: { history: [coffee, cost] },
+              expect: { history: [coffee, cost], number: ['730', '80', '27'] },
             }
   - id: CQ-07
     title: grants, angels or venture capital
@@ -188,6 +188,7 @@ scenarios:
       - turns:
           - {
               say: 'We have one prototype that hears cracks on a test beam and a county engineer who wants to try it on one bridge.',
+              expect: { news: [county] },
             }
           - {
               say: 'Should I be looking for grants, angel investors or venture capital?',
@@ -209,7 +210,12 @@ scenarios:
         domain: consumer,
         goal: Set a first price.,
       }
-    facts: { tutoring: [tutor*, quarter hour, quarter-hour, session*], price: ['30', '12', '20'] }
+    facts:
+      {
+        tutoring: [tutor*, quarter hour, quarter-hour, session*],
+        price: ['30', '12', '20'],
+        free: [free, for nothing, unpaid],
+      }
     record:
       - {
           type: evidence,
@@ -221,8 +227,14 @@ scenarios:
       - turns:
           - {
               say: "TutorTag sells tutoring by the quarter hour. I've run 9 sessions for free to see if people come back.",
+              expect: { news: [free] },
             }
-          - { say: 'How should I price it?', q: Q8, wording: Q8, expect: { history: [tutoring, price] } }
+          - {
+              say: 'How should I price it?',
+              q: Q8,
+              wording: Q8,
+              expect: { history: [tutoring, price], number: ['7.5'] },
+            }
   - id: CQ-09
     title: a first investor meeting
     role: grad
@@ -405,11 +417,26 @@ scenarios:
         domain: hardware,
         goal: Decide what to do before a conference talk.,
       }
-    facts: { membrane: [membrane, lead, water], talk: [conference, talk, poster, present*, disclos*] }
+    facts:
+      {
+        membrane: [membrane, lead, water],
+        talk: [conference, talk, poster, present*, disclos*],
+        clock:
+          [
+            disclos*,
+            one-year,
+            twelve months,
+            12 months,
+            before the abstract,
+            before it goes public,
+            file before,
+          ],
+      }
     sessions:
       - turns:
           - {
               say: "I'm presenting the membrane results at a conference on {date+24}, and the abstract goes public a week before.",
+              expect: { news: [clock] },
             }
           - {
               say: 'Should I file a patent right now, or wait?',
@@ -530,6 +557,7 @@ scenarios:
       - turns:
           - {
               say: "We've been offering leftover meals to students and nobody paid. But three caterers said they pay to have leftovers hauled away.",
+              expect: { news: [caterers] },
             }
           - {
               say: 'So we decided: we pivot. We stop selling to students and charge caterers 25 dollars a pickup instead. The plan is to ask 5 caterers this week.',

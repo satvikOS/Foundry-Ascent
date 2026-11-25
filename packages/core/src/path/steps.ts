@@ -148,11 +148,22 @@ export function openCriterionOf(state: PathState, play: Play, inStage: boolean):
 const DONE_CHARS = 400;
 const DEFAULT_MINUTES = 30;
 const LEAST_MINUTES = 10;
-const PART = /^(?:First \d+ minutes of|The first one only|The first part of): /;
+const PART = /^(?:First \d+ minutes of|The first part of): /;
 const minutesOf = (item: PathStepView['items'][number]): number => item.minutes ?? DEFAULT_MINUTES;
 const lowerFirst = (text: string): string =>
   /^[A-Z][a-z]/.test(text) ? `${text.charAt(0).toLowerCase()}${text.slice(1)}` : text;
 const clause = (text: string): string => lowerFirst(text.replace(/[\s.!?;]+$/u, '').trim());
+
+const NUMBER_WORDS =
+  'two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|\\d{1,3}';
+const COUNTED = new RegExp(`\\b(?:(?:all|the|these|those|my|our) )*(${NUMBER_WORDS}) (?=[a-z])`, 'i');
+
+/** One of a number ("email the five theatre groups" → "Email one of the five theatre groups"); null: it has no count. */
+function oneOf(whole: string): string | null {
+  if (/\bone of the\b/i.test(whole) || (countsIn(whole)[0] ?? 0) <= 1) return null;
+  const said = whole.replace(COUNTED, (_m, n: string) => `one of the ${n} `);
+  return said === whole ? null : `${said.charAt(0).toUpperCase()}${said.slice(1)}`;
+}
 
 /**
  * The same step cut to its first doable item or items within the time they have, done when those are, and due soon. Null:
@@ -189,9 +200,7 @@ export function smallerStep(view: PathStepView, ask: SmallerAsk, today: string):
           do:
             ask.minutes !== null
               ? `First ${String(budget)} minutes of: ${whole}`
-              : (countsIn(whole)[0] ?? 0) > 1
-                ? `The first one only: ${whole}`
-                : `The first part of: ${whole}`,
+              : (oneOf(whole) ?? `The first part of: ${whole}`),
           minutes: ask.minutes === null && first.minutes === null ? null : budget,
         }
       : null;
@@ -247,6 +256,60 @@ export function restOf(
 /** Most characters of a step's title (`path_steps`). */
 const TITLE_CHARS = 120;
 
+/** What they will do as done ("email" → "emailed"), and what can be said of it then. */
+const DID: Readonly<Record<string, readonly [did: string, count: string, came: string]>> = {
+  ask: ['asked', 'how many said yes', 'what they said'],
+  offer: ['offered it to', 'how many said yes', 'what they said'],
+  email: ['emailed', 'how many answered', 'what came back'],
+  message: ['messaged', 'how many answered', 'what came back'],
+  text: ['texted', 'how many answered', 'what came back'],
+  dm: ['messaged', 'how many answered', 'what came back'],
+  contact: ['contacted', 'how many answered', 'what came back'],
+  call: ['called', 'how many picked up', 'what they said'],
+  talk: ['talked', 'what most of them said', 'what they said'],
+  speak: ['spoken', 'what most of them said', 'what they said'],
+  interview: ['interviewed', 'what most of them said', 'what they said'],
+  meet: ['met', 'what most of them said', 'what they said'],
+  visit: ['visited', 'what you saw in each', 'what you saw'],
+  sell: ['sold', 'who bought and at what price', 'who bought and at what price'],
+  pitch: ['pitched', 'how many said yes', 'what they asked'],
+  show: ['shown', 'what each of them did', 'what they did'],
+  survey: ['surveyed', 'how many answered', 'what they answered'],
+  send: ['sent', 'how many answered', 'what came back'],
+  post: ['posted', 'how many answered', 'what came back'],
+  write: ['written', '', ''],
+  draft: ['drafted', '', ''],
+  build: ['built', '', ''],
+  make: ['made', '', ''],
+  finish: ['finished', '', ''],
+  submit: ['submitted', '', ''],
+  read: ['read', '', ''],
+  list: ['listed', '', ''],
+  book: ['booked', '', ''],
+  print: ['printed', '', ''],
+  find: ['found', '', ''],
+  pick: ['picked', '', ''],
+  choose: ['chosen', '', ''],
+  count: ['counted', '', ''],
+  file: ['filed', '', ''],
+  launch: ['launched', 'who came', 'who came'],
+  run: ['run', 'what came of it', 'what came of it'],
+  test: ['tested', 'what came of it', 'what came of it'],
+  try: ['tried', 'what came of it', 'what came of it'],
+  do: ['done', 'what came of it', 'what came of it'],
+};
+
+/** When what they said they would do is done, in checkable words ("you have asked 5 caterers and can say how many said yes"). */
+export function doneWhenOf(said: string): string {
+  const whole = clause(said);
+  const verb = /^[a-z]+/i.exec(whole)?.[0].toLowerCase() ?? '';
+  const did = DID[verb];
+  if (did === undefined) return `You have done it, and can say in one line what came of it: ${whole}.`;
+  const rest = whole.slice(verb.length).trim();
+  const say = (countsIn(whole)[0] ?? 0) > 1 && !/\bone of the\b/i.test(whole) ? did[1] : did[2];
+  return `You have ${did[0]}${rest === '' ? '' : ` ${rest}`}${say === '' ? '' : ` and can say ${say}`}.`;
+}
+
 /**
  * What the founder said they would do, as their step: their words for its title, the method of the play it belongs to
  * when the playbook has one, and their day.
@@ -296,7 +359,7 @@ export function ownStep(
               },
             ]
           : itemsOf(play),
-      doneWhen: `You can say what came of it: ${clause(said.clause)}.`,
+      doneWhen: doneWhenOf(said.clause),
       dueOn: due,
       status: 'now',
       origin: 'founder',
@@ -310,6 +373,16 @@ export function ownStep(
 }
 
 // As it is shown ---------------------------------------------------------------------------------------------------
+
+/** What is left of a counted step, as an instruction ("Hold 2 more customer talks"). */
+function restTitle(title: string, evidence: string, rest: number): string {
+  const left = `${String(rest)} more`;
+  const one = rest === 1;
+  if (/\b(?:conversations?|interviews?|talks?|people (?:described|told|said))\b/i.test(evidence))
+    return `Hold ${left} customer ${one ? 'talk' : 'talks'}`;
+  if (/\b(?:customers?|buyers?)\b/i.test(evidence)) return `Win ${left} ${one ? 'customer' : 'customers'}`;
+  return `${title}: ${left}`;
+}
 
 /**
  * The step as it is shown: when its criterion is already part of the way ("8 of 10"), what remains of it, with the work
@@ -334,8 +407,12 @@ export function shownStep(view: PathStepView, state: PathState): PathStepView {
   );
   return {
     ...view,
-    title: `${view.title}: ${String(rest)} more`,
+    title: restTitle(view.title, c.criterion.evidence, rest),
     items: view.items.map((item, i) => (i < longest ? { ...item, done: true } : item)),
-    doneWhen: `${String(rest)} more make ${String(c.progress.of)} in all. ${c.criterion.evidence}`,
+    doneWhen:
+      `${String(rest)} more ${rest === 1 ? 'makes' : 'make'} ${String(c.progress.of)} in all: ${clause(c.criterion.evidence).replace(/^A (?=[a-z])/, 'a ')}.`.slice(
+        0,
+        DONE_CHARS,
+      ),
   };
 }

@@ -1,0 +1,110 @@
+# Eight pieces of news: the reply says what each means for the idea before it says what to do.
+group: news
+scenarios:
+  - id: NW-01
+    title: sign-ups that mean less than they look, then two that pay
+    role: undergrad
+    founder: Yara Haddock
+    studies: senior in textile design
+    first_time: true
+    venture:
+      {
+        name: MendMail,
+        oneLiner: Clothes mended by post within a week.,
+        stage: validation,
+        domain: consumer,
+        goal: Find out whether strangers pay for mending.,
+      }
+    facts:
+      mending: [mend*, cloth*]
+      rate: ['4.5', one in twenty, 1 in 22, few, weak, not a sale, not money, not proof, interest]
+      forgot: [five, '5', forgot*, remember*, weak*, cold]
+      paid: [two, '2', paid, pay*, '22', '40']
+    passing: A sign-up is read as interest, forgetting as weaker still, and two payments as the first evidence, each in its own words.
+    sessions:
+      - turns:
+          - {
+              say: 'I put up a page for MendMail. 200 people saw it and 9 left an email address.',
+              expect: { kind: report, news: [rate] },
+              judge: [relevance, critical],
+            }
+          - {
+              say: "I phoned the nine. Five of them didn't remember signing up.",
+              expect: { kind: report, news: [forgot] },
+            }
+          - {
+              say: 'Two of the other four paid me 20 dollars each while we were on the phone.',
+              expect: { kind: report, news: [paid] },
+              judge: [critical, actionability],
+            }
+  - id: NW-02
+    title: a no from the buyer, a yes from a user, and a spending limit
+    role: grad
+    founder: Nkechi Obi
+    studies: master's student in nursing administration
+    venture:
+      {
+        name: ShiftScribe,
+        oneLiner: Handover notes between hospital shifts.,
+        stage: validation,
+        domain: clinical,
+        goal: Get one ward to pay.,
+      }
+    facts:
+      ward: [ward*, shift*, handover*, floor*]
+      system: [already, existing, system, incumbent, replace*]
+      floor: [supervisor*, night shift, one floor, her floor, smaller]
+      limit: ['500', under, below, six months]
+    passing: The no is read as who the buyer is and what they compare with; the yes as a smaller place to start; the limit as a price.
+    sessions:
+      - turns:
+          - {
+              say: 'The head nurse turned ShiftScribe down. She says the hospital already has a system for handovers.',
+              expect: { kind: report, news: [system] },
+              judge: [relevance, critical],
+            }
+          - {
+              say: 'But the night shift supervisor asked me afterwards if she could have it just for her floor.',
+              expect: { kind: report, news: [floor] },
+            }
+          - {
+              say: 'Purchasing told me anything above 500 dollars takes six months to approve.',
+              expect: { kind: report, news: [limit] },
+              judge: [critical, actionability],
+            }
+  - id: NW-03
+    title: a co-founder leaves, and a free competitor appears
+    role: undergrad
+    founder: Lucia Ferro
+    studies: senior in information systems
+    venture:
+      {
+        name: LoftLedger,
+        oneLiner: Splits bills between housemates automatically.,
+        stage: validation,
+        domain: software,
+        goal: Keep the first twelve houses.,
+      }
+    facts:
+      houses: [house*, bill*, twelve, '12']
+      code: [code, app, wrote, access, rights, repository, passwords, owns]
+      free: [free, charge*, pay*, switch*, keep]
+    record:
+      - {
+          type: milestone,
+          title: First houses,
+          content: 'Twelve houses use it; four pay 3 dollars a month.',
+          days_ago: 8,
+        }
+    passing: What the departure means for the code and the houses comes first; the free rival is read against why four houses pay.
+    sessions:
+      - turns:
+          - {
+              say: 'My co-founder left last night. He wrote the whole app.',
+              expect: { kind: report, news: [code] },
+              judge: [critical, relevance],
+            }
+          - {
+              say: 'And this morning a bank launched the same thing, for free.',
+              expect: { kind: report, news: [free], history: [houses] },
+            }

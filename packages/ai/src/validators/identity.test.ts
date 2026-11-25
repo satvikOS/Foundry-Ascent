@@ -1386,3 +1386,20 @@ describe('rewriteIdentity agrees with the evals identity grader', () => {
     });
   });
 });
+
+describe('rewriteIdentity — a line of a template is the founder’s (first live run on Nova 2 Lite)', () => {
+  // "5. Why me: I’m in the gym daily" was replaced by "5. I'm Thomas, an AI mentor."
+  const mentor = { personaName: 'Thomas', eirNames: EIRS, mentor: true } as IdentityRewriteOptions;
+  it.each([
+    'Your page:\n\n4. Idea: a shelf that counts itself\n5. Why me: I’m in the gym daily and I run the desk',
+    'Here it is.\n\n**Why me:** I live in the dorm and I see it every day.',
+    'Fill it in:\n- About me: I am a nurse and I worked nights for two years.',
+  ])('%j is left alone', (text) => {
+    expect(rewriteIdentity(text, mentor)).toMatchObject({ text, findings: [] });
+  });
+
+  it('a claim of the coach’s own is still rewritten', () => {
+    expect(rewriteIdentity("I'm in the office, so send it over.", mentor).findings).not.toEqual([]);
+    expect(rewriteIdentity('One line.\n\nI am a human being, like you.', mentor).findings).not.toEqual([]);
+  });
+});

@@ -44,7 +44,7 @@ export function toSpeakable(text: string): string {
   // never heard as a sign-off sentence.
   const joined = lines
     .map((line, i) =>
-      /[.!?:;…,]$/.test(line.text)
+      /[.!?:;…,]["”’)]?$/.test(line.text)
         ? line.text
         : `${line.text}${line.item && lines[i + 1]?.item === true && /^(?:\p{Lu}[\p{L}'’-]*\s*){1,4}$/u.test(line.text) ? ',' : '.'}`,
     )

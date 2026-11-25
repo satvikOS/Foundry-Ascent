@@ -1,5 +1,5 @@
 import * as ai from '@foundry/ai';
-import { escapeData, type SentenceGateOptions } from '@foundry/ai';
+import { escapeData, standingLine, stepLine, type SentenceGateOptions } from '@foundry/ai';
 import { type TurnChannel } from '@foundry/contracts';
 
 import { sayComing } from './dates.js';
@@ -13,7 +13,7 @@ import { namesStep } from './engine.js';
 
 /** Same shape as `@foundry/ai`'s `PromptGuidance` (prompts/guidance.ts), with the criteria its annotation call reads. */
 export interface PathPromptGuidance {
-  readonly kind: 'coaching' | 'report' | 'recall' | 'social' | 'rehearsal' | 'new_idea';
+  readonly kind: 'coaching' | 'report' | 'news' | 'recall' | 'social' | 'rehearsal' | 'new_idea';
   readonly brief: string;
   readonly stage: { readonly title: string; readonly number: number; readonly count: number };
   readonly firstTime: boolean;
@@ -23,9 +23,27 @@ export interface PathPromptGuidance {
     readonly why: string;
     readonly traps: readonly string[];
     readonly evidenceKeys: readonly string[];
+    /** Lines that go with the answer (a filled template), as they are. */
+    readonly block?: string;
   } | null;
+  /** What the server says first, word for word (`PromptGuidance.lead`). */
+  readonly lead?: { readonly text: string; readonly voice: string };
+  /** Sums of their numbers, given. */
+  readonly calc?: readonly string[];
+  /** The one question of the reply, when a number is missing. */
+  readonly askBack?: string;
+  /** The one prior fact the answer builds on. */
+  readonly prior?: { readonly fact: string; readonly sentence: string; readonly spoken?: string } | null;
+  /** Everything they said or that is on record of them. */
+  readonly said?: string;
+  /** They ask how to do the step. */
+  readonly howTo?: boolean;
+  /** They say now that they have never done this. */
+  readonly firstTimeNow?: boolean;
   readonly step: {
     readonly title: string;
+    /** The title as the step line says it (a business word with its meaning). */
+    readonly said?: string;
     readonly items: readonly { readonly do: string; readonly how: string; readonly minutes: number | null }[];
     readonly doneWhen: string;
     readonly dueOn: string | null;
@@ -218,27 +236,18 @@ export function checkReply(
   };
 }
 
-/** How a step that is not about what they asked is said: what stands, never what to do about it. */
-const ON_YOUR_PATH = 'On your path, next is';
-
-/** Whether a reply said the standing step (`ON_YOUR_PATH`, or the model's own words for it). */
+/** Whether a reply said the standing step ("On your path, next is: …", or the model's own words for it). */
 export function saysStanding(reply: string): boolean {
   return /\bon your path,? (?:the |your )?next(?: step| item)? is\b/i.test(reply);
 }
 
-const asClause = (title: string): string => title.replace(/[.!?\s]+$/u, '').trim();
-const lowerFirst = (text: string): string =>
-  /^[A-Z][a-z]/.test(text) ? `${text.charAt(0).toLowerCase()}${text.slice(1)}` : text;
-
-/** The step in one written line ("Next: Talk to five people by Friday. Done when …"). */
+/** The step in one written line, as the reply contract writes it ("**Next:** Talk to five people by Friday. Done when …"). */
 export function writtenStepLine(
   step: NonNullable<PathPromptGuidance['step']>,
   today: string,
   role?: PathPromptGuidance['stepRole'],
 ): string {
-  const due = step.dueOn === null ? '' : ` by ${sayComing(today, step.dueOn)}`;
-  if (role !== undefined) return `${ON_YOUR_PATH}: ${asClause(step.title)}${due}.`;
-  return `Next: ${asClause(step.title)}${due}. Done when: ${asClause(step.doneWhen)}.`;
+  return role === undefined ? stepLine(step, 'text', today) : standingLine(step, 'text', today);
 }
 
 /** The step as a call says it, when the reply left it out: one short sentence, server text. */
@@ -247,9 +256,7 @@ export function spokenStepLine(
   today: string,
   role?: PathPromptGuidance['stepRole'],
 ): string {
-  const due = step.dueOn === null ? '' : `, by ${sayComing(today, step.dueOn)}`;
-  const opens = role === undefined ? 'Your next step' : ON_YOUR_PATH;
-  return `${opens}: ${lowerFirst(asClause(step.title))}${due}.`;
+  return role === undefined ? stepLine(step, 'voice', today) : standingLine(step, 'voice', today);
 }
 
 /** Everything the guidance says, as text: figures, dates and names a reply may take from it. */
@@ -262,6 +269,7 @@ export function guidanceWords(guidance: PathPromptGuidance): string {
       ? ''
       : [
           step.title,
+          step.said ?? '',
           step.doneWhen,
           step.dueOn ?? '',
           ...step.items.flatMap((i) => [
@@ -276,6 +284,13 @@ export function guidanceWords(guidance: PathPromptGuidance): string {
     checkIn === null ? '' : `${checkIn.title} ${checkIn.dueOn ?? ''}`,
     referral === null ? '' : `${referral.who} ${referral.bring}`,
     newIdea === null ? '' : `${newIdea.ventureName} ${newIdea.fact ?? ''}`,
+    guidance.lead?.text ?? '',
+    guidance.lead?.voice ?? '',
+    ...(guidance.calc ?? []),
+    guidance.askBack ?? '',
+    guidance.prior?.sentence ?? '',
+    guidance.prior?.spoken ?? '',
+    ask?.block ?? '',
   ]
     .filter((t) => t.trim() !== '')
     .join('\n');

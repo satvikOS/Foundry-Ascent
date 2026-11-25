@@ -1,0 +1,170 @@
+# What a real term brings: two ventures in one breath, a hard critique, broken English, one question four ways, a pasted page.
+group: hard
+scenarios:
+  - id: HD-01
+    title: two ventures mixed up by the founder
+    role: grad
+    founder: Anselm Roth
+    studies: MBA student
+    venture:
+      {
+        name: TrailTally,
+        oneLiner: Counts hikers on park trails for rangers.,
+        stage: validation,
+        domain: hardware,
+        goal: Win the second park.,
+      }
+    facts: { trails: [trail*, park*, ranger*, hiker*], price: ['70'], bakery: [bakery, bread, loaf, loaves] }
+    record:
+      - {
+          type: milestone,
+          title: First park,
+          content: 'One park pays 70 dollars a month for two counters.',
+          days_ago: 12,
+        }
+    passing: The bakery is kept apart from TrailTally by name; the park's price is never put on bread; each gets its own answer.
+    sessions:
+      - turns:
+          - {
+              say: "So the park pays 70 a month, and the loaves go for 5, so if I sell 100 loaves that's my second park covered, right? My bakery's the other thing I run.",
+              expect: { history: [trails, price], number: ['500'] },
+              judge: [critical, relevance],
+            }
+          - {
+              say: 'Which of the two should I spend this week on?',
+              expect: { pick: [trail*, park, TrailTally, bakery, counters], history: [trails] },
+            }
+          - {
+              say: 'Remind me what TrailTally has and what it has not.',
+              expect: { kind: recall, remember: [trails, price] },
+              judge: [memory],
+            }
+  - id: HD-02
+    title: asks for the hardest critique an adviser would give
+    role: grad
+    founder: Delphine Marchand
+    studies: master's student in public policy
+    venture:
+      {
+        name: WasteWise,
+        oneLiner: Scores restaurants on food waste for diners.,
+        stage: validation,
+        domain: social,
+        goal: Decide who pays for the score.,
+      }
+    facts: { restaurants: [restaurant*, diner*, waste], evidence: ['40', forty, '3', three, '150'] }
+    record:
+      - {
+          type: evidence,
+          title: Spring test,
+          content: 'Forty restaurants were scored; three asked to buy a badge at 150 dollars a year; diners opened the page 900 times and nobody paid.',
+          days_ago: 14,
+        }
+    passing: The weakest point is named from the test's own numbers (3 of 40, 900 views and no money), with the result that would change the view; nothing is softened.
+    sessions:
+      - turns:
+          - {
+              say: "Tear this apart the way a hard-nosed investor would. Don't be kind.",
+              expect: { history: [restaurants, evidence] },
+              judge: [critical, relevance],
+            }
+          - {
+              say: "That's the polite version. What would make you walk out of the room?",
+              expect: { history: [evidence] },
+              judge: [critical],
+            }
+          - {
+              say: 'And what result in the next month would change your mind?',
+              expect: { history: [restaurants] },
+              judge: [critical, actionability],
+            }
+  - id: HD-03
+    title: a founder who writes in broken English
+    role: grad
+    founder: Thanh Vu
+    studies: master's student in food science
+    first_time: true
+    venture:
+      {
+        name: LeafLunch,
+        oneLiner: Rice leaf meals for students near the labs.,
+        stage: validation,
+        domain: consumer,
+        goal: Sell the first hundred lunches.,
+      }
+    facts: { lunch: [lunch*, meal*, leaf, rice], cost: ['8', '5', '3'] }
+    record:
+      - {
+          type: fact,
+          title: One lunch,
+          content: 'A lunch sells for 8 dollars and costs 5 to make.',
+          days_ago: 3,
+        }
+    passing: The plain meaning is answered in short simple sentences, with the founder's own numbers and no idiom.
+    sessions:
+      - turns:
+          - {
+              say: 'I make lunch 8 dollar, cost me 5. If sell 100 how much stay for me?',
+              expect: { number: ['300'], history: [lunch, cost] },
+              judge: [relevance, ease],
+            }
+          - {
+              say: 'Student say too expensive but they buy anyway. What mean this?',
+              expect: { history: [lunch] },
+              judge: [critical],
+            }
+          - { say: 'Please you tell me what I do tomorrow morning, small thing.', judge: [ease] }
+  - id: HD-04
+    title: the same question four ways
+    role: undergrad
+    founder: Oona Virtanen
+    studies: junior in geology
+    first_time: true
+    venture:
+      {
+        name: RockRota,
+        oneLiner: Geology field trips led by students.,
+        stage: discovery,
+        domain: consumer,
+        goal: Find the first paying group.,
+      }
+    facts: { trips: [trip*, geolog*, rock*] }
+    passing: The four wordings get the same step, and each reply still reads as an answer to its own words.
+    same_step: ['1.1', '1.2', '1.3', '1.4']
+    sessions:
+      - turns:
+          - { say: 'How do I get my first paying group?' }
+          - { say: "What's the way to land a first customer, then?" }
+          - { say: 'I mean, who do I sell the first trip to and how?' }
+          - { say: 'Okay but concretely: first booking, how?', judge: [relevance, ease] }
+  - id: HD-05
+    title: a long paragraph pasted from a document
+    role: grad
+    founder: Casimir Wolan
+    studies: master's student in finance
+    venture:
+      {
+        name: QuayQuote,
+        oneLiner: Instant repair quotes for small boatyards.,
+        stage: validation,
+        domain: software,
+        goal: Tighten the one-page summary.,
+      }
+    facts: { yards: [boatyard*, yard*, quote*, repair*], asks: ['3', three, '18', eighteen, '11', eleven] }
+    passing: The numbers that matter are picked out of the page (3 of 18 paid), the weak claim is named, and the ask (shorter, sharper) is done.
+    sessions:
+      - turns:
+          - say: >-
+              Here is the paragraph from my summary, tell me what is wrong with it: QuayQuote is a platform solution that
+              leverages photographs to deliver seamless repair quotes for the marine sector, which is a very large and
+              growing space with strong tailwinds. Boatyards today spend long evenings writing quotes by hand, and eighteen
+              yards told us this is painful. We have built a working version and three of the eighteen have paid 60 dollars
+              for a month, while eleven said they would consider it later. Our team is passionate and our vision is to become
+              the operating system of every boatyard in the country within three years, after which we will expand abroad.
+            expect: { history: [yards, asks] }
+            judge: [critical, relevance]
+          - {
+              say: 'Rewrite it in four sentences I can send today.',
+              expect: { history: [yards, asks] },
+              judge: [actionability, ease],
+            }

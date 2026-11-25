@@ -5,6 +5,7 @@ import {
   guidanceWords,
   renderPathGuidance,
   spokenStepLine,
+  writtenStepLine,
   type PathPromptGuidance,
 } from './ai-adapter.js';
 import { arcOf, BRIEF_CHARS, briefOf, type BriefSource } from './brief.js';
@@ -254,7 +255,7 @@ describe('a reply that leaves the step out', () => {
     expect(checkReply('Interesting.', prompt, context).findings).toContain('missing_step');
     expect(
       checkReply(
-        'Labs expire what they cannot see. Next: run one test with a pass line by Friday, December 4. Done when it is written down and dated.',
+        `Labs expire what they cannot see, so see whether one of them acts on a list of what is about to expire.\n\n${prompt.step === null ? '' : writtenStepLine(prompt.step, TODAY)}`,
         prompt,
         context,
       ).findings,
@@ -274,7 +275,7 @@ describe('a reply that leaves the step out', () => {
 
   it('a call says it in one short sentence', () => {
     const line = prompt.step === null ? '' : spokenStepLine(prompt.step, TODAY);
-    expect(line).toBe('Your next step: run one test with a pass line, by December 4.');
+    expect(line).toBe('Your next step: run one test with a pass line by Friday, December 4.');
     expect(line.split(' ').length).toBeLessThanOrEqual(30);
   });
 });

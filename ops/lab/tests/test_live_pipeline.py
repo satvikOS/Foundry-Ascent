@@ -1316,6 +1316,8 @@ def test_reply_holes_include_counts_spelled_lists_and_announcements_mid_reply() 
         "Write this down first:\n\nPrediction: three of five sign.\nKill criterion: two or fewer.",
         "One: call them. Two: price it.",
         "We have three options and I like the first.",
+        # The server's step line under a reply is no item of a list the reply announced.
+        "Three ways in: friends, a class, a club.\n\n**Next:** Pick one by Friday. Done when it has a name.",
     ):
         assert not reply_hole(reply), reply
 

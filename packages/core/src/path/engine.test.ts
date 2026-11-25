@@ -334,9 +334,16 @@ describe('the ask', () => {
       continuity: {},
       earlierMessages: [],
     });
-    expect(turn.prompt.ask?.title).toBe('Where you are and what comes next');
-    expect(turn.prompt.ask?.answer).toContain('stage 3 of 7');
-    expect(turn.prompt.ask?.answer).toContain('First paying customers');
+    expect(turn.prompt.ask).toBeNull();
+    const lead = turn.prompt.lead?.text ?? '';
+    expect(lead).toMatch(/^You are on stage 3 of 7 with ReagentLoop, proving someone wants it\./);
+    expect(lead).toContain('first paying customers');
+    expect(lead).toContain('What you know so far: you interviewed 15 lab managers');
+    expect(lead).toContain('Start with this: list the people you can reach this week.');
+    // Spoken, it is where they stand, what is missing and the start.
+    const voice = turn.prompt.lead?.voice ?? '';
+    expect(voice).not.toContain('What you know so far');
+    expect(voice.split(' ').length).toBeLessThanOrEqual(50);
   });
 });
 
@@ -678,7 +685,10 @@ describe('an idea the record does not hold', () => {
   it('is told apart from the venture’s own, with one concrete fact, and still gets a first step', () => {
     const d = decide(input(idea, withHistory()));
     expect(d.kind).toBe('new_idea');
-    expect(d.newIdea).toEqual({ ventureName: 'ReagentLoop', fact: '15 interviews with lab managers' });
+    expect(d.newIdea).toEqual({
+      ventureName: 'ReagentLoop',
+      fact: 'you interviewed 15 lab managers; 11 described the last time a reagent expired unused',
+    });
     expect(d.step?.view).toMatchObject({ playId: 'idea-on-a-page', origin: 'coach', status: 'later' });
     expect(d.then).toEqual([]);
     // The venture's own path is as it was.

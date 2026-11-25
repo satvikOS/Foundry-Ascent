@@ -70,6 +70,9 @@ export {
   type MockStreamOutcome,
 } from './gateway/mock.js';
 export { COACH_ANNOTATIONS_SCHEMA_NAME, CoachAnnotations } from './gateway/coach-annotations.js';
+export { PathAnnotations, annotationsOfPath } from './prompts/annotations.js';
+export { termsIn, withMeanings } from './validators/glossary.js';
+export { ownFactsUnit, type OwnFacts } from './validators/own-facts.js';
 export {
   LunaProvider,
   mantleBaseUrl,
@@ -302,6 +305,7 @@ export {
   carriesContract,
   checkReplyContract,
   composeFromGuidance,
+  composedAnswer,
   contractApplies,
   contractTail,
   firstUnitVerdict,
@@ -309,6 +313,7 @@ export {
   namesStep,
   saidVerbatim,
   spokenReserve,
+  standingLine,
   stepLine,
   type ContractVerdict,
   type ReplyContractInput,

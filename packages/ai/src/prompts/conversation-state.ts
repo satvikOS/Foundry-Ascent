@@ -2394,9 +2394,7 @@ export function renderConversationState(
     }
   }
   if (state.moves.includes('news') && guided) {
-    lines.push(
-      '- They bring news: react to it first, in your own words, and say what it changes; then the open step in one line.',
-    );
+    lines.push('- They bring news: react to it first, in your own words, and say what it changes.');
   } else if (state.moves.includes('news')) {
     lines.push(
       '- They bring news: react to it and ask about it first, in your own words. In this reply never steer back to an',
@@ -2466,7 +2464,7 @@ export function renderConversationState(
   if (state.stuckAgain === true) {
     lines.push(
       guided
-        ? '- You already gave them the step last time: do not argue for it again (name it in one line at the end).'
+        ? '- You already gave them the step last time: do not argue for it again.'
         : '- You already gave them a next step last time; do not repeat it or argue for it again.',
       '  Do the work now, in full, in this reply (write the draft, the script, the list or the plan they need), or help with',
       '  what they just asked for. If they are telling you how they are rather than asking for the work, respond to that',
@@ -2523,7 +2521,7 @@ export function renderConversationState(
   if (state.moves.includes('topic_shift') && state.earlierTurns > 0) {
     lines.push(
       guided
-        ? '- They changed the subject: answer that first, fully; the open step stays one line at the end.'
+        ? '- They changed the subject: answer that, fully.'
         : '- They changed the subject: follow them fully. Do not steer back to the earlier thread unless they return to it.',
     );
   }
@@ -2565,7 +2563,7 @@ export function renderConversationState(
   if ((state.adviceGiven ?? []).length > 0) {
     lines.push(
       `- Earlier in this conversation you already said: ${(state.adviceGiven ?? []).map(quoted).join(' | ')}. Build on`,
-      guided ? '  it; never give it again, except the open step in one line.' : '  it; never give it again.',
+      '  it; never give it again.',
     );
   }
   const asks = state.moves.includes('help') || state.moves.includes('question');
@@ -2587,7 +2585,12 @@ export function renderConversationState(
       '  before anything you ask.',
     );
   }
-  if (state.asksForNumber === true) {
+  if (state.asksForNumber === true && guided) {
+    lines.push(
+      '- They asked for a number: give one only from their own, the sums and the evidence; else say which number to find',
+      '  and where, first.',
+    );
+  } else if (state.asksForNumber === true) {
     lines.push(
       // Live pilot 42099643194: pressed for a number after a correct referral, the coach gave a device class, a timeline
       // and a cost range. Rule 5 holds for legal, regulatory, medical, equity and investment questions.
@@ -2595,8 +2598,8 @@ export function renderConversationState(
       '  withhold it for want of evidence. Not for a legal, regulatory, medical, equity or investment question (rule 5).',
     );
   }
-  if (state.previous !== null) lines.push(`- You were on: ${quoted(state.previous.gist)}.`);
-  for (const p of state.parked) {
+  if (state.previous !== null && !guided) lines.push(`- You were on: ${quoted(state.previous.gist)}.`);
+  for (const p of guided ? [] : state.parked) {
     lines.push(`- Parked, left before it was settled: ${quoted(p.gist)} (${ago(p.messagesAgo)}).`);
   }
   if (state.questionStreak >= 2 && state.distress === true) {
@@ -2609,13 +2612,13 @@ export function renderConversationState(
   } else if (state.questionStreak === 1) {
     lines.push('- Your last reply ended with a question.');
   }
-  if (state.recentOpenings.length > 0) {
+  if (state.recentOpenings.length > 0 && !guided) {
     lines.push(`- Your recent replies opened with: ${state.recentOpenings.map(quoted).join(' | ')}`);
   }
   if (state.askedQuestions.length > 0) {
     lines.push(`- You already asked: ${state.askedQuestions.map(quoted).join(' | ')}`);
   }
-  const phrasing = state.phrasing === undefined ? '' : renderPhrasingLedger(state.phrasing);
+  const phrasing = state.phrasing === undefined || guided ? '' : renderPhrasingLedger(state.phrasing);
   if (phrasing !== '') lines.push(phrasing);
   if ((state.told ?? []).length > 0) {
     lines.push(

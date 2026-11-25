@@ -27,12 +27,15 @@ export interface PlayMatchProfile {
  * row (the deterministic embedding of tests and local development is one: only shared words make texts similar there)
  * cannot be asked: the nearest words stand in, held to much more (match.ts).
  *
- * UNCALIBRATED starting values (2026-11-24), strict on purpose: a message left to the rules costs what it costs today,
- * a wrong play answers a question nobody asked. The models benchmark prints the pair that its messages suggest for each
- * model (docs/runbooks/conversation-lab.md, "Models benchmark"); set it here.
+ * Titan's come from its similarities over 652 asks and 107 messages that ask nothing (models benchmark, 2026-11-24: the
+ * play that answers is nearest for 90 % of the asks): 68 % of the asks no phrase names get their play, 2.5 % another one
+ * (a neighbour, most of them), and 1 of the 107 gets one. The starting values it replaces (0.5, 0.06, 0.58, 0.08): 36 %,
+ * 0.3 % and none. Every intent found this way still lets the model leave the answer (ai `prompts/guidance.ts`,
+ * SEMANTIC_LINE). Cohere's are UNCALIBRATED: the account has no access to it. Measure again after a change of the plays'
+ * asks (docs/runbooks/conversation-lab.md, "Models benchmark").
  */
 export const PLAY_MATCH_PROFILES: Readonly<Record<string, PlayMatchProfile>> = {
-  'amazon.titan-embed-text-v2:0': { floor: 0.5, margin: 0.06, referralFloor: 0.58, guard: 0.08 },
+  'amazon.titan-embed-text-v2:0': { floor: 0.33, margin: 0.03, referralFloor: 0.4, guard: 0.06 },
   'cohere.embed-v4:0': { floor: 0.55, margin: 0.05, referralFloor: 0.62, guard: 0.07 },
 };
 

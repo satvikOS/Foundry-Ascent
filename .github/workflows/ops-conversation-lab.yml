@@ -52,8 +52,12 @@ name: Ops - conversation lab
 #   client  (on its own, never in `all`) the client's own test (ops/lab/conversation_lab/client): its short protocol and
 #           twenty questions, a first-time founder, calls, arcs over days, repeats, and a small adversarial set; every
 #           reply graded by code against its own guidance and evidence, the questions scored by a judge of another
-#           family on the client's seven weighted criteria. Runs every scenario (max_scenarios does not apply;
-#           scenario_ids does). Capped at USD 2. The exact wording of the client's questions and the other tools'
+#           family on the client's seven weighted criteria, after the judge has scored a hand-graded calibration set
+#           (a judge that is lenient on it makes the client score no pass). Runs every scenario (max_scenarios does not
+#           apply; scenario_ids and groups do). A run estimated above USD 1.80 is refused before any call, with each
+#           group's estimate. `coach_model` puts this suite's API process on another coach for an A/B (GPT-6 Luna,
+#           Claude Haiku 5.5: benchmark only, production unchanged; the summary names the coach), `judge_model` names
+#           the judge (never one of the coach's family). Capped at USD 2. The exact wording of the client's questions and the other tools'
 #           recorded scores come from the optional repository secret LAB_CLIENT_PACK (never committed, run step
 #           only); without it our equivalent wording is used and the summary says so.
 # The app runs with CORE_SAFETY_SCREEN=on in every suite (ops/lab conversation_lab/stack.py).
@@ -111,6 +115,29 @@ on:
         type: choice
         options: [builtin, evals]
         default: builtin
+      groups:
+        description: client only - just these groups of scenarios, comma-separated (protocol, questions, organise, calls, arcs, numbers, news, followups, novice, odd, memory, hard, repeats, adversarial); empty = all
+        type: string
+        default: ''
+      coach_model:
+        description: client only - the app's coach model for this run (lab only; production unchanged) - default = production's models
+        type: choice
+        options:
+          - default
+          - us.amazon.nova-2-lite-v1:0
+          - us.anthropic.claude-haiku-5-5
+          - global.anthropic.claude-haiku-5-5
+          - us.openai.gpt-6-luna
+        default: default
+      judge_model:
+        description: client only - the judge (auto = the first of another family than the coach); one named for both arms of an A/B must be of neither coach's family
+        type: choice
+        options:
+          - auto
+          - us.anthropic.claude-haiku-4-5-20251001-v1:0
+          - us.amazon.nova-pro-v1:0
+          - us.meta.llama4-maverick-17b-instruct-v1:0
+        default: auto
       baseline_run_id:
         description: Compare with an earlier lab run (its run id; a committed ops/lab/baselines file or its public summary artifact); empty = no comparison
         type: string
@@ -158,6 +185,9 @@ jobs:
           REPEAT: ${{ inputs.repeat }}
           FACE_MODE: ${{ inputs.face_mode }}
           PRODUCTION_ORIGIN: ${{ inputs.production_origin }}
+          SCENARIO_GROUPS: ${{ inputs.groups }}
+          COACH_MODEL: ${{ inputs.coach_model }}
+          JUDGE_MODEL: ${{ inputs.judge_model }}
         run: |
           # Values are checked, never echoed (except the suite and the numbers, which are public).
           case "${SUITE}" in recall|matrix|voice|ui|agenda|safety|models|face|client|all) ;; *) echo "::error::suite must be recall, matrix, voice, ui, agenda, safety, models, face, client or all."; exit 1;; esac
@@ -199,6 +229,26 @@ jobs:
           fi
           if [[ ! "${REPEAT}" =~ ^[0-9]{1,2}$ ]] || (( 10#${REPEAT} < 1 || 10#${REPEAT} > 10 )); then
             echo "::error::repeat must be a whole number from 1 to 10."
+            exit 1
+          fi
+          if [[ ! "${SCENARIO_GROUPS}" =~ ^([a-z]{3,12}(,[a-z]{3,12}){0,13})?$ ]]; then
+            echo "::error::groups must be empty or comma-separated group names like numbers,news."
+            exit 1
+          fi
+          for group in ${SCENARIO_GROUPS//,/ }; do
+            found=no
+            for known in protocol questions organise calls arcs numbers news followups novice odd memory hard repeats adversarial; do
+              if [ "${group}" = "${known}" ]; then found=yes; fi
+            done
+            if [ "${found}" = no ]; then
+              echo "::error::groups names a group the client suite does not have."
+              exit 1
+            fi
+          done
+          case "${COACH_MODEL}" in default|us.amazon.nova-2-lite-v1:0|us.anthropic.claude-haiku-5-5|global.anthropic.claude-haiku-5-5|us.openai.gpt-6-luna) ;; *) echo "::error::coach_model is not one of its options."; exit 1;; esac
+          case "${JUDGE_MODEL}" in auto|us.anthropic.claude-haiku-4-5-20251001-v1:0|us.amazon.nova-pro-v1:0|us.meta.llama4-maverick-17b-instruct-v1:0) ;; *) echo "::error::judge_model is not one of its options."; exit 1;; esac
+          if [ "${SUITE}" != client ] && { [ -n "${SCENARIO_GROUPS}" ] || [ "${COACH_MODEL}" != default ] || [ "${JUDGE_MODEL}" != auto ]; }; then
+            echo "::error::groups, coach_model and judge_model are the client suite's."
             exit 1
           fi
           case "${FACE_MODE}" in both|full|lite|lite-probe) ;; *) echo "::error::face_mode must be both, full, lite or lite-probe."; exit 1;; esac
@@ -275,6 +325,9 @@ jobs:
       LAB_REPEAT: ${{ inputs.repeat }}
       LAB_MATRIX_SOURCE: ${{ inputs.matrix_source }}
       LAB_FACE_MODE: ${{ inputs.face_mode }}
+      LAB_GROUPS: ${{ matrix.suite == 'client' && inputs.groups || '' }}
+      LAB_COACH_MODEL: ${{ matrix.suite == 'client' && inputs.coach_model || 'default' }}
+      LAB_JUDGE_MODEL: ${{ matrix.suite == 'client' && inputs.judge_model || 'auto' }}
     steps:
       - name: Validate the sealing key, set the output folder
         env:
@@ -423,7 +476,8 @@ jobs:
             --max-scenarios "${LAB_MAX_SCENARIOS}" --out "${LAB_OUT}" \
             --baseline-run-id "${LAB_BASELINE_RUN_ID}" --baseline-file "${RUNNER_TEMP}/baseline/summary.json" \
             --scenarios "${LAB_SCENARIO_IDS}" --repeat "${LAB_REPEAT}" --matrix-source "${LAB_MATRIX_SOURCE}" \
-            --face-mode "${LAB_FACE_MODE}"
+            --face-mode "${LAB_FACE_MODE}" --groups "${LAB_GROUPS}" --coach-model "${LAB_COACH_MODEL}" \
+            --judge-model "${LAB_JUDGE_MODEL}"
 
       - name: Seal the private outputs
         if: always() && env.LAB_PUBLIC_KEY != ''

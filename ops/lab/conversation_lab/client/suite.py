@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import Any
 
 from conversation_lab.client import pack as client_pack
-from conversation_lab.client.scenarios import ClientSet, Scenario, choose, load
+from conversation_lab.client.plan import estimate, in_groups, parse_groups, refusal
+from conversation_lab.client.scenarios import ClientSet, Scenario, ScenarioError, choose, load
+from conversation_lab.config import lab_models, model_family
 
 #: The owner's cap on a paid run; the expected spend of a whole run on Luna or Nova is under USD 1.
 CLIENT_HARD_CAP_USD = 2.0
@@ -32,6 +34,44 @@ def load_set(pack: client_pack.Pack, today: dt.date | None = None) -> tuple[Clie
     return load(day, pack.wording), day
 
 
+class PlanRefusedError(RuntimeError):
+    """The run must not start; the message holds numbers and group names only, so it is printed."""
+
+
+def planned(scenario_ids: tuple[str, ...], groups: str, today: dt.date | None = None) -> list[Scenario]:
+    """The scenarios a run plays (their wording is the harness's to overlay later)."""
+    day = today or dt.datetime.now(dt.UTC).date()
+    return in_groups(choose(load(day).scenarios, scenario_ids), parse_groups(groups))
+
+
+def check_plan(
+    scenarios: list[Scenario],
+    *,
+    budget_usd: float,
+    prices: Any,
+    coach: str,
+    judge: str | None,
+    simulator: str | None,
+) -> Any:
+    """The run's estimate; raises ``PlanRefusedError`` when it does not fit its budget."""
+    from conversation_lab.client.calibration import load as load_calibration
+
+    if not scenarios:
+        raise PlanRefusedError("no scenario is in the chosen groups")
+    found = estimate(
+        scenarios,
+        prices=prices,
+        coach=coach,
+        judge=judge,
+        simulator=simulator,
+        calibration_cases=len(load_calibration()) if judge is not None else 0,
+    )
+    why = refusal(found, budget_usd, scenarios, prices=prices, coach=coach, judge=judge)
+    if why is not None:
+        raise PlanRefusedError(why)
+    return found
+
+
 def seed(ctx: Any, env: dict[str, str], scenarios: list[Scenario]) -> dict[str, Any]:
     from conversation_lab.client.app import run_seed
     from conversation_lab.stack import PNPM
@@ -46,7 +86,7 @@ def prepare(ctx: Any, env: dict[str, str], summary: dict[str, Any]) -> None:
     os.environ.pop("LAB_CLIENT_PACK", None)
     env.pop("LAB_CLIENT_PACK", None)
     chosen, today = load_set(pack)
-    scenarios = choose(chosen.scenarios, ctx.scenario_ids)
+    scenarios = in_groups(choose(chosen.scenarios, ctx.scenario_ids), parse_groups(ctx.client_groups))
     seeded = seed(ctx, env, scenarios)
     ctx.client = {
         "pack": pack,
@@ -72,6 +112,8 @@ def run_suite(
     **_: Any,
 ) -> dict[str, Any]:
     from conversation_lab.client.app import ClientApp
+    from conversation_lab.client.calibration import calibrate, private_rows
+    from conversation_lab.client.calibration import load as load_calibration
     from conversation_lab.client.judge import JUDGE_PROMPT_VERSION, ClientJudge
     from conversation_lab.client.report import aggregate, render, write_private
     from conversation_lab.client.runner import ClientRunner
@@ -81,12 +123,22 @@ def run_suite(
 
     state = ctx.client
     live = not ctx.mock
+    judge = ClientJudge(lab_client, judge_model) if live and judge_model else None
+    calibration: dict[str, Any] | None = None
+    if judge is not None:
+        cases = load_calibration()
+        calibration, cards = calibrate(judge, cases, concurrency=ctx.concurrency)
+        folder = ctx.private / "client"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "calibration.json").write_text(
+            json.dumps(private_rows(cases, cards), indent=1), encoding="utf-8"
+        )
     runner = ClientRunner(
         app=ClientApp(admin, ctx.env, ctx.private / "logs", pnpm=PNPM),
         simulator=LlmSimulator(lab_client, simulator_model)
         if live and simulator_model
         else TemplateSimulator(),
-        judge=ClientJudge(lab_client, judge_model) if live and judge_model else None,
+        judge=judge,
         today=state["today"],
         guard=guard,
         private_dir=ctx.private,
@@ -105,7 +157,15 @@ def run_suite(
             "code_sha": code_sha(),
             "run_id": os.environ.get("GITHUB_RUN_ID") or "local",
             "day": state["today"].isoformat(),
+            "coach": ctx.coach_primary if live else "mock",
+            "coach_choice": ctx.coach_model if live else "mock",
+            "groups": list(parse_groups(ctx.client_groups)) or "all",
+            "plan": state.get("plan"),
+            "calibration": calibration,
             "judge": judge_model if live else None,
+            "judge_independent": live
+            and judge_model is not None
+            and model_family(judge_model) != model_family(ctx.coach_primary),
             "judge_prompt": JUDGE_PROMPT_VERSION,
             "simulator": simulator_model if live else "template",
         },
@@ -119,7 +179,19 @@ def run_suite(
         "passed": passed,
         "run": len(results),
         "client_md": text,
-        "client": {k: summary[k] for k in ("evidence", "wording", "score", "gates", "blocking_failures")},
+        "client": {
+            k: summary[k]
+            for k in (
+                "evidence",
+                "wording",
+                "coach",
+                "judge",
+                "calibration",
+                "score",
+                "gates",
+                "blocking_failures",
+            )
+        },
         "stopped_by": runner.stopped,
     }
 
@@ -146,12 +218,32 @@ def cmd_pack(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_list(_args: argparse.Namespace) -> int:
+def cmd_list(args: argparse.Namespace) -> int:
     """The scenario set, validated: ids, groups, sessions and turns."""
+    from conversation_lab.client.calibration import load as load_calibration
+
     chosen = load(dt.datetime.now(dt.UTC).date())
-    for s in chosen.scenarios:
+    try:
+        scenarios = in_groups(chosen.scenarios, parse_groups(args.groups))
+    except ScenarioError as exc:
+        print(f"client-list: {exc}", file=sys.stderr)
+        return 2
+    for s in scenarios:
         print(f"{s.id} {s.group} {s.role} sessions={len(s.sessions) * s.repeat} turns={s.turns}")
-    print(f"total scenarios={len(chosen.scenarios)} turns={chosen.turns}")
+    lab = lab_models()
+    found = estimate(
+        scenarios,
+        prices=lab.prices,
+        coach=None,
+        judge=lab.client_judge[0],
+        simulator=lab.live_simulator[0],
+        calibration_cases=len(load_calibration()),
+    )
+    print(
+        f"total scenarios={len(scenarios)} turns={found.turns} judged={found.judged} "
+        f"estimate_usd={found.total_usd:.2f} (app {found.app_usd:.2f}, lab {found.lab_usd:.2f}; production's coach, "
+        f"{lab.client_judge[0]} judging)"
+    )
     return 0
 
 
@@ -201,6 +293,8 @@ def cmd_local(args: argparse.Namespace) -> int:
         str(args.concurrency),
         "--scenarios",
         args.scenarios,
+        "--groups",
+        args.groups,
     ]
     if args.client_pack:
         argv += ["--client-pack", args.client_pack]
@@ -221,6 +315,7 @@ def add_commands(sub: Any) -> None:
     local = sub.add_parser("client-local", help="the client test on the mock model: no AWS, no cost")
     local.add_argument("--out", required=True)
     local.add_argument("--scenarios", default="", help="only these scenario ids, comma-separated")
+    local.add_argument("--groups", default="", help="only these groups, comma-separated")
     local.add_argument(
         "--client-pack", default="", help="the client's pack (client-pack), for the exact wording"
     )
@@ -234,4 +329,8 @@ def add_commands(sub: Any) -> None:
     pack.add_argument("--out", required=True, help="a file outside the repository")
     pack.set_defaults(func=cmd_pack)
     listing = sub.add_parser("client-list", help="validate and list the client scenarios")
+    listing.add_argument("--groups", default="", help="only these groups, comma-separated")
     listing.set_defaults(func=cmd_list)
+    from conversation_lab.client.regrade import add_command
+
+    add_command(sub)

@@ -14,6 +14,8 @@ in `packages/core/src/path/playbook/`; everything here is the machinery that rea
 | `state.ts`, `progress.ts`        | Stage and criteria from the stored path and the record; work a founder reports ("8 of 10")                                    |
 | `steps.ts`                       | One step: from its row or its play, cut to the time they have, taken up again, as it is shown                                 |
 | `engine.ts`                      | `decide(input) -> Decision`: pure (no I/O, model or clock); the turn's step, the path's own, what follows                     |
+| `calc.ts`                        | The sums students ask for, from the numbers they gave; the one number that is missing                                         |
+| `news.ts`, `tell.ts`             | What news means, by rule; the record said as a mentor says it, the one prior fact, the story                                  |
 | `brief.ts`, `turn.ts`            | The founder brief (at most 1,200 characters), the arc, and what the prompt and the record carry                               |
 | `report.ts`, `apply.ts`          | The model's `path_report` held to the founder's words; the writes                                                             |
 | `service.ts`, `view.ts`          | `GET/PUT/PATCH /ventures/:id/path…`                                                                                           |
@@ -76,9 +78,9 @@ the blind ones.
   those whose `unless` words the message holds. The first is the answer when it is at the model's `floor` and nearer than
   the next **different** play by `margin`; a play with a referral needs `referralFloor`. A referral play at the floor, about
   as near as the first and not chosen, still brings who decides, as a note. Every constant is in `PLAY_MATCH_PROFILES`
-  (`semantic.ts`), by embedding model, and nowhere else. **They are uncalibrated starting values**, strict on purpose: set
-  them from the models benchmark ("Plays by meaning", docs/runbooks/conversation-lab.md). A model without a row
-  cannot be asked.
+  (`semantic.ts`), by embedding model, and nowhere else. Titan's come from the models benchmark of
+  2026-11-24 ("Plays by meaning", docs/runbooks/conversation-lab.md): 68 % of the asks no phrase names get their play, 2.5 %
+  another one. A model without a row cannot be asked.
 - **What it costs.** A turn a phrase or a rule decided waits for nothing and reads nothing. The others wait for the embedding their
   retrieval needs anyway, at most 400 ms, and make one statement more in the retrieval's own transaction: the play decides
   what the search looks for, so it cannot be the same statement (pinned in `perf/round-trips.db.test.ts`). A late or failed
@@ -90,11 +92,36 @@ the blind ones.
 
 **A way out.** The prompt is told how the ask was found (`PromptGuidance.matched`). `phrase`: the program's answer first, as
 always. `semantic` (by meaning, or by nearest words): if that answer is not about what they asked, the model answers what
-they asked and keeps only the step line, and the reply contract puts the program's answer in only for a reply that asks,
-puts off or says nothing. `none`: the model answers, substance first, nothing invented; a step that shares no word with
+they asked, and the reply contract puts the program's answer in only for a reply that asks, puts off or says nothing. `none`: the model answers, substance first, nothing invented; a step that shares no word with
 what they asked is `standing`: said once, last, as what stands ("On your path, next is: …"), at most once in three turns
 (`quiet` in between: not said, the card under the reply has it), and never as a "Next:" of theirs. A step given for an
 earlier ask that is not on their path is not said to another subject at all.
+
+## What the server says, and what the model says
+
+The model writes only a natural answer. Everything that must be exact is code's, in the same words on a streamed and a
+whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
+
+- **The lead** (`PromptGuidance.lead`, `turn.ts` `leadOf`) opens the reply before the model has written anything, so it costs
+  no time to the first word: a sum, what news or a report shows, "is that good?", where they stand ("get me organized", as
+  a numbered list when they ask for a plan), a recall, the story, a change of direction. Said once: what the model says of
+  it again (its figures, the stage, a second plan, its dates) goes, and a lead said a moment ago is cut to where to start.
+- **The step line** ends it, once: `**Next:** <title> by <Weekday, Month D>. Done when <done when>.`, on a call "Your next
+  step: … by Monday." (a step due today: "today"). Whatever step, deadline, "Next:", done-when or list of the step's parts
+  the model writes is left out as a whole block; an answer of fewer than about twelve words left over is the program's own.
+- **The one question** is last: a number the calculator lacks (`askBack`), else the model's own.
+- **The first part** of the step answers "how do I do that?", with its template filled in from their words (`howTo`,
+  `fillTemplate`): what they did not tell keeps its [brackets].
+- **One prior fact** (`prior`, `tell.ts` `priorFact`): the confirmed memory, report or sentence of theirs that shares most
+  with the ask, else the idea. The model weaves it in; a typed reply that did not gets one sentence, never of what the
+  coach said in its last reply, of what this message takes back, or of an order in a message.
+- **Their facts only** (`said`, `validators/own-facts.ts`): a line of a template that says more than they did keeps its
+  bracket; a sentence that gives them customers, sales or money nobody told goes; so do our words ("the playbook says").
+- **Business words** are told in ten words or fewer, once, to who has not said they know them (`validators/glossary.ts`).
+- **Sums** (`calc.ts`): price less costs, margin, break-even, a month at a volume, a rate, payback, a share. Deterministic,
+  shown with its working; units are never mixed (per box and per month), a missing number is the question.
+- **News** (`news.ts`, kind `news`): who paid and who did not, a result against the pass line they set, what people said,
+  someone who left, an offer, sign-ups. A sign-up is never called a sale.
 
 ## Rules the code keeps
 
@@ -106,15 +133,17 @@ earlier ask that is not on their path is not said to another subject at all.
   a criterion (a count it asks for must be reached); hypotheses, offers, plans and proposals never do.
 - **Due dates.** Today plus the play's days, on a weekday, pulled in by a deadline in the intake. A step past its day is
   named with a day they can still make; the check-in and the opening say what was due.
+- **Capstones.** A curriculum capstone's step waits for the venture's own evidence of its stage, unless the deadline in the
+  intake is the course's (then it comes first) or they ask for it.
 - **Reports.** A founder's own plain report with something to show finishes the step in that turn (its step is the next
   one). Work of a later stage ("I did eight interviews") moves the stage there, claims the earlier criteria in their words,
   and keeps progress and the finding on the criterion (`8 of 10: …`); the step shown is what remains. A step not done moves
-  to a new day, with the smaller version offered. "I'll email the five clubs by Friday" becomes their step, in their words.
+  to a new day, with the smaller version offered. "I'll email the five clubs by Friday" becomes their step, in their words, done when that can be counted.
   The annotation call's `path_report` counts only with a quote that is in the message word for word, in a sentence that
   says it happened, and never short of a count.
 - **The idea.** Stated in a conversation while the intake has none, it is kept word for word (at most 400 characters), and
-  leads the brief, with the latest decision. A recall carries the facts in `ask.answer`: the idea, what was decided and
-  when, what was reported, the open step and its day. A change of direction keeps the new idea, dates the old one in the
+  leads the brief, with the latest decision. A recall carries in its lead what they asked for: the idea, what was decided and
+  when, what was reported, the open step and its day; the story is dated lines, each thing once, at most eight. A change of direction keeps the new idea, dates the old one in the
   arc (`venture_paths.pivots`), and opens what the old customer had shown, from talking to customers on (their words stay on the criterion, dated).
 - **Who decides.** A referral intent wins over every other ask; a risk the classifier found leads to its play when no
   phrase names one, or brings who decides beside another answer; something said in passing (`note`: "my advisor is on the

@@ -44,6 +44,9 @@ VALID = {
         "PRODUCTION_ORIGIN": "",
         "BASELINE_RUN_ID": "",
         "PUBLIC_KEY": "",
+        "SCENARIO_GROUPS": "",
+        "COACH_MODEL": "default",
+        "JUDGE_MODEL": "auto",
     },
     LIVE: {
         "FAMILIES": "all",
@@ -300,3 +303,30 @@ def test_the_runbook_documents_the_cap_and_the_approval() -> None:
     for workflow in (LAB, LIVE):
         assert "approved_over_cap" in text(workflow)
         assert "scripts/approve-spend.sh" in text(workflow)
+
+
+@pytest.mark.parametrize(
+    ("extra", "ok"),
+    [
+        ({"SUITE": "client", "SCENARIO_GROUPS": "numbers,news"}, True),
+        ({"SUITE": "client", "COACH_MODEL": "us.anthropic.claude-haiku-5-5"}, True),
+        ({"SUITE": "client", "JUDGE_MODEL": "us.amazon.nova-pro-v1:0"}, True),
+        # A name the suite does not have, text that is no list of names, a model that is no option.
+        ({"SUITE": "client", "SCENARIO_GROUPS": "sums"}, False),
+        ({"SUITE": "client", "SCENARIO_GROUPS": "numbers;id"}, False),
+        ({"SUITE": "client", "SCENARIO_GROUPS": "$(id)"}, False),
+        ({"SUITE": "client", "COACH_MODEL": "us.anthropic.claude-sonnet-4-6"}, False),
+        ({"SUITE": "client", "JUDGE_MODEL": "auto; id"}, False),
+        # They are the client suite's: no other suite ignores them silently.
+        ({"SUITE": "recall", "SCENARIO_GROUPS": "numbers"}, False),
+        ({"SUITE": "all", "COACH_MODEL": "us.openai.gpt-6-luna"}, False),
+    ],
+)
+def test_the_client_suites_inputs_are_validated_and_never_echoed(
+    tmp_path: Path, extra: dict[str, str], ok: bool
+) -> None:
+    rc, out, _ = validate(tmp_path, LAB, "2", **extra)
+    assert (rc == 0) is ok, out
+    if not ok:
+        assert "::error::" in out
+        assert extra.get("SCENARIO_GROUPS", "-") not in out

@@ -1,0 +1,59 @@
+# Ten asks in wordings no rule has: short, slangy, clipped, or sideways. Each has a plain meaning.
+group: odd
+scenarios:
+  - id: OW-01
+    title: slang and half-sentences
+    role: undergrad
+    founder: Kai Nakamura
+    studies: sophomore, undeclared
+    first_time: true
+    venture:
+      {
+        name: CrateClub,
+        oneLiner: Vinyl records shared between dorms.,
+        stage: discovery,
+        domain: consumer,
+        goal: See whether anyone rents a record.,
+      }
+    facts: { records: [vinyl, record*, crate*], rents: [rent*, borrow*, share*] }
+    passing: Each line is read for what it asks and answered in kind, briefly and plainly.
+    sessions:
+      - turns:
+          - { say: 'is my thing dead or nah', expect: { history: [records, rents] }, judge: [critical, ease] }
+          - { say: 'who even buys this lol', expect: { history: [records, rents] }, judge: [relevance] }
+          - { say: 'money bit. how??', expect: { history: [records, rents] } }
+          - { say: 'what would u do if u were me rn', judge: [actionability] }
+          - { say: 'ok boss. orders pls', expect: { kind: coaching } }
+  - id: OW-02
+    title: sideways and clipped
+    role: grad
+    founder: Inge Vandersloot
+    studies: MBA student
+    venture:
+      {
+        name: PierPantry,
+        oneLiner: Groceries for boats in small harbours.,
+        stage: validation,
+        domain: consumer,
+        goal: Choose between two harbours.,
+      }
+    facts: { boats: [boat*, harbour*, pier*], payers: ['6', six, '11', eleven] }
+    record:
+      - {
+          type: evidence,
+          title: Two harbours,
+          content: 'In the north harbour six of 20 boats ordered; in the south harbour eleven of 60 did.',
+          days_ago: 6,
+        }
+    passing: The one-word question gets a pick with the two shares (30 and 18 percent), the translation is plain, nothing is repeated.
+    sessions:
+      - turns:
+          - {
+              say: 'One word. North or south?',
+              expect: { pick: [north, south], number: ['30', '18.3', '18'], history: [boats, payers] },
+              judge: [relevance, critical],
+            }
+          - { say: 'Convince a sceptic.', expect: { history: [boats, payers] }, judge: [critical] }
+          - { say: 'Now say that like a normal person.', expect: { history: [boats] }, judge: [ease] }
+          - { say: 'What is the dumbest thing I could do next?', expect: { history: [boats] } }
+          - { say: 'Fine, and the least dumb?', expect: { history: [boats] }, judge: [actionability] }

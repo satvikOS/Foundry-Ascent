@@ -68,7 +68,29 @@ export interface BuildMessagesOptions {
 }
 
 /** Upper bound on the notes of a turn whose path already carries the brief and the open step. */
-export const GUIDED_CONTINUITY_CHARS = 2_400;
+export const GUIDED_CONTINUITY_CHARS = 1_400;
+/** The same where they ask what is remembered. */
+export const GUIDED_RECALL_CHARS = 2_400;
+/** On the path the founder's record carries the story: earlier turns in view, the last of them in full. */
+export const GUIDED_HISTORY = { turns: 8, full: 2, fullChars: 900, reply: 260, founder: 420 } as const;
+
+/** The step line the server wrote under a reply: never the model's to copy. */
+const STEP_LINE = /\n*^\*{0,2}(?:Next|On your path, next is):\*{0,2} .*$/gmu;
+const SPOKEN_STEP_LINE = /\s*(?:Your next step|On your path, next is): [^\n]*$/u;
+
+/** An earlier reply as the history of a turn on the path shows it: without the server's step line. */
+export function withoutStepLine(reply: string): string {
+  const out = reply.replace(STEP_LINE, '').replace(SPOKEN_STEP_LINE, '').trim();
+  return out === '' ? reply.trim() : out;
+}
+
+/** The start of a text at a sentence end, at most about `max` characters. */
+function opening(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('.\n'), cut.lastIndexOf('? '));
+  return end > max * 0.4 ? cut.slice(0, end + 1) : truncate(text, max);
+}
 
 function wrapFounder(text: string): string {
   return `<founder_message>\n${escapeData(text)}\n</founder_message>`;
@@ -201,20 +223,33 @@ export function buildMessages(
   const completed = history.filter(
     (t) => t.answer !== null && t.answer.trim() !== '' && t.founderText.trim() !== '',
   );
-  const recent = maxTurns === 0 ? [] : completed.slice(-maxTurns);
+  const guidance = options.guidance ?? null;
+  const most = guidance === null ? maxTurns : Math.min(maxTurns, GUIDED_HISTORY.turns);
+  const recent = most === 0 ? [] : completed.slice(-most);
 
   const messages: ChatMessage[] = [];
-  for (const turn of recent) {
-    messages.push({ role: 'user', content: historyFounder(turn.founderText, maxChars) });
-    messages.push({ role: 'assistant', content: truncate(turn.answer ?? '', maxChars) });
-  }
+  recent.forEach((turn, i) => {
+    const full = i >= recent.length - GUIDED_HISTORY.full;
+    const reply =
+      guidance === null
+        ? truncate(turn.answer ?? '', maxChars)
+        : opening(withoutStepLine(turn.answer ?? ''), full ? GUIDED_HISTORY.fullChars : GUIDED_HISTORY.reply);
+    const founder = guidance === null ? maxChars : full ? GUIDED_HISTORY.fullChars : GUIDED_HISTORY.founder;
+    messages.push({ role: 'user', content: historyFounder(turn.founderText, founder) });
+    messages.push({ role: 'assistant', content: reply });
+  });
   const started = completed.length > 0 || (options.opener ?? '').trim() !== '';
-  const guidance = options.guidance ?? null;
   // A path with a step, or a check-in on one, is the agenda: the notes' own (older wordings of it) is left out, except
   // where they ask what is remembered.
   const pathAgenda =
     guidance !== null && guidance.kind !== 'recall' && (guidance.step !== null || guidance.checkIn !== null);
-  const maxNotes = options.maxContinuityChars ?? (guidance === null ? undefined : GUIDED_CONTINUITY_CHARS);
+  const maxNotes =
+    options.maxContinuityChars ??
+    (guidance === null
+      ? undefined
+      : guidance.kind === 'recall'
+        ? GUIDED_RECALL_CHARS
+        : GUIDED_CONTINUITY_CHARS);
   const notes = buildContinuityBlock(options.continuity, {
     ...(options.today !== undefined ? { today: options.today } : {}),
     ...(maxNotes !== undefined ? { maxChars: maxNotes } : {}),

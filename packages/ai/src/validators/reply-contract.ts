@@ -1,7 +1,7 @@
 import type { TurnChannel } from '@foundry/contracts';
 
 import { inDistress } from '../prompts/conversation-state.js';
-import { sayDay, weekdayOf } from '../prompts/due-day.js';
+import { longDay, sayDay } from '../prompts/due-day.js';
 import type { PromptGuidance, ReplyContractFinding, ReplyContractResult } from '../prompts/guidance.js';
 import { handBackCandidate, putToFounder } from './social.js';
 import { coverage, sharedCount, stemOf, stemsOf } from './stems.js';
@@ -247,8 +247,8 @@ const NEXT_LINE = new RegExp(
   String.raw`^[\s*_]*(?:next(?: step)?|${STANDING_OPENS})[*_]*\s*(?::|—|–|-)`,
   'iu',
 );
-/** The step as what stands on their path, never as what to do about what they asked. */
-const STANDING_LINE = new RegExp(String.raw`^[\s*_]*${STANDING_OPENS}\b`, 'iu');
+/** The step line as the server opens it, on text and on a call. */
+const SERVER_STEP = /^[*_]*(?:(?:your )?next(?: step)?|on your path,? next is)[*_]*\s*:/iu;
 /** "A good next step: …", "Your next step is to …": a sentence that says what to do next, whatever it opens with. */
 const NEXT_SAID = new RegExp(
   String.raw`^${LEAD_WORDS}[\s*_]*(?:here(?:['’]s| is) )?(?:a|an|your|the|my|one) (?:(?:really |very )?(?:good|great|best|better|solid|useful|obvious|simple|smart|clear|logical|natural|real|right|immediate|concrete|practical) )*next (?:step|move|action|thing to do)[*_]*\s*(?::|—|–|-|(?:is|would be|could be|should be)\b)`,
@@ -256,21 +256,6 @@ const NEXT_SAID = new RegExp(
 );
 /** What done means, on its own line. */
 export const DONE_LINE = /^[\s*_]*done (?:when|once)\b/iu;
-const DATE_SAID = new RegExp(
-  String.raw`\b(?:${WEEKDAY}s?|${MONTH}\.? \d{1,2}|\d{1,2} ${MONTH}|today|tonight|tomorrow|this (?:week|weekend|afternoon|evening|morning)|next week|end of (?:the |this )?(?:day|week)|(?:in|within) (?:a|an|one|two|three|four|five|six|seven|\d+) (?:hours?|days?|weeks?)|\d{4}-\d{2}-\d{2})\b`,
-  'iu',
-);
-
-/** A line that gives a next step of its own: what follows its opening says enough to be one. */
-function givesNext(text: string): boolean {
-  const t = text.trim();
-  if (QUESTION_END.test(t)) return false;
-  if (NEXT_LINE.test(t)) return true;
-  const said = NEXT_SAID.exec(t);
-  // "Your next step is below." points at the card.
-  return said !== null && stemsOf(t.slice(said[0].length)).size >= 3;
-}
-
 /** Whether `text` names the step: its title, or one of the things to do in it, in recognisable words. */
 export function namesStep(text: string, step: PromptGuidance['step']): boolean {
   if (step === null) return false;
@@ -312,27 +297,43 @@ function lowerFirst(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
-function byDay(dueOn: string | null, today: string | null | undefined): string | null {
-  const day = sayDay(dueOn, today);
-  if (day === null) return null;
-  return day === 'today' ? 'the end of today' : day;
-}
-
 function doneClause(doneWhen: string): string {
+  // Said in the step line already, as the step.
+  if (/^\s*this one part is done:/iu.test(doneWhen)) return 'this one part is done';
   return lowerFirst(stripEnd(doneWhen.replace(/^\s*done when:?\s*/iu, '')));
 }
 
-/** The step as the server says it: "Next: … by Thursday. Done when …" (text), one sentence on a call. */
+/** A step's title with its day: "Email one group today", "Talk to five people by Thursday, December 3". */
+function titleBy(
+  title: string,
+  dueOn: string | null,
+  today: string | null | undefined,
+  long: boolean,
+): string {
+  const t = stripEnd(title);
+  const day = sayDay(dueOn, today);
+  if (day === null) return t;
+  if (day === 'today' || day === 'tomorrow')
+    return long && day === 'tomorrow'
+      ? `${t} by tomorrow`
+      : `${t} ${day === 'today' ? 'today' : 'by tomorrow'}`;
+  return `${t} by ${long ? (longDay(dueOn ?? '') ?? day) : day}`;
+}
+
+/**
+ * The step as the server says it, once, at the end of the reply: "**Next:** … by Thursday, December 3. Done when …" (text),
+ * one short sentence on a call.
+ */
 export function stepLine(
   step: NonNullable<PromptGuidance['step']>,
   channel: TurnChannel,
   today?: string | null,
 ): string {
-  const day = byDay(step.dueOn, today);
-  const title = stripEnd(step.title);
-  const by = day === null ? '' : ` by ${day}`;
-  if (channel === 'voice') return `Your next step: ${lowerFirst(title)}${day === null ? '' : `, by ${day}`}.`;
-  return `Next: ${title}${by}. Done when ${doneClause(step.doneWhen)}.`;
+  // Said aloud, the title alone: a meaning in brackets is read on the screen.
+  if (channel === 'voice')
+    return `Your next step: ${lowerFirst(titleBy(step.title, step.dueOn, today, false))}.`;
+  const title = step.said ?? step.title;
+  return `**Next:** ${titleBy(title, step.dueOn, today, true)}. Done when ${doneClause(step.doneWhen)}.`;
 }
 
 /** A step that is not about what they asked, as what stands on their path. */
@@ -341,92 +342,236 @@ export function standingLine(
   channel: TurnChannel,
   today?: string | null,
 ): string {
-  const day = byDay(step.dueOn, today);
-  const title = stripEnd(step.title);
-  if (channel === 'voice')
-    return `On your path, next is: ${lowerFirst(title)}${day === null ? '' : `, by ${day}`}.`;
-  return `On your path, next is: ${title}${day === null ? '' : ` by ${day}`}.`;
+  const title = channel === 'voice' ? step.title : (step.said ?? step.title);
+  const said = titleBy(title, step.dueOn, today, channel === 'text');
+  return channel === 'voice'
+    ? `On your path, next is: ${lowerFirst(said)}.`
+    : `**On your path, next is:** ${said}.`;
 }
 
-/** The turn's step as the server says it: what to do, or what stands. */
-function sayStep(
-  guidance: PromptGuidance,
+/** The step as a recall ends on it: the record keeps the day it had, so a day that has passed is said as one. */
+function recalledStep(
   step: NonNullable<PromptGuidance['step']>,
   channel: TurnChannel,
   today?: string | null,
 ): string {
+  if (step.dueOn === null || today == null || step.dueOn >= today) return stepLine(step, channel, today);
+  const day = longDay(step.dueOn) ?? step.dueOn;
+  return stepLine({ ...step, dueOn: null }, channel, today).replace(
+    channel === 'voice' ? /\.$/u : /\. (?=Done when )/u,
+    channel === 'voice' ? `. It was due ${day}.` : `. It was due ${day}. `,
+  );
+}
+
+/** The turn's one step line; '' when the turn gives none (it was said a moment ago). */
+function sayStep(guidance: PromptGuidance, channel: TurnChannel, today?: string | null): string {
+  const { step } = guidance;
+  if (step === null) return '';
+  if (guidance.kind === 'recall') return recalledStep(step, channel, today);
+  if (guidance.stepRole === 'quiet') return '';
   return guidance.stepRole === undefined
     ? stepLine(step, channel, today)
     : standingLine(step, channel, today);
 }
 
-/** "Next: …" of a step that only stands, said as that. */
-function asStanding(text: string): string {
-  return STANDING_LINE.test(text)
-    ? text
-    : text.replace(NEXT_LINE, (opening) => `${/^[\s*_]*/.exec(opening)?.[0] ?? ''}On your path, next is:`);
+// The model's own step talk --------------------------------------------------------------------------------------
+
+/** A line of its own that says by when, and nothing else ("Do it by Monday.", "By Friday, December 5."). */
+const BY_ONLY = new RegExp(
+  String.raw`^(?:(?:do|finish|complete|have|get|aim to (?:do|finish|complete|have|get)|try to (?:do|finish|have))\b[^.!?]{0,60}?\b)?(?:by|before|due(?: on| by)?|start (?:by|on))\s+(?:the )?(?:end of )?(?:(?:this|next) )?(?:${WEEKDAY}|${MONTH}\.? \d{1,2}|today|tonight|tomorrow|week(?:end)?)(?:,? (?:the )?(?:${MONTH}\.? \d{1,2}|\d{1,2} ${MONTH})(?:st|nd|rd|th)?)?[.!]*$`,
+  'iu',
+);
+/** "Do this in 20 minutes." */
+const IN_MINUTES =
+  /^(?:do (?:it|this|that)|that (?:takes|is)|it takes)\b[^.!?]{0,20}\b(?:in |about )?\d+ (?:minutes|min|hours?)\b[^.!?]{0,20}[.!]*$/iu;
+/** What opens the step's own list ("Here's what to do:", "Do three things:"). */
+const ANNOUNCES_STEPS =
+  /^[\s*_]*(?:here(?:['’]s| is| are)?|so|now|then)?[, ]*(?:(?:what|the (?:\w+ )?steps|the plan|your plan|how)\b[^.!?]{0,60}|(?:you(?:['’]ll| will| should)? )?(?:do|follow|take) (?:these|this|the following|three|four|two|a few)\b[^.!?]{0,40})[*_]*:[*_\s]*$/iu;
+
+/** Whether a unit opens a step of the model's own: "Next: …", "Your next step is …", "What to do next: …". */
+export function opensStep(unit: string): boolean {
+  const t = bare(unit.replace(/^\s*(?:[-*+•]|\d{1,3}[.)])\s+/u, '').replace(/^\s*#{1,6}\s+/u, ''));
+  if (NEXT_LINE.test(t)) return true;
+  if (QUESTION_END.test(t)) return false;
+  return NEXT_SAID.test(t) || /^(?:what to do|do this) next\b/iu.test(t);
 }
 
-/** Whether a line gives the turn's step as what to do about what they asked, when it only stands on their path. */
-function givesAsAnswer(text: string, guidance: PromptGuidance): boolean {
+/** Whether a unit by itself only says when it is due, how long it takes or what done means. */
+export function saysDue(unit: string): boolean {
+  const t = bare(unit.replace(/^\s*(?:[-*+•]|\d{1,3}[.)])\s+/u, ''));
   return (
-    guidance.stepRole !== undefined &&
-    givesNext(text) &&
-    !STANDING_LINE.test(text.trim()) &&
-    namesStep(text, guidance.step)
+    DONE_LINE.test(t) || BY_ONLY.test(t) || IN_MINUTES.test(t) || /^(?:deadline|due|by when)\s*:/iu.test(t)
   );
 }
 
-/** What is missing of a step the reply names without saying by when, or when it is done (text only). */
-function stepRest(
-  step: NonNullable<PromptGuidance['step']>,
-  said: string,
-  channel: TurnChannel,
-  today: string | null | undefined,
-): string {
-  const day = byDay(step.dueOn, today);
-  const dated = day === null || DATE_SAID.test(said);
-  const done =
-    channel === 'voice' ||
-    /\b(?:done|finished|complete) (?:when|once)\b/iu.test(said) ||
-    coverage(stemsOf(step.doneWhen), stemsOf(said)) >= 0.5;
-  const parts: string[] = [];
-  if (!dated) parts.push(channel === 'voice' ? `Have that done by ${day}.` : `Do it by ${day}.`);
-  if (!done) parts.push(`Done when ${doneClause(step.doneWhen)}.`);
-  return parts.join(' ');
+/** Whether a unit says one of the step's own parts again (they are on the card, and under the reply when asked). */
+export function restatesItem(unit: string, guidance: PromptGuidance): boolean {
+  const { step } = guidance;
+  if (step === null || guidance.howTo === true) return false;
+  const said = stemsOf(unit.replace(/^\s*(?:[-*+•]|\d{1,3}[.)])\s+/u, ''));
+  if (said.size < 3) return false;
+  // A sentence of the program's answer is the answer, whatever the step's parts say too.
+  if (
+    guidance.kind !== 'report' &&
+    guidance.ask !== null &&
+    coverage(said, stemsOf(`${guidance.ask.answer} ${guidance.ask.why}`)) >= 0.6
+  )
+    return false;
+  return step.items.some((item) => {
+    const words = stemsOf(item.do);
+    if (words.size < 3 || coverage(words, said) < 0.7) return false;
+    return coverage(said, stemsOf(`${item.do} ${item.how}`)) >= 0.6;
+  });
 }
 
-const DAY_SAID = new RegExp(
-  String.raw`\b(by|due|before)(\s+)((?:(?:this|next|the end of) )?${WEEKDAY}(?:,? (?:the )?(?:${MONTH}\.? \d{1,2}|\d{1,2} ${MONTH})(?:st|nd|rd|th)?)?|${MONTH}\.? \d{1,2}(?:st|nd|rd|th)?|today|tonight|tomorrow)\b`,
+const PARAGRAPH = /^[ \t]*\n\s*\n|^\s*\n[ \t]*\n/;
+
+/** What the stream of a reply's units says of steps, read unit by unit: the model's own step talk goes, block by block. */
+export class StepTalk {
+  /** The rest of a paragraph a step line opened. */
+  #inBlock = false;
+  /** The list right under a step line, or one that opened with the step's own first part. */
+  #inList = false;
+  /** An item of a list that stays: what follows it on its line stays too. */
+  #listStays = false;
+  /** The server's lead is the plan they asked for, as a list: another one of the model's goes. */
+  readonly #planned: boolean;
+  /** The server's lead is their dated story: the model's own dates of it go. */
+  readonly #dated: boolean;
+
+  constructor(private readonly guidance: PromptGuidance) {
+    this.#planned = (guidance.lead?.text ?? '').includes('\n1. ');
+    this.#dated = DATED_LINES.test(guidance.lead?.text ?? '');
+  }
+
+  /** The step's own title, as a sentence of its own ("Email the five theatre groups."). */
+  #saysTitle(text: string): boolean {
+    const { step } = this.guidance;
+    if (step === null || QUESTION_END.test(text)) return false;
+    const said = stemsOf(text);
+    const title = stemsOf(step.title);
+    return title.size >= 2 && coverage(title, said) >= 0.8 && coverage(said, title) >= 0.9;
+  }
+
+  /**
+   * Whether the unit is the model's own step talk. A step line takes the rest of its paragraph with it, and the list right
+   * under it; a deadline or a done-when goes by itself with what follows it in its paragraph; a list that opens with one of
+   * the step's parts goes whole, any other list stays whole (an item left out would be a hole in it).
+   */
+  drops(unit: string): boolean {
+    const text = unit.trim();
+    const newParagraph = PARAGRAPH.test(unit);
+    const item = isListUnit(text);
+    const template = isTemplateLine(text, this.guidance);
+    if (item && template) {
+      this.#inBlock = this.#inList = false;
+      this.#listStays = true;
+      return false;
+    }
+    if (opensStep(text) || (this.#planned && (item || OWN_PLAN.test(bare(text))))) {
+      this.#inBlock = this.#inList = true;
+      this.#listStays = false;
+      return true;
+    }
+    if (item) {
+      if (this.#inList) {
+        this.#inBlock = true;
+        return true;
+      }
+      if (!this.#listStays && restatesItem(text, this.guidance)) {
+        this.#inList = this.#inBlock = true;
+        return true;
+      }
+      this.#listStays = true;
+      this.#inBlock = false;
+      return saysDue(text);
+    }
+    if (newParagraph) {
+      this.#inBlock = false;
+      // The list under a step line may come after a blank line; anything else ends it.
+      this.#inList = false;
+      this.#listStays = false;
+    }
+    if (this.#saysTitle(text) || (this.#dated && OWN_DATED.test(bare(text)))) return true;
+    if (this.#inBlock) return !(QUESTION_END.test(text) && !/["“”]/.test(text));
+    if (saysDue(text)) {
+      this.#inBlock = DONE_LINE.test(bare(text));
+      return true;
+    }
+    return false;
+  }
+}
+
+/** Dated lines, as the server tells a story; a date of it the model tells again, or the step by its record's name. */
+const DATED_LINES = new RegExp(String.raw`\n- ${MONTH} \d{1,2}: `, 'u');
+const OWN_DATED = new RegExp(
+  String.raw`^(?:(?:on )?${MONTH} \d{1,2}\s*[:,–—-]|open step(?: now)?\s*:)`,
+  'iu',
+);
+/** A plan of the model's own ("Week 1: …", "Here's a two-week plan to get there."). */
+const OWN_PLAN =
+  /^(?:(?:week|day|month) (?:\d|one|two|three|four)\b|here(?:['’]s| is) (?:a|the|your) [^.!?]{0,40}\b(?:plan|schedule|roadmap)\b)/iu;
+
+const WHY_LABEL = /^(\s*)[*_]{0,2}why[*_]{0,2}:[*_]{0,2}\s+(?=\S)/iu;
+/** A list marker with nothing after it: where a reply broke off. */
+const BARE_MARKER = /^\s*(?:\d{1,3}[.)]|[-*•])\s*$/u;
+
+/** A unit without a label that is ours ("Why: Customers judge…"); '' when it is only a list marker. */
+export function withoutLabel(unit: string): string {
+  if (BARE_MARKER.test(unit)) return '';
+  return unit.replace(WHY_LABEL, '$1');
+}
+
+/** Whether a unit only announces the step's parts ("Here's what to do:"). */
+export function announcesSteps(unit: string): boolean {
+  return ANNOUNCES_STEPS.test(bare(unit));
+}
+
+/** A line of a template written for them: its label, as the template gives it or as any five-line page does. */
+const TEMPLATE_LABEL =
+  /^\s*(?:[-*+•]\s+|\d{1,3}[.)]\s+)?[*_]{0,2}(who|problem|today(?: they)?|idea|my idea|why me|offer|price|customer|user|buyer)[*_]{0,2}\s*:/iu;
+
+export function isTemplateLine(unit: string, guidance: PromptGuidance | null | undefined): boolean {
+  const text = unit.trim();
+  if (TEMPLATE_LABEL.test(text)) return true;
+  const label = /^(?:[-*+•]\s+|\d{1,3}[.)]\s+)?[*_]{0,2}([\p{L}][\p{L}\d '’/-]{1,40}?)[*_]{0,2}\s*:/u.exec(
+    text,
+  )?.[1];
+  if (label === undefined) return false;
+  const body = [guidance?.step?.template?.body ?? '', guidance?.ask?.block ?? ''].join('\n');
+  return body.split('\n').some((l) =>
+    l
+      .replace(/^\s*(?:\d{1,3}[.)]|[-*])\s+/u, '')
+      .toLowerCase()
+      .startsWith(`${label.toLowerCase()}:`),
+  );
+}
+
+const DEADLINE_CLAUSE = new RegExp(
+  String.raw`,?\s+\b(by|before|no later than|due(?: on| by)?)\s+((?:the )?(?:end of )?(?:(?:this|next) )?(?:${WEEKDAY}|${MONTH}\.? \d{1,2}|today|tonight|tomorrow)(?:,? (?:the )?(?:${MONTH}\.? \d{1,2}|\d{1,2} ${MONTH})(?:st|nd|rd|th)?)?)(?=[.,;:!?)]|$|\s+(?:and|so|to|then)\b)`,
   'giu',
 );
 
-/** The step's unit with its day as the path gives it, when it names another one. */
-function withStepDay(text: string, dueOn: string | null, today: string | null | undefined): string {
-  const said = byDay(dueOn, today);
-  const weekday = dueOn === null ? null : weekdayOf(dueOn);
-  if (said === null || weekday === null || dueOn === null) return text;
-  const long = sayDay(dueOn) ?? '';
-  const monthDay = long.split(', ')[1] ?? '';
-  const right = (day: string): boolean => {
-    const d = day
-      .toLowerCase()
-      .replace(/[.,]/g, '')
-      .replace(/(\d)(?:st|nd|rd|th)$/, '$1');
-    const short = monthDay.toLowerCase().split(' ');
-    const words = d.split(/\s+/);
-    if (said.endsWith('today') && (d === 'today' || d === 'tonight')) return true;
-    if (d === 'tomorrow' || d === 'today' || d === 'tonight') return d === said;
-    if (words.includes(weekday.toLowerCase())) {
-      const number = /\d{1,2}/.exec(d)?.[0];
-      return number === undefined || number === short[1];
-    }
-    if (new RegExp(`^${WEEKDAY}`, 'iu').test(d)) return false;
-    return (short[0] ?? '').startsWith(words[0] ?? '-') && words[1] === short[1];
-  };
-  return text.replace(DAY_SAID, (whole, prep: string, space: string, day: string) =>
-    right(day) ? whole : `${prep}${space}${said}`,
+/** A sentence without the deadline the model gave: the one day of a reply is the step line's, and theirs. */
+export function withoutDeadline(unit: string, guidance: PromptGuidance, today?: string | null): string {
+  const { step } = guidance;
+  if (step === null || QUESTION_END.test(unit.trim())) return unit;
+  if (
+    /\byou (?:said|were|are|had|have|set|wanted|planned|agreed|promised|told)\b|\b(?:pitch|competition|meeting|exam|conference|class|event|demo day)\b/iu.test(
+      unit,
+    )
+  )
+    return unit;
+  const own = ` ${(guidance.said ?? '').toLowerCase()} `;
+  const due = [sayDay(step.dueOn, today), sayDay(step.dueOn)].flatMap((d) =>
+    d === null ? [] : [d.toLowerCase()],
   );
+  return unit.replace(DEADLINE_CLAUSE, (whole, _prep: string, day: string) => {
+    const said = day.toLowerCase().replace(/^the /, '');
+    // A day of theirs that is not the step's stays.
+    if (own.includes(said) && !due.some((d) => d === said || d.startsWith(`${said},`))) return whole;
+    return '';
+  });
 }
 
 // The answer -------------------------------------------------------------------------------------------------
@@ -501,7 +646,7 @@ function answerOf(guidance: PromptGuidance, channel: TurnChannel): string {
 }
 
 function saysAnswer(reply: string, guidance: PromptGuidance, founderText: string | undefined): boolean {
-  if (guidance.ask === null) return true;
+  if (guidance.ask === null || (guidance.lead ?? null) !== null) return true;
   const said = stemsOf(reply);
   const own = new Set([...stemsOf(founderText ?? ''), ...stemsOf(guidance.ask.title)]);
   const without = (text: string): Set<string> => {
@@ -514,11 +659,6 @@ function saysAnswer(reply: string, guidance: PromptGuidance, founderText: string
   const whole = without(`${answer} ${guidance.ask.why}`);
   const inPick = sharedCount(pick, said);
   const inWhole = sharedCount(whole, said);
-  // What they asked to be told again is facts: most of them are said, or the record is.
-  if (guidance.kind === 'recall') {
-    const facts = without(answerOf(guidance, 'text'));
-    return coverage(facts, said) >= 0.4;
-  }
   return (inPick >= 2 && inPick / pick.size >= 0.25) || (inWhole >= 4 && inWhole / whole.size >= 0.2);
 }
 
@@ -527,9 +667,7 @@ function lacksAnswer(reply: string, guidance: PromptGuidance, founderText: strin
   if (guidance.ask === null || saysAnswer(reply, guidance, founderText)) return false;
   if (guidance.matched !== 'semantic') return true;
   const units = read(reply);
-  const answered = units.filter(
-    (u) => (u.kind === 'statement' || u.kind === 'block') && !givesNext(u.text) && !DONE_LINE.test(u.text),
-  );
+  const answered = units.filter((u) => u.kind === 'statement' || u.kind === 'block');
   return !saysSomething(
     answered,
     units.some((u) => u.kind === 'deferral'),
@@ -550,20 +688,25 @@ function newIdeaRest(reply: string, guidance: PromptGuidance): string {
   const factSaid = coverage(stemsOf(fact), stemsOf(reply)) >= 0.5;
   if (!ways && !factSaid) return newIdeaLine(guidance);
   return [
-    factSaid ? '' : `${name} has this on record: ${fact}.`,
+    factSaid || fact === '' ? '' : `That is not ${name}${whereFact(fact)}.`,
     ways
       ? ''
-      : `You can make it a change of direction for ${name}, or ask your program lead for a separate workspace.`,
+      : `Make it a change of direction for ${name}, or ask your program lead for a separate workspace.`,
   ]
     .filter((p) => p !== '')
     .join(' ');
 }
 
+/** A fact of the record as it goes into another sentence ("where one shop kept 900 tools on a clipboard"). */
+function whereFact(fact: string | null): string {
+  const said = stripEnd(fact ?? '');
+  return said === '' ? '' : `, where ${lowerFirst(said)}`;
+}
+
 function newIdeaLine(guidance: PromptGuidance): string {
   const idea = guidance.newIdea;
   if (idea === null) return '';
-  const fact = idea.fact === null || idea.fact.trim() === '' ? '' : ` (${stripEnd(idea.fact)})`;
-  return `This is a different idea from ${idea.ventureName}${fact}. You can make it a change of direction for ${idea.ventureName}, or ask your program lead for a separate workspace; either way, here is how it starts.`;
+  return `This is a different idea from ${idea.ventureName}${whereFact(idea.fact)}: make it a change of direction for ${idea.ventureName}, or ask your program lead for a separate workspace.`;
 }
 
 /** Generic words of who decides ("the university's office"): naming them alone names no one. */
@@ -651,38 +794,71 @@ export function playKey(guidance: PromptGuidance): string | null {
   return guidance.ask?.evidenceKeys.find((k) => /^E\d+$/.test(k)) ?? null;
 }
 
-/** The whole reply the path alone gives: the answer, why, who decides and the step (no model). */
+/** What the server says first on this turn ('' when the model's answer opens the reply). */
+export function leadText(guidance: PromptGuidance | null | undefined, channel: TurnChannel): string {
+  if (!contractApplies(guidance)) return '';
+  const lead = guidance.lead ?? null;
+  if (lead === null) return '';
+  return (channel === 'voice' ? lead.voice.replace(/\s+/g, ' ') : lead.text).trim();
+}
+
+/** The step's parts: a numbered list on text, a spoken sequence on a call. */
+export function subSteps(step: NonNullable<PromptGuidance['step']>, channel: TurnChannel): string {
+  if (channel === 'voice') {
+    const [first, second] = step.items;
+    if (first === undefined) return '';
+    const then = second === undefined ? '' : `, then ${lowerFirst(stripEnd(second.do))}`;
+    return `First ${lowerFirst(stripEnd(first.do))}${then}.`;
+  }
+  return step.items
+    .map((item, i) => {
+      const how = stripEnd(item.how);
+      const time = item.minutes === null ? '' : ` (${String(item.minutes)} min)`;
+      return `${String(i + 1)}. ${stripEnd(item.do)}${time}${how === '' ? '.' : `: ${lowerFirst(how)}.`}`;
+    })
+    .join('\n');
+}
+
+/** The answer as the server gives it: its lead, the program's answer, or where they stand and the step's parts. */
+export function composedAnswer(guidance: PromptGuidance, channel: TurnChannel): string {
+  const voice = channel === 'voice';
+  const lead = leadText(guidance, channel);
+  if (lead !== '') return lead;
+  const { ask, step, stage } = guidance;
+  if (ask !== null) {
+    if (voice) return answerOf(guidance, channel);
+    return [
+      cited(ask.answer.trim(), guidance, channel),
+      ask.block === undefined || ask.block.trim() === ''
+        ? cited(ask.why.trim(), guidance, channel)
+        : ask.block.trim(),
+    ]
+      .filter((p) => p !== '')
+      .join('\n\n');
+  }
+  const where = `You are at ${lowerFirst(stage.title)}, stage ${String(stage.number)} of ${String(stage.count)}.`;
+  if (step === null || guidance.stepRole !== undefined || step.items.length === 0) return where;
+  const parts = subSteps(step, channel);
+  return voice ? parts : `${where} Here is how the step goes:\n\n${parts}`;
+}
+
+/** The whole reply the path alone gives: the answer, who decides and the step (no model). */
 export function composeFromGuidance(
   guidance: PromptGuidance,
   channel: TurnChannel,
   today?: string | null,
 ): string {
-  const voice = channel === 'voice';
-  const recall = guidance.kind === 'recall';
-  const parts: string[] = [];
-  if (guidance.newIdea !== null) parts.push(newIdeaLine(guidance));
-  if (guidance.ask !== null) {
-    const answer = voice || recall ? answerOf(guidance, channel) : guidance.ask.answer.trim();
-    parts.push(cited(answer, guidance, channel));
-    if (!voice && !recall) parts.push(cited(guidance.ask.why.trim(), guidance, channel));
-  } else if (guidance.step === null || recall) {
-    parts.push(
-      `You are at ${lowerFirst(guidance.stage.title)}, stage ${String(guidance.stage.number)} of ${String(guidance.stage.count)}.`,
-    );
-  }
-  const gap = voice ? ' ' : '\n\n';
-  parts.push(referralRest('', guidance, channel));
-  const text = parts.join(gap);
-  if (guidance.step !== null) {
-    const { step } = guidance;
-    // The answer may give the step itself ("Next: …" of a report, the open step of a recall): only what it left out.
-    const given =
-      (recall && guidance.ask !== null && namesStep(text, step)) ||
-      unitsOf(text).some((u) => givesNext(u.text) && namesStep(u.text, step));
-    const rest = recall || guidance.stepRole !== undefined ? '' : stepRest(step, text, channel, today);
-    parts.push(given ? rest : sayStep(guidance, step, channel, today));
-  }
-  return parts.filter((p) => p.trim() !== '').join(gap);
+  const gap = channel === 'voice' ? ' ' : '\n\n';
+  const answer = composedAnswer(guidance, channel);
+  return [
+    answer,
+    newIdeaRest(answer, guidance),
+    referralRest('', guidance, channel),
+    sayStep(guidance, channel, today),
+    guidance.askBack ?? '',
+  ]
+    .filter((p) => p.trim() !== '')
+    .join(gap);
 }
 
 // The check --------------------------------------------------------------------------------------------------
@@ -690,8 +866,10 @@ export function composeFromGuidance(
 /** Words of help a reply needs to be more than questions. */
 const MIN_HELP_WORDS = 6;
 
-/** Words of its own a reply needs to answer an ask that was only found by meaning; one that also puts it off, more. */
-const MIN_ANSWER_WORDS = 12;
+/** Words of answer a reply needs: with fewer, the server gives the answer (a step line alone is never a reply). */
+export const MIN_ANSWER_WORDS = 12;
+/** The same on a call, where an answer is one short sentence. */
+const MIN_SPOKEN_ANSWER_WORDS = 8;
 
 /** Whether the reply answers with substance of its own (a match by meaning may be about something else). */
 function saysSomething(answered: readonly ReadUnit[], deferred: boolean): boolean {
@@ -699,108 +877,268 @@ function saysSomething(answered: readonly ReadUnit[], deferred: boolean): boolea
   return said >= (deferred ? 2 : 1) * MIN_ANSWER_WORDS;
 }
 
-interface Analysis {
-  readonly units: readonly ReadUnit[];
-  readonly findings: ReplyContractFinding[];
-  /** Questions put to the founder, as indexes into `units`. */
-  readonly questions: readonly number[];
-  readonly helpWords: number;
-  /** The units that name the step, as indexes. */
-  readonly stepUnits: readonly number[];
+const norm = (text: string): string =>
+  text
+    .replace(/\[\s*E\d+(?:\s*[,;]\s*E\d+)*\s*\]/gi, '')
+    .replace(/[*_]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+/** `text` without `part` at its start (spacing and emphasis apart); null when it does not start with it. */
+export function withoutStart(text: string, part: string): string | null {
+  const want = norm(part);
+  if (want === '') return null;
+  // Word by word, so spacing and emphasis inside never matter.
+  let seen = '';
+  const step = /\S+\s*/gy;
+  step.lastIndex = /^\s*/.exec(text)?.[0].length ?? 0;
+  for (let m = step.exec(text); m !== null; m = step.exec(text)) {
+    seen = norm(`${seen} ${m[0]}`);
+    if (seen === want) return text.slice(m.index + m[0].length);
+    if (!want.startsWith(seen)) return null;
+  }
+  return null;
 }
 
-function analyse(
-  text: string,
-  guidance: PromptGuidance,
-  founderText: string | undefined,
-  channel: TurnChannel,
-): Analysis {
-  const units = read(text);
-  const findings: ReplyContractFinding[] = [];
-  const questions = units.flatMap((u, i) => (u.kind === 'question' ? [i] : []));
-  const help = units.filter((u) => u.kind === 'statement' || u.kind === 'block');
-  const helpWords = help.reduce((n, u) => n + wordsIn(u.text), 0);
-  const helpText = help.map((u) => u.text).join(' ');
-  const deferred = units.some(
-    (u, i) =>
-      u.kind === 'deferral' ||
-      (u.kind === 'question' && DEFERRAL_LEAD.test(bare(u.text))) ||
-      (i < 2 && withoutLead(u.raw) !== null && DEFERRAL_LEAD.test(bare(u.text))) ||
-      (u.kind === 'question' && i < 2 && PLAN_QUESTION.test(bare(u.text))),
-  );
-  const onlyAsks =
-    helpWords < MIN_HELP_WORDS &&
-    (units.length === 0 ||
-      units.some((u) => u.kind === 'question' || u.kind === 'asked' || u.kind === 'deferral'));
-  if (onlyAsks) findings.push('question_only');
-  if (deferred) findings.push('deferral');
-  // The step's own line is not the answer, whatever words they share.
-  const answered = help.filter((u) => !givesNext(u.text) && !DONE_LINE.test(u.text));
-  if (
-    (!saysAnswer(answered.map((u) => u.text).join(' '), guidance, founderText) &&
-      !(guidance.matched === 'semantic' && saysSomething(answered, deferred))) ||
-    newIdeaRest(text, guidance) !== ''
-  )
-    findings.push('missing_answer');
-  if (referralRest(helpText, guidance, channel) !== '') findings.push('missing_referral');
+interface Parts {
+  /** The model's own part of the reply. */
+  readonly body: string;
+  readonly hadLead: boolean;
+  readonly hadStep: boolean;
+  /** The answer the server wrote already is in it. */
+  readonly hadAnswer: boolean;
+}
 
-  const stepUnits: number[] = [];
-  const step = guidance.step;
-  if (step !== null) {
-    units.forEach((u, i) => {
-      if (u.kind === 'question' || u.kind === 'asked' || u.kind === 'deferral') return;
-      const next = units[i + 1];
-      const pair =
-        next === undefined || next.kind === 'question' || next.kind === 'deferral'
-          ? u.text
-          : `${u.text} ${next.text}`;
-      if (namesStep(u.text, step)) stepUnits.push(i);
-      else if (
-        next !== undefined &&
-        wordsIn(pair) <= 40 &&
-        !namesStep(next.text, step) &&
-        namesStep(pair, step)
-      )
-        stepUnits.push(i, i + 1);
-    });
-    if (guidance.stepRole !== undefined) {
-      if (guidance.stepRole === 'standing' && stepUnits.length === 0 && guidance.kind !== 'recall')
-        findings.push('missing_step');
-      if (
-        units.some(
-          (u) =>
-            givesAsAnswer(u.text, guidance) ||
-            (guidance.stepRole === 'quiet' && givesNext(u.text) && namesStep(u.text, step)),
-        )
-      )
-        findings.push('step_as_answer');
-    } else if (guidance.kind !== 'recall') {
-      const from = stepUnits[0];
-      const said =
-        from === undefined
-          ? ''
-          : units
-              .slice(from)
-              .map((u) => u.text)
-              .join(' ');
-      if (from === undefined || stepRest(step, said, channel, '1970-01-01') !== '')
-        findings.push('missing_step');
+/** A reply without what the server wrote around it (it may have been written already: the check is idempotent). */
+function partsOf(
+  reply: string,
+  guidance: PromptGuidance,
+  channel: TurnChannel,
+  today?: string | null,
+): Parts {
+  let body = reply.trim();
+  const lead = leadText(guidance, channel);
+  const rest = withoutStart(body, lead);
+  const hadLead = lead !== '' && rest !== null;
+  if (rest !== null && hadLead) body = rest.trim();
+  const askBack = (guidance.askBack ?? '').trim();
+  if (askBack !== '' && body.endsWith(askBack)) body = body.slice(0, -askBack.length).trimEnd();
+  const line = sayStep(guidance, channel, today);
+  let hadStep = false;
+  if (line !== '') {
+    const at = body.lastIndexOf(line);
+    if (at >= 0) {
+      hadStep = true;
+      body = `${body.slice(0, at).trimEnd()}${body.slice(at + line.length)}`.trim();
     }
-    if (
-      units.some(
-        (u, i) => u.kind !== 'question' && u.kind !== 'asked' && givesNext(u.text) && !stepUnits.includes(i),
-      )
-    )
-      findings.push('other_step');
-    const named = units.filter((u, i) => stepUnits.includes(i) || NEXT_LINE.test(u.text));
-    if (named.some((u) => withStepDay(u.text, step.dueOn, null) !== u.text)) findings.push('wrong_date');
   }
-  if (stacked(units, questions).length > 1) findings.push('stacked_questions');
-  if (
-    units.some((u) => u.kind === 'flattery' || (u.kind === 'statement' && FLATTERY_LEAD.test(bare(u.text))))
-  )
-    findings.push('flattery');
-  return { units, findings, questions, helpWords, stepUnits };
+  const composed = composedAnswer(guidance, channel);
+  const at = lead === '' && composed !== '' ? body.indexOf(composed) : -1;
+  if (at >= 0)
+    body = `${body.slice(0, at).trimEnd()}\n\n${body.slice(at + composed.length).trimStart()}`.trim();
+  return { body, hadLead, hadStep, hadAnswer: at >= 0 };
+}
+
+interface Cleaned {
+  /** The model's own help, in its order, without step talk, deferrals, flattery and the questions left out. */
+  readonly text: string;
+  readonly question: string;
+  readonly findings: ReadonlySet<ReplyContractFinding>;
+  readonly answerWords: number;
+}
+
+/** The model's part of a reply as the contract lets it stand. */
+function clean(body: string, guidance: PromptGuidance, channel: TurnChannel, today?: string | null): Cleaned {
+  const units = read(body);
+  const findings = new Set<ReplyContractFinding>();
+  const talk = new StepTalk(guidance);
+  const kept: { raw: string; unit: ReadUnit; index: number }[] = [];
+  const owned = guidance.step !== null;
+  const lead = stemsOf(leadText(guidance, channel));
+  const questions = units.flatMap((u, i) => (u.kind === 'question' ? [i] : []));
+  const asking = stacked(units, questions).at(-1) ?? [];
+  if (stacked(units, questions).length > 1) findings.add('stacked_questions');
+  const trailing = asking.length > 0 && asking.at(-1) === units.length - 1;
+  const question = trailing ? asking.map((i) => units[i]?.text ?? '').join(' ') : '';
+  const mayAsk =
+    question !== '' &&
+    !PLAN_QUESTION.test(bare(question)) &&
+    !DEFERRAL_LEAD.test(bare(question)) &&
+    !asking.some((i) => REQUEST.test(bare(units[i]?.text ?? ''))) &&
+    !asking.some((i) => isListUnit(units[i]?.text ?? ''));
+  let broke = false;
+  const leave = (u: ReadUnit, finding: ReplyContractFinding): void => {
+    findings.add(finding);
+    if (PARAGRAPH.test(u.raw)) broke = true;
+  };
+  units.forEach((u, i) => {
+    if (owned && talk.drops(u.raw) && !isServerText(u.text, guidance, channel)) {
+      leave(u, 'step_talk');
+      return;
+    }
+    if (u.kind === 'deferral' || u.kind === 'flattery') {
+      leave(u, u.kind);
+      return;
+    }
+    if (u.kind === 'question') {
+      const text = bare(u.text);
+      if (DEFERRAL_LEAD.test(text) || PLAN_QUESTION.test(text)) findings.add('deferral');
+      if (!asking.includes(i) || trailing) return; // left out, or said last
+    }
+    let raw = owned ? withoutLabel(u.raw) : u.raw;
+    if (raw === '') return;
+    if (u.kind === 'statement') {
+      const without = withoutLead(raw);
+      if (without !== null) {
+        findings.add(FLATTERY_LEAD.test(bare(u.text)) ? 'flattery' : 'deferral');
+        raw = without;
+      }
+    }
+    if (owned) {
+      const undated = withoutDeadline(raw, guidance, today);
+      if (undated !== raw) {
+        findings.add('wrong_date');
+        raw = undated;
+        if (wordsIn(raw) < 3) return;
+      }
+    }
+    // What the server already said first, or a verdict on it.
+    if (lead.size > 0 && (repeatsLead(raw, lead) || onlyVerdict(raw))) {
+      leave(u, 'step_talk');
+      return;
+    }
+    if (broke && kept.length > 0 && !/^\s*\n/.test(raw)) raw = `\n\n${raw.trimStart()}`;
+    broke = false;
+    kept.push({ raw, unit: u, index: i });
+  });
+  // "Here's what to do:" of a list that went.
+  const shown = kept.filter((k) => {
+    if (!/:[*_\s]*$/.test(k.unit.text)) return true;
+    const next = units[k.index + 1];
+    if (next === undefined) return !announcesSteps(k.unit.text);
+    return kept.some((x) => x.index === k.index + 1);
+  });
+  // Only questions, however they are put: the last of them is asked after the help.
+  const onlyAsks =
+    shown.length > 0 && shown.every((k) => k.unit.kind === 'question' || k.unit.kind === 'asked');
+  if (onlyAsks && question === '') {
+    const last = shown.at(-1)?.unit.text ?? '';
+    const asks = !isListUnit(last) && !REQUEST.test(bare(last)) && !PLAN_QUESTION.test(bare(last));
+    return { text: '', question: asks ? last : '', findings, answerWords: 0 };
+  }
+  const text = tidy(shown.map((k) => k.raw).join(''));
+  const answerWords = shown
+    .filter((k) => k.unit.kind === 'statement' || k.unit.kind === 'block')
+    .reduce((n, k) => n + wordsIn(k.raw), 0);
+  return { text, question: mayAsk ? question : '', findings, answerWords };
+}
+
+/** Whether a unit is text of the server's own (the program's answer, who decides, what it builds on). */
+export function isServerText(unit: string, guidance: PromptGuidance, channel: TurnChannel): boolean {
+  const own = norm(unit);
+  if (own.length < 8) return false;
+  const { ask, prior, askBack } = guidance;
+  return [
+    ask === null ? '' : `${ask.answer} ${ask.why} ${ask.block ?? ''}`,
+    prior?.sentence ?? '',
+    prior?.spoken ?? '',
+    askBack ?? '',
+    referralRest('', guidance, channel),
+    newIdeaLine(guidance),
+  ].some((t) => norm(t).includes(own));
+}
+
+/** Whether a unit only says what the lead said. */
+export function repeatsLead(unit: string, lead: ReadonlySet<string>): boolean {
+  const said = stemsOf(unit);
+  if (said.size >= 3 && coverage(said, lead) >= 0.85) return true;
+  // The same figures again, in other words ("so the contribution is $3.50").
+  const figures = [...said].filter((w) => /^\d/.test(w));
+  return (
+    figures.length >= 2 &&
+    figures.every((f) => lead.has(f)) &&
+    coverage(said, lead) >= 0.4 &&
+    !isListUnit(unit)
+  );
+}
+
+/** A verdict on what they said that says nothing of it ("Got it.", "That's a strong signal.", "That's useful news."). */
+export function onlyVerdict(unit: string): boolean {
+  const t = bare(unit);
+  return (
+    FILLER.test(t) ||
+    // A greeting under what already opened, or the stage it said.
+    /^(?:(?:hi|hello|hey)\b[^.!?]{0,30}|(?:good|great|nice|lovely) to (?:see|hear from) you(?: again)?|welcome back)[,!.\s]*(?:\p{L}+)?[.!]*$/iu.test(
+      t,
+    ) ||
+    /^you(?:['’]re| are) (?:now )?(?:at|on|in) stage (?:\d|one|two|three|four|five|six|seven)\b[^.!?]{0,60}[.!]*$/iu.test(
+      t,
+    ) ||
+    /^(?:that|this|it)(?:['’]s| is| was) (?:a |an )?(?:really |very |pretty |such )?(?:clear|strong|useful|solid|great|good|helpful|big|real|promising|positive|important|valuable|exciting|fantastic|excellent|nice)\b[^.!?]{0,40}[.!]*$/iu.test(
+      t,
+    )
+  );
+}
+
+function tidy(text: string): string {
+  return text
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Whether the reply says the prior fact the answer builds on: two of its own words, or its figure. */
+export function saysPrior(reply: string, guidance: PromptGuidance): boolean {
+  const prior = guidance.prior ?? null;
+  if (prior === null) return true;
+  const fact = stemsOf(prior.fact);
+  const said = stemsOf(reply);
+  const shared = sharedCount(fact, said);
+  return (
+    fact.size === 0 || shared >= Math.max(2, Math.ceil(fact.size * 0.34)) || (shared >= 1 && fact.size <= 2)
+  );
+}
+
+/** What the end of a reply adds, after the model's own part (`said`: all of it, the lead too). */
+function tailOf(
+  said: string,
+  answerWords: number,
+  guidance: PromptGuidance,
+  channel: TurnChannel,
+  founderText: string | undefined,
+  findings: Set<ReplyContractFinding>,
+  hadAnswer = false,
+): string[] {
+  const voice = channel === 'voice';
+  const parts: string[] = [];
+  const lead = leadText(guidance, channel);
+  const little = lead === '' && answerWords < (voice ? MIN_SPOKEN_ANSWER_WORDS : MIN_ANSWER_WORDS);
+  const recall = guidance.kind === 'recall';
+  if (hadAnswer) parts.push(composedAnswer(guidance, channel));
+  else if (little) {
+    findings.add(answerWords < MIN_HELP_WORDS ? 'question_only' : 'missing_answer');
+    parts.push(composedAnswer(guidance, channel));
+  } else if (lacksAnswer(said, guidance, founderText)) {
+    findings.add('missing_answer');
+    parts.push(cited(answerOf(guidance, channel), guidance, channel));
+  }
+  const idea = newIdeaRest(said, guidance);
+  if (idea !== '') {
+    findings.add('missing_answer');
+    parts.push(idea);
+  }
+  const prior = (voice ? guidance.prior?.spoken : guidance.prior?.sentence) ?? '';
+  if (!recall && lead === '' && prior !== '' && !saysPrior([said, ...parts].join(' '), guidance)) {
+    findings.add('missing_prior');
+    parts.push(prior);
+  }
+  const referral = referralRest([said, ...parts].join(' '), guidance, channel);
+  if (referral !== '') {
+    findings.add('missing_referral');
+    parts.push(referral);
+  }
+  return parts;
 }
 
 /** The questions put to the founder, an "Or …?" that goes on from the one before it counted with it. */
@@ -816,98 +1154,40 @@ function stacked(units: readonly ReadUnit[], questions: readonly number[]): numb
 }
 
 /**
- * Reads a whole reply against the path's decision and repairs what is missing from it (see the module comment). The
- * model's own help stays, in its order: what only puts the answer off or flatters goes, the answer leads when it was not
- * given, at most one question stays (the last one), and the step and its day come before it. `repaired` is null when the
- * reply keeps the contract.
+ * Reads a whole reply against the path's decision and writes the server's parts around the model's own: what must be said
+ * first (the lead), the program's answer when the model gave too little of one, who decides, the one step line, and at most
+ * one question. The model's own help stays, in its order; the step lines, deadlines, done-whens and sub-steps it wrote go,
+ * whole blocks of them. `repaired` is null when the reply is already as it should be (so the check is idempotent).
  */
 export function checkReplyContract(input: ReplyContractInput): ReplyContractResult {
   const { guidance, channel } = input;
   const reply = input.reply;
   if (!contractApplies(guidance, input.founderText)) return { ok: true, findings: [], repaired: null };
-  const a = analyse(reply, guidance, input.founderText, channel);
-  if (a.findings.length === 0) return { ok: true, findings: [], repaired: null };
-  const has = (f: ReplyContractFinding): boolean => a.findings.includes(f);
-
-  const groups = stacked(a.units, a.questions);
-  const asking = groups.at(-1) ?? [];
-  const trailing = asking.length > 0 && asking.at(-1) === a.units.length - 1;
-  const question = asking.map((i) => a.units[i]?.text ?? '').join(' ');
-  const keepQuestion =
-    question !== '' &&
-    !PLAN_QUESTION.test(bare(question)) &&
-    !DEFERRAL_LEAD.test(bare(question)) &&
-    !asking.some((i) => REQUEST.test(bare(a.units[i]?.text ?? ''))) &&
-    !asking.some((i) => isListUnit(a.units[i]?.text ?? ''));
-
-  if (has('question_only')) {
-    const composed = composeFromGuidance(guidance, channel, input.today);
-    const repaired = keepQuestion && channel === 'text' ? `${composed}\n\n${capital(question)}` : composed;
-    return { ok: false, findings: a.findings, repaired };
-  }
-
-  // The model's own reply, unit by unit, without what the contract leaves out.
-  const body: string[] = [];
-  let afterOtherStep = false;
-  a.units.forEach((u, i) => {
-    // "Done when it is live." of a step that is not the path's goes with it.
-    const itsDone = afterOtherStep && DONE_LINE.test(u.text);
-    afterOtherStep = false;
-    if (itsDone) return;
-    if (u.kind === 'deferral' || u.kind === 'flattery') return;
-    if (u.kind === 'question') {
-      const last = asking.includes(i);
-      if (!last || (trailing && !keepQuestion)) return;
-      if (trailing) return; // after the step
-    }
-    let raw = u.raw;
-    if (u.kind === 'statement') raw = withoutLead(raw) ?? raw;
-    if (
-      guidance.step !== null &&
-      givesNext(u.text) &&
-      (guidance.stepRole === 'quiet' || !a.stepUnits.includes(i))
-    ) {
-      afterOtherStep = true; // another step, or one said a moment ago: never
-      return;
-    }
-    if (givesAsAnswer(u.text, guidance)) raw = asStanding(raw);
-    if (guidance.step !== null && (a.stepUnits.includes(i) || NEXT_LINE.test(u.text)))
-      raw = withStepDay(raw, guidance.step.dueOn, input.today);
-    body.push(raw);
-  });
-  let text = body.join('').trim();
-
-  const gap = channel === 'voice' ? ' ' : '\n\n';
-  if (has('missing_answer')) {
-    const lead = [
-      newIdeaRest(text, guidance),
-      lacksAnswer(text, guidance, input.founderText)
-        ? cited(answerOf(guidance, channel), guidance, channel)
-        : '',
-    ]
-      .filter((p) => p !== '')
-      .join(gap);
-    text = lead === '' ? text : `${lead}${gap}${text}`;
-  }
-  if (has('missing_referral')) text = `${text}${gap}${referralRest(text, guidance, channel)}`.trim();
-  if (guidance.step !== null && has('missing_step')) {
-    const from = a.stepUnits[0];
-    const said =
-      from === undefined
-        ? ''
-        : a.units
-            .slice(from)
-            .map((u) => u.text)
-            .join(' ');
-    const line =
-      from === undefined
-        ? sayStep(guidance, guidance.step, channel, input.today)
-        : stepRest(guidance.step, said, channel, input.today);
-    if (line !== '') text = `${text}${from === undefined ? gap : ' '}${line}`;
-  }
-  if (trailing && keepQuestion) text = `${text}${gap}${question}`;
-  text = text.trim();
-  return { ok: false, findings: a.findings, repaired: text === reply.trim() ? null : text };
+  const voice = channel === 'voice';
+  const gap = voice ? ' ' : '\n\n';
+  const parts = partsOf(reply, guidance, channel, input.today);
+  const c = clean(parts.body, guidance, channel, input.today);
+  const findings = new Set<ReplyContractFinding>(c.findings);
+  const lead = leadText(guidance, channel);
+  if (lead !== '' && !parts.hadLead) findings.add('missing_lead');
+  const step = sayStep(guidance, channel, input.today);
+  if (step !== '' && !parts.hadStep) findings.add('missing_step');
+  const tail = tailOf(
+    [lead, c.text].join(' '),
+    c.answerWords,
+    guidance,
+    channel,
+    input.founderText,
+    findings,
+    parts.hadAnswer,
+  );
+  const onlyComposed = voice && findings.has('question_only');
+  const question =
+    (guidance.askBack ?? '').trim() !== '' ? (guidance.askBack ?? '') : onlyComposed ? '' : c.question;
+  const text = [lead, c.text, ...tail, step, question].filter((p) => p.trim() !== '').join(gap);
+  const changed = norm(text) !== norm(reply);
+  if (!changed) return { ok: findings.size === 0, findings: [...findings], repaired: null };
+  return { ok: false, findings: [...findings], repaired: text };
 }
 
 // Streaming --------------------------------------------------------------------------------------------------
@@ -953,66 +1233,23 @@ export function firstUnitVerdict(
   return { action: 'release' };
 }
 
-/** Whether another wording of the step is written on a "Next:" line that is not the path's step. */
-export function isOtherNextLine(unit: string, guidance: PromptGuidance | null | undefined): boolean {
-  if (!contractApplies(guidance) || guidance.step === null) return false;
-  return givesNext(unit) && (guidance.stepRole === 'quiet' || !namesStep(unit, guidance.step));
-}
-
 /**
- * A unit of a streamed reply with the step's day as the path gives it (unchanged when it names no other), and a step that
- * only stands on their path said as that.
- */
-export function withPathDay(
-  unit: string,
-  guidance: PromptGuidance | null | undefined,
-  today?: string | null,
-): string {
-  if (!contractApplies(guidance) || guidance.step === null) return unit;
-  const said = givesAsAnswer(unit, guidance) ? asStanding(unit) : unit;
-  return NEXT_LINE.test(said.trim()) || namesStep(said, guidance.step)
-    ? withStepDay(said, guidance.step.dueOn, today)
-    : said;
-}
-
-/**
- * What the end of a streamed reply (`released`: what was shown or said) must add so it keeps the contract: the whole
- * answer and step when nothing of help was released, else the answer (shortly), who decides and the step that are
- * missing; '' when nothing is. A question the gate held comes after it.
+ * What the end of a streamed reply (`released`: what was shown or said, the lead too) must add: the answer when the model
+ * gave too little of one, who decides, what the answer builds on; then, after the held question's place, the step line and
+ * the one question the path asks. '' when nothing.
  */
 export function contractTail(
-  input: Omit<ReplyContractInput, 'reply'> & { readonly released: string },
-): string {
+  input: Omit<ReplyContractInput, 'reply'> & { readonly released: string; readonly answerWords: number },
+): { readonly before: string; readonly step: string; readonly findings: readonly ReplyContractFinding[] } {
   const { guidance, channel, released } = input;
-  if (!contractApplies(guidance, input.founderText)) return '';
-  const a = analyse(released, guidance, input.founderText, channel);
-  if (a.findings.includes('question_only')) return composeFromGuidance(guidance, channel, input.today);
-  const parts: string[] = [];
-  if (a.findings.includes('missing_answer')) {
-    parts.push(newIdeaRest(released, guidance));
-    if (lacksAnswer(released, guidance, input.founderText)) {
-      // Said plainly, with no lead-in: the same one on every reply is what a founder hears as canned.
-      parts.push(cited(answerOf(guidance, channel), guidance, channel));
-    }
-  }
-  if (a.findings.includes('missing_referral'))
-    parts.push(referralRest([released, ...parts].join(' '), guidance, channel));
-  if (guidance.step !== null && a.findings.includes('missing_step')) {
-    const from = a.stepUnits[0];
-    const said =
-      from === undefined
-        ? ''
-        : a.units
-            .slice(from)
-            .map((u) => u.text)
-            .join(' ');
-    parts.push(
-      from === undefined
-        ? sayStep(guidance, guidance.step, channel, input.today)
-        : stepRest(guidance.step, said, channel, input.today),
-    );
-  }
-  return parts.filter((p) => p.trim() !== '').join(channel === 'voice' ? ' ' : '\n\n');
+  if (!contractApplies(guidance, input.founderText)) return { before: '', step: '', findings: [] };
+  const findings = new Set<ReplyContractFinding>();
+  const parts = tailOf(released, input.answerWords, guidance, channel, input.founderText, findings);
+  return {
+    before: parts.filter((p) => p.trim() !== '').join(channel === 'voice' ? ' ' : '\n\n'),
+    step: sayStep(guidance, channel, input.today),
+    findings: [...findings],
+  };
 }
 
 /**
@@ -1021,10 +1258,28 @@ export function contractTail(
  */
 export function carriesContract(unit: string, guidance: PromptGuidance | null | undefined): boolean {
   if (!contractApplies(guidance)) return false;
-  if (guidance.stepRole !== 'quiet') {
-    if (NEXT_LINE.test(unit.trim()) || namesStep(unit, guidance.step)) return !QUESTION_END.test(unit.trim());
-    if (guidance.step !== null && DONE_LINE.test(unit)) return true;
-  }
+  if (isTemplateLine(unit, guidance)) return true;
+  const own = norm(unit);
+  if (
+    own !== '' &&
+    [
+      guidance.lead?.text,
+      guidance.lead?.voice,
+      guidance.prior?.sentence,
+      guidance.prior?.spoken,
+      guidance.ask?.block,
+      ...(guidance.calc ?? []),
+    ].some((t) => t !== undefined && norm(t).includes(own))
+  )
+    return true;
+  if (guidance.step !== null && guidance.stepRole !== 'quiet' && SERVER_STEP.test(unit.trim()))
+    return namesStep(unit, guidance.step);
+  if (
+    guidance.step !== null &&
+    DONE_LINE.test(bare(unit)) &&
+    coverage(stemsOf(unit), stemsOf(guidance.step.doneWhen)) >= 0.6
+  )
+    return true;
   const said = stemsOf(unit);
   // Who decides, and what to bring, are said on every turn that needs them.
   if (
@@ -1037,9 +1292,9 @@ export function carriesContract(unit: string, guidance: PromptGuidance | null | 
   const pick = stemsOf(pickOf(guidance.ask.answer, 40));
   if (pick.size >= 3 && coverage(pick, said) >= 0.6) return true;
   // A sentence of the path's own answer, or of its why.
-  const own = `${guidance.ask.answer} ${guidance.ask.why}`;
-  if (wordsIn(unit) >= 4 && plainWords(own).includes(plainWords(unit))) return true;
-  return said.size >= 4 && coverage(said, stemsOf(own)) >= 0.85;
+  const whole = `${guidance.ask.answer} ${guidance.ask.why}`;
+  if (wordsIn(unit) >= 4 && plainWords(whole).includes(plainWords(unit))) return true;
+  return said.size >= 4 && coverage(said, stemsOf(whole)) >= 0.85;
 }
 
 /** The words of `text` alone, spaced, without citation keys. */
@@ -1050,6 +1305,9 @@ function plainWords(text: string): string {
     .trim()} `;
 }
 
+/** Most words of a call's whole reply on the path: the model's part, and the step said after it. */
+export const SPOKEN_REPLY_WORDS = 65;
+
 /** Words the step, and who decides, take on a call: kept free of a reply's spoken budget until they were said. */
 export function spokenReserve(
   guidance: PromptGuidance | null | undefined,
@@ -1057,10 +1315,12 @@ export function spokenReserve(
   today?: string | null,
 ): number {
   if (!contractApplies(guidance)) return 0;
-  const referral = wordsIn(referralRest(released, guidance, 'voice'));
-  const { step } = guidance;
-  if (step === null || guidance.kind === 'recall' || guidance.stepRole === 'quiet') return referral;
-  return referral + (namesStep(released, step) ? 0 : wordsIn(sayStep(guidance, step, 'voice', today)));
+  return (
+    wordsIn(referralRest(released, guidance, 'voice')) +
+    wordsIn(sayStep(guidance, 'voice', today)) +
+    wordsIn(guidance.prior?.spoken ?? '') +
+    wordsIn(guidance.askBack ?? '')
+  );
 }
 
 /**

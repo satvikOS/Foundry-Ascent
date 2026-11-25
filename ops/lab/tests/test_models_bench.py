@@ -445,7 +445,8 @@ def test_the_dry_run_runs_the_real_script_on_the_mock(
     summary = json.loads((out / "public" / "summary.json").read_text())
     assert all(a["ok"] for a in summary["result"]["access"])
     assert {a["id"] for a in summary["result"]["access"]} == models_bench.candidate_ids()
-    assert len(summary["result"]["reasoning"]) == 5
+    # One row per candidate and effort: Luna (none, low), global Luna, Nova, Haiku 4.5, Haiku 5.5 (none, low), its global.
+    assert len(summary["result"]["reasoning"]) == 8
     assert summary["result"]["embeddings"][0]["vector"]["answerable"] >= 220
     # No database in this run: the models alone.
     assert summary["result"]["search"] == []

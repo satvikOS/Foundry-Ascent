@@ -238,7 +238,7 @@ describe('reports', () => {
     expect(d.step?.view).toMatchObject({
       playId: 'interview-script',
       criterionId: 'discovery-ten-conversations',
-      title: 'Run a problem interview: 2 more',
+      title: 'Hold 2 more customer talks',
     });
     expect(d.step?.view.doneWhen).toContain('2 more make 10 in all');
     // The row keeps the play's own words: what remains is worked out when it is shown.
@@ -251,7 +251,10 @@ describe('reports', () => {
     });
     expect(rows['idea-one-page']).toMatchObject({ status: 'claimed', evidence: told });
     const { prompt } = turnOf(told);
-    expect(prompt.ask?.answer).toContain('8 of 10');
+    // What it shows, by the code: the share, what that means, what it does not show, and how far they are.
+    expect(prompt.lead?.text).toBe(
+      '6 of 8 (75%) said the problem is the missing microwave, not the food: more than half is a pattern, so it leads now. It shows the problem, not yet that they would pay to have it gone. That is 8 of the 10 customer talks, 2 to go. That puts you on stage 2, talking to customers.',
+    );
     expect(prompt.brief).toContain(`They reported (8 of 10 done): "${told}"`);
   });
 
@@ -271,7 +274,7 @@ describe('reports', () => {
   };
 
   it('what is reported next adds up: two more finish it, and the step is the pattern', () => {
-    expect(at('What next?', { reads: eight }).step?.view.title).toBe('Run a problem interview: 2 more');
+    expect(at('What next?', { reads: eight }).step?.view.title).toBe('Hold 2 more customer talks');
     const d = at('I interviewed two more nurses on Monday.', { reads: eight });
     expect(d.applied?.rows).toMatchObject([
       { criterionId: 'discovery-ten-conversations', status: 'claimed' },
@@ -321,8 +324,8 @@ describe('reports', () => {
     expect([d.kind, d.step?.view.id, d.movedTo]).toEqual(['report', late.id, '2026-12-01']);
     expect(d.keeps).toMatchObject({ write: 'change', storedVersion: 1, view: { dueOn: '2026-12-01' } });
     const answer = turnOf("I didn't get to it. Midterms ate the week.", { reads }).prompt.ask?.answer;
-    expect(answer).toContain('it moves to December 1');
-    expect(answer).toContain('do only this: write five questions about the last time');
+    expect(answer).toContain('the step moves to December 1');
+    expect(answer).toContain('do one thing only: write five questions about the last time');
   });
 
   it('an overdue step is never named with a day that has passed; a recall says the day it had', () => {
@@ -477,20 +480,20 @@ describe('the idea, kept in their words', () => {
         }),
       ],
     };
-    for (const message of [
-      'What was my startup idea again?',
-      'What did we decide yesterday?',
-      'Remind me of our plan',
-    ]) {
+    // What they ask for is what they get, as a mentor says it; the model adds to it and never says it again.
+    const said = (message: string): string => {
       const { prompt, decision } = turnOf(message, { reads });
-      expect(decision.kind, message).toBe('recall');
-      expect(prompt.ask?.answer, message).toContain('"NapNook, an app that rents quiet chairs to students"');
-      expect(prompt.ask?.answer, message).toContain('Decided on November 23: Start with the library.');
-      expect(prompt.ask?.answer, message).toContain('Open step: Run a problem interview, due Friday.');
-      // What was corrected since is not said again.
-      expect(prompt.ask?.answer, message).toContain('450');
-      expect(prompt.ask?.answer, message).not.toContain('Charge 300');
-    }
+      expect([decision.kind, prompt.ask], message).toEqual(['recall', null]);
+      return prompt.lead?.text ?? '';
+    };
+    expect(said('What was my startup idea again?')).toBe(
+      'Your idea is New venture: NapNook, an app that rents quiet chairs to students.',
+    );
+    for (const message of ['What did we decide yesterday?', 'Remind me of our plan'])
+      expect(said(message), message).toBe(
+        'Yesterday you decided to start with the library. Last Friday you decided: the fee is 450 dollars now, not 300.',
+      );
+    expect(said("What's my fee per application?")).toBe('The fee is 450 dollars now, not 300.');
     expect(turnOf("What's my fee per application?", { reads }).decision.kind).toBe('recall');
   });
 
@@ -513,8 +516,8 @@ describe('the idea, kept in their words', () => {
       ],
     };
     const { prompt } = turnOf('What did we decide last time?', { reads });
-    expect(prompt.ask?.answer).toContain('450');
-    expect(prompt.ask?.answer).not.toContain('Charge 300');
+    expect(prompt.lead?.text).toContain('450');
+    expect(prompt.lead?.text).not.toContain('Charge 300');
     expect(prompt.brief).not.toContain('Charge 300');
   });
 
@@ -566,8 +569,11 @@ describe('the idea, kept in their words', () => {
       progress: null,
     });
     const { prompt } = turnOf(message, { reads });
-    expect(prompt.ask?.answer).toContain('does not carry over by itself');
-    expect(prompt.ask?.answer).toContain('Ten people told you about the last time');
+    // Said as a mentor says it: the new direction, the old idea kept, and what is shown again, in short words.
+    expect(prompt.lead?.text).toBe(
+      'From today you stop feeding students and haul leftovers for caterers instead. The first idea (leftover meals for students) stays in your story. What you showed was about the old customer, so you show it again for the new one: ten customer talks, the pattern in what people said and what you compete with.',
+    );
+    expect(prompt.lead?.voice.split(' ').length).toBeLessThan(prompt.lead?.text.split(' ').length ?? 0);
     expect(prompt.brief.split('\n').slice(0, 2)).toEqual([
       'Idea, in their words: We stop feeding students and haul leftovers for caterers instead',
       `Changed direction ${TODAY}, from: leftover meals for students`,
@@ -606,8 +612,12 @@ describe('the idea, kept in their words', () => {
     };
     const { prompt, decision } = turnOf('Remind me how we got here, from the start.', { reads });
     expect(decision.kind).toBe('recall');
-    expect(prompt.ask?.answer).toMatch(
-      /^You started with "packed lunches for nurses"\. November 10: I did eight interviews\. Six have no microwave\. November 17: Changed direction: rent thermos jars with soup\. Open step now: Run a problem interview/,
+    expect(prompt.lead?.text).toBe(
+      [
+        'You started with this idea: packed lunches for nurses.',
+        '- November 10: you did eight interviews. Six have no microwave.',
+        '- November 17: you changed direction to this: rent thermos jars with soup.',
+      ].join('\n'),
     );
     expect(decision.step?.view.title).toBe('Run a problem interview');
   });
@@ -693,7 +703,7 @@ describe('who decides, and what is never shared', () => {
       expect([d.pushes, d.referral?.who], message).toEqual([true, first.referral?.who]);
       expect(d.step?.view.playId, message).toBe('sign-ip-form');
       const answer = turnOf(message, over).prompt.ask?.answer;
-      expect(answer, message).toContain('I will not say yes or no');
+      expect(answer, message).toContain('a yes or no from me would be a guess');
       expect(answer, message).toContain(first.referral?.bring.slice(5, 30) ?? '?');
     }
     // Another ask is its own.
@@ -803,9 +813,13 @@ describe('organise me, on a venture with a record; and another idea', () => {
         'value-proposition',
         false,
       ]);
-      expect(prompt.ask?.answer, message).toContain('ToolTally is at stage 3 of 7');
-      expect(prompt.ask?.answer, message).toContain('900 tools');
-      expect(prompt.ask?.answer, message).toContain('Now: Write the value proposition, due');
+      const lead = prompt.lead?.text ?? '';
+      expect(lead, message).toMatch(/^You are on stage 3 of 7 with ToolTally, proving someone wants it\./);
+      expect(lead, message).toContain('one shop kept 900 tools on a clipboard');
+      expect(lead, message).toMatch(/Start with this: [a-z][^.]*\.$/);
+      expect(lead.split(' ').length, message).toBeLessThanOrEqual(110);
+      // Said once: what it names of the record is not also left for the model to build on.
+      expect(prompt.prior?.sentence ?? '', message).toBe('');
     }
   });
 

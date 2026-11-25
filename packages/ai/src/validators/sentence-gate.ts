@@ -46,17 +46,26 @@ import { asksForNumber, founderMoves } from '../prompts/conversation-state.js';
 import { questionFramesOf, withVariedQuestions } from '../prompts/phrasing.js';
 import { nameBudgetSpent, withoutStockOpener, withoutVocativeName } from './openers.js';
 import { guidanceText, type PromptGuidance } from '../prompts/guidance.js';
+import { termsIn, withMeanings } from './glossary.js';
+import { ownFactsUnit } from './own-facts.js';
 import { supportUnit, type SupportIndex } from './citation-support.js';
 import {
-  DONE_LINE,
+  SPOKEN_REPLY_WORDS,
+  StepTalk,
+  announcesSteps,
   carriesContract,
   contractApplies,
   contractTail,
   firstUnitVerdict,
-  isOtherNextLine,
+  isServerText,
+  leadText,
+  onlyVerdict,
+  repeatsLead,
+  withoutLabel,
   spokenReserve,
-  withPathDay,
+  withoutDeadline,
 } from './reply-contract.js';
+import { stemsOf } from './stems.js';
 import { clampWords, toSpeakable } from './speech.js';
 import { findUnitEnd } from './units.js';
 
@@ -258,6 +267,8 @@ export interface SentenceGateOptions {
   today?: string;
   /** What may be stated this turn (validators/citation-support.ts): read per unit. Absent: not checked. */
   support?: SupportIndex | null;
+  /** What the server says first was already said (a reply that goes on from it). Default false. */
+  leadSaid?: boolean;
 }
 
 export interface GateUnit {
@@ -281,6 +292,11 @@ export interface GateResult {
   /** Set when the reply ends before the rest of the stream (after units were released): stop the stream. */
   readonly cut: GateCutReason | null;
 }
+
+/** A sentence that says nothing without the one before it. */
+const LEANS =
+  /^(?:and |so )?(?:that|this|it|those|these)(?:['’](?:s|re|ll|d)| (?:is|are|was|were|means|will|would|gives|keeps|tells))\b/iu;
+const LEANS_MAX_WORDS = 16;
 
 /** A unit the gate left out, and why (kept only with `keepDropped`, for the conversation lab's stream trace). */
 export interface DroppedUnit {
@@ -488,11 +504,24 @@ export class SentenceGate {
   readonly #contract: PromptGuidance | null;
   /** The figures known this turn, the path's included. */
   readonly #figures: string | undefined;
+  /** The model's own step talk, block by block (the server writes the one step line); null: the turn has no step. */
+  readonly #talk: StepTalk | null;
+  /** What the server says first ('' on a turn that opens with the model's answer), and whether it was said. */
+  readonly #lead: string;
+  readonly #leadStems: ReadonlySet<string>;
+  #leadShown = false;
+  /** Units of the model's own released, and the words of answer in them. */
+  #modelUnits = 0;
+  #answerWords = 0;
+  /** The unit before was left out as said before, or as nobody's: one that leans on it goes too. */
+  #leanedOn = false;
+  /** Business words whose meaning a first-time founder has (null: nobody needs them told). */
+  readonly #terms: Set<string> | null;
+  /** A unit that began a paragraph was left out: the next one begins it. */
+  #paragraphLeft = false;
   /** A question put to the founder, kept until the reply's help was released. */
   #heldQuestion: string | null = null;
   #questionReleased = false;
-  /** The last unit named another step than the path's and was left out: what "done" means of it goes too. */
-  #afterOtherStep = false;
   #contractDone = false;
   #contractEdits = 0;
   #contractAppended = false;
@@ -521,6 +550,30 @@ export class SentenceGate {
       this.#question === null && contractApplies(options.guidance, options.founderText)
         ? options.guidance
         : null;
+    // A social turn has no step line of the server's, and the model's own step talk is left out of it all the same.
+    const guided = options.guidance ?? null;
+    this.#talk =
+      guided !== null && guided.kind !== 'rehearsal' && (guided.step !== null || guided.kind === 'social')
+        ? new StepTalk(guided)
+        : null;
+    this.#lead =
+      this.#contract === null || options.leadSaid === true
+        ? ''
+        : leadText(this.#contract, options.spoken === true ? 'voice' : 'text');
+    this.#leadStems = stemsOf(
+      this.#contract === null ? '' : leadText(this.#contract, options.spoken === true ? 'voice' : 'text'),
+    );
+    this.#terms =
+      this.#contract?.firstTime === true
+        ? termsIn(
+            [
+              options.founderText ?? '',
+              options.previousReply ?? '',
+              ...(options.earlierReplies ?? []).map((t) => t ?? ''),
+              this.#lead,
+            ].join('\n'),
+          )
+        : null;
     this.#figures =
       options.knownFigures === undefined || this.#contract === null
         ? options.knownFigures
@@ -531,7 +584,9 @@ export class SentenceGate {
     this.#keepReferrals = options.keepReferrals === true;
     this.#signOffWelcome = welcomesSignOff(options.founderText);
     this.#wrapsUp = wrapsUp(options.founderText);
-    this.#askedNumber = options.founderText !== undefined && asksForNumber(options.founderText);
+    // On the path a number is theirs, a sum given or the evidence's: never a range of the model's own.
+    this.#askedNumber =
+      this.#contract === null && options.founderText !== undefined && asksForNumber(options.founderText);
     const said = [options.previousReply, ...(options.earlierReplies ?? [])].filter(
       (t): t is string => typeof t === 'string' && t.trim() !== '',
     );
@@ -616,6 +671,27 @@ export class SentenceGate {
     if (this.#options.keepDropped === true) this.#dropped.push({ reason, text: text.trim() });
   }
 
+  /** Whether the reply is held to the path (the server writes its step, and what it says first). */
+  get guided(): boolean {
+    return this.#contract !== null;
+  }
+
+  /** What the server says first, before the model wrote anything: at once, so the founder waits for nothing. */
+  open(): GateResult {
+    const units: GateUnit[] = [];
+    if (!this.#ended && !this.#stopped()) this.#openLead(units);
+    return this.#blocked !== null
+      ? this.#block(this.#blocked, units)
+      : { units, blocked: null, fallback: null, cut: null };
+  }
+
+  #openLead(units: GateUnit[]): void {
+    if (this.#lead === '' || this.#leadShown) return;
+    this.#leadShown = true;
+    this.#rewritten = true;
+    this.#sayWhole(this.#lead, '', units);
+  }
+
   /** Adds a chunk and returns the units it completes. */
   push(chunk: string): GateResult {
     if (this.#ended) throw new Error('SentenceGate.push after end');
@@ -664,6 +740,11 @@ export class SentenceGate {
     return this.#shown === '' && this.#stats.withheld === 0;
   }
 
+  /** Nothing of the model's own was released yet. */
+  #nothingModel(): boolean {
+    return this.#modelUnits === 0 && this.#stats.withheld === 0;
+  }
+
   /**
    * Text that cannot change any more: all of it once ended, else up to the last whitespace. Read from the end
    * (only the last word), so a long stream of small chunks stays linear.
@@ -686,16 +767,24 @@ export class SentenceGate {
 
   #release(): GateResult {
     const units: GateUnit[] = [];
-    if (this.#nothingReleased()) {
+    this.#openLead(units);
+    if (this.#blocked !== null) return this.#block(this.#blocked, units);
+    if (this.#nothingModel()) {
       // Nothing is shown before the opening is known to be prose.
       const opening = this.#raw.trimStart();
       if (STRUCTURED_OPENING.test(opening)) {
+        if (this.#leadShown) {
+          // What the server said first stands, with the step: nothing of this is prose to show after it.
+          this.#cut = 'meta_narration';
+          this.#finishContract(units);
+          return { units, blocked: this.#blocked, fallback: null, cut: this.#cut };
+        }
         this.#fallback = 'structured_output';
         return this.#nothing();
       }
       // A finished lead-in is prose: nothing can make it structured output any more.
       if (!this.#ended && opening.length < OPENING_CHARS && !this.#leadInAt(this.#cursor)) {
-        return this.#nothing();
+        return { ...this.#nothing(), units };
       }
     }
     const stable = this.#stable();
@@ -752,7 +841,7 @@ export class SentenceGate {
           rawUnit = greeting.text;
         }
       }
-      if (this.#nothingReleased() && this.#question === null) {
+      if (this.#nothingModel() && this.#question === null) {
         // The reply starts with its substance, never a stock opener (validators/openers.ts): the start of a unit goes,
         // and a unit that is nothing but the opener goes once the next unit shows that more follows.
         const opener = withoutStockOpener(rawUnit, {
@@ -829,7 +918,7 @@ export class SentenceGate {
         }
         this.#cut = 'meta_narration';
         this.#finishContract(units);
-        if (this.#blocked !== null) return this.#block(this.#blocked, units);
+        if (this.blocked !== null) return this.#block(this.blocked, units);
         return { units, blocked: null, fallback: null, cut: this.#cut };
       }
       const repeat = this.#repeatOf(rawUnit, this.#raw.slice(0, this.#cursor), trailing);
@@ -840,6 +929,7 @@ export class SentenceGate {
         // unless the turn is flagged, when nothing that may carry its escalation is ever left unsaid.
         this.#cursor = end;
         this.#repeatsDropped += 1;
+        this.#leanedOn = this.#contract !== null;
         this.#repeatedUnits.push(rawUnit);
         if (repeat === 'reask') this.#reasksDropped += 1;
         this.#keepDropped(repeat, rawUnit);
@@ -883,6 +973,12 @@ export class SentenceGate {
         rawUnit = varied.text;
         for (const frame of questionFramesOf(rawUnit)) this.#usedFrames.add(frame);
       }
+      // What follows what the server said first starts a paragraph of its own.
+      if (this.#leadShown && this.#nothingModel() && !/^\s*\n/.test(rawUnit))
+        rawUnit = `${this.#options.spoken === true ? ' ' : '\n\n'}${rawUnit.trimStart()}`;
+      else if (this.#paragraphLeft && this.#modelUnits > 0 && !/^\s*\n/.test(rawUnit))
+        rawUnit = `${this.#options.spoken === true ? ' ' : '\n\n'}${rawUnit.trimStart()}`;
+      this.#paragraphLeft = false;
       const unit = this.#process(rawUnit);
       this.#cursor = end;
       if (unit === 'identity' || unit === 'cross_venture') return this.#block(unit, units);
@@ -896,11 +992,16 @@ export class SentenceGate {
       this.#show(unit, units);
       this.#released.units += 1;
       this.#released.words += words(unit.text);
-      if (this.#contract !== null) this.#releasedText += unit.text;
+      this.#modelUnits += 1;
+      if (this.#contract !== null) {
+        this.#releasedText += unit.text;
+        if (!/\?["'”’)\]*_]*\s*$/u.test(unit.text))
+          this.#answerWords += words(unit.text.replace(/\[E\d+[^\]]*\]/g, ''));
+      }
     }
     if (this.#ended || this.#full || this.#spokenFull) {
       this.#finishContract(units);
-      if (this.#blocked !== null) return this.#block(this.#blocked, units);
+      if (this.blocked !== null) return this.#block(this.blocked, units);
     }
     if (this.#ended && this.#lifeRemoved && this.#life !== null && !this.#lifeClosed) {
       // A made-up life went and nothing but thanks (or nothing) was released: the reply turns to the founder ("Thanks for
@@ -947,6 +1048,8 @@ export class SentenceGate {
   #repeatOf(unit: string, before: string, trailing = false): 'repeat' | 'reask' | null {
     if (this.#previousGrams === null) return null;
     if (isProtectedLine(unit, this.#keepReferrals) || carriesContract(unit, this.#contract)) return null;
+    // On the path, a list is a draft or a template made better: an item of it is never left out of it.
+    if (this.#contract !== null && isListItem(unit)) return null;
     if (repeatsPrevious(unit, this.#previousGrams, { signOffs: !this.#signOffWelcome })) return 'repeat';
     // A question for someone else (in a quoted draft, a list of questions to send) is the founder's prep, never a
     // re-ask of them (`putToFounder`, `handBackCandidate`): `trailing` is set only for a re-ask candidate.
@@ -1027,15 +1130,49 @@ export class SentenceGate {
    * question), 'wait' while what follows a question has not arrived. A statement is never waited for.
    */
   #holdToContract(rawUnit: string, end: number, stable: string): { readonly unit: string } | 'out' | 'wait' {
-    let unit = rawUnit;
+    let unit = this.#contract === null ? rawUnit : withoutLabel(rawUnit);
+    const channel = this.#options.spoken === true ? 'voice' : 'text';
+    if (unit === '') {
+      this.#leaveOut('contract', rawUnit);
+      return 'out';
+    }
+    if (unit !== rawUnit) this.#rewritten = true;
+    // "That's the only way to know." of a sentence that went leans on nothing.
+    if (
+      this.#leanedOn &&
+      LEANS.test(unit.trim()) &&
+      words(unit) <= LEANS_MAX_WORDS &&
+      !isProtectedLine(unit, this.#keepReferrals) &&
+      !(this.#contract !== null && isServerText(unit, this.#contract, channel))
+    ) {
+      this.#leaveOut('contract', rawUnit);
+      return 'out';
+    }
+    this.#leanedOn = false;
+    // Whole blocks of the model's own step talk: the one step line is the server's.
+    const talk = this.#talk?.drops(rawUnit) === true;
+    if (
+      talk &&
+      !isProtectedLine(unit, this.#keepReferrals) &&
+      !(this.#contract !== null && isServerText(rawUnit, this.#contract, channel))
+    ) {
+      this.#leaveOut('contract', rawUnit);
+      return 'out';
+    }
     if (this.#contract !== null && !isProtectedLine(unit, this.#keepReferrals)) {
       const guidance = this.#contract;
-      const afterOther = this.#afterOtherStep;
-      this.#afterOtherStep = false;
-      if (isOtherNextLine(unit, guidance) || (afterOther && DONE_LINE.test(unit))) {
-        this.#afterOtherStep = true;
+      if (this.#leadShown && (repeatsLead(unit, this.#leadStems) || onlyVerdict(unit))) {
         this.#leaveOut('contract', rawUnit);
         return 'out';
+      }
+      if (guidance.step !== null && /:[*_\s]*$/.test(unit)) {
+        // "Here's what to do:" waits for what it announces: the model's own step list goes with it.
+        const next = this.#nextUnit(end, stable);
+        if (next === null) return 'wait';
+        if (next === '' ? announcesSteps(unit) : this.#talkAfter(next)) {
+          this.#leaveOut('contract', rawUnit);
+          return 'out';
+        }
       }
       const verdict = firstUnitVerdict(this.#raw.slice(0, this.#cursor), unit, guidance);
       if (verdict.action === 'drop') {
@@ -1046,6 +1183,10 @@ export class SentenceGate {
         unit = verdict.text;
         this.#contractEdits += 1;
         this.#rewritten = true;
+      }
+      if (verdict.action === 'hold' && (guidance.askBack ?? '') !== '') {
+        this.#leaveOut('contract', rawUnit);
+        return 'out';
       }
       if (verdict.action === 'hold') {
         const next = this.#nothingReleased() ? '' : this.#nextUnit(end, stable);
@@ -1065,11 +1206,15 @@ export class SentenceGate {
         }
         this.#questionReleased = true;
       }
-      const dated = withPathDay(unit, guidance, this.#options.today);
-      if (dated !== unit) {
-        unit = dated;
+      const undated = withoutDeadline(unit, guidance, this.#options.today);
+      if (undated !== unit) {
         this.#contractEdits += 1;
         this.#rewritten = true;
+        if (words(undated) < 3) {
+          this.#keepDropped('contract', rawUnit);
+          return 'out';
+        }
+        unit = undated;
       }
     }
     if (this.#options.support && this.#question === null) {
@@ -1090,11 +1235,39 @@ export class SentenceGate {
         unit = out.text;
       }
     }
+    if (
+      this.#contract !== null &&
+      !isProtectedLine(unit, this.#keepReferrals) &&
+      !isServerText(unit, this.#contract, channel)
+    ) {
+      const out = ownFactsUnit(unit, this.#contract, { known: this.#figures ?? '' });
+      if (out.findings.length > 0) {
+        this.#supportEdits += 1;
+        this.#rewritten = true;
+      }
+      if (out.text === '') {
+        this.#leanedOn = true;
+        this.#keepDropped('support', rawUnit);
+        return 'out';
+      }
+      unit = out.text;
+    }
+    if (this.#terms !== null) {
+      const told = withMeanings(unit, this.#terms, channel === 'voice');
+      if (told !== unit) this.#rewritten = true;
+      unit = told;
+    }
     return { unit };
+  }
+
+  /** Whether the next unit is the model's own step talk (read on a copy of the block so far). */
+  #talkAfter(next: string): boolean {
+    return this.#contract !== null && new StepTalk(this.#contract).drops(next);
   }
 
   /** A unit the contract leaves out. */
   #leaveOut(reason: 'contract', unit: string): void {
+    if (/^[ \t]*\n\s*\n/.test(unit)) this.#paragraphLeft = true;
     this.#contractEdits += 1;
     this.#rewritten = true;
     this.#keepDropped(reason, unit);
@@ -1115,38 +1288,44 @@ export class SentenceGate {
     const budget = this.#options.replyBudget ?? null;
     if (repeatedAway || (budget !== null && budget.words < SHORT_BUDGET.words)) return;
     const voice = this.#options.spoken === true;
+    const gap = voice ? ' ' : '\n\n';
     const onlyAsked = this.#nothingReleased();
     const tail = contractTail({
       released: this.#releasedText,
+      answerWords: this.#answerWords,
       guidance: this.#contract,
       channel: voice ? 'voice' : 'text',
       ...(this.#options.today === undefined ? {} : { today: this.#options.today }),
       ...(this.#options.founderText === undefined ? {} : { founderText: this.#options.founderText }),
     });
-    if (tail !== '') {
+    for (const text of [tail.before, tail.step]) {
+      if (text === '' || this.#blocked !== null) continue;
       this.#contractAppended = true;
       this.#rewritten = true;
-      this.#sayWhole(tail, voice ? ' ' : /^(?:Do it by|Done when)\b/.test(tail) ? ' ' : '\n\n', units);
+      this.#sayWhole(text, gap, units);
     }
-    const question = this.#heldQuestion;
+    // One question, last: the number the path lacks, else the model's own.
+    const asked = (this.#contract.askBack ?? '').trim();
+    const question = asked === '' ? this.#heldQuestion : asked;
     const fits =
       this.#options.spokenWordBudget === undefined ||
       this.#spokenWords + words(question ?? '') <= this.#options.spokenWordBudget;
     if (
       question !== null &&
       this.#blocked === null &&
-      !this.#questionReleased &&
-      !this.#spokenFull &&
-      // A call that only asked gets the answer and the step in its place.
-      !(voice && onlyAsked) &&
-      fits &&
-      this.#options.noQuestions !== true &&
-      this.#repeatOf(question, this.#releasedText) === null
+      (asked !== '' ||
+        (!this.#questionReleased &&
+          !this.#spokenFull &&
+          // A call that only asked gets the answer and the step in its place.
+          !(voice && onlyAsked) &&
+          fits &&
+          this.#options.noQuestions !== true &&
+          this.#repeatOf(question, this.#releasedText) === null))
     ) {
       this.#questionReleased = true;
       this.#sayWhole(
         question.trim(),
-        tail === '' ? (/^\s*\n/.test(question) ? '\n\n' : ' ') : voice ? ' ' : '\n\n',
+        tail.step === '' && tail.before === '' && /^\s*\S/.test(question) && asked === '' ? ' ' : gap,
         units,
       );
     }
@@ -1246,7 +1425,8 @@ export class SentenceGate {
       ...this.#identity,
       ...this.#disclaimers,
       answers,
-      ...(this.#life === null ? {} : { lifeBefore: before }),
+      // What the founder will send or say may have begun in an earlier unit ("Here's a line to say:").
+      lifeBefore: before,
     });
     if (identity.findings.some((f) => this.#blockOn.has(f.kind))) return 'identity';
     this.#stats.identityRewrites += identity.findings.length;
@@ -1277,8 +1457,8 @@ export class SentenceGate {
     if (this.#spokenFull && !this.#serverUnit) return null;
     this.#tail = identityTail(text);
     if (!this.#identified && identifiesHonestly(text, this.#identity)) this.#identified = true;
+    this.#releasedTail = `${before}${text}`.slice(-DRAFT_SCAN_CHARS);
     if (this.#life !== null) {
-      this.#releasedTail = `${before}${text}`.slice(-DRAFT_SCAN_CHARS);
       // Only the reply's start matters here (whether it is all thanks), so it stays short.
       if (this.#lifeReleased.length < LIFE_RELEASED_CHARS)
         this.#lifeReleased = `${this.#lifeReleased} ${text}`.slice(0, LIFE_RELEASED_CHARS);
@@ -1348,7 +1528,10 @@ export class SentenceGate {
    * where Markdown, links and citations no longer split a word).
    */
   #speak(text: string, before: string): { said: string } | { blocked: GateBlockReason } {
-    const budget = this.#options.spokenWordBudget;
+    const budget =
+      this.#options.spokenWordBudget === undefined || this.#contract === null
+        ? this.#options.spokenWordBudget
+        : Math.min(this.#options.spokenWordBudget, SPOKEN_REPLY_WORDS);
     let speakable = toSpeakable(text);
     if (this.#options.spoken === true && speakable !== '') {
       // Heard, not read: the spoken form is checked as speech before it is said, alone and after the end of
@@ -1357,7 +1540,7 @@ export class SentenceGate {
       const heard = rewriteIdentity(speakable, {
         ...options,
         ...this.#disclaimers,
-        ...(this.#life === null ? {} : { lifeBefore: before }),
+        lifeBefore: before,
       });
       if (heard.findings.some((f) => this.#blockOn.has(f.kind))) return { blocked: 'identity' };
       this.#stats.identityRewrites += heard.findings.length;
@@ -1379,7 +1562,7 @@ export class SentenceGate {
     }
     // The step's words are kept free until it was said.
     const reserve = spokenReserve(this.#contract, `${this.#releasedText} ${text}`, this.#options.today);
-    const left = budget - this.#spokenWords - Math.min(reserve, Math.floor(budget / 2));
+    const left = budget - this.#spokenWords - Math.min(reserve, Math.floor((budget * 2) / 3));
     if (this.#spokenFull || left <= 0 || (words(speakable) > left && this.#spokenWords > 0)) {
       // A sentence is said whole or not at all once something was said; only a first sentence longer than the whole
       // budget is cut (else the call would say nothing).

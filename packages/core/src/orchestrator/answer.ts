@@ -65,7 +65,7 @@ import {
   type GenerationMeter,
 } from './generate.js';
 import { withoutTrailingFields } from './reply-extract.js';
-import { pathReportRequest } from './turn-prompts.js';
+import { pathAnnotationMessages, pathReportRequest } from './turn-prompts.js';
 
 /**
  * Steps 4–6 of a turn (system design §7), shared by founder turns (`runTurn`) and the EIR studio's test bench
@@ -343,7 +343,10 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
   const read = socialTurnOf(spec.founderText);
   const social = read === 'greeting' && previousReply === null ? null : read;
 
-  const introduced = alreadyIntroduced(spec);
+  // A coaching reply on the path starts with its answer, the first one too: only a hello is met with a name.
+  const introduced =
+    alreadyIntroduced(spec) ||
+    (guidance !== null && guidance.kind !== 'social' && guidance.kind !== 'rehearsal');
   // A whole reply that says the conversation again is written once more with what was said (generateWhole), unless
   // the founder asked to hear it again or sincerely asks who or what the coach is (its honest answer always stands).
   const saidBefore = [previousReply, ...earlierReplies].filter(
@@ -440,6 +443,23 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     narration: { founder: spec.continuity.founderFirstName ?? null, people: guards.addressees },
     alreadySaid,
     pathReport: pathReportRequest(system, guidance),
+    pathAnnotations:
+      prompt.annotation === null ||
+      guidance === null ||
+      guidance.kind === 'rehearsal' ||
+      spec.mode === 'rehearse'
+        ? null
+        : {
+            system: prompt.annotation,
+            messages: (answer: string) =>
+              pathAnnotationMessages({
+                lastFounder: spec.history.at(-1)?.founderText ?? null,
+                lastReply: spec.history.at(-1)?.answer ?? null,
+                evidence: shown.map((k) => k.item),
+                founderText: spec.founderText,
+                answer,
+              }),
+          },
   };
   let generation: Generation;
   try {

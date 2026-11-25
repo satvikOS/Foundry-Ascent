@@ -144,6 +144,10 @@ class LabModels:
     live_judge: tuple[str, ...] = ()
     #: Alternative coach models the lab may run the app's coach on for an A/B (``live.coach``; never production's).
     live_coach: tuple[str, ...] = ()
+    #: The client suite's judges, in order (the first of another family than the coach's), and the coach models its runs
+    #: may put the lab's API process on (``client`` in models.json; never production's).
+    client_judge: tuple[str, ...] = ()
+    client_coach: tuple[str, ...] = ()
 
 
 def foundation_model_id(model_id: str) -> str:
@@ -163,7 +167,18 @@ def lab_models(path: Path = MODELS_FILE) -> LabModels:
     live_simulator = tuple(live.get("simulator") or ())
     live_judge = tuple(live.get("judge") or ())
     live_coach = tuple(live.get("coach") or ())
-    for model in (*simulator, *judge, *live_simulator, *live_judge, *live_coach):
+    client = raw.get("client") or {}
+    client_judge = tuple(client.get("judge") or ())
+    client_coach = tuple(client.get("coach") or ())
+    for model in (
+        *simulator,
+        *judge,
+        *live_simulator,
+        *live_judge,
+        *live_coach,
+        *client_judge,
+        *client_coach,
+    ):
         if foundation_model_id(model) not in prices:
             raise ValueError(f"models.json has no price for {model}")
     return LabModels(
@@ -173,6 +188,8 @@ def lab_models(path: Path = MODELS_FILE) -> LabModels:
         live_simulator=live_simulator,
         live_judge=live_judge,
         live_coach=live_coach,
+        client_judge=client_judge,
+        client_coach=client_coach,
     )
 
 
@@ -180,17 +197,20 @@ def lab_models(path: Path = MODELS_FILE) -> LabModels:
 DEFAULT_COACH = "default"
 
 
-def coach_app_models(choice: str, lab: LabModels, app: AppModels | None = None) -> AppModels:
-    """The app's models for a lab run: production's (``default``), or one of ``live.coach`` in models.json as both
-    primary and fallback, so the A/B arm is that model alone (a failure is counted, never answered by another model);
+def coach_app_models(
+    choice: str, lab: LabModels, app: AppModels | None = None, *, offered: Sequence[str] | None = None
+) -> AppModels:
+    """The app's models for a lab run: production's (``default``), or one of ``offered`` (``live.coach`` in models.json;
+    the client suite offers ``client.coach``) as both primary and fallback, so the A/B arm is that model alone (a failure is counted, never answered by another model);
     the background route stays production's (the safety screen is no part of the coach). Production is never changed:
     this is the lab's API process environment only (conversation_lab/stack.py)."""
     base = app or app_models()
     if choice in ("", DEFAULT_COACH):
         return base
-    if choice not in lab.live_coach:
+    known = tuple(lab.live_coach if offered is None else offered)
+    if choice not in known:
         raise ValueError(
-            f"coach_model must be {DEFAULT_COACH} or one of {', '.join(lab.live_coach) or '(none listed)'}"
+            f"coach_model must be {DEFAULT_COACH} or one of {', '.join(known) or '(none listed)'}"
         )
     return AppModels(primary=choice, fallback=choice, embeddings=base.embeddings, background=base.background)
 
@@ -315,5 +335,5 @@ def budget_parts(suite: str, budget_usd: float, app_share: float | None = None) 
 #: The client's own test (conversation_lab/client), on its own like the other extra suites: the coach's turns, then the
 #: judge of the client's questions and the small adversarial set's simulator.
 EXTRA_SUITES += ("client",)
-APP_SHARE["client"] = 0.8
+APP_SHARE["client"] = 0.65
 SUITE_WEIGHT["client"] = 1
