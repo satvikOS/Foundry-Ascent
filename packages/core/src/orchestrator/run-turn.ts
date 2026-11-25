@@ -32,6 +32,7 @@ import {
   pathRepo,
   personasRepo,
   readTogether,
+  retrievalRepo,
   sessionsRepo,
   settingsRepo,
   turnsRepo,
@@ -63,6 +64,7 @@ import { applyReport, changesPath, keepDecided } from '../path/apply.js';
 import { evidencePlayOf } from '../path/engine.js';
 import { PLAYBOOK } from '../path/playbook/index.js';
 import { guardReport } from '../path/report.js';
+import { PLAY_MATCH_TOP, PLAY_MATCH_WAIT_MS, playMatchProfile } from '../path/semantic.js';
 import { evidenceKeysOf, nextActionsOf, pathTurn, withEvidenceKeys, type PathTurn } from '../path/turn.js';
 import { type Playbook } from '../path/types.js';
 import { createDraftEscalation, reviseDraftEscalation } from '../services/escalations.js';
@@ -203,6 +205,21 @@ interface TurnContextPrefetch {
   accounted: boolean;
 }
 
+/** What `task` gives when it settles within `ms`, else null. `task` itself goes on. */
+async function settledWithin<T>(task: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(null);
+    }, ms);
+  });
+  try {
+    return await Promise.race([task, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const SAFE_INTERNAL = (cause: unknown): DomainError =>
   new DomainError('internal', 'Something went wrong while answering. Please try again.', {
     cause,
@@ -335,6 +352,10 @@ export function createOrchestrator(
     new PlatformKeyCache(kit, Math.max(cfg.session.keyGraceSeconds, cfg.session.ttlSeconds));
   const turnContexts = options.turnContexts ?? new TurnContextKeyring();
   const playbook: Playbook | null = cfg.turns.founderPath ? (options.playbook ?? PLAYBOOK) : null;
+  /** An embedding model in use has constants to match plays with: without any, a turn waits for nothing. */
+  const matchesPlays = [kit.deps.gateway, kit.deps.previousEmbeddings].some(
+    (g) => g !== undefined && playMatchProfile(g.info.embeddingsModelId) !== null,
+  );
 
   /**
    * Starts the conversation's context reads in a transaction of their own, beside the preflight, when the process knows
@@ -1020,6 +1041,8 @@ export function createOrchestrator(
     coach: Coach,
     input: z.output<typeof RunTurnInput>,
     risk: RiskClassification,
+    /** The plays the message is nearest to, when no phrase named one (path/semantic.ts), or that they cannot be read. */
+    near: retrievalRepo.NearPlays | 'unavailable' | null = null,
   ): PathTurn | null {
     if (playbook === null) return null;
     try {
@@ -1041,6 +1064,8 @@ export function createOrchestrator(
         started: coach.heardHistory.length > 0,
         continuity: coach.memory.continuity,
         earlierMessages: coach.history.map((t) => t.founderText),
+        earlierReplies: coach.heardHistory.map((t) => t.answer ?? ''),
+        near,
       });
     } catch (err) {
       logger.error('turn.path_undecided', {
@@ -1167,24 +1192,38 @@ export function createOrchestrator(
     if (active === null || coach === null)
       throw new DomainError('assignment_inactive', 'No active coach', { reason: 'no_assignment' });
 
-    // What the founder path decides for this turn, shown at once (before the first text of the reply).
-    const path = decidePath(ctx, pre, coach, input, risk);
-    if (path !== null && path.guidance !== null)
-      await emit({ event: 'turn.guidance', turnId: turn.id, guidance: path.guidance });
-    if (path !== null)
+    // What the founder path decides for this turn, shown at once (before the first text of the reply). An ask no phrase
+    // names is matched by meaning first, with the embedding the turn's retrieval waits for anyway (below).
+    const comparable = cfg.turns.semanticPlays && matchesPlays;
+    let path = decidePath(ctx, pre, coach, input, risk, comparable ? null : 'unavailable');
+    const byMeaning = comparable && path?.decision.open != null;
+    const announce = async (
+      decided: PathTurn | null,
+      near: retrievalRepo.NearPlays | null,
+    ): Promise<void> => {
+      if (decided === null) return;
+      const { decision, guidance } = decided;
       logger.info('turn.path', {
         requestId: ctx.requestId,
         turnId: turn.id,
-        kind: path.decision.kind,
-        intent: path.decision.intent,
-        matched: path.decision.matched,
-        stage: path.decision.state.stage,
-        stepId: path.decision.step?.view.id ?? null,
-        playId: path.decision.step?.view.playId ?? null,
-        completes: path.decision.completes !== null,
-        offered: path.decision.offered,
-        carried: path.decision.carried,
+        kind: decision.kind,
+        intent: decision.intent,
+        matched: decision.matched,
+        score: decision.score,
+        // Ids and similarities of what it was compared with; absent when it was not asked what it means.
+        ...(byMeaning
+          ? { nearest: near?.plays.map((n) => `${n.playId}:${n.score.toFixed(3)}`).join(',') ?? 'none' }
+          : {}),
+        stage: decision.state.stage,
+        stepId: decision.step?.view.id ?? null,
+        playId: decision.step?.view.playId ?? null,
+        completes: decision.completes !== null,
+        offered: decision.offered,
+        carried: decision.carried,
       });
+      if (guidance !== null) await emit({ event: 'turn.guidance', turnId: turn.id, guidance });
+    };
+    if (!byMeaning) await announce(path, null);
 
     // Step 3: authorized, scoped retrieval. "Where you left off" (the latest earlier conversations, read as they
     // were said when not distilled yet) has been loading since the preflight, in its own transaction: it never waits
@@ -1193,9 +1232,42 @@ export function createOrchestrator(
     const embedding =
       a.embedding ??
       embedRetrievalQuery(kit, ctx, { purpose: 'turn', ventureId }, a.query, signal, a.tails, input.text);
+    // The founder's own words, which the retrieval query may add to: the same embedding when it does not.
+    const own = !byMeaning
+      ? null
+      : a.query === input.text.trim()
+        ? embedding
+        : embedRetrievalQuery(
+            kit,
+            ctx,
+            { purpose: 'turn', ventureId },
+            input.text.trim(),
+            signal,
+            a.tails,
+            input.text,
+          );
+    if (own !== null) a.tails.push(kit.later(own));
+    const ownVector = own === null ? null : settledWithin(own, PLAY_MATCH_WAIT_MS);
+    const announced: Promise<void>[] = [];
     // The retrieval transaction opens while the query is embedded (its begin and context run beside the embedding,
     // which needs no database connection), and the search is used without waiting for the commit: it only reads.
     const { value: retrieved, ended } = await kit.readInRequest(ctx, async (scope) => {
+      if (ownVector !== null) {
+        // One statement of the retrieval's own transaction, on these turns only: which play it is decides what the
+        // search looks for, so the two cannot be one.
+        const message = await ownVector;
+        const near =
+          message === null
+            ? null
+            : await retrievalRepo.nearestPlays(scope.tx, {
+                tenantId: ctx.tenantId,
+                embedding: message,
+                limit: PLAY_MATCH_TOP,
+              });
+        path = decidePath(ctx, pre, coach, input, risk, near ?? 'unavailable') ?? path;
+        // Sent in order, never waited for while the transaction holds a connection.
+        announced.push(announce(path, near));
+      }
       const vector = await embedding;
       const evidencePack = await retrieveEvidence(scope.tx, {
         tenantId: ctx.tenantId,
@@ -1229,6 +1301,7 @@ export function createOrchestrator(
       return { evidencePack, lexicalOnly: vector === null };
     });
     a.tails.push(kit.later(ended));
+    await Promise.all(announced);
     const pack = retrieved.evidencePack;
     // What was retrieved for the turn is audited as before, written beside the reply rather than ahead of it (the
     // events are the request's: its tenant, person and request id).

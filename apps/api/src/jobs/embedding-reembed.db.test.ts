@@ -4,7 +4,15 @@
  * a batch another model answered is never stored.
  */
 import { type EmbedResult, hashEmbedding } from '@foundry/ai';
-import { knowledgeRepo, settingsRepo, usageRepo } from '@foundry/db';
+import { PLAYBOOK, playAsks } from '@foundry/core';
+import {
+  knowledgePack,
+  knowledgeRepo,
+  retrievalRepo,
+  settingsRepo,
+  tagEmbedding,
+  usageRepo,
+} from '@foundry/db';
 import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -14,6 +22,7 @@ import { backfillEmbeddings, type BackfillOptions } from './embedding-backfill.j
 let t: TestDatabase;
 beforeAll(async () => {
   t = await createTestDatabase({ seed: true });
+  await t.db.system((sx) => knowledgePack.syncPlayAsksToTenants(sx, playAsks(PLAYBOOK)));
 }, 120_000);
 afterAll(async () => {
   await t.cleanup();
@@ -53,6 +62,16 @@ const models = async () => {
   return new Map(rows.map((r) => [`${r.store}:${r.modelId ?? 'none'}`, r.rows]));
 };
 
+/** The plays a message embedded by `modelId` is nearest to. */
+const plays = (modelId: string) =>
+  t.db.system((sx) =>
+    retrievalRepo.nearestPlays(sx, {
+      tenantId: t.seed?.tenantId ?? '',
+      embedding: tagEmbedding(hashEmbedding(`${modelId} what should I charge`), modelId),
+      limit: 3,
+    }),
+  );
+
 describe('re-embedding with a new model', () => {
   it('replaces every vector, resumes after an interruption and never mixes models', async () => {
     const old = gatewayOf('model-old');
@@ -61,6 +80,7 @@ describe('re-embedding with a new model', () => {
     const chunks = before.get('chunks:model-old') ?? 0;
     const memory = before.get('memory:model-old') ?? 0;
     expect(chunks).toBeGreaterThan(100);
+    expect(await plays('model-old')).toMatchObject({ modelId: 'model-old', plays: [{}, {}, {}] });
     expect(memory).toBeGreaterThan(10);
     // As rows from before migration 0034: the model is not recorded.
     await t.db.system((sx) => sx.query('UPDATE knowledge_chunks SET embedding_model = NULL'));
@@ -79,6 +99,9 @@ describe('re-embedding with a new model', () => {
     const after = await models();
     expect(after.get('chunks:model-new')).toBe(chunks);
     expect(after.get('memory:model-new')).toBe(memory);
+    // The plays' asks too: messages of the new model are matched, those of the old one no more.
+    expect(await plays('model-new')).toMatchObject({ modelId: 'model-new', plays: [{}, {}, {}] });
+    expect(await plays('model-old')).toBeNull();
     expect([...after.keys()].some((k) => k.endsWith('model-old'))).toBe(false);
     // Again: nothing to do, and no call made.
     const calls = next.texts.length;

@@ -10,6 +10,7 @@
 import { embeddingModelOf, tagEmbedding } from '../embedding-model.js';
 import { type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
+import { notAnAskSql } from '../knowledge-pack/play-asks.js';
 import { setChunkEmbeddings } from '../repositories/knowledge.js';
 import { uuidV5 } from '../seed/ids.js';
 import { type BenchmarkPassage } from './corpus.js';
@@ -132,7 +133,7 @@ export async function productionPassages(
   // The text a chunk is embedded by is `listChunksMissingEmbeddings`'.
   const chunks = await sx.query(
     `SELECT id, persona_id, coalesce(heading || E'\\n\\n', '') || content AS text FROM knowledge_chunks
-     WHERE tenant_id = :tenantId AND venture_id IS NULL ORDER BY id`,
+     WHERE tenant_id = :tenantId AND venture_id IS NULL AND ${notAnAskSql('knowledge_chunks')} ORDER BY id`,
     params,
   );
   const lessons = await sx.query(

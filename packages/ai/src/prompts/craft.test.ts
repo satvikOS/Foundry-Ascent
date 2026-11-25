@@ -328,7 +328,7 @@ describe('conversation craft in the system prompt', () => {
     // 2026-11-24.1: the founder path. The stable prompt is rewritten as a compact guide-first policy (the reply contract,
     // 4,800 to about 3,100 tokens with the doctrine); the incidents each earlier rule came from are held by the
     // validators and the turn's <conversation_state>. The history of the wording is in git.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-24.2');
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-25.1');
   });
 });
 

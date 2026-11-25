@@ -10,7 +10,7 @@ explains what was picked and never invents a step, a figure or a source.
 | `stages.ts`        | the seven `VentureStage`s with a title and goal in a student's words                                       |
 | `criteria.ts`      | 2 to 4 criteria per stage, each tied to one play of its stage; the three Ain capstones are criteria        |
 | `plays/<stage>.ts` | 114 plays: answer, why, 3 to 5 steps, done when, days, template, traps, referral, citations, next          |
-| `intents.ts`       | one intent per play, 8 to 20 phrases; `referral` wins, `note` only brings who decides, `overview`, `holds` |
+| `intents.ts`       | one intent per play, 8 to 40 phrases; `referral` wins, `note` only brings who decides, `overview`, `holds` |
 | `sources.ts`       | the reading list the citations resolve to                                                                  |
 | `make.ts`          | small helpers (`step`, `cite`, `ain`, `REFERRALS`)                                                         |
 | `test-fixtures.ts` | the asks of `playbook.test.ts` and `turns.test.ts`, in our own words; not shipped                          |
@@ -67,13 +67,18 @@ covers undergraduate and graduate students.
 - Nothing invented: no money, percentage or statistic; legal terms in numbers need a government citation; programme
   citations name the module, unit and topic, never who recorded it.
 - Referrals: valid category and role; a referral intent leads to a play that hands over.
-- Intents, under the path engine's own matcher (`match.ts`): each phrase answers its own play; the evaluation's 20
-  questions, its protocol and the live test's messages (in our own words, never the client's) map to their play; 230
-  paraphrases at 94 percent and 346 short asks at 90; near-misses do not. `HELD_OUT_ASKS` were never used to widen the
-  phrases (65 of 81): the test holds them at 80 percent, and no held-out ask may lose its referral. Recall asks ("what did
-  I say my idea was?") and small talk are the engine's own turn kinds, not intents. Whole turns are in `turns.test.ts`.
+- Intents (`match.ts`): each phrase answers its own play; the evaluation's 20 questions (but the recall), its protocol and
+  the live test's messages (in our own words, never the client's) are named by a phrase or a rule, whatever an embedding
+  says; near-misses are not. What no phrase names is for meaning to say (measured on real embeddings by the models
+  benchmark, never here). Without it (`near: 'unavailable'`) the phrases, risks and plainly nearest words answer about 60
+  percent of 231 paraphrases, 50 of 346 short asks and 30 of `HELD_OUT_ASKS`, and at most 2 percent of any wrongly; of the
+  asks that need a person all but two are told who. Recall asks ("what did I say my idea was?") and small talk are the
+  engine's own turn kinds, not intents. Whole turns are in `turns.test.ts`.
 
 A play's title is the name of a step ("Next: …"), so it is an instruction.
 
 To add a play: write it in its stage's file, add an intent under the same id with 8 or more phrases, add two asks to
 `test-fixtures.ts`, raise `PLAYBOOK_VERSION`, run `pnpm --filter @foundry/core exec vitest run src/path`.
+A play's title, the first sentence of its answer and its intent's phrases are also what an ask is compared with by
+meaning (docs/architecture/founder-path.md, "By meaning"): the next deploy stores and embeds what changed. Never copy an
+ask of `path/play-benchmark/` into a phrase: those measure the matching and are kept apart (a test checks).

@@ -72,18 +72,22 @@ const pause = (ms: number, signal?: AbortSignal): Promise<void> =>
         signal?.addEventListener('abort', done, { once: true });
       });
 
+/** Production's embedding model. */
+const EMBEDDINGS_MODEL_ID = 'amazon.titan-embed-text-v2:0';
+
 /**
  * The model gateway with the model's own time added: a stream's text arrives word by word, the first word
  * after the time to first token and each further one after `modelWordMs` (the inner gateway, a mock without
  * pauses, hands over whole sentences at once); a structured result after a whole call's time; vectors after
- * an embedding's time. The text and results are the inner gateway's, unchanged.
+ * an embedding's time. The text and results are the inner gateway's, unchanged, but that vectors are said to be
+ * production's embedding model's, so a turn does what it does there.
  */
 export function simulatedGateway(inner: ModelGateway, latency: SimulatedLatency): ModelGateway {
   return {
-    info: inner.info,
+    info: { ...inner.info, embeddingsModelId: EMBEDDINGS_MODEL_ID },
     async embed(texts, options) {
       await pause(latency.embedMs, options.signal);
-      return inner.embed(texts, options);
+      return { ...(await inner.embed(texts, options)), modelId: EMBEDDINGS_MODEL_ID };
     },
     async generateStructured(request) {
       await pause(latency.structuredMs, request.signal);

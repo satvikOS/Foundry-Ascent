@@ -2,7 +2,7 @@ import { type PromptContinuity } from '@foundry/ai';
 import { type EvidenceItem, type Play, type TurnGuidance } from '@foundry/contracts';
 import { type pathRepo } from '@foundry/db';
 
-import { type PathPromptGuidance } from './ai-adapter.js';
+import { saysStanding, type PathPromptGuidance } from './ai-adapter.js';
 import {
   arcOf,
   briefOf,
@@ -23,8 +23,9 @@ import {
   type DecideInput,
   type Decision,
 } from './engine.js';
+import { meaningWords, refersBack } from './match.js';
 import { type Playbook } from './types.js';
-import { contentStems, plain } from './words.js';
+import { contentStems, numberOf, plain } from './words.js';
 
 /** The path of one turn: what was decided, what is kept with the turn, and what the prompt is given. */
 export interface PathTurn {
@@ -37,6 +38,8 @@ export interface PathTurnInput extends Omit<DecideInput, 'recordText' | 'backgro
   readonly continuity: PromptContinuity;
   /** The founder's earlier messages in view. */
   readonly earlierMessages: readonly string[];
+  /** The coach's earlier replies in view, oldest first. */
+  readonly earlierReplies?: readonly string[];
 }
 
 function briefSource(input: PathTurnInput, decision: Decision): BriefSource {
@@ -122,9 +125,55 @@ export function pathTurn(input: PathTurnInput): PathTurn {
   return { decision, guidance: guidanceOf(playbook, decision), prompt: promptOf(input, decision) };
 }
 
+/** Replies since a standing step was said before it may be said again: once in three turns. */
+const STANDING_EVERY = 3;
+/** Words of its own a follow-up has at most ("just give me your best estimate"). */
+const FOLLOW_UP_WORDS = 3;
+
+/** How what they asked was found, as the prompt and the reply contract take it: what is only near it may be set aside. */
+function matchedOf(decision: Decision, asked: Ask): NonNullable<PathPromptGuidance['matched']> {
+  if (decision.matched === 'semantic' || decision.matched === 'lexical') return 'semantic';
+  return decision.matched === null && asked === null ? 'none' : 'phrase';
+}
+
+/**
+ * What the step is to a reply that answers with nothing of the program's: absent when it is about what they asked (they
+ * share a word that says something, or the message points back at it), else what stands on their path, said once in
+ * {@link STANDING_EVERY} turns.
+ */
+function stepRoleOf(
+  input: PathTurnInput,
+  decision: Decision,
+  matched: PathPromptGuidance['matched'],
+): PathPromptGuidance['stepRole'] {
+  const { step } = decision;
+  if (matched !== 'none' || decision.kind !== 'coaching' || step === null) return undefined;
+  // A follow-up is about what was just said, in few words of its own or pointing back at it.
+  if (decision.carried && (refersBack(input.message) || meaningWords(input.message) <= FOLLOW_UP_WORDS))
+    return undefined;
+  // "Two lifts" and "two pilots" share nothing.
+  const stems = (text: string): string[] =>
+    contentStems(text).filter((w) => numberOf(w) === null && !/^\d+$/.test(w));
+  const about = new Set(
+    stems(`${step.view.title}. ${step.view.doneWhen}. ${step.view.items.map((i) => i.do).join('. ')}`),
+  );
+  // What the step was given for is what they go on about ("unit economics for one box", "at forty boxes a month?").
+  if (decision.carried) for (const w of stems(input.earlierMessages.at(-1) ?? '')) about.add(w);
+  if (stems(input.message).some((w) => about.has(w))) return undefined;
+  // One given for an earlier ask is no part of their path: the card has it.
+  if (decision.offered) return 'quiet';
+  const lately = (input.earlierReplies ?? []).slice(1 - STANDING_EVERY);
+  return lately.some(saysStanding) ? 'quiet' : 'standing';
+}
+
 function promptOf(input: PathTurnInput, decision: Decision): PathPromptGuidance {
   const { step, choice, pathStep } = decision;
+  const asked = askOf(input, decision);
+  const matched = matchedOf(decision, asked);
+  const stepRole = stepRoleOf(input, decision, matched);
   return {
+    matched,
+    ...(stepRole === undefined ? {} : { stepRole }),
     kind: decision.kind === 'crisis' ? 'coaching' : decision.kind,
     brief: briefOf(
       briefSource(input, decision),
@@ -138,7 +187,7 @@ function promptOf(input: PathTurnInput, decision: Decision): PathPromptGuidance 
       count: decision.stageCount,
     },
     firstTime: decision.firstTime,
-    ask: askOf(input, decision),
+    ask: asked,
     step:
       step === null
         ? null

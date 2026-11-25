@@ -311,7 +311,8 @@ Every coaching reply is the answer, why, the next step (what, done when, by when
 
 - `checkReplyContract({ reply, guidance, channel, today?, founderText? })` → `{ ok, findings, repaired }`
   (`validators/reply-contract.ts`): `question_only`, `deferral`, `missing_answer`, `missing_step`, `stacked_questions`,
-  `flattery`, `missing_referral` (who decides, or what to bring), `wrong_date`, `other_step` (a "next step" that is not
+  `flattery`, `missing_referral` (who decides, or what to bring), `wrong_date`, `step_as_answer` (a step that is
+  not about what they asked, given as if it were), `other_step` (a "next step" that is not
   the path's). `repaired` is written from the path, never by a second model call, and keeps the model's own help. Social
   turns, role-play, a founder in distress and turns with no path are exempt. What the server writes of an answer is up to
   four sentences (420 characters) on text and two on a call (`shortAnswer`), with no lead-in, under the play's own key

@@ -14,6 +14,7 @@ import { PLAYBOOK } from './playbook/index.js';
 import { CLIENT_QUESTIONS, PROTOCOL_ASKS } from './playbook/test-fixtures.js';
 import { smallerStep } from './steps.js';
 import { fresh, input, memory, NO_READS, storedStep, TODAY, VENTURE_ID } from './testing/inputs.js';
+import { TEST_MODEL } from './testing/meaning.js';
 import { pathTurn } from './turn.js';
 
 const path = (over: Partial<pathRepo.PathRecord> = {}): pathRepo.PathRecord => ({
@@ -838,4 +839,52 @@ describe('organise me, on a venture with a record; and another idea', () => {
       expect(at(message, { venture, reads }).newIdea).toBeNull();
     },
   );
+});
+
+describe('how the prompt is told it was found', () => {
+  const near = (playId: string) => ({
+    modelId: TEST_MODEL,
+    plays: [
+      { playId, score: 0.9 },
+      { playId: 'launch', score: 0.2 },
+    ],
+  });
+  const prompt = (message: string, over: Partial<DecideInput> = {}, earlierReplies: string[] = []) =>
+    pathTurn({ ...input(message, real(over)), continuity: {}, earlierMessages: [], earlierReplies }).prompt;
+  const ODD = 'Is it odd that the corridor smells of oranges?';
+
+  it('in so many words, by what it seems to mean, or not at all', () => {
+    expect(prompt('How should I price it?').matched).toBe('phrase');
+    expect(prompt('What next?').matched).toBe('phrase');
+    expect(prompt('What was my idea again?').matched).toBe('phrase');
+    const meant = prompt('Which figure belongs on the sticker?', { near: near('pricing') });
+    expect([meant.matched, meant.ask?.title]).toEqual(['semantic', 'Set a first price']);
+    // Plainly nearest words are no more than that either.
+    expect(prompt('How do I work out how big the market is', { near: 'unavailable' }).matched).toBe(
+      'semantic',
+    );
+    expect([prompt(ODD).matched, prompt(ODD).ask]).toEqual(['none', null]);
+  });
+
+  it('a step that is not about the message only stands, once in three turns', () => {
+    expect(prompt(ODD).stepRole).toBe('standing');
+    const said = 'Open a window. On your path, next is: put the idea on one page by Monday.';
+    expect(prompt(ODD, {}, [said]).stepRole).toBe('quiet');
+    expect(prompt(ODD, {}, [said, 'Ask the porter.']).stepRole).toBe('quiet');
+    expect(prompt(ODD, {}, [said, 'Ask the porter.', 'And the dean.']).stepRole).toBe('standing');
+    // It shares a word that says something with the step, or is answered by the program.
+    expect(prompt('Is it odd that one page took me a week?').stepRole).toBeUndefined();
+    expect(prompt('How should I price it?').stepRole).toBeUndefined();
+    expect(prompt('What next?').stepRole).toBeUndefined();
+  });
+
+  it('a follow-up keeps the step it is about; another subject is not answered with it', () => {
+    const asked = at('How should I price it?');
+    expect(prompt('ok how do I do that', next(asked)).stepRole).toBeUndefined();
+    expect(prompt('just give me your best estimate', next(asked)).stepRole).toBeUndefined();
+    // Given for an earlier ask and not on their path: the card has it.
+    expect(
+      prompt('Is the corridor beside the chapel louder on rainy mornings in November?', next(asked)).stepRole,
+    ).toBe('quiet');
+  });
 });

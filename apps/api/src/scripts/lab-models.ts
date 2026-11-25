@@ -19,6 +19,8 @@
  *   and fused with a word search in memory, against the word search alone.
  * - With a local DATABASE_URL (the lab's own, reset and seeded): production's own search with each model's 1024-dimension
  *   vectors, for every candidate set of fusion weights and floors (./lab-retrieval.ts).
+ * - With each model's 1024-dimension vectors, the path's matching: the play a message gets from the rules alone and with
+ *   meaning behind them, on asks, near misses and messages nothing answers (./lab-plays.ts).
  * - Rerankers that answered: the top 20 of production's ranking with production's embedding model, reordered, on a fixed
  *   sample of the questions: for every question, and only for those whose ranking is ambiguous.
  *
@@ -56,7 +58,7 @@ import {
   type ModelAttempt,
   type ModelGateway,
 } from '@foundry/ai';
-import { PLAYBOOK } from '@foundry/core';
+import { PLAYBOOK, playAsks } from '@foundry/core';
 import { retrievalRepo, type Db } from '@foundry/db';
 import {
   LexicalIndex,
@@ -78,6 +80,14 @@ import { z } from 'zod';
 import { createDatabase } from '../runtime/common.js';
 import { refusal } from './lab-local-db.js';
 import { benchmarkMessages, benchmarkSystemPrompt } from './lab-models-prompt.js';
+import {
+  benchPlays,
+  matchingMessages,
+  productionPlay,
+  ruleOutcomes,
+  type MatchingVectors,
+  type PlayMatchingResult,
+} from './lab-plays.js';
 import {
   benchSearch,
   extraTexts,
@@ -722,6 +732,46 @@ async function embedExtras(
   return out;
 }
 
+/** The plays' asks and the messages, embedded; null when the model or the budget stopped it. */
+async function embedMatching(
+  clients: Clients,
+  budget: Budget,
+  refusals: Refusals,
+  region: string,
+  model: { readonly id: string; readonly dimensions: number },
+  texts: readonly string[],
+  known: ReadonlyMap<string, readonly number[]>,
+): Promise<MatchingVectors | null> {
+  const family = embeddingFamily(model.id);
+  const size = family === null ? 1 : EMBEDDING_BATCH[family];
+  const embedAll = async (all: readonly string[], input: 'query' | 'document') => {
+    const batches = Array.from({ length: Math.ceil(all.length / size) }, (_, i) =>
+      all.slice(i * size, (i + 1) * size),
+    );
+    return (
+      await pooled(batches, async (batch) => {
+        const answer = await embedBatch(clients.invoke(region), budget, model, batch, input);
+        if (answer === null) throw new BudgetReachedError();
+        return answer.vectors;
+      })
+    ).flat();
+  };
+  try {
+    const asks = await embedAll(
+      playAsks(PLAYBOOK).asks.map((a) => a.text),
+      'document',
+    );
+    const missing = [...new Set(texts)].filter((t) => !known.has(t));
+    const found = await embedAll(missing, 'query');
+    const messages = new Map(known);
+    missing.forEach((t, i) => messages.set(t, found[i] ?? []));
+    return { modelId: model.id, asks, messages };
+  } catch (error) {
+    refusals.add('embeddings', model.id, error);
+    return null;
+  }
+}
+
 // ---- Rerankers -------------------------------------------------------------------------------------------------
 
 type Reranker = Candidates['rerankers'][number];
@@ -903,6 +953,10 @@ export async function runModelsBenchmark(
       : await openRetrievalStore(database.db, { passages, queries }, database.tenantSlug);
   const search: SearchResult[] = [];
   const searchKept: Record<string, Record<string, unknown>> = {};
+  const matching = matchingMessages(queries);
+  const ruled = ruleOutcomes(matching);
+  const plays: PlayMatchingResult[] = [];
+  const playsKept: Record<string, Record<string, unknown>> = {};
   /** What a reranker reorders: production's ranking with its own model when both were there, else the best fused one. */
   interface Base {
     readonly id: string;
@@ -931,11 +985,31 @@ export async function runModelsBenchmark(
       if (embedded.corpus !== null && (best === null || (best.by === 'fused' && mrr > best.mrr))) {
         best = { id: c.id, dimensions, by: 'fused', mrr, rankings: embedded.hybrid, ambiguous: null };
       }
-      if (store === null || embedded.corpus === null || dimensions !== PRODUCTION_EMBEDDING.dimensions)
-        continue;
+      if (embedded.corpus === null || dimensions !== PRODUCTION_EMBEDDING.dimensions) continue;
+      const { queries: asked } = embedded.corpus;
+      const vectors = await embedMatching(
+        clients,
+        budget,
+        refusals,
+        region,
+        { id: c.id, dimensions },
+        matching.map((m) => m.text),
+        new Map(
+          queries.flatMap((q) => {
+            const vector = asked.get(q.id);
+            return vector === undefined ? [] : [[q.query, vector] as const];
+          }),
+        ),
+      );
+      if (vectors !== null) {
+        const matched = benchPlays(ruled, vectors, dimensions);
+        plays.push(matched.result);
+        playsKept[c.id] = matched.kept;
+      }
+      if (store === null) continue;
       const extras = await embedExtras(clients, budget, region, store, { id: c.id, dimensions });
       if (extras === null) continue;
-      const measured = await benchSearch(store, embedded.corpus, extras);
+      const measured = await benchSearch(store, embedded.corpus, extras, productionPlay(vectors));
       search.push(measured.result);
       searchKept[c.id] = measured.kept;
       if (c.id === PRODUCTION_EMBEDDING.id) {
@@ -1008,6 +1082,7 @@ export async function runModelsBenchmark(
       lexical: quality(queries, lexical, { scoresMeanRelevance: true }),
       embeddings,
       search,
+      playMatching: plays,
       rerank: {
         base: best === null ? null : { id: best.id, dimensions: best.dimensions, by: best.by },
         sample: sample.length,
@@ -1030,6 +1105,7 @@ export async function runModelsBenchmark(
           ? {}
           : Object.fromEntries([...fused.hybrid].map(([id, r]) => [id, r.slice(0, 5).map((s) => s.id)])),
       search: searchKept,
+      playMatching: playsKept,
       rerankings,
     },
   };

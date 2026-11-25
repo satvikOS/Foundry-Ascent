@@ -42,6 +42,10 @@ export interface PathPromptGuidance {
   readonly referral: { readonly who: string; readonly bring: string } | null;
   readonly newIdea: { readonly ventureName: string; readonly fact: string | null } | null;
   readonly criteria?: readonly { readonly id: string; readonly title: string; readonly evidence: string }[];
+  /** How what they asked was found (`PromptGuidance.matched`). */
+  readonly matched?: 'phrase' | 'semantic' | 'none';
+  /** A step that is not about what they asked: said as what stands on their path, or not again yet. */
+  readonly stepRole?: 'standing' | 'quiet';
 }
 
 export interface ReplyContract {
@@ -173,7 +177,12 @@ function plainGuidance(g: PathPromptGuidance, channel: TurnChannel, today: strin
 
 /** A turn whose reply owes the step: not a social turn, not in role, and a step was decided. */
 export function owesStep(guidance: PathPromptGuidance): boolean {
-  return guidance.step !== null && guidance.kind !== 'social' && guidance.kind !== 'rehearsal';
+  return (
+    guidance.step !== null &&
+    guidance.stepRole !== 'quiet' &&
+    guidance.kind !== 'social' &&
+    guidance.kind !== 'rehearsal'
+  );
 }
 
 /** Checks a reply against the turn's guidance (`@foundry/ai` `checkReplyContract`). Never throws. */
@@ -204,9 +213,17 @@ export function checkReply(
     findings: missing ? ['missing_step'] : [],
     repaired:
       missing && context.channel === 'text' && guidance.step !== null
-        ? `${reply.trimEnd()}\n\n${writtenStepLine(guidance.step, context.today)}`
+        ? `${reply.trimEnd()}\n\n${writtenStepLine(guidance.step, context.today, guidance.stepRole)}`
         : null,
   };
+}
+
+/** How a step that is not about what they asked is said: what stands, never what to do about it. */
+const ON_YOUR_PATH = 'On your path, next is';
+
+/** Whether a reply said the standing step (`ON_YOUR_PATH`, or the model's own words for it). */
+export function saysStanding(reply: string): boolean {
+  return /\bon your path,? (?:the |your )?next(?: step| item)? is\b/i.test(reply);
 }
 
 const asClause = (title: string): string => title.replace(/[.!?\s]+$/u, '').trim();
@@ -214,15 +231,25 @@ const lowerFirst = (text: string): string =>
   /^[A-Z][a-z]/.test(text) ? `${text.charAt(0).toLowerCase()}${text.slice(1)}` : text;
 
 /** The step in one written line ("Next: Talk to five people by Friday. Done when …"). */
-export function writtenStepLine(step: NonNullable<PathPromptGuidance['step']>, today: string): string {
+export function writtenStepLine(
+  step: NonNullable<PathPromptGuidance['step']>,
+  today: string,
+  role?: PathPromptGuidance['stepRole'],
+): string {
   const due = step.dueOn === null ? '' : ` by ${sayComing(today, step.dueOn)}`;
+  if (role !== undefined) return `${ON_YOUR_PATH}: ${asClause(step.title)}${due}.`;
   return `Next: ${asClause(step.title)}${due}. Done when: ${asClause(step.doneWhen)}.`;
 }
 
 /** The step as a call says it, when the reply left it out: one short sentence, server text. */
-export function spokenStepLine(step: NonNullable<PathPromptGuidance['step']>, today: string): string {
+export function spokenStepLine(
+  step: NonNullable<PathPromptGuidance['step']>,
+  today: string,
+  role?: PathPromptGuidance['stepRole'],
+): string {
   const due = step.dueOn === null ? '' : `, by ${sayComing(today, step.dueOn)}`;
-  return `Your next step: ${lowerFirst(asClause(step.title))}${due}.`;
+  const opens = role === undefined ? 'Your next step' : ON_YOUR_PATH;
+  return `${opens}: ${lowerFirst(asClause(step.title))}${due}.`;
 }
 
 /** Everything the guidance says, as text: figures, dates and names a reply may take from it. */

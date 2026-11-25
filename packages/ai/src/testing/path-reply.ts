@@ -34,6 +34,8 @@ export interface PathBlock {
   readonly by: string | null;
   readonly items: readonly string[];
   readonly doneWhen: string | null;
+  /** A step that is not about what they asked: said as what stands on their path, or not at all. */
+  readonly stepRole: 'standing' | 'quiet' | null;
   readonly referral: { readonly who: string; readonly bring: string } | null;
   readonly newIdea: { readonly venture: string; readonly fact: string | null } | null;
   readonly social: boolean;
@@ -76,7 +78,7 @@ export function pathBlockIn(system: string): PathBlock | null {
       .filter((l) => l !== ''),
     firstTime: block.includes('First-time founder:'),
     answer: of(
-      /^(?:Say this pick first, in your own words|Tell them this first, with its names, figures and dates): (.+)$/m,
+      /^(?:(?:If this is what they asked, s|S)ay this pick first, in your own words|Tell them this first, with its names, figures and dates): (.+)$/m,
     ),
     why: of(/^Why: (.+)$/m),
     evidenceKeys: (of(/^Cite: \[([^\]]*)\]$/m) ?? '').split(/,\s*/).filter((k) => k !== ''),
@@ -84,6 +86,11 @@ export function pathBlockIn(system: string): PathBlock | null {
     by: of(/^<step title="[^"]*" by="([^"]*)"/m),
     items: [...step.matchAll(/^\d+\. ([^:\n]+?)(?::.*)?$/gm)].map((m) => unescapeData(m[1] ?? '').trim()),
     doneWhen: of(/^Done when: (.+)$/m),
+    stepRole: step.includes('as what stands on their path')
+      ? 'standing'
+      : step.includes('do not name it')
+        ? 'quiet'
+        : null,
     referral:
       referral === null
         ? null
@@ -280,11 +287,13 @@ export function mockPathReply(
   const day = path.by === null ? '' : ` by ${path.by === 'today' ? 'the end of today' : path.by}`;
   const named = title !== '' && helps.toLowerCase().includes(title.toLowerCase());
   const step =
-    title === '' || (named && (recall || /\bNext: /u.test(helps)))
+    title === '' || path.stepRole === 'quiet' || (named && (recall || /\bNext: /u.test(helps)))
       ? ''
-      : voice
-        ? `Your next step: ${asClause(title)}${day === '' ? '' : `,${day}`}.`
-        : `Next: ${title}${day}. Done when ${asClause(withoutStop(path.doneWhen ?? 'it is written down'))}.`;
+      : path.stepRole === 'standing'
+        ? `On your path, next is: ${asClause(title)}${day}.`
+        : voice
+          ? `Your next step: ${asClause(title)}${day === '' ? '' : `,${day}`}.`
+          : `Next: ${title}${day}. Done when ${asClause(withoutStop(path.doneWhen ?? 'it is written down'))}.`;
   const asks = options.founderText ?? '';
   const held = recall ? null : factIn(path, asks, options.told, options.said);
   const nearest =

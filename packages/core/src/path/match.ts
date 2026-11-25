@@ -3,8 +3,9 @@ import { BREAK, FUNCTION_WORDS, plain, sentences, tokens } from './words.js';
 
 /**
  * What a founder asks, read from their words by the playbook's intent table: phrase rules (referral intents before all
- * others), and the nearest phrase by the words that carry meaning. Pure: the same words and table always give the same
- * intent, and a tie goes to the intent listed first.
+ * others). The nearest phrase by the words that carry meaning ({@link nearestWords}) stands in for the stage by meaning
+ * (semantic.ts) only when that could not be asked. Pure: the same words and table always give the same intent, and a tie
+ * goes to the intent listed first.
  */
 export interface IntentMatch {
   readonly intent: PathIntent;
@@ -19,34 +20,13 @@ export interface IntentMatch {
 export type Asking = 'ask' | 'mid_ask' | 'statement' | 'follow_up';
 
 /**
- * Whether a nearest match is one (`likeness` of the message to the phrase, `evidence`: how telling the words they share
- * are, `shared`: how many). A statement asks nothing, and a follow-up is about what was just said: both need more.
+ * When the nearest phrase is what they ask: how much of it the message holds and of the message it is (`likeness`), how
+ * telling the words they share are (`evidence`) and how many (`shared`), and how far any other play is behind (`margin`).
+ * `guarded` is added to the likeness of a message that is no plain first question. Tuned to say nothing rather than a wrong
+ * play: on the fixtures, the blind asks and the messages of nothing (path/play-benchmark) it answers about half of what
+ * it is asked and none of it wrongly (words.test.ts, play-benchmark.test.ts).
  */
-const IS_NEAR: Readonly<Record<Asking, (likeness: number, evidence: number, shared: number) => boolean>> = {
-  ask: (likeness, evidence, shared) =>
-    (likeness >= 0.36 && evidence >= 3.4) ||
-    (likeness >= 0.3 && evidence >= 4.6) ||
-    (likeness >= 0.35 && shared >= 3) ||
-    (likeness >= 0.5 && shared >= 2),
-  mid_ask: (likeness, evidence, shared) =>
-    (likeness >= 0.36 && evidence >= 3.4 && shared >= 2) ||
-    (likeness >= 0.36 && evidence >= 4.6) ||
-    (likeness >= 0.35 && shared >= 3) ||
-    (likeness >= 0.5 && shared >= 2),
-  statement: (likeness, evidence, shared) =>
-    (likeness >= 0.6 && (evidence >= 6.5 || shared >= 3)) ||
-    (likeness >= 0.5 && evidence >= 6 && shared >= 2) ||
-    (likeness >= 0.42 && shared >= 3),
-  follow_up: (likeness, evidence, shared) =>
-    (likeness >= 0.55 && evidence >= 5 && shared >= 2) || (likeness >= 0.45 && shared >= 3),
-};
-/** A referral this close to the best match wins (a qualified person decides). */
-const REFERRAL_MARGIN = 0.9;
-/** The same, of another sentence of the message. */
-const REFERRAL_ACROSS = 0.75;
-/** What a phrase found whole adds to its intent. */
-const PHRASE_BONUS = 0.35;
-
+export const NEAREST_WORDS = { likeness: 0.55, evidence: 5, shared: 2, margin: 0.25, guarded: 0.2 } as const;
 /** Words between a phrase's words that never count as a gap ("price my product", "price the actual product"). */
 const FILLERS: ReadonlySet<string> = new Set(
   'a an the my our your their this that these those some any just really actually please for me u to i we so'.split(
@@ -219,6 +199,17 @@ function holds(words: readonly string[], phrases: readonly Phrase[]): boolean {
   return phrases.some((phrase) => findPhrase(words, phrase) !== null);
 }
 
+/** Whether the message says it is another ask than `intent`'s (its `unless` words). */
+export function isAnotherAsk(playbook: Playbook, intent: PathIntent, text: string): boolean {
+  const compiled = indexOf(playbook).intents.find((c) => c.intent === intent);
+  return compiled !== undefined && holds(tokens(text), compiled.unless);
+}
+
+/** How many words of the message carry meaning of their own. */
+export function meaningWords(text: string): number {
+  return meaningOf(text).length;
+}
+
 /** The intent whose phrase the message holds: a referral first, then the most specific phrase, then table order. */
 export function phraseIntent(
   playbook: Playbook,
@@ -250,12 +241,17 @@ export function phraseIntent(
 const ANAPHORA =
   /\b(?:it|them|they|he|she|him|her|there|instead|else|the other|the second|the first one)\b|\b(?:this|that|these|those|one|ones)\b/;
 
-/** Whether a message names little of its own and points at what was just said. */
-export function pointsBack(text: string): boolean {
-  return ANAPHORA.test(plain(text)) && meaningOf(text).length <= 3;
+/** Whether a message has a word that points at what was just said, whatever else it names. */
+export function refersBack(text: string): boolean {
+  return ANAPHORA.test(plain(text));
 }
 
-interface Nearest {
+/** Whether a message names little of its own and points at what was just said. */
+export function pointsBack(text: string): boolean {
+  return refersBack(text) && meaningOf(text).length <= 3;
+}
+
+export interface Nearest {
   readonly intent: PathIntent;
   readonly score: number;
   readonly likeness: number;
@@ -264,12 +260,7 @@ interface Nearest {
   readonly shared: number;
 }
 
-function nearestOf(
-  index: Index,
-  text: string,
-  only: (intent: PathIntent) => boolean,
-  phrase: PathIntent | null,
-): Nearest[] {
+function nearestOf(index: Index, text: string, only: (intent: PathIntent) => boolean): Nearest[] {
   const said = meaningOf(text);
   const has = new Set(said);
   const total = (words: Iterable<string>): number => {
@@ -322,74 +313,55 @@ function nearestOf(
       likeness,
       evidence,
       shared,
-      score: likeness + 0.3 * (familiar / all) + (c.intent === phrase ? PHRASE_BONUS : 0),
+      score: likeness + 0.3 * (familiar / all),
     });
   }
   return out;
 }
 
 /**
- * The intent the message is nearest to, by the words that carry meaning (each weighted by how few intents use it): how
- * much of one phrase the message holds, and how much of the message that phrase is ({@link IS_NEAR}). A phrase found whole
- * counts towards its intent. A referral nearly as near as the best wins.
+ * The intents the message is near by the words that carry meaning (each weighted by how few intents use it), best first,
+ * one for each play: how much of one phrase the message, or a sentence of it that says something of its own, holds, and how
+ * much of it that phrase is.
  */
-export function lexicalIntent(
+export function nearestAsks(
+  playbook: Playbook,
+  text: string,
+  only: (intent: PathIntent) => boolean = () => true,
+): Nearest[] {
+  const index = indexOf(playbook);
+  const own = sentences(text);
+  const parts = own.length > 1 && own.length <= 6 ? [text, ...own.filter((x) => !pointsBack(x))] : [text];
+  const best = new Map<string, Nearest>();
+  for (const part of parts)
+    for (const near of nearestOf(index, part, only)) {
+      const known = best.get(near.intent.playId);
+      if (known === undefined || near.score > known.score) best.set(near.intent.playId, near);
+    }
+  return [...best.values()].sort((x, y) => y.score - x.score);
+}
+
+/**
+ * The intent the message is plainly nearest to by its words ({@link NEAREST_WORDS}); null when none is, or two are about
+ * as near. Only when the message could not be compared by meaning.
+ */
+export function nearestWords(
   playbook: Playbook,
   text: string,
   options: {
     readonly only?: (intent: PathIntent) => boolean;
-    readonly asking?: Asking;
-    readonly phrase?: PathIntent | null;
+    readonly guarded?: boolean;
   } = {},
 ): IntentMatch | null {
-  const index = indexOf(playbook);
-  const isNear = IS_NEAR[options.asking ?? 'ask'];
-  const phrase = options.phrase ?? null;
-  const picks: Nearest[] = [];
-  // The whole message, and each sentence of it that says something of its own.
-  const own = sentences(text);
-  const parts = own.length > 1 && own.length <= 6 ? [text, ...own.filter((x) => !pointsBack(x))] : [text];
-  for (const part of parts) {
-    const ranked = nearestOf(index, part, options.only ?? (() => true), phrase)
-      .filter(
-        (m) =>
-          m.intent === phrase ||
-          isNear(m.likeness, m.evidence, m.shared) ||
-          // Who decides is named on less: an unneeded name costs a line, a missed one may cost the venture.
-          (m.intent.referral === true &&
-            options.asking !== 'follow_up' &&
-            m.likeness >= 0.42 &&
-            m.evidence >= 4.5 &&
-            m.shared >= 2),
-      )
-      .sort((x, y) => y.score - x.score);
-    const first = ranked[0];
-    if (first === undefined) continue;
-    picks.push(
-      ranked.find((m) => m.intent.referral === true && m.score >= REFERRAL_MARGIN * first.score) ?? first,
-    );
-  }
-  picks.sort((x, y) => y.score - x.score);
-  const top = picks[0] ?? null;
-  const best =
-    top === null
-      ? null
-      : (picks.find((m) => m.intent.referral === true && m.score >= REFERRAL_ACROSS * top.score) ?? top);
-  return best === null ? null : { intent: best.intent, how: 'lexical', score: best.score };
-}
-
-/**
- * The intent the message asks: a phrase of the playbook unless the message is nearer to another ask than to the phrase it
- * happens to hold ("teachers use it but principals pay, so who is my customer?"), else the nearest.
- */
-export function askedIntent(
-  playbook: Playbook,
-  text: string,
-  asking: Asking,
-  only: (intent: PathIntent) => boolean = () => true,
-): IntentMatch | null {
-  const phrase = phraseIntent(playbook, text, only);
-  if (phrase?.intent.referral === true) return phrase;
-  const near = lexicalIntent(playbook, text, { only, asking, phrase: phrase?.intent ?? null });
-  return phrase !== null && (near === null || near.intent === phrase.intent) ? phrase : near;
+  const [first, second] = nearestAsks(playbook, text, options.only);
+  const least = NEAREST_WORDS.likeness + (options.guarded === true ? NEAREST_WORDS.guarded : 0);
+  if (
+    first === undefined ||
+    first.likeness < least ||
+    first.evidence < NEAREST_WORDS.evidence ||
+    first.shared < NEAREST_WORDS.shared ||
+    first.score - (second?.score ?? 0) < NEAREST_WORDS.margin
+  )
+    return null;
+  return { intent: first.intent, how: 'lexical', score: first.score };
 }

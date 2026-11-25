@@ -615,7 +615,7 @@ export function withReplyContract(
   const voice = context.channel === 'voice';
   const spokenStep =
     voice && guidance.step !== null && owesStep(guidance) && contract.findings.includes('missing_step')
-      ? spokenStepLine(guidance.step, context.today)
+      ? spokenStepLine(guidance.step, context.today, guidance.stepRole)
       : null;
   const answer =
     spokenStep !== null

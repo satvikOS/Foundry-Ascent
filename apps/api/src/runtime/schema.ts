@@ -1,4 +1,4 @@
-import { type EnvLike } from '@foundry/core';
+import { type EnvLike, PLAYBOOK, playAsks } from '@foundry/core';
 import { seedConfigFromEnv } from '@foundry/db';
 
 import { loadApiConfig } from '../config.js';
@@ -18,7 +18,8 @@ export function createSchemaRuntime(env: EnvLike): SchemaResourceDeps {
   const gateway = createGateway(env, logger);
   return {
     db,
-    seedConfig: seedConfigFromEnv(env),
+    // The playbook is core's: what founders ask each play for is stored with the rest of the seed.
+    seedConfig: { ...seedConfigFromEnv(env), playAsks: playAsks(PLAYBOOK) },
     backfill: (options) => backfillEmbeddings({ db, gateway, logger }, { ...options, purpose: 'seed' }),
     logger,
   };

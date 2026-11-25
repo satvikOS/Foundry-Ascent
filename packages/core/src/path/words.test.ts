@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { findPhrase, lexicalIntent, phraseIntent } from './match.js';
+import { findPhrase, nearestAsks, nearestWords, phraseIntent } from './match.js';
+import { PLAYBOOK } from './playbook/index.js';
 import { FIXTURE_PLAYBOOK } from './testing/fixture-playbook.js';
 import { type Playbook } from './types.js';
 import { BREAK, contentStems, countsIn, plain, singular, tokens } from './words.js';
@@ -93,23 +94,31 @@ describe('intent phrases', () => {
     expect(phraseIntent(two, 'Help me price my product')?.intent.id).toBe('b');
   });
 
-  it('falls back to the nearest phrase above the threshold, at least two words shared', () => {
-    expect(lexicalIntent(FIXTURE_PLAYBOOK, 'Can you walk me through economics of a unit?')?.intent.id).toBe(
-      'unit',
-    );
-    expect(lexicalIntent(FIXTURE_PLAYBOOK, 'Where do I park near the stadium?')).toBeNull();
-    expect(lexicalIntent(FIXTURE_PLAYBOOK, 'Tell me about customers')).toBeNull();
+  it('is plainly nearest to one ask by its words, or to none', () => {
+    const near = (text: string, guarded = false) =>
+      nearestWords(PLAYBOOK, text, { guarded })?.intent.id ?? null;
+    expect(near('How do I work out how big the market is')).toBe('market-size');
+    expect(near('How many subscriptions do we need before we break even')).toBe('break-even');
+    expect(near('Where do I park near the stadium?')).toBeNull();
+    // A word or two in common, or much of two plays, is nobody's ask.
+    expect(near('Tell me about customers')).toBeNull();
+    expect(near('How do I price a used car?')).toBeNull();
+    // A message that is no plain question is held to more.
+    expect(near('We have about four months of cash left')).toBe('runway');
+    expect(near('We have about four months of cash left', true)).toBeNull();
   });
 
-  it('breaks a lexical tie by the order of the table, every time', () => {
+  it('gives nothing when two plays are about as near', () => {
     const tie: Playbook = {
       ...FIXTURE_PLAYBOOK,
       intents: [
         { id: 'first', playId: 'price-it', phrases: ['grant budget report'] },
-        { id: 'second', playId: 'price-it', phrases: ['report budget grant'] },
+        { id: 'second', playId: 'run-a-test', phrases: ['report budget grant'] },
       ],
     };
-    for (let i = 0; i < 50; i += 1)
-      expect(lexicalIntent(tie, 'How does a grant budget report work?')?.intent.id).toBe('first');
+    expect(nearestWords(tie, 'How does a grant budget report work?')).toBeNull();
+    // One play's two phrasings are one play.
+    const one: Playbook = { ...tie, intents: tie.intents.map((i) => ({ ...i, playId: 'price-it' })) };
+    expect(nearestAsks(one, 'How does a grant budget report work?')).toHaveLength(1);
   });
 });

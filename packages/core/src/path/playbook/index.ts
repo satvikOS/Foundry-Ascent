@@ -12,7 +12,7 @@ import { SOURCES } from './sources.js';
 import { STAGES } from './stages.js';
 
 /** Changes with any change of a play, a criterion or an intent: kept with each venture's path. */
-export const PLAYBOOK_VERSION = '2026-11-25.1';
+export const PLAYBOOK_VERSION = '2026-11-25.2';
 
 /** What a student founder hears: data only, the same for every founder; docs/architecture/playbook.md. */
 export const PLAYBOOK: Playbook = {

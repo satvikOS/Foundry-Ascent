@@ -7,7 +7,7 @@ import {
   type TurnGuidance,
   type VentureStage,
 } from '@foundry/contracts';
-import { type pathRepo } from '@foundry/db';
+import { type pathRepo, type retrievalRepo } from '@foundry/db';
 
 import { factOf, isReference } from './brief.js';
 import { addDays, dueOnFor } from './dates.js';
@@ -20,8 +20,11 @@ import {
   commitmentOf,
   isCommitted,
   isFragment,
+  isInDistress,
+  isReaction,
   isRehearsal,
   isSocial,
+  isVenting,
   needsAPerson,
   pivotOf,
   pushesOn,
@@ -30,14 +33,24 @@ import {
   saysFirstTime,
   smallerOf,
   statedIdea,
+  statesNeed,
   type Commitment,
   type MessageReport,
   type Pivot,
   type SmallerAsk,
 } from './kinds.js';
-import { askedIntent, phraseIntent, pointsBack, type Asking, type IntentMatch } from './match.js';
+import {
+  meaningWords,
+  nearestWords,
+  phraseIntent,
+  pointsBack,
+  refersBack,
+  type Asking,
+  type IntentMatch,
+} from './match.js';
 import { reportedWork, withWork, type AppliedWork, type ReportedWork } from './progress.js';
 import { referralForRisk } from './referrals.js';
+import { pickPlay, playMatchProfile, type Openness, type SemanticMatch } from './semantic.js';
 import {
   earlierEvidence,
   isShownCriterion,
@@ -72,7 +85,8 @@ export { stepView, type ChosenStep, type StepContext } from './steps.js';
  * The founder path's engine: pure, no I/O, no model, no clock (today is given). The same input always gives the same
  * decision, to the byte; a reply explains the step it chose and never chooses another.
  *
- * The turn's step is the one their message is about: the play's own step when they ask something a play answers (it
+ * The turn's step is the one their message is about: the play's own step when they ask something a play answers, by a
+ * phrase of it (a referral's first) or, with none, by meaning (it
  * becomes the path's step when it shows what the stage still asks for, else it is offered), the step of the turn before
  * when they go on about it, and the path's own step when they ask what is next, report, or open the conversation.
  */
@@ -100,6 +114,12 @@ export interface DecideInput extends PathSource {
   readonly background: readonly string[];
   /** The conversation is already under way (a check-in is asked once, at its start). */
   readonly started: boolean;
+  /**
+   * The plays the message is nearest to by its embedding: read only when no phrase names one ({@link Decision.open}).
+   * `unavailable`: they could not be read (late, failed, off), and the nearest words stand in, held to much more
+   * (match.ts `NEAREST_WORDS`). Absent or null: not read yet, and the phrases alone.
+   */
+  readonly near?: retrievalRepo.NearPlays | 'unavailable' | null;
 }
 
 /** A change of direction: the idea it was and is, and what the old customer had shown, open again. */
@@ -116,7 +136,11 @@ export interface Decision {
   readonly kind: TurnKind;
   /** The ask's intent in the playbook's table, `overview` for "get me organized", or null. */
   readonly intent: string | null;
-  readonly matched: IntentMatch['how'] | 'risk' | 'rule' | 'previous' | null;
+  readonly matched: IntentMatch['how'] | 'risk' | 'rule' | 'previous' | 'semantic' | null;
+  /** The similarity of the nearest play, when the message was compared with them (whether or not it was chosen). */
+  readonly score: number | null;
+  /** No phrase names what they ask, and it may be matched by meaning (semantic.ts); null: nothing to match. */
+  readonly open: Openness | null;
   /** The play that answers the ask; null when they asked nothing the playbook covers. */
   readonly play: Play | null;
   /** The whole path is the answer. */
@@ -465,6 +489,9 @@ function recordOf(input: DecideInput): { core: string; all: string; substantial:
   return { core, all, substantial: reads.memory.length > 0 || subjectStems(core).length >= 4 };
 }
 
+/** What a phrase found in a statement must hold to be what it asks: two words that say something, or more (match.ts). */
+const STATEMENT_PHRASE = 4;
+
 const SUPPORT: ReadonlySet<RiskCategory> = new Set<RiskCategory>(['safety_wellbeing', 'conflict_harassment']);
 
 /** The path as it reads once `step` is done, or the small part of it that was. */
@@ -616,6 +643,8 @@ export function decide(input: DecideInput): Decision {
   const base = {
     intent: null,
     matched: null,
+    score: null,
+    open: null,
     play: null,
     overview: false,
     state: before,
@@ -662,7 +691,8 @@ export function decide(input: DecideInput): Decision {
   const previous = input.previous ?? null;
   const on = currentStep(input, before);
   const onRow = input.reads.steps.find((s) => s.id === on?.view.id && s.status === 'now') ?? null;
-  const referralMatch = phraseIntent(playbook, message, (i) => i.referral === true);
+  const reacts = isReaction(message);
+  const referralMatch = reacts ? null : phraseIntent(playbook, message, (i) => i.referral === true);
   const report = reportOf(message);
   const committed = commitmentOf(message, input.today);
   const commitment = isCommitted(committed) ? committed : null;
@@ -670,10 +700,16 @@ export function decide(input: DecideInput): Decision {
 
   // "I did it, thanks!" thanks, and reports on the step they were on.
   const reportsOnStep = report !== null && on !== null && on.write === null;
-  if (referralMatch === null && !reportsOnStep && isSocial(message, input.previousReply))
+  const askLike = asksFor(message);
+  // Courtesy and a bare "ok" are never an ask, whatever words they hold.
+  if (
+    (referralMatch === null || !askLike) &&
+    !reportsOnStep &&
+    !asksOverview(message) &&
+    isSocial(message, input.previousReply)
+  )
     return { ...base, kind: 'social', commitment, keeps: accepted(input, commitment, earlier) };
 
-  const askLike = asksFor(message);
   const recallAsked = referralMatch === null && asksRecall(message);
   const pivot = recallAsked ? null : pivotOf(message);
   const isNote = (i: PathIntent): boolean => i.note === true;
@@ -689,13 +725,20 @@ export function decide(input: DecideInput): Decision {
   const newIdea =
     referralMatch === null && !recallAsked && pivot === null && bringsNewIdea(message, recordOf(input));
 
-  // The founder's explicit ask: a phrase of the playbook (a plain report that happens to hold one asks nothing), or,
-  // when they do ask something, the nearest phrase.
+  // The founder's explicit ask: a phrase of the playbook (a plain report that happens to hold one asks nothing).
   const heldIntent = heldBy(playbook, previous);
   const upset = needsAPerson(message);
   const smaller = smallerOf(message);
   const recorded = asksForRecorded(message, input.reads.memory);
   let match: IntentMatch | null = null;
+  const asking: Asking =
+    earlier !== null && pointsBack(message)
+      ? 'follow_up'
+      : askLike || isFragment(message)
+        ? earlier === null
+          ? 'ask'
+          : 'mid_ask'
+        : 'statement';
   if (referralMatch === null && !recallAsked) {
     // A report of their step or of the path's work, or a commitment, asks nothing, whatever phrase it holds; another
     // thing they tell (what is in the way, what happened) may be what they ask about.
@@ -706,30 +749,11 @@ export function decide(input: DecideInput): Decision {
         (report.state !== 'done' ||
           reportedWork(before, message).length > 0 ||
           (onRow !== null && reportFinishes(message, report, onRow))));
-    const asking: Asking =
-      earlier !== null && pointsBack(message)
-        ? 'follow_up'
-        : askLike || isFragment(message)
-          ? earlier === null
-            ? 'ask'
-            : 'mid_ask'
-          : 'statement';
-    if (askLike || !told) match = askedIntent(playbook, message, asking, (i) => !isNote(i));
-    // A nearest match gives way to what the message says plainly: the path, a change of direction, less to do, a push on
-    // what a qualified person decides, or a fact of the record asked for.
-    // A founder who is upset is never matched to a task by likeness.
-    if (
-      match?.how === 'lexical' &&
-      (upset ||
-        asksPath ||
-        pivot !== null ||
-        (smaller !== null && (smaller.strict || !askLike)) ||
-        (heldIntent !== null && pushesOn(message)) ||
-        recorded)
-    )
-      match = null;
+    if ((askLike || !told) && !reacts) match = phraseIntent(playbook, message, (i) => !isNote(i));
+    // In passing, a word of a play ("the pricing page is blue") asks nothing: a statement says more of it than that.
+    if (asking === 'statement' && match !== null && match.score < STATEMENT_PHRASE) match = null;
   }
-  const note = referralMatch === null ? phraseIntent(playbook, message, isNote) : null;
+  const note = referralMatch === null && !reacts ? phraseIntent(playbook, message, isNote) : null;
   // A push on what a qualified person decides, or on what is never shared, keeps the answer of the turn before.
   const ownAsk =
     referralMatch !== null || match !== null || recallAsked || asksPath || newIdea || pivot !== null;
@@ -739,16 +763,43 @@ export function decide(input: DecideInput): Decision {
   const recall = recallAsked || (referralMatch === null && match === null && risky === null && recorded);
   // A risk the classifier found is the ask itself unless a phrase of the playbook named another one: then that is
   // answered, and who decides comes with it.
-  const intent: PathIntent | null =
+  const ruled: PathIntent | null =
     referralMatch?.intent ??
-    (pivot !== null
+    (pivot !== null ? null : (match?.intent ?? risky ?? (pushes ? heldIntent : null)));
+  const work = recall || newIdea || pivot !== null ? [] : reportedWork(before, message);
+  // They tell how hard it is, and ask nothing: no task is pushed.
+  const vents = isVenting(message);
+  // Nothing any phrase or rule reads in it: what is left may be matched by meaning.
+  const unread =
+    ruled === null &&
+    !asksPath &&
+    !recall &&
+    !newIdea &&
+    pivot === null &&
+    // What they report or will do asks nothing by itself; a question beside it does ("I asked ten people, how do I…").
+    (report === null || (askLike && report.state !== 'not_yet' && report.state !== 'dropped')) &&
+    (askLike || (work.length === 0 && commitment === null)) &&
+    (smaller === null || (askLike && !smaller.strict)) &&
+    !recorded &&
+    !reacts &&
+    !vents &&
+    !upset &&
+    !isInDistress(message) &&
+    !input.riskCategories.some((c) => SUPPORT.has(c));
+  const open = unread ? opennessOf(input, asking, askLike) : null;
+  const near = input.near ?? null;
+  const compared = near !== null && near !== 'unavailable' && playMatchProfile(near.modelId) !== null;
+  const semantic: SemanticMatch | null =
+    open === null || !compared ? null : pickPlay(playbook, message, near, open);
+  const words: IntentMatch | null =
+    open === null || near === null || compared
       ? null
-      : ((match !== null && (match.how === 'phrase' || match.intent.referral === true)
-          ? match.intent
-          : null) ??
-        risky ??
-        (pushes ? heldIntent : null) ??
-        (recall ? null : (match?.intent ?? null))));
+      : nearestWords(playbook, message, {
+          only: (i) => !isNote(i),
+          // A few words that name a thing are a question of it ("cofounder shares").
+          guarded: open === 'guarded' && !(asking === 'ask' && report === null),
+        });
+  const intent = ruled ?? semantic?.intent ?? words?.intent ?? null;
   const overview = asksPath || intent?.overview !== undefined;
   const answered = playOf(playbook, intent?.playId ?? null);
   // "Get me organized" is answered by where this venture stands: a play of another stage ("you are on move one") is not.
@@ -763,21 +814,25 @@ export function decide(input: DecideInput): Decision {
           ? 'previous'
           : intent !== null && intent === match?.intent
             ? match.how
-            : overview
-              ? 'rule'
-              : null;
-  const passing = playOf(playbook, (risky ?? note?.intent)?.playId ?? null)?.referral ?? null;
+            : ruled === null && intent !== null
+              ? words === null
+                ? 'semantic'
+                : words.how
+              : overview
+                ? 'rule'
+                : null;
+  const passing =
+    playOf(playbook, (risky ?? note?.intent)?.playId ?? null)?.referral ?? semantic?.referral ?? null;
   const referral = play?.referral ?? passing;
-
-  // A founder who is upset, or asks about safety or a conflict, is never pushed a task (a smaller one is no push).
-  const support =
-    input.riskCategories.some((c) => SUPPORT.has(c)) ||
-    (upset && intent === null && !(smaller !== null && earlier !== null));
 
   // What they report: the step finished, work of the path's criteria, or a step not done.
   const reported =
     report !== null && !askLike ? report : report !== null && on !== null && intent === null ? report : null;
-  const work = recall || newIdea || pivot !== null ? [] : reportedWork(before, message);
+  // A founder who is upset, or asks about safety or a conflict, is never pushed a task (a smaller one is no push).
+  const support =
+    input.riskCategories.some((c) => SUPPORT.has(c)) ||
+    ((upset || (vents && reported === null)) && intent === null && !(smaller !== null && earlier !== null));
+
   const completes = finished(input, report, onRow, work);
 
   let reads = completes === null ? input.reads : withCompleted(input.reads, completes);
@@ -896,6 +951,8 @@ export function decide(input: DecideInput): Decision {
     kind,
     intent: intent?.id ?? (pivot !== null ? 'pivot' : overview ? 'overview' : null),
     matched,
+    score: semantic?.score ?? null,
+    open,
     play,
     overview,
     state,
@@ -929,6 +986,30 @@ export function decide(input: DecideInput): Decision {
     newIdea: newIdea ? { ventureName: input.venture.name, fact: concreteFact(input.reads.memory) } : null,
     firstTime,
   };
+}
+
+/** Words of its own a question that points back has at most, to go on about what was said and ask nothing else. */
+const FOLLOW_UP_WORDS = 5;
+
+/**
+ * Whether a message no rule reads asks something that may be matched by meaning, and how plainly. While another step is
+ * under way only a question of its own does, one that points at nothing just said: the rest goes on about that step.
+ */
+function opennessOf(input: DecideInput, asking: Asking, askLike: boolean): Openness | null {
+  const { message, previous, previousReply } = input;
+  const words = meaningWords(message);
+  if (asking === 'follow_up' || words === 0) return null;
+  // A question beside a report is part of what they say.
+  if (asking === 'ask' && askLike && reportOf(message) === null) return 'ask';
+  if (words < 2) return null;
+  if (previous != null && (!askLike || (refersBack(message) && words <= FOLLOW_UP_WORDS))) return null;
+  if (asking === 'statement') {
+    // A plain fact, what they answer to a question, or tell of their idea, asks nothing.
+    if (!statesNeed(message)) return null;
+    if (/\?["'”’)\]*_]*\s*$/.test((previousReply ?? '').trim())) return null;
+    if (statedIdea(message, input.venture.name) !== null) return null;
+  }
+  return 'guarded';
 }
 
 /** The intent the turn before answered, when a push keeps it: a qualified person decides, or it is never shared. */

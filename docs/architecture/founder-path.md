@@ -5,25 +5,26 @@ in `packages/core/src/path/playbook/`; everything here is the machinery that rea
 
 ## Where things are
 
-| File (`packages/core/src/path/`) | What it does                                                                                                              |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `words.ts`, `match.ts`           | Normalised words; phrase rules (word boundaries, gaps, `unless`, referral first) and the nearest ask                      |
-| `kinds.ts`                       | Kinds of message by rule: social, recall, report, rehearsal, overview, A-or-B, new idea, smaller, commitment, idea, pivot |
-| `referrals.ts`                   | The risk classifier's categories to the play whose person decides                                                         |
-| `state.ts`, `progress.ts`        | Stage and criteria from the stored path and the record; work a founder reports ("8 of 10")                                |
-| `steps.ts`                       | One step: from its row or its play, cut to the time they have, taken up again, as it is shown                             |
-| `engine.ts`                      | `decide(input) -> Decision`: pure (no I/O, model or clock); the turn's step, the path's own, what follows                 |
-| `brief.ts`, `turn.ts`            | The founder brief (at most 1,200 characters), the arc, and what the prompt and the record carry                           |
-| `report.ts`, `apply.ts`          | The model's `path_report` held to the founder's words; the writes                                                         |
-| `service.ts`, `view.ts`          | `GET/PUT/PATCH /ventures/:id/path…`                                                                                       |
-| `opener.ts`                      | An opening that names the last step with its due state                                                                    |
-| `ai-adapter.ts`                  | `@foundry/ai`'s `renderGuidance`, `checkReplyContract`, `buildSupportIndex`; plain forms where a build has none           |
+| File (`packages/core/src/path/`) | What it does                                                                                                                  |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `words.ts`, `match.ts`           | Normalised words; phrase rules (word boundaries, gaps, `unless`, referral first) and the plainly nearest ask                  |
+| `semantic.ts`                    | The play an ask means when no phrase names one, by its embedding (constants per embedding model); what each play is asked for |
+| `kinds.ts`                       | Kinds of message by rule: social, recall, report, rehearsal, overview, A-or-B, new idea, smaller, commitment, idea, pivot     |
+| `referrals.ts`                   | The risk classifier's categories to the play whose person decides                                                             |
+| `state.ts`, `progress.ts`        | Stage and criteria from the stored path and the record; work a founder reports ("8 of 10")                                    |
+| `steps.ts`                       | One step: from its row or its play, cut to the time they have, taken up again, as it is shown                                 |
+| `engine.ts`                      | `decide(input) -> Decision`: pure (no I/O, model or clock); the turn's step, the path's own, what follows                     |
+| `brief.ts`, `turn.ts`            | The founder brief (at most 1,200 characters), the arc, and what the prompt and the record carry                               |
+| `report.ts`, `apply.ts`          | The model's `path_report` held to the founder's words; the writes                                                             |
+| `service.ts`, `view.ts`          | `GET/PUT/PATCH /ventures/:id/path…`                                                                                           |
+| `opener.ts`                      | An opening that names the last step with its due state                                                                        |
+| `ai-adapter.ts`                  | `@foundry/ai`'s `renderGuidance`, `checkReplyContract`, `buildSupportIndex`; plain forms where a build has none               |
 
 ## The turn's step
 
 A turn's step is the step of what the message is about, never the path's own step again and again:
 
-1. **An explicit ask a play answers** (a phrase of the playbook, or the nearest one by its words): the step is that play's,
+1. **An explicit ask a play answers** (a phrase of the playbook, a referral's first; else by meaning, below): the step is that play's,
    with its sub-steps, done-when, due day, template and citations, and a derived id. If the play shows a criterion the
    current stage still asks for, it becomes the path's `now` step and the one before waits as `next`, with its id and
    ticks. Otherwise it is **offered**: `TurnGuidance.offered`, not stored, with the path's own step in `pathStep`. Nothing
@@ -39,7 +40,61 @@ What they were shown is what is stored (`pathRepo.shownStep`).
 "That's too much", "I only have an hour", "exam week", "something smaller": the same step, same id, cut to its first items
 that fit the minutes, done when those are, due soon. Finishing the small part brings the rest of it back.
 
-A message in distress that asks nothing of the work gets no step, and is never matched to a play by likeness.
+A message in distress, or that only says how hard things are, gets no step when it asks nothing of the work, and is never
+matched to a play by meaning.
+
+## Which play: a phrase, then meaning, then nothing
+
+A wrong play is worse than none: it answers a question nobody asked, with a step. The order is
+
+1. **a referral's phrase** (a qualified person must decide), then **a phrase of any other play**: the playbook's own
+   words, found whole. Courtesy, a reaction ("fair enough", "wait, really?") and a word of a play in passing ("the pricing
+   page is blue") are never one;
+2. **the risk classifier**, when no phrase named an ask;
+3. **meaning**: the founder's **own message** (never the retrieval query, which may add the goal) compared with what
+   founders ask each play for (`matched: 'semantic'`, with its `score`);
+4. **nothing**: the model answers the question itself, and the path's own step stands beside it.
+
+The nearest words (`match.ts` `NEAREST_WORDS`) are in none of these. They stand in for meaning only when it could not be
+asked (the embedding failed or was late, the asks have no vectors yet, the model has no constants, the switch is off), held
+to a likeness, evidence and margin at which they give **no** play to the messages that ask for nothing and a wrong one to at
+most 3 in 100 blind asks (`playbook.test.ts`, `path/play-benchmark`): about half of the playbook's tests' asks, 1 in 16 of
+the blind ones.
+
+- **What is stored.** One to three short texts of each play (`playAsks`: its title with the first sentence of its answer,
+  and its intent's phrases in two groups), in every tenant, as passages of one source (`knowledge-pack/play-asks.ts`, uri
+  `playbook:asks`). The deploy's seed syncs them (nothing is written while `PLAYBOOK_VERSION` and the texts are the stored
+  ones; a change replaces only the asks that changed) and its backfill embeds them; a change of embedding model re-embeds
+  them like any passage. They are never evidence: the shared search leaves them out of its candidates and its word counts,
+  and the document viewer refuses their source. Withdrawing the source (status `withdrawn`) turns the stage off for a tenant.
+- **When.** Every message no phrase or rule reads (`Decision.open`), but never a social one, a crisis, distress, venting, a
+  reaction, a recall, a report, a commitment, a rehearsal, another idea, a change of direction, "something smaller", or a
+  follow-up. A statement only when it says what they want, lack or fear (a plain fact is none), a bare noun phrase, a
+  question beside a report, and, while another step is under way, only a question of its own: at a higher floor
+  (`guarded`).
+- **Which.** The three nearest plays, each by its closest ask (exact, the same every time; equal scores by id), without
+  those whose `unless` words the message holds. The first is the answer when it is at the model's `floor` and nearer than
+  the next **different** play by `margin`; a play with a referral needs `referralFloor`. A referral play at the floor, about
+  as near as the first and not chosen, still brings who decides, as a note. Every constant is in `PLAY_MATCH_PROFILES`
+  (`semantic.ts`), by embedding model, and nowhere else. **They are uncalibrated starting values**, strict on purpose: set
+  them from the models benchmark ("Plays by meaning", docs/runbooks/conversation-lab.md). A model without a row
+  cannot be asked.
+- **What it costs.** A turn a phrase or a rule decided waits for nothing and reads nothing. The others wait for the embedding their
+  retrieval needs anyway, at most 400 ms, and make one statement more in the retrieval's own transaction: the play decides
+  what the search looks for, so it cannot be the same statement (pinned in `perf/round-trips.db.test.ts`). A late or failed
+  embedding, or asks that do not all have a vector of one model yet, leaves the turn to the phrases and plainly nearest
+  words. When the message and the
+  retrieval query differ, the message is embedded too (the same cache). `turn.path` logs the ids and scores of the three
+  nearest, never words.
+- **Off.** `CORE_SEMANTIC_PLAYS=off`: the phrases, the rules and plainly nearest words.
+
+**A way out.** The prompt is told how the ask was found (`PromptGuidance.matched`). `phrase`: the program's answer first, as
+always. `semantic` (by meaning, or by nearest words): if that answer is not about what they asked, the model answers what
+they asked and keeps only the step line, and the reply contract puts the program's answer in only for a reply that asks,
+puts off or says nothing. `none`: the model answers, substance first, nothing invented; a step that shares no word with
+what they asked is `standing`: said once, last, as what stands ("On your path, next is: …"), at most once in three turns
+(`quiet` in between: not said, the card under the reply has it), and never as a "Next:" of theirs. A step given for an
+earlier ask that is not on their path is not said to another subject at all.
 
 ## Rules the code keeps
 
@@ -64,8 +119,8 @@ A message in distress that asks nothing of the work gets no step, and is never m
 - **Who decides.** A referral intent wins over every other ask; a risk the classifier found leads to its play when no
   phrase names one, or brings who decides beside another answer; something said in passing (`note`: "my advisor is on the
   paper") brings it too; a push ("you decide", "what do I take") keeps it. An escalation keeps the model's own next step.
-- **No round trip of its own.** A turn's path reads are part of its context statement (`turn-context.ts`); the decision is
-  pure; writes run beside the turn's own, only when something changed.
+- **No round trip of its own**, but for an ask no rule names ("By meaning"). A turn's path reads are part of its context
+  statement (`turn-context.ts`); the decision is pure; writes run beside the turn's own, only when something changed.
 - **Who sees what.** `venture_paths`, `path_steps`, `path_criteria` (migrations 0033, 0035): read by founders, team and the
   assigned EIR, written by founders and team. Program leads read `app.path_overview` (no words). Deleting a conversation
   erases the words it left (evidence, the idea said in it, a change of it, a step in the founder's own words) and its

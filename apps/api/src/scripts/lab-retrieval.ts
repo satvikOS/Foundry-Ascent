@@ -8,11 +8,11 @@
  * - **floors**: the same search with the code's floors and with the floors these vectors suggest: what is returned for a
  *   question, and whether nothing is returned for a question nothing answers;
  * - **production**: `retrieveEvidence` in the home tenant as a founder's turn calls it (row-level security, lanes, gates,
- *   budgets), with the play the path's rules choose for the message, and without it.
+ *   budgets), with the play a turn chooses for the message (./lab-plays.ts), and without it.
  *
  * Everything returned is numbers and fixed names; each question's passages go to the private report.
  */
-import { lexicalIntent, phraseIntent, playRefId, PLAYBOOK, retrieveEvidence } from '@foundry/core';
+import { playRefId, PLAYBOOK, retrieveEvidence } from '@foundry/core';
 import { retrievalRepo, type Db } from '@foundry/db';
 import {
   embedStored,
@@ -28,6 +28,8 @@ import {
   type SelectionQuality,
   type StoredBenchmark,
 } from '@foundry/db/retrieval-benchmark';
+
+import { productionPlay } from './lab-plays.js';
 
 /** Candidate fusion weights by name; `default` is what the code ships. */
 export const FUSION_VARIANTS = {
@@ -218,17 +220,16 @@ async function searchBenchmark(
   return new Map(store.queries.map((q, i) => [q.id, found[i] ?? []]));
 }
 
-/** The play the path's rules choose for a message alone (a first message: no venture, no step yet). */
-function playFor(message: string): (typeof PLAYBOOK.plays)[number] | null {
-  const intent = (phraseIntent(PLAYBOOK, message) ?? lexicalIntent(PLAYBOOK, message))?.intent;
-  return PLAYBOOK.plays.find((play) => play.id === intent?.playId) ?? null;
-}
+/** The play a turn answers a message with (a first message: no venture, no step yet), by its id; null: none. */
+export type ChoosePlay = (message: string) => string | null;
+type Play = (typeof PLAYBOOK.plays)[number];
+const playById = (id: string | null): Play | null => PLAYBOOK.plays.find((play) => play.id === id) ?? null;
 
 async function searchProduction(
   store: RetrievalStore,
   embedded: EmbeddedCorpus,
   tuning: retrievalRepo.RetrievalTuning | undefined,
-  withPlay: boolean,
+  choose: ChoosePlay | null,
 ): Promise<Rankings> {
   const { production } = store;
   const passageOf = new Map(production.rows.map((r) => [r.id, r.passageId] as const));
@@ -242,7 +243,7 @@ async function searchProduction(
       q.expected.map((id) => personaOf.get(id) ?? null).find((id) => id !== null) ??
       production.coachPersonaId ??
       '';
-    const play = withPlay ? playFor(q.query) : null;
+    const play = choose === null ? null : playById(choose(q.query));
     const pack = await store.db.withContext(
       { principalId: production.principalId, tenantId: production.tenantId, requestId: 'lab-retrieval' },
       (tx) =>
@@ -342,7 +343,7 @@ export interface SearchResult {
   readonly production: {
     /** Questions measured (production holds an answer, or nothing answers). */
     readonly questions: number;
-    /** Share of the answerable ones whose play, as the path's rules choose it from the message alone, answers. */
+    /** Share of the answerable ones whose play, as a turn chooses it from the message alone, answers. */
     readonly playAnswers: number;
     /** The retrieved items alone, for each floors, and with the old equal weights. */
     readonly retrieval: Readonly<Record<FloorVariant | 'equal_weights', Measured>>;
@@ -370,6 +371,7 @@ export async function benchSearch(
   store: RetrievalStore,
   embedded: EmbeddedCorpus,
   extras: ReadonlyMap<string, readonly number[]>,
+  choose: ChoosePlay = productionPlay(null),
 ): Promise<{ result: SearchResult; candidates: Candidates; kept: Record<string, unknown> }> {
   const calibration = calibrate(store.queries, embedded);
   await store.db.system(async (sx) => {
@@ -426,14 +428,14 @@ export async function benchSearch(
   };
   const asked = askable(store);
   const answerable = asked.filter((q) => q.kind === 'answerable');
-  const pack = await searchProduction(store, embedded, undefined, true);
-  const bare = await searchProduction(store, embedded, undefined, false);
+  const pack = await searchProduction(store, embedded, undefined, choose);
+  const bare = await searchProduction(store, embedded, undefined, null);
   const playAnswers = answerable.filter((q) => {
-    const play = playFor(q.query);
+    const play = playById(choose(q.query));
     return play !== null && q.expected.includes(`play/${play.id}`);
   }).length;
   const retrievalOf = async (tuning: retrievalRepo.RetrievalTuning): Promise<Measured> =>
-    measured(asked, await searchProduction(store, embedded, tuning, false), DEPTH);
+    measured(asked, await searchProduction(store, embedded, tuning, null), DEPTH);
   const production = {
     questions: asked.length,
     playAnswers: answerable.length === 0 ? 0 : round(playAnswers / answerable.length),

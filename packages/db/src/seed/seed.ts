@@ -19,7 +19,7 @@
  *   tenant's common pool on every run, demo data or not (`../knowledge-pack/sync.ts`: inserted when absent, re-ingested when
  *   its text changed, withdrawn when the JSON drops it; a person's withdrawal is kept). The cited corpus
  *   (`../knowledge-pack/corpus.ts`: the open library, and the programme's course notes) likewise, once migration 0034 is
- *   applied.
+ *   applied. What founders ask each play for (`../knowledge-pack/play-asks.ts`) likewise, when the host gives it.
  */
 import { col } from '../columns.js';
 import { appendAudit } from '../repositories/audit.js';
@@ -36,6 +36,7 @@ import {
   PROGRAM_METHOD_SOURCE,
 } from './doctrine.js';
 import { hasCitationSchema, syncCorpusToTenants } from '../knowledge-pack/corpus-sync.js';
+import { syncPlayAsksToTenants, type PlayAsks } from '../knowledge-pack/play-asks.js';
 import { syncKnowledgePackToTenants } from '../knowledge-pack/sync.js';
 import {
   COACH_RELEASES,
@@ -81,6 +82,11 @@ export interface SeedConfig {
    * `../knowledge-pack/corpus-sync.ts`). Default: as `knowledgePack`.
    */
   readonly corpus?: boolean;
+  /**
+   * What founders ask each play for (core's playbook, given by the host: `@foundry/core` builds on this package), synced
+   * into every active tenant on every run (`../knowledge-pack/play-asks.ts`). Absent: left as they are.
+   */
+  readonly playAsks?: PlayAsks;
   /**
    * Owner-approved releases to apply once (`SEED_OWNER_RELEASES`): persona releases, keys of `OWNER_RELEASES` in
    * ./owner-releases.ts (ADR-0021), demo-story releases, keys of `STORY_RELEASES` in ./story-releases.ts, and coach
@@ -425,8 +431,10 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
   if (veirSchema && (config.knowledgePack ?? true)) await syncKnowledgePackToTenants(sx);
   // The cited corpus (migration 0034's columns): the open library everywhere, the programme's course notes in its own
   // tenant only, as the curriculum is.
-  if (veirSchema && (config.corpus ?? config.knowledgePack ?? true) && (await hasCitationSchema(sx))) {
-    await syncCorpusToTenants(sx, CURRICULUM_TENANT_SLUG);
+  const corpus = config.corpus ?? config.knowledgePack ?? true;
+  if (veirSchema && (corpus || config.playAsks !== undefined) && (await hasCitationSchema(sx))) {
+    if (corpus) await syncCorpusToTenants(sx, CURRICULUM_TENANT_SLUG);
+    if (config.playAsks !== undefined) await syncPlayAsksToTenants(sx, config.playAsks);
   }
 
   if (demo) {

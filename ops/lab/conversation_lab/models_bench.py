@@ -69,6 +69,19 @@ FUSIONS = (
 )
 FLOORS = ("current", "suggested", "suggested_tight", "strict")
 FAMILIES = ("knowledge_base", "corpus", "programme", "coach", "play")
+#: The sets of messages and ways of matching lab-plays.ts measures, by the names the summary may print.
+ASK_SETS = ("client", "protocol", "paraphrases", "short", "held_out", "blind", "benchmark")
+NO_ASK_SETS = ("social", "venting", "off_topic", "fact", "report", "reaction", "benchmark_none")
+MATCHINGS = {
+    "production": "production (phrase, meaning, nothing; code's constants)",
+    "suggested": "the same, suggested constants",
+    "phrases": "phrases and rules alone",
+    "fallback": "embedding late or failed (phrases, then plainly nearest words)",
+    "held": "held-out half, suggested constants",
+    "heldPhrases": "held-out half, phrases and rules alone",
+}
+#: Floors and margins a grid may hold, at most.
+GRID_POINTS = 200
 #: Variables of the job the script does not need: the app's access code is not its to hold.
 NOT_THE_SCRIPTS = frozenset({"E2E_OWNER_ACCESS_CODE"})
 
@@ -229,6 +242,70 @@ def _search(row: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _match_profile(source: Any) -> dict[str, int | float | None] | None:
+    if not isinstance(source, Mapping):
+        return None
+    return {
+        name: _num(source.get(key))
+        for key, name in (
+            ("floor", "floor"),
+            ("margin", "margin"),
+            ("referralFloor", "referral_floor"),
+            ("guard", "guard"),
+        )
+    }
+
+
+def _matching_score(source: Any) -> dict[str, Any]:
+    data = _map(source)
+
+    def share(row: Any) -> dict[str, int | float | None]:
+        return {key: _num(_map(row).get(key)) for key in ("messages", "right", "wrong")}
+
+    def matched(row: Any) -> dict[str, int | float | None]:
+        return {key: _num(_map(row).get(key)) for key in ("messages", "matched")}
+
+    asks, false = _map(data.get("asks")), _map(data.get("falseMatch"))
+    return {
+        "asks": {name: share(asks.get(name)) for name in ASK_SETS},
+        "all": share(data.get("all")),
+        "false_match": {name: matched(false.get(name)) for name in NO_ASK_SETS},
+        "false_match_all": matched(data.get("falseMatchAll")),
+        "near_miss": matched(data.get("nearMiss")),
+        "chosen": _num(data.get("chosen")),
+        "chosen_right": _num(data.get("chosenRight")),
+    }
+
+
+def _play_matching(row: Mapping[str, Any]) -> dict[str, Any]:
+    open_, nearest, scores = _map(row.get("open")), _map(row.get("nearestRight")), _map(row.get("scores"))
+    return {
+        "id": row["id"],
+        "dimensions": _num(row.get("dimensions")),
+        "messages": _num(row.get("messages")),
+        "open": {key: _num(open_.get(key)) for key in ("ask", "guarded")},
+        "nearest_right": {key: _num(nearest.get(key)) for key in ("first", "top")},
+        "related": _nums(row.get("related"), 3),
+        "unrelated": _nums(row.get("unrelated"), 3),
+        "current": _match_profile(row.get("current")),
+        "suggested": _match_profile(row.get("suggested")),
+        "scores": {name: _matching_score(scores.get(name)) for name in MATCHINGS},
+        "grid": [
+            {
+                name: _num(point.get(key))
+                for key, name in (
+                    ("floor", "floor"),
+                    ("margin", "margin"),
+                    ("right", "right"),
+                    ("wrong", "wrong"),
+                    ("falseMatch", "false_match"),
+                )
+            }
+            for point in _rows(row.get("grid"))[:GRID_POINTS]
+        ],
+    }
+
+
 def public_result(
     report: Mapping[str, Any] | None, *, exit_code: int, ids: frozenset[str] | None = None
 ) -> dict[str, Any]:
@@ -306,6 +383,7 @@ def public_result(
             for r in listed(report.get("embeddings"))
         ],
         "search": [_search(r) for r in listed(report.get("search"))],
+        "play_matching": [_play_matching(r) for r in listed(report.get("playMatching"))],
         "rerank": {
             "base": (
                 {
@@ -420,14 +498,81 @@ def search_tables(rows: list[Mapping[str, Any]]) -> list[str]:
         )
         out += [
             "",
-            f"Of {_cell(prod['questions'])} questions production could answer or must not; the path's rules choose a "
-            f"play that answers for {_cell(prod['play_answers'])} of the answerable ones. Found by family: {families}.",
+            f"Of {_cell(prod['questions'])} questions production could answer or must not; a turn's first message "
+            f"gets a play that answers for {_cell(prod['play_answers'])} of the answerable ones. Found by family: {families}.",
             "",
             "| Vector floor | " + " | ".join(_cell(p["floor"]) for p in cal["curve"]) + " |",
             "| --- |" + " --- |" * len(cal["curve"]),
             "| answers kept | " + " | ".join(_cell(p["answered"]) for p in cal["curve"]) + " |",
             "| no-answer caught | " + " | ".join(_cell(p["caught"]) for p in cal["curve"]) + " |",
         ]
+    return out
+
+
+def _profile_text(p: Mapping[str, Any] | None) -> str:
+    if p is None:
+        return "none"
+    return (
+        f"floor {_cell(p['floor'])}, margin {_cell(p['margin'])}, referral floor {_cell(p['referral_floor'])}, "
+        f"guard {_cell(p['guard'])}"
+    )
+
+
+def matching_tables(rows: list[Mapping[str, Any]]) -> list[str]:
+    """Which play a message gets, by the rules and with each model's vectors behind them."""
+    out: list[str] = []
+    for r in rows:
+        out += [
+            "",
+            f"Plays by meaning with {r['id']} ({_cell(r['dimensions'])}) over {_cell(r['messages'])} messages; "
+            f"{_cell(r['open']['ask'])} plain asks and {_cell(r['open']['guarded'])} others are asked what they mean. Constants: "
+            f"code's {_profile_text(r['current'])}; suggested {_profile_text(r['suggested'])}. A play that answers is "
+            f"nearest for {_cell(r['nearest_right']['first'])} of the asks, among the nearest three for "
+            f"{_cell(r['nearest_right']['top'])}. Similarity p10 / p50 / p90: "
+            f"{' / '.join(_cell(v) for v in r['related'])} of an ask with it, "
+            f"{' / '.join(_cell(v) for v in r['unrelated'])} of a message of nothing with its nearest.",
+            "",
+            "| Right (wrong) play | All asks | "
+            + " | ".join(ASK_SETS)
+            + " | Nothing asked, matched | Near misses | Chosen by meaning (right) |",
+            "| --- | --- |" + " --- |" * (len(ASK_SETS) + 3),
+        ]
+        for name, label in MATCHINGS.items():
+            s = r["scores"][name]
+            cells = [f"{_cell(x['right'])} ({_cell(x['wrong'])})" for x in (s["all"], *s["asks"].values())]
+            out.append(
+                f"| {label} | "
+                + " | ".join(cells)
+                + f" | {_cell(s['false_match_all']['matched'])} | {_cell(s['near_miss']['matched'])} | "
+                f"{_cell(s['chosen'])} ({_cell(s['chosen_right'])}) |"
+            )
+        out += [
+            "",
+            "| Nothing asked, matched | " + " | ".join(NO_ASK_SETS) + " |",
+            "| --- |" + " --- |" * len(NO_ASK_SETS),
+        ]
+        for name in ("production", "suggested", "phrases", "fallback"):
+            cells = [_cell(x["matched"]) for x in r["scores"][name]["false_match"].values()]
+            out.append(f"| {MATCHINGS[name]} | " + " | ".join(cells) + " |")
+        floors = sorted({p["floor"] for p in r["grid"] if p["floor"] is not None})
+        margins = sorted({p["margin"] for p in r["grid"] if p["margin"] is not None})
+        points = {(p["floor"], p["margin"]): p for p in r["grid"]}
+        out += [
+            "",
+            "Right / wrong on asks, matched of messages of nothing, on the half the suggestion comes from, by floor and "
+            "margin:",
+            "",
+            "| Floor | " + " | ".join(f"margin {m}" for m in margins) + " |",
+            "| --- |" + " --- |" * len(margins),
+        ]
+        for floor in floors:
+            cells = []
+            for margin in margins:
+                p = points.get((floor, margin)) or {}
+                cells.append(
+                    f"{_cell(p.get('right'))} / {_cell(p.get('wrong'))}, {_cell(p.get('false_match'))}"
+                )
+            out.append(f"| {floor} | " + " | ".join(cells) + " |")
     return out
 
 
@@ -480,6 +625,7 @@ def tables(result: Mapping[str, Any]) -> list[str]:
                 f"{_cell(e['usd_per_million_tokens'])} | {_quality_cells(e[label])} |"
             )
     out += search_tables(result.get("search") or [])
+    out += matching_tables(result.get("play_matching") or [])
     rerank = result.get("rerank") or {}
     base = rerank.get("base") or {}
     out += [

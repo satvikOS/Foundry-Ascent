@@ -8,7 +8,9 @@ import { createTestDatabase, makeContext, type TestDatabase } from '@foundry/db/
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DEFAULT_CORE_CONFIG } from '../config.js';
-import { lexicalIntent, phraseIntent } from '../path/match.js';
+import { phraseIntent } from '../path/match.js';
+import { pickPlay } from '../path/semantic.js';
+import { meaningOfTest } from '../path/testing/meaning.js';
 import { PLAYBOOK } from '../path/playbook/index.js';
 import { estimateTokens } from './context-budget.js';
 import { type EvidencePack } from './evidence.js';
@@ -48,7 +50,10 @@ afterAll(async () => {
 });
 
 function evidence(message: string): Promise<EvidencePack> {
-  const intent = (phraseIntent(PLAYBOOK, message) ?? lexicalIntent(PLAYBOOK, message))?.intent ?? null;
+  // As meaning would choose one: the nearest, or none.
+  const intent = (
+    phraseIntent(PLAYBOOK, message) ?? pickPlay(PLAYBOOK, message, meaningOfTest(PLAYBOOK, message), 'ask')
+  ).intent;
   const play = PLAYBOOK.plays.find((x) => x.id === intent?.playId) ?? null;
   return t.db.withContext(makeContext(venture.founder, tenantId), (tx) =>
     retrieveEvidence(tx, {

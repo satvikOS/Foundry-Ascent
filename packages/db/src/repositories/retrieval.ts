@@ -54,6 +54,7 @@ import {
   selectReferences,
   type ConversationContext,
 } from '../knowledge-pack/gate.js';
+import { notAnAskSql, PLAY_ASK_LOCATOR, PLAY_ASKS_URI } from '../knowledge-pack/play-asks.js';
 import { namedTermGroups, queryTermGroups, subjectTermGroups } from '../knowledge-pack/query-terms.js';
 import { DOCUMENTED_ACCOUNT_HEADING } from '../knowledge-pack/render.js';
 import { isCorpusTopic, seeksHelp, type CorpusTopic } from '../knowledge-pack/topics.js';
@@ -807,7 +808,7 @@ function sharedSearch(query: SharedChunkQuery): StoreSearch {
   const c = constants(q);
   const { L } = c;
   const scopeFilter = `c.venture_id IS NULL AND c.tenant_id = :tenantId AND c.scope = ANY (:scopes)
-    AND (c.scope <> 'persona' OR c.persona_id = :personaId)`;
+    AND (c.scope <> 'persona' OR c.persona_id = :personaId) AND ${notAnAskSql('c')}`;
   const refLimit = q.reference ? Math.max(0, Math.min(q.reference.limit ?? REFERENCE_GATE.limit, 10)) : 0;
   const admitted = q.reference ? selectReferences(q.reference.founderText, { limit: refLimit }).matches : [];
   // Nothing asked for: what the conversation is about may bring one item, rate-limited in SQL (`recent_ref`).
@@ -999,6 +1000,79 @@ function sharedSearch(query: SharedChunkQuery): StoreSearch {
       stageUris: p.textArray(corpusUrisForTopics(stageTopics)),
     },
     decode: (r) => decodeItem('from_row', r),
+  };
+}
+
+// ------------------------------------------------------------------------------------------------
+// The plays a message is nearest to
+// ------------------------------------------------------------------------------------------------
+
+/** A play by its closest ask (`knowledge-pack/play-asks.ts`). */
+export interface NearPlay {
+  readonly playId: string;
+  /** Cosine similarity of the message with the play's closest ask. */
+  readonly score: number;
+}
+
+/** The nearest plays, best first, and the embedding model their scores are of (scores of two are not comparable). */
+export interface NearPlays {
+  readonly modelId: string;
+  readonly plays: readonly NearPlay[];
+}
+
+/**
+ * The plays whose asks the message is closest to, each once, best first (equal scores: by id). One exact scan of the
+ * tenant's few hundred asks. Null unless every stored ask has a vector of one model that also embedded the message (its
+ * own, else the model being replaced, {@link alternateOf}): with a part of them, a play is chosen because the right one is
+ * missing.
+ */
+export async function nearestPlays(
+  ex: SqlExecutor,
+  args: {
+    readonly tenantId: string;
+    /** The founder's own message, embedded; only a tagged vector (`embedding-model.ts`) can be compared. */
+    readonly embedding: readonly number[];
+    readonly limit: number;
+  },
+): Promise<NearPlays | null> {
+  const modelId = embeddingModelOf(args.embedding);
+  if (modelId === null) return null;
+  const alternate = alternateOf(args.embedding);
+  const result = await ex.query(
+    `WITH asks AS MATERIALIZED (
+       SELECT substr(c.locator, ${PLAY_ASK_LOCATOR.length + 1}) AS play_id, c.embedding, c.embedding_model
+       FROM knowledge_sources s JOIN knowledge_chunks c ON c.source_id = s.id
+       WHERE s.tenant_id = :tenantId AND s.scope = 'public' AND s.uri = :uri AND s.status = 'active'
+         AND c.tenant_id = :tenantId)
+     , model AS (
+       SELECT CASE WHEN bool_and(coalesce(embedding IS NOT NULL AND embedding_model = :modelId, false)) THEN :modelId
+                   WHEN bool_and(coalesce(embedding IS NOT NULL AND embedding_model = :alternateModel, false))
+                     THEN :alternateModel END AS id
+       FROM asks)
+     SELECT m.id AS model_id, a.play_id,
+            max(1 - (a.embedding <=> CASE WHEN m.id = :modelId THEN :embedding ELSE :alternate END)) AS score
+     FROM asks a JOIN model m ON m.id IS NOT NULL
+     GROUP BY m.id, a.play_id
+     ORDER BY score DESC, a.play_id
+     LIMIT :limit`,
+    {
+      tenantId: p.uuid(args.tenantId),
+      uri: p.text(PLAY_ASKS_URI),
+      modelId: p.text(modelId),
+      embedding: p.vector(args.embedding),
+      alternateModel: p.nullable.text(alternate?.modelId),
+      alternate: p.nullable.vector(alternate?.embedding),
+      limit: p.int(clampLimit(args.limit, 3, 20)),
+    },
+  );
+  const first = result.rows[0];
+  if (first === undefined) return null;
+  return {
+    modelId: col.text.decode(first.model_id, 'model_id'),
+    plays: result.rows.map((r) => ({
+      playId: col.text.decode(r.play_id, 'play_id'),
+      score: col.num.decode(r.score, 'score'),
+    })),
   };
 }
 

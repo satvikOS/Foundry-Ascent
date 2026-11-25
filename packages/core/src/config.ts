@@ -80,6 +80,11 @@ export const CoreConfig = z.object({
      * a turn runs without one (no guidance, no step in the prompt, nothing stored), as before the path.
      */
     founderPath: z.boolean(),
+    /**
+     * An ask no rule of the playbook names is matched by meaning (core `path/semantic.ts`; `CORE_SEMANTIC_PLAYS=on|off`,
+     * on by default): off, the rules alone choose a play.
+     */
+    semanticPlays: z.boolean(),
   }),
   retrieval: z.object({
     memory: z.number().int().min(0).max(50),
@@ -172,6 +177,7 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
     traceStreamText: false,
     safetyScreen: false,
     founderPath: true,
+    semanticPlays: true,
   },
   // The persona's library gives two items, not four (live pilot 42099643194: its method notes were injected on almost
   // every turn, whatever the topic, and replies on grants, leases and tutoring cited the interview guide). The path's
@@ -233,7 +239,7 @@ function intFrom(env: EnvLike, name: string, fallback: number): number {
  * The single place where packages/core reads environment variables (runtime contract): APP_ENV,
  * APP_VERSION, HOME_TENANT_SLUG, SITE_ORIGIN, plus optional tuning knobs
  * (CORE_TURN_RATE_LIMIT, CORE_REVIEW_SAMPLE_RATE_PCT, CORE_SESSION_CACHE_SECONDS, CORE_SAFETY_SCREEN=on|off,
- * CORE_FOUNDER_PATH=on|off, and
+ * CORE_FOUNDER_PATH=on|off, CORE_SEMANTIC_PLAYS=on|off, and
  * for local demos CORE_DISTILL_DELAY_SECONDS / CORE_DISTILL_ACTIVE_SECONDS).
  */
 export function loadConfig(env: EnvLike): CoreConfig {
@@ -258,6 +264,7 @@ export function loadConfig(env: EnvLike): CoreConfig {
       traceStreamText: env.LAB_TRACE_STREAM === '1' && appEnv !== 'production',
       safetyScreen: switchFrom(env, 'CORE_SAFETY_SCREEN', DEFAULT_CORE_CONFIG.turns.safetyScreen),
       founderPath: switchFrom(env, 'CORE_FOUNDER_PATH', DEFAULT_CORE_CONFIG.turns.founderPath),
+      semanticPlays: switchFrom(env, 'CORE_SEMANTIC_PLAYS', DEFAULT_CORE_CONFIG.turns.semanticPlays),
     },
     distillation: {
       turnDelaySeconds: intFrom(

@@ -5,7 +5,7 @@ import {
   SourceTextQuery,
   type SourceTextResponse,
 } from '@foundry/contracts/viewer';
-import { assignmentsRepo, documentsRepo, knowledgeRepo, readerRepo } from '@foundry/db';
+import { assignmentsRepo, documentsRepo, knowledgePack, knowledgeRepo, readerRepo } from '@foundry/db';
 import { type z } from 'zod';
 
 import { hasAnyRole, loadPrincipalRoles } from '../authz/roles.js';
@@ -152,7 +152,9 @@ export function createDocumentReaderService(kit: Kit): DocumentReaderService {
     source: knowledgeRepo.KnowledgeSourceRecord,
     ventureId: string,
   ): Promise<boolean> {
-    if (!READABLE_SOURCE_STATUSES.has(source.status)) return false;
+    // What founders ask the plays for is matched against, never cited.
+    if (!READABLE_SOURCE_STATUSES.has(source.status) || source.uri === knowledgePack.PLAY_ASKS_URI)
+      return false;
     switch (source.scope) {
       case 'venture':
         return source.ventureId === ventureId;

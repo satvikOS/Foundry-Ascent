@@ -53,6 +53,17 @@ export {
   syncCorpusToTenants,
   type CorpusSyncReport,
 } from './corpus-sync.js';
+export {
+  notAnAskSql,
+  PLAY_ASKS_URI,
+  PLAY_ASK_LOCATOR,
+  playAsksChecksum,
+  playAsksSourceId,
+  syncPlayAsks,
+  syncPlayAsksToTenants,
+  type PlayAsks,
+  type PlayAsksSyncReport,
+} from './play-asks.js';
 export { CORPUS_TOPICS, corpusTopics, isCorpusTopic, seeksHelp, type CorpusTopic } from './topics.js';
 export {
   contentTerms,

@@ -76,6 +76,42 @@ def search() -> dict[str, Any]:
     }
 
 
+def matching_score(right: float = 0.7) -> dict[str, Any]:
+    share = {"messages": 10, "right": right, "wrong": 0.1}
+    none = {"messages": 10, "matched": 0.05}
+    return {
+        "asks": dict.fromkeys(models_bench.ASK_SETS, share),
+        "all": share,
+        "falseMatch": dict.fromkeys(models_bench.NO_ASK_SETS, none),
+        "falseMatchAll": none,
+        "nearMiss": {"messages": 12, "matched": 0},
+        "chosen": 80,
+        "chosenRight": 0.91,
+    }
+
+
+def play_matching() -> dict[str, Any]:
+    """A row of the script's measure of the path's matching (lab-plays.ts)."""
+    profile = {"floor": 0.5, "margin": 0.05, "referralFloor": 0.58, "guard": 0.05}
+    return {
+        "id": TITAN,
+        "dimensions": 1024,
+        "messages": 1100,
+        "open": {"ask": 110, "guarded": 130},
+        "nearestRight": {"first": 0.6, "top": 0.8},
+        "related": [0.3, 0.5, 0.7],
+        "unrelated": [0.1, 0.2, 0.3],
+        "current": profile,
+        "suggested": {**profile, "floor": 0.425},
+        "scores": {name: matching_score(0.7 + i / 100) for i, name in enumerate(models_bench.MATCHINGS)},
+        "grid": [
+            {"floor": f, "margin": m, "right": 0.7, "wrong": 0.1, "falseMatch": 0.02}
+            for f in (0.4, 0.425)
+            for m in (0.02, 0.05)
+        ],
+    }
+
+
 def report(**overrides: Any) -> dict[str, Any]:
     """A lab-models.ts report as the script prints it."""
     base: dict[str, Any] = {
@@ -141,6 +177,7 @@ def report(**overrides: Any) -> dict[str, Any]:
             },
         ],
         "search": [search()],
+        "playMatching": [play_matching()],
         "rerank": {
             "base": {"id": TITAN, "dimensions": 1024, "by": "search"},
             "sample": 40,
@@ -249,6 +286,17 @@ def test_public_result_keeps_numbers_candidate_ids_and_codes_only() -> None:
     assert found["production"]["pack"]["precision"] == 0.55
     assert found["production"]["families"]["play"] == {"questions": 10, "found": 0.5}
     assert found["calibration"]["curve"][1] == {"floor": 0.3, "answered": 0.8, "caught": 0.5}
+    plays = result["play_matching"][0]
+    assert plays["suggested"] == {"floor": 0.425, "margin": 0.05, "referral_floor": 0.58, "guard": 0.05}
+    assert plays["scores"]["suggested"]["asks"]["blind"] == {"messages": 10, "right": 0.71, "wrong": 0.1}
+    assert plays["scores"]["production"]["false_match"]["venting"] == {"messages": 10, "matched": 0.05}
+    assert plays["grid"][3] == {
+        "floor": 0.425,
+        "margin": 0.05,
+        "right": 0.7,
+        "wrong": 0.1,
+        "false_match": 0.02,
+    }
     assert result["rerank"]["base"]["by"] == "search"
     assert result["rerank"]["models"][0]["ambiguous_only"]["share"] == 0.4
 
@@ -271,6 +319,13 @@ def test_public_result_keeps_numbers_candidate_ids_and_codes_only() -> None:
     row["ranking"]["default"] = secret
     row["production"].update(questions=secret, families={secret: {"questions": secret}}, pack=secret)
     hostile["search"].append({"id": secret})
+    plays = hostile["playMatching"][0]
+    plays.update(current=secret, related=[secret], open=secret, messages=secret, grid=[{"floor": secret}])
+    plays["scores"]["production"]["asks"][secret] = secret
+    plays["scores"]["production"]["asks"]["blind"] = {"messages": secret, "right": secret}
+    plays["scores"][secret] = secret
+    plays["scores"]["fallback"] = secret
+    hostile["playMatching"].append({"id": secret})
     hostile["refusals"] = [{"id": LUNA, "message": secret}]
     text = json.dumps(models_bench.public_result(hostile, exit_code=0))
     assert secret not in text
@@ -304,6 +359,10 @@ def test_the_summary_renders_the_numbers() -> None:
     )
     assert f"| {COHERE_RERANK}, only when ambiguous (0.4 of questions) | 130 / 260 | 0.8 |" in text
     assert "| no-answer caught | 0 | 0.5 |" in text
+    assert f"Plays by meaning with {TITAN} (1024) over 1100 messages" in text
+    assert "suggested floor 0.425, margin 0.05, referral floor 0.58, guard 0.05" in text
+    assert "| production (phrase, meaning, nothing; code's constants) | 0.7 (0.1) |" in text
+    assert "| 0.425 | 0.7 / 0.1, 0.02 | 0.7 / 0.1, 0.02 |" in text
     assert "App models" not in text
     # Every row of a table has as many cells as its header.
     width = 0

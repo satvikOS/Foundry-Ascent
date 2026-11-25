@@ -722,3 +722,98 @@ describe('the same reply and decision always give the same result', () => {
     expect(performance.now() - started).toBeLessThan(1_500);
   });
 });
+
+describe('an answer found by meaning: a way out', () => {
+  const MEANT: PromptGuidance = { ...SERVICE_OR_PRODUCT, matched: 'semantic' };
+  const founder = 'My invoices keep coming back unpaid from the school, what do I do with them?';
+  const OWN =
+    'Ring the payables desk and ask which reference number is missing, because a school ignores an invoice without one. Send it again the same afternoon with that number at the top.';
+
+  it('is never forced into a reply that answers something else with substance', () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const out = check(OWN, MEANT, channel, founder);
+      expect(out.findings).not.toContain('missing_answer');
+      expect(out.repaired ?? '').not.toContain('paid service');
+      // The step line is kept, and nothing else of the path.
+      expect(out.repaired).toContain('20 office managers');
+      const tail = contractTail({
+        released: OWN,
+        guidance: MEANT,
+        channel,
+        today: TODAY,
+        founderText: founder,
+      });
+      expect(tail).toContain('20 office managers');
+      expect(tail).not.toContain('paid service');
+    }
+    // An ask a phrase named is answered from the program, as before.
+    expect(check(OWN, SERVICE_OR_PRODUCT, 'text', founder).findings).toContain('missing_answer');
+  });
+
+  it.each([
+    ['only asks', 'What do you sell to them? And who signs?'],
+    [
+      'puts it off',
+      'Before we get into that, I need to know more about the school. It is important to be clear.',
+    ],
+    ['says nothing', 'Good point.'],
+    ['is empty', ''],
+  ])('is said for a reply that %s', (_, reply) => {
+    const out = check(reply, MEANT, 'text', founder);
+    expect(out.findings.some((f) => f === 'missing_answer' || f === 'question_only')).toBe(true);
+    expect(out.repaired).toContain('paid service');
+  });
+});
+
+describe('a step that is not about what they asked', () => {
+  const asked = 'My invoices keep coming back unpaid from the school, what do I do with them?';
+  const OWN =
+    'Ring the payables desk and ask which purchase order number is missing, because a school pays nothing without one.';
+  const STANDING: PromptGuidance = { ...STEP_ONLY, matched: 'none', stepRole: 'standing' };
+  const QUIET: PromptGuidance = { ...STEP_ONLY, matched: 'none', stepRole: 'quiet' };
+  const STANDS =
+    'On your path, next is: List 20 office managers who run admin by hand and message 5 of them by Thursday.';
+
+  it('is said once, last, as what stands on their path', () => {
+    const out = check(OWN, STANDING, 'text', asked);
+    expect(out.repaired).toBe(`${OWN}\n\n${STANDS}`);
+    expect(check(`${OWN}\n\n${STANDS}`, STANDING, 'text', asked)).toEqual({
+      ok: true,
+      findings: [],
+      repaired: null,
+    });
+    expect(contractTail({ released: OWN, guidance: STANDING, channel: 'text', today: TODAY })).toBe(STANDS);
+    expect(contractTail({ released: OWN, guidance: STANDING, channel: 'voice', today: TODAY })).toBe(
+      'On your path, next is: list 20 office managers who run admin by hand and message 5 of them, by Thursday.',
+    );
+  });
+
+  it('is never given as if it answered them', () => {
+    const out = check(`${OWN}\n\n${NEXT}`, STANDING, 'text', asked);
+    expect(out.findings).toEqual(['step_as_answer']);
+    expect(out.repaired).not.toMatch(/(?:^|\n)Next:/);
+    expect(out.repaired).toContain('On your path, next is: list 20 office managers');
+    const unit = NEXT.split(' Done when')[0] ?? '';
+    expect(withPathDay(unit, STANDING, TODAY)).toMatch(/^On your path, next is: list 20/);
+    expect(isOtherNextLine(unit, STANDING)).toBe(false);
+    // A step of the model's own is still left out.
+    expect(isOtherNextLine('Next: hire a collections agency and write to the dean.', STANDING)).toBe(true);
+  });
+
+  it('is not said again a moment later, even where the reply says it', () => {
+    expect(check(OWN, QUIET, 'text', asked)).toEqual({ ok: true, findings: [], repaired: null });
+    expect(contractTail({ released: OWN, guidance: QUIET, channel: 'text', today: TODAY })).toBe('');
+    expect(check(`${OWN}\n\n${NEXT}`, QUIET, 'text', asked).repaired).toBe(OWN);
+    expect(isOtherNextLine(STANDS, QUIET)).toBe(true);
+    expect(carriesContract(STANDS, QUIET)).toBe(false);
+    expect(spokenReserve(QUIET, '', TODAY)).toBe(0);
+    expect(spokenReserve(STANDING, '', TODAY)).toBeGreaterThan(5);
+  });
+
+  it('is deterministic and idempotent', () => {
+    for (const guidance of [STANDING, QUIET]) {
+      const once = check(`${OWN}\n\n${NEXT}`, guidance, 'text', asked).repaired ?? '';
+      expect(check(once, guidance, 'text', asked).repaired).toBeNull();
+    }
+  });
+});

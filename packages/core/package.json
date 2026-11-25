@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./play-benchmark": "./src/path/play-benchmark/index.ts",
     "./testing": "./src/testing/index.ts"
   },
   "scripts": {

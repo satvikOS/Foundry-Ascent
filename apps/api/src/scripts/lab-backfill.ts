@@ -1,5 +1,6 @@
 /**
- * Conversation lab (docs/runbooks/conversation-lab.md): embeds the local seed's knowledge chunks and memory with
+ * Conversation lab (docs/runbooks/conversation-lab.md): stores what founders ask each play for (the local reset cannot:
+ * the playbook is core's) and embeds the local seed's knowledge chunks and memory with
  * the configured embeddings model, as every production deploy's migrate resource does after seeding, so the
  * lab's retrieval matches production's (the local seed stores no embeddings). Metered in the usage ledger
  * (purpose `seed`) under the daily caps like any embedding call. Prints counts only.
@@ -7,6 +8,9 @@
  *   DATABASE_URL=… MODEL_PROVIDER=bedrock MODEL_EMBEDDINGS_ID=… tsx src/scripts/lab-backfill.ts
  */
 import { randomUUID } from 'node:crypto';
+
+import { PLAYBOOK, playAsks } from '@foundry/core';
+import { knowledgePack } from '@foundry/db';
 
 import { loadApiConfig } from '../config.js';
 import { backfillEmbeddings } from '../jobs/embedding-backfill.js';
@@ -30,6 +34,7 @@ async function main(): Promise<void> {
   const logger = createProcessLogger(config, 'dev');
   const db = createDatabase(env);
   try {
+    await db.system((sx) => knowledgePack.syncPlayAsksToTenants(sx, playAsks(PLAYBOOK)));
     const report = await backfillEmbeddings(
       { db, gateway: createGateway(env, logger), logger },
       {

@@ -429,11 +429,30 @@ gh workflow run ops-conversation-lab.yml -f suite=models -f budget_usd=0.5 -f pu
      complete); "nothing shown" the share of answerable questions that got nothing, and of unanswerable ones (there,
      higher is better).
    - _A turn's retrieval_: `retrieveEvidence` as a founder's turn calls it, in the home tenant (row-level security, the
-     lanes, gates and budgets), without and with the play the path's rules choose from the message. The startup
+     lanes, gates and budgets), without and with the play a turn chooses for the message. The startup
      knowledge base is admitted by its gate alone, so a question only it answers is found there only when the founder
      names the thing: "Found by family" shows it.
    - The vector floor table: for each floor, the share of questions whose best answering passage reaches it, and of
      unanswerable questions whose closest passage does not.
+     **Plays by meaning** (`lab-plays.ts`), for each model at 1024 dimensions, no database: the play a message gets in a
+     turn's own order (docs/architecture/founder-path.md, "Which play"), read as the first message of a venture with nothing
+     on record, with the risk classifier's categories. The messages: the playbook's tests' asks (`client`, `protocol`,
+     `paraphrases`, `short`, `held_out`, and its near misses), 145 asks written without reading its phrases and 142 messages
+     that ask for nothing (`blind`, `social` to `reaction`: `packages/core/src/path/play-benchmark/`), and the retrieval
+     benchmark's questions only a play answers (`benchmark`) or nothing does (`benchmark_none`). Reading it:
+   - _Right (wrong)_: the share of a set's asks that got a play that answers, and another one; the rest got none.
+     _Nothing asked, matched_: the share of those messages that got a play. _Chosen by meaning (right)_: how many messages
+     meaning chose for, and the share of the asks among them it got right.
+   - _Rows_: **production** is the final order with the code's constants (`PLAY_MATCH_PROFILES`; a model without a row is
+     one whose embedding never came); the same with the suggested constants; the phrases and rules alone; a late or failed
+     embedding (phrases, then plainly nearest words); and, for the half of the messages the suggestion was not taken from,
+     the suggestion and the phrases alone.
+   - _Suggested_: the constants (floor, margin, guard; referral floor = floor + 0.08) that answer the most asks while meaning
+     is right for 92 % of those it chooses, at most 3 % of the blind asks get a wrong play, no message that asks for nothing
+     gets one the phrases do not give it, and at most 2 points more of the benchmark's unanswerable questions do. "none":
+     no constants are that good, so the model gets no row. The table by floor and margin is the trade-off.
+   - Set `PLAY_MATCH_PROFILES` (`packages/core/src/path/semantic.ts`) to the suggested row of production's embedding model
+     when the held-out row agrees, and run again: the production row must then say the same.
 4. **Rerankers** that answered, on the top 20 of production's ranking with production's embedding model, for a fixed
    sample of 60 questions: reordering always, and only where the ranking is ambiguous (the closest passage is barely
    about the question, or two are about equally close), with the share of questions and the cost per thousand. "none" is

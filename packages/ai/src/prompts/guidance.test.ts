@@ -436,3 +436,42 @@ describe('the mock’s path-shaped reply (testing/path-reply.ts)', () => {
     }
   });
 });
+
+describe('how the ask was found', () => {
+  const said = (over: Partial<PromptGuidance>): string =>
+    renderGuidance({ ...SERVICE_OR_PRODUCT, ...over }, 'text', { today: TODAY });
+
+  it('a phrase keeps its wording, with or without the field', () => {
+    expect(said({ matched: 'phrase' })).toBe(said({}));
+    expect(said({})).toContain('Say this pick first, in your own words: Both, in this order');
+    expect(said({})).not.toContain('what they seem to mean');
+  });
+
+  it('a match by meaning gives the model a way out, and keeps the step line', () => {
+    const text = said({ matched: 'semantic' });
+    expect(text).toContain('If this is what they asked, say this pick first');
+    expect(text).toContain(
+      'answer what they asked, from the evidence and your judgement, and keep only the step line',
+    );
+    expect(text).toContain('<step title=');
+  });
+
+  it('with no answer of the program’s the model answers, with nothing invented', () => {
+    const text = said({ ask: null, matched: 'none' });
+    expect(text).toContain('answer what they asked yourself, first and with substance');
+    expect(text).not.toContain('Keep its answer');
+    expect(text).toContain('Done when:');
+    // Another kind of turn says what it always said.
+    expect(said({ ask: null, matched: 'none', kind: 'report' })).toBe(said({ ask: null, kind: 'report' }));
+  });
+
+  it('a step that is not about what they asked is only what stands on their path, or unsaid', () => {
+    const standing = said({ ask: null, matched: 'none', stepRole: 'standing' });
+    expect(standing).toContain('"On your path, next is: …"');
+    expect(standing).not.toMatch(/Done when:|<then>/);
+    expect(standing).toContain('by="');
+    const quiet = said({ ask: null, matched: 'none', stepRole: 'quiet' });
+    expect(quiet).toContain('do not name it');
+    expect(quiet).not.toContain('by="');
+  });
+});

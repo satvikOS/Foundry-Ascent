@@ -34,7 +34,7 @@ const LATENCY: SimulatedLatency = {
   speechFirstByteMs: 0,
 };
 
-/** Spoken turns of one call (none asks for a one-sentence reply). */
+/** Spoken turns of one call (none asks for a one-sentence reply), which no phrase of the playbook names. */
 const MESSAGES = [
   'Our pilot at the north campus library starts in two weeks. What should we measure first?',
   'Two of the librarians said the sensors felt intrusive. How do we handle that?',
@@ -54,12 +54,15 @@ const reply = (context: { readonly founderText: string }): string =>
   REPLIES[MESSAGES.indexOf(context.founderText)] ?? REPLIES[0] ?? '';
 
 /** A call's turns, in order: the round trips each waited for one after another. */
-async function callTurns(rig: LatencyRig): Promise<SequentialSample[]> {
+async function callTurns(
+  rig: LatencyRig,
+  messages: readonly string[] = MESSAGES,
+): Promise<SequentialSample[]> {
   const cookie = await rig.signIn(rig.founderId);
   const conversation = await newConversation(rig, cookie);
   const { started } = await startCall(rig, cookie, conversation.id);
   const out: SequentialSample[] = [];
-  for (const text of MESSAGES) {
+  for (const text of messages) {
     expect(text.startsWith(QUICK_PREFIX)).toBe(false);
     await rig.drain();
     const sample = await turn(rig, { cookie, sessionId: conversation.id, text, callId: started.call.id });
@@ -72,8 +75,10 @@ async function callTurns(rig: LatencyRig): Promise<SequentialSample[]> {
 describe.each([
   // Before: 30 to the stream (35 on a call's first turn served by a container that never saw the conversation), 35-36
   // to the first spoken unit, 39 with a FULL face (harness, profile production, the same counting).
-  { face: false, streamOpen: 10, firstSpeech: 13 },
-  { face: true, streamOpen: 10, firstSpeech: 14 },
+  // Re-pinned (2026-11-25), one more for an ask no phrase names: what it means decides the play, and the play what the
+  // search looks for, so the plays it is nearest to are read by a statement of their own (core `path/semantic.ts`).
+  { face: false, streamOpen: 10, firstSpeech: 14 },
+  { face: true, streamOpen: 10, firstSpeech: 15 },
 ])('a spoken turn (FULL face: $face)', ({ face, streamOpen, firstSpeech }) => {
   let rig: LatencyRig;
   let turns: SequentialSample[];
@@ -90,6 +95,30 @@ describe.each([
     expect(turns.map((t) => ({ streamOpen: t.streamOpen, firstSpeech: t.firstSpeech }))).toEqual(
       MESSAGES.map(() => ({ streamOpen, firstSpeech })),
     );
+  });
+});
+
+/** An ask a phrase of the playbook names, and a report: neither reads the plays it is near to. */
+describe('a spoken turn a phrase or a rule decides', () => {
+  let rig: LatencyRig;
+  let turns: SequentialSample[];
+
+  beforeAll(async () => {
+    rig = await createLatencyRig(LATENCY, { traceQueries: true, face: false, reply });
+    turns = await callTurns(rig, [
+      'How do I split the equity with my cofounder?',
+      'What should I do next for the library pilot?',
+    ]);
+  }, 180_000);
+  afterAll(async () => {
+    await rig.cleanup();
+  });
+
+  it('waits for 10 round trips before its stream opens and 13 before its first spoken unit, as before', () => {
+    expect(turns.map((t) => ({ streamOpen: t.streamOpen, firstSpeech: t.firstSpeech }))).toEqual([
+      { streamOpen: 10, firstSpeech: 13 },
+      { streamOpen: 10, firstSpeech: 13 },
+    ]);
   });
 });
 

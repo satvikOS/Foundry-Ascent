@@ -41,6 +41,9 @@ export const INTENTS: readonly PathIntent[] = [
     make me a plan for my idea
     help me build my venture from scratch
     let's plan my venture
+    I am a student founder
+    my idea is ... app that
+    my idea is ... service that
     `,
     { overview: 'path', unless: ['competitor', 'similar', 'lab'] },
   ),
@@ -64,6 +67,9 @@ export const INTENTS: readonly PathIntent[] = [
     business is all new to me and I study science
     total newbie at running a business
     never taken a business class, can I do it
+    never done anything like this
+    business is all new to me
+    I know nothing about business
     `,
     { overview: 'play' },
   ),
@@ -109,6 +115,8 @@ export const INTENTS: readonly PathIntent[] = [
     can you make money with an idea like this
     is this legit a business idea
     could it be a proper business
+    become a real business
+    be a real company one day
     `,
   ),
   intent(
@@ -185,6 +193,10 @@ export const INTENTS: readonly PathIntent[] = [
     my mom loves it lol is that validation
     friends think its awesome so should i build it
     people close to me like it
+    friends ... love it
+    friends ... they love it
+    friends say they love
+    friends ... love the idea
     `,
   ),
   intent(
@@ -203,6 +215,8 @@ export const INTENTS: readonly PathIntent[] = [
     what assumptions am I making
     what is my most dangerous assumption
     what could sink this
+    biggest reason ... fail
+    main reason ... fail
     `,
   ),
   intent(
@@ -225,6 +239,8 @@ export const INTENTS: readonly PathIntent[] = [
     say it's a winner
     say my idea is amazing
     tell me it is brilliant
+    tell me the idea is great
+    tell me my idea is great
     `,
   ),
   intent(
@@ -245,6 +261,9 @@ export const INTENTS: readonly PathIntent[] = [
     should I sell to the university or to the students
     sell this to the school or to parents
     who pays, the library or its users
+    use it but ... pay
+    use it but ... pay ... who is my customer
+    uses it but ... pays
     `,
     { unless: ['10', 'ten'] },
   ),
@@ -271,6 +290,19 @@ export const INTENTS: readonly PathIntent[] = [
     you coach them too, give me a hint
     what are the other founders you coach doing
     somebody else here is building something like mine, what did they tell investors
+    what do you know of their plan
+    building something close to mine
+    startup close to mine
+    what did they tell investors
+    somebody else here is building
+    other ventures here
+    other founders here
+    other teams here
+    another student ... building
+    another founder ... building
+    building a similar startup
+    know about their plan
+    how they pitched
     `,
     { holds: true },
   ),
@@ -336,6 +368,13 @@ export const INTENTS: readonly PathIntent[] = [
     made it with grant money as a grad student, do I own it
     take ... and start our own company
     my advisor says we can each take it
+    working in a university lab
+    work I did in a university lab
+    work ... in a university lab
+    came out of ... university lab
+    university own
+    who has the rights
+    invention made with
     `,
     { referral: true },
   ),
@@ -353,6 +392,9 @@ export const INTENTS: readonly PathIntent[] = [
     what happens if I sign the IP agreement
     is it safe to sign the lab's form
     the university wants me to sign away my rights
+    sign an invention form
+    sign ... invention form
+    invention form
     `,
     { referral: true },
   ),
@@ -422,6 +464,12 @@ export const INTENTS: readonly PathIntent[] = [
     deep tech startup from my thesis
     gene or cell therapy from my PhD
     startup based on a molecule we found
+    phd ... biotech idea
+    a biotech idea
+    a medical device idea
+    therapeutics company
+    new antibody
+    gene therapy
     `,
     { referral: true },
   ),
@@ -571,6 +619,8 @@ export const INTENTS: readonly PathIntent[] = [
     on a student visa, can I pay myself
     visa rules for running a business
     working for my own startup as an international student
+    do this on OPT
+    while on OPT
     `,
     { referral: true, unless: ['mastercard'] },
   ),
@@ -798,6 +848,7 @@ export const INTENTS: readonly PathIntent[] = [
     how do I find data on my market
     tam for my startup
     market sizing help
+    how big is the ... market
     `,
   ),
   intent(
@@ -935,7 +986,11 @@ export const INTENTS: readonly PathIntent[] = [
     be sure people will buy
     does that mean they would pay
     learn whether people want it
+    learn if people want
     find out if people want this
+    whether people ... pay for
+    would really pay for
+    would people really pay
     `,
     { unless: ['friends', 'tuition'] },
   ),
@@ -1220,6 +1275,10 @@ export const INTENTS: readonly PathIntent[] = [
     user privacy and data protection rules
     legal to store patient information
     keeping patients' health info in an app
+    patient records
+    medical records
+    health records
+    student records
     `,
     { referral: true },
   ),
@@ -1238,6 +1297,8 @@ export const INTENTS: readonly PathIntent[] = [
     can I say my product treats a disease
     do I need a clinical study
     fda path for a health app
+    fda clearance
+    fda approval
     `,
     { referral: true },
   ),
@@ -1327,6 +1388,8 @@ export const INTENTS: readonly PathIntent[] = [
     productized service
     do i do consulting or both
     consultancy or a software product
+    service ... consultancy
+    service ... consulting ... both
     `,
   ),
   intent(
@@ -1386,6 +1449,9 @@ export const INTENTS: readonly PathIntent[] = [
     a/b test my pricing
     people think the price is too high
     do I raise the price, yes or no
+    raise the price
+    raise my price
+    raise our price
     `,
   ),
   intent(
@@ -1439,6 +1505,8 @@ export const INTENTS: readonly PathIntent[] = [
     what budget would I need
     budget to begin
     how much money will it take
+    how much money do I need
+    money ... get started
     `,
   ),
   intent(
@@ -1491,6 +1559,10 @@ export const INTENTS: readonly PathIntent[] = [
     seed funding or grant
     how do I raise money
     grant or venture capital
+    grants ... angel ... vc
+    angel investors or vc
+    angels or vcs
+    grants or angels
     `,
     { unless: ['meeting', 'uncle', 'parents', 'family'] },
   ),
@@ -1509,6 +1581,11 @@ export const INTENTS: readonly PathIntent[] = [
     friends want to buy a piece of the company
     relative wants to put in money and asks for a percentage
     wants a percentage of the company for the money
+    wants to put in money
+    put money in ... percentage
+    offered to invest
+    wants to invest in
+    crowdfunding from
     `,
     { referral: true },
   ),
@@ -1527,6 +1604,9 @@ export const INTENTS: readonly PathIntent[] = [
     how do I come up with a valuation
     how much should I raise and at what valuation
     valuation cap
+    put a value on the company
+    value on my startup
+    is my company worth
     `,
     { referral: true },
   ),
@@ -1564,6 +1644,13 @@ export const INTENTS: readonly PathIntent[] = [
     who gets how much of the company
     we never talked about who owns what
     who owns what between the two of us
+    split the shares
+    split the company
+    divide the company
+    my cofounder's shares
+    shares ... cofounder
+    equity ... cofounder
+    should my cofounder get
     `,
     { referral: true },
   ),
@@ -1581,6 +1668,11 @@ export const INTENTS: readonly PathIntent[] = [
     roles and responsibilities for our team
     operating agreement between founders
     my cofounder graduated and left, who owns their part
+    who is ceo
+    if a cofounder leaves
+    if my cofounder leaves
+    becomes ceo
+    roles ... each founder
     `,
     { referral: true },
   ),
@@ -1599,6 +1691,9 @@ export const INTENTS: readonly PathIntent[] = [
     incorporate in delaware
     legal designation for my business
     should I get an llc before I sell
+    should we incorporate
+    should I incorporate
+    a dba or
     `,
     { referral: true },
   ),
@@ -1620,6 +1715,7 @@ export const INTENTS: readonly PathIntent[] = [
     do I sign it
     should I sign this
     guarantee it is legal
+    insurance for my
     `,
     { referral: true },
   ),
@@ -1636,6 +1732,9 @@ export const INTENTS: readonly PathIntent[] = [
     tax forms for my startup
     irs self employment
     accounting and bookkeeping for my business
+    pay tax on
+    pay taxes on
+    owe taxes on
     `,
     { referral: true },
   ),
@@ -1653,6 +1752,8 @@ export const INTENTS: readonly PathIntent[] = [
     food truck permits
     university rules about selling things
     can I sell alcohol at my event
+    permit ... to sell
+    license to sell
     `,
     { referral: true },
   ),
@@ -1694,6 +1795,8 @@ export const INTENTS: readonly PathIntent[] = [
     how do I reach a hundred people using the app
     more downloads without a budget
     reach a hundred users on the cheap
+    first hundred users
+    first 100 users
     `,
   ),
   intent(
@@ -1713,6 +1816,8 @@ export const INTENTS: readonly PathIntent[] = [
     how do I promote my business
     flyers or instagram
     tiktok or email for marketing
+    which marketing channel
+    which channel ... first
     `,
   ),
   intent(
@@ -1858,6 +1963,9 @@ export const INTENTS: readonly PathIntent[] = [
     pitch me in a sentence
     how do I open when I stand up to pitch
     opening line of my pitch
+    how do I open my pitch
+    how should I open ... standing
+    how should I start my pitch
     `,
   ),
   intent(
@@ -1896,6 +2004,9 @@ export const INTENTS: readonly PathIntent[] = [
     pitching at a competition, help me prepare slides and a live pitch
     live pitch in front of judges
     prepare a pitch
+    pitching at a competition
+    pitch at a competition
+    in a pitch competition
     `,
   ),
   intent(
@@ -1942,6 +2053,9 @@ export const INTENTS: readonly PathIntent[] = [
     how do investors decide
     what to bring to an investor meeting
     what impresses investors
+    investor want to see
+    investors want to see
+    investor ... first time we meet
     `,
     { unless: ['valuation'] },
   ),
@@ -2113,6 +2227,8 @@ export const INTENTS: readonly PathIntent[] = [
     how do I know I'm ready to move on from the program
     exit the program
     ready to leave the incubator
+    move on from the Ain Center
+    after the Ain Center
     `,
   ),
   intent(

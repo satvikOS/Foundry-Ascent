@@ -13,6 +13,8 @@ the usage ledger under `embedding` and stopped by the daily cap and the kill swi
   needs a migration and is out of scope here).
 - The gateway can call it (`packages/ai/src/gateway`), and the Lambda roles may invoke it **and** the old one until the
   end.
+- It has a row in `PLAY_MATCH_PROFILES` (`packages/core/src/path/semantic.ts`), from the models benchmark's "Plays by
+  meaning": without one, asks no phrase names are matched to a play only by plainly nearest words.
 - It has floors in `EMBEDDING_PROFILES` (`packages/db/src/repositories/retrieval.ts`): see "How retrieval is tuned" below.
   Cosine similarities of two models are not comparable: 0.3 can be "related" for one and noise for another. A model
   without a profile gets a strict default (fewer, never wrong, passages). **The profiles of Titan and Cohere in the code
@@ -36,6 +38,9 @@ the usage ledger under `embedding` and stopped by the daily cap and the kill swi
 5. **Finish.** Deploy without `MODEL_EMBEDDINGS_PREVIOUS_ID` and drop the old model's permission.
 
 **Roll back** at any point before step 5: swap the two ids, deploy, and send the job with `previous` the other way round.
+
+While rows of both models exist, no play may be chosen by meaning (the plays' asks are compared only when all of them have
+a vector of the same model, the new one or the one named as previous): the phrases and plainly nearest words choose until step 3 is done.
 
 While rows of both models exist, the meaning-based duplicate check of kept memory (`memory.ts`) compares only within a
 venture's rows as stored: a duplicate kept under the old model may not be recognised until step 3 is done. The daily

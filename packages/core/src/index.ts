@@ -75,7 +75,16 @@ export { createPathService, type PathService } from './path/service.js';
 export { decide, type DecideInput, type Decision, type TurnKind } from './path/engine.js';
 export { type Playbook, type PathIntent, type PlaybookStage } from './path/types.js';
 export { PLAYBOOK } from './path/playbook/index.js';
-export { lexicalIntent, phraseIntent } from './path/match.js';
+export { nearestWords, phraseIntent } from './path/match.js';
+export {
+  PLAY_MATCH_PROFILES,
+  PLAY_MATCH_TOP,
+  pickPlay,
+  playAsks,
+  playMatchProfile,
+  type Openness,
+  type PlayMatchProfile,
+} from './path/semantic.js';
 export { type VenturesService } from './services/ventures.js';
 export { type SessionsService, type EndSessionResult, type SessionPageResult } from './services/sessions.js';
 export {

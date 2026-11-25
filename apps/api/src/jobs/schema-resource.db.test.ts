@@ -1,10 +1,19 @@
 import { MockModelGateway } from '@foundry/ai';
-import { accessCodePrefix, generateAccessCode, hashAccessCode, p, type SeedConfig } from '@foundry/db';
+import { PLAYBOOK, playAsks } from '@foundry/core';
+import {
+  accessCodePrefix,
+  generateAccessCode,
+  hashAccessCode,
+  knowledgePack,
+  p,
+  type SeedConfig,
+} from '@foundry/db';
 import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 import type { CdkCustomResourceEvent } from 'aws-lambda';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createJsonLogger } from '../logging.js';
+import { createSchemaRuntime } from '../runtime/schema.js';
 import { backfillEmbeddings } from './embedding-backfill.js';
 import {
   handleSchemaEvent,
@@ -36,6 +45,12 @@ async function count(sql: string): Promise<number> {
   return Number((result.rows[0] as { n: string | number }).n);
 }
 
+const askCount = (where: string) =>
+  count(
+    `SELECT count(*) AS n FROM knowledge_chunks c
+     WHERE starts_with(c.locator, '${knowledgePack.PLAY_ASK_LOCATOR}') AND ${where}`,
+  );
+
 beforeAll(async () => {
   t = await createTestDatabase({ migrate: false });
   const code = generateAccessCode();
@@ -46,6 +61,7 @@ beforeAll(async () => {
       accessCodePrefix: accessCodePrefix(code),
       accessCodeHash: await hashAccessCode(code),
     },
+    playAsks: playAsks(PLAYBOOK),
   };
   const logger = createJsonLogger({ level: 'debug', write: (line) => logs.push(line) });
   deps = {
@@ -76,6 +92,16 @@ describe('migrations custom resource', () => {
     ).toBe(0);
     expect(await count("SELECT count(*) AS n FROM usage_ledger WHERE purpose = 'seed'")).toBeGreaterThan(0);
     expect(await count('SELECT count(*) AS n FROM ventures')).toBeGreaterThan(0);
+    // What founders ask each play for, stored and embedded like any passage, its model recorded.
+    expect(await askCount(`c.embedding_model = '${gateway.info.embeddingsModelId}'`)).toBe(
+      playAsks(PLAYBOOK).asks.length,
+    );
+  });
+
+  it('is given the playbook’s own asks in a deploy', () => {
+    const runtime = createSchemaRuntime({ APP_ENV: 'development', DB_DRIVER: 'pg', DATABASE_URL: t.url });
+    expect(runtime.seedConfig.playAsks).toEqual(playAsks(PLAYBOOK));
+    return runtime.db.close();
   });
 
   it('Update: idempotent (nothing to migrate, seed and backfill are no-ops)', async () => {
@@ -97,6 +123,7 @@ describe('migrations custom resource', () => {
       },
     });
     expect(await count('SELECT count(*) AS n FROM ventures')).toBe(ventures);
+    expect(await askCount('true')).toBe(playAsks(PLAYBOOK).asks.length);
   });
 
   it('respects the AI kill switch for the backfill and never fails the deployment because of it', async () => {

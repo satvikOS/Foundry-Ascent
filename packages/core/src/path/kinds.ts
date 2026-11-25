@@ -48,9 +48,65 @@ const ACKNOWLEDGES =
 const SMALL_TALK =
   /\bweather\b.*\b(?:there|you|where you are)\b|\bhow(?: is| was) your (?:day|week|weekend|morning|evening)\b|\bwhere are you (?:right now|based|from)\b|\byour favou?rite (?:\w+ )?(?:food|colou?r|movie|song|book|team|band)\b|\bdo you (?:even |ever |really )?(?:sleep|eat|dream|have (?:kids|a dog|a cat|hobbies|a family|a life|feelings))\b|\b(?:you have no idea|you do not know) what you are (?:talking|saying)\b/;
 
+/** Wishes, farewells and hellos the social turn's own words do not know ("have a great weekend", "I'm back", "see you Monday"). */
+const COURTESY: readonly RegExp[] = [
+  /\b(?:have|enjoy) (?:a|an|the|your) (?:(?:very|really|super) )?(?:(?:great|good|nice|lovely|fun|happy|safe|restful|wonderful) )?(?:day|evening|night|morning|afternoon|weekend|week|break|holidays?|one|rest|trip)\b(?: (?:everyone|all|too|off|ahead|of your day))?/g,
+  /\b(?:happy|merry) (?:new year|\p{L}+(?:day|days|mas|giving|s))\b(?: to (?:you|all)(?: and (?:yours|your family))?)?/gu,
+  /\bsee (?:you|ya|u)(?: (?:on|later|soon|tomorrow|then|around|next (?:week|time)|again|(?:mon|tues|wednes|thurs|fri|satur|sun)day|there))*\b/g,
+  /\b(?:talk|speak|chat) (?:to you |soon|later|tomorrow|then|again)+\b|\b(?:catch you (?:later|soon)|ttyl|bye|goodbye|good ?night|take (?:care|it easy))\b/g,
+  /\bi am back\b/g,
+  /\b(?:nice|good|great|lovely) to meet you\b(?:[,.! ]+i am \p{L}+)?|\b(?:nice|good|great|lovely) to (?:see|hear from) you\b|\bhope (?:you are|all is|your \w+ is) (?:well|good|going well|doing well)\b/gu,
+  /\byou (?:are|rock)(?: (?:so|the|a|very|really|just))* (?:best|funny|great|awesome|kind|sweet|nice|legend|lifesaver|star)\b|\byou (?:really |just )?(?:helped|saved)(?: me| us)?(?: (?:so much|a lot|today|out|again))*\b/g,
+  /\b(?:yo|hi|hello|hey|hiya|good (?:morning|afternoon|evening|day)|thanks?|thank you|cheers|thx|ty|what is up)\b/g,
+];
+/** Words beside a courtesy that add nothing to it. */
+const BESIDE_COURTESY =
+  /\b(?:i )?(?:have|got|need) to (?:go|run)\b|\bi have (?:a )?(?:class|lab|practice|work)(?: now| soon)?\b|\b(?:alright|welcome|tons?|a lot|so much|a million|again|there|lol|haha+|ok(?:ay)?|well|and|a|too|then|now|later|soon|today|for now|this was (?:great|helpful))\b/g;
+
+/** Nothing but courtesy: once the polite words are out, nothing is left. */
+function isCourtesy(text: string): boolean {
+  const said = plain(text);
+  if (said.includes('?') || said.length > 90 || /\d/.test(said)) return false;
+  let rest = said;
+  for (const part of COURTESY) rest = rest.replace(part, ' ');
+  return rest !== said && !/[\p{L}\p{N}]/u.test(rest.replace(BESIDE_COURTESY, ' '));
+}
+
+/** A few words that only react to what was said: they name nothing to plan, whatever words they hold. */
+const REACTIONS =
+  /^(?:(?:ok(?:ay)?|so|well|yeah|yes|no|hmm+|oh|ah|wow|wait|lol|right|honestly|i mean|but|um+|uh+)[,.! ]+)*(?:(?:that |this |it )?(?:all |really |kind of |sort of |totally )?makes? (?:a lot of |total |more |perfect |some )?sense(?: (?:now|to me|i guess))?|(?:that is |this is )?(?:fair|fair enough|a (?:good|fair|great) point|good point|interesting|fascinating|helpful|useful|a lot(?: to take in)?|new to me|good to (?:know|hear)|what i thought|funny|wild|crazy|true|right|wrong)|i (?:see|get it|got it|agree|disagree|guess so|think so|do not (?:think so|agree|get it|know)|hear you|like (?:that|it|this|(?:the )?(?:first|second|third|last|other) (?:one|idea|option)(?: better| more| best)?)|am not sure(?: (?:about that|i (?:agree|follow|buy (?:it|that))))?(?: with (?:that|you|this))?)|(?:wait|really|seriously|huh|what|sorry|pardon|no way|is it|are you (?:sure|serious))|what do you mean(?: by (?:that|this|it))?|(?:can you )?(?:say|explain) (?:that|it|this)(?: again)?(?: but)?(?: (?:slower|more slowly|simpler|differently|in other words))?|come again|not (?:quite|really|exactly|sure|yet)|maybe|perhaps|i will think about (?:it|that)|let me think(?: about (?:it|that))?|got it|noted|understood|interesting)(?:[,.! ]+(?:maybe|i will think about (?:it|that)|i guess|though|then|not quite|thanks?|really|wow|interesting|that is a lot))*[\s.!?]*$/;
+
+/** Only a reaction ("fair enough", "wait, really?", "what do you mean by that?"): it goes on about what was said. */
+export function isReaction(text: string): boolean {
+  const said = plain(text).replace(/\s+/g, ' ').trim();
+  return said !== '' && said.length <= 90 && REACTIONS.test(said);
+}
+
+/** What someone who is having a hard time says of themselves, about nothing to work on. */
+const VENTS =
+  /\bugh\b|\b(?:i|me) (?:just |really |still |also |so |kind of )*(?:feel|am feeling|felt|have been feeling)\b|\bi (?:am|have been) (?:so|just|really|very|too|honestly|super|completely)? ?(?:tired|exhausted|sad|lonely|alone|sick of|done|fed up|homesick|drained|overwhelmed|stressed|anxious|miserable|angry|upset|over it)\b|\b(?:i|we) (?:hate|cried|miss|(?:bombed|failed) (?:my|the|a|an) (?:\w+ )?(?:exam|quiz|midterm|final|class|course|paper)|cannot (?:think|sleep|focus|cope|stand)|want to (?:hide|cry|scream|sleep))\b|\b(?:worst|awful|terrible|horrible|bad|rough) (?:day|week|month|semester|night)\b|\b(?:nobody|no one) (?:understands (?:me|us|this|that|how hard)|cares|gets it|likes me)\b|\bdriving me (?:crazy|nuts|insane)\b|\bin the hospital\b|\bsick of\b|\bmy brain is\b|\beverything (?:went|is going|goes) wrong\b|\bcut out for\b/;
+
+/** What they work on, beside the words of a question about it: hard, it is the work's to help with. */
+const AT_WORK: ReadonlySet<string> = new Set(
+  'test pilot demo cold call calling outreach selling meeting survey competitor marketing channel hire experiment lead lawyer team'.split(
+    ' ',
+  ),
+);
+
+/** They tell how hard things are, and nothing of the work: nothing is planned for it, and no task pushed. */
+export function isVenting(text: string): boolean {
+  if (asksFor(text)) return false;
+  const said = plain(text);
+  return VENTS.test(said) && !contentStems(said).some((w) => WORK_WORDS.has(w) || AT_WORK.has(w));
+}
+
+/** A statement that says what they want, lack, fear or cannot get done: it asks for help without asking. */
+const NEEDS =
+  /\b(?:need|want|wish|hope|trying|try|looking for|search(?:ing)?|struggl\w*|stuck|lost|unsure|not sure|wonder\w*|confus\w*|worried|nervous|afraid|scared|torn|undecided|no (?:idea|clue)|cannot|can not|could not|will not|would not|do not|does not|did not|never|nobody|no one|none|nothing|keeps?|too (?:many|much|few|big|small|expensive|early|late)|instead|rather|should|might|maybe|thinking (?:of|about)|supposed to|have to|must|only (?:have|know)|how|what|which|whether|where|who|why|if|but|or)\b/;
+
 /** A social message: a hello, thanks, a goodbye, small talk, a bare "ok" that answers nothing the coach asked. */
 export function isSocial(text: string, previousReply: string | null): boolean {
-  if (socialTurnOf(text) !== null || wrapUpOf(text)) return true;
+  if (socialTurnOf(text) !== null || wrapUpOf(text) || isCourtesy(text)) return true;
   const own = sentences(text);
   if (own.length > 0 && own.every((s) => SMALL_TALK.test(s))) return true;
   if (!ACKNOWLEDGES.test(plain(text).trim())) return false;
@@ -60,7 +116,7 @@ export function isSocial(text: string, previousReply: string | null): boolean {
 
 const RECALL: readonly RegExp[] = [
   /\bwhat (?:did|have|had) (?:we|you and i|i) (?:just |already )?(?:talk|talked|speak|spoken|say|said|discuss|discussed|decide|decided|agree|agreed|cover|covered|work|worked|plan|planned|do|done)\b.*(?:\b(?:about|on|last|yesterday|before|earlier|previous(?:ly)?|today|session|call|time|week|so far)\b|\?|$)/,
-  /\bwhat (?:was|is|were|are) (?:(?:the )?name of )?(?:my|our) (?:startup|venture|idea|business|company|product|plan|decision|goal)(?: idea| name| plan)?\b/,
+  /\bwhat (?:was|is|were|are) (?:(?:the )?name of )?(?:my|our) (?:startup|venture|idea|business|company|product|plan|decision|goal)(?: idea| name| plan)?\b(?! (?:really |actually |even )?worth\b)/,
   /\b(?:do|did) you (?:still )?remember\b|\bremember (?:our|my|the|what) (?:plan|idea|pivot|decision|goal|we|i)\b/,
   /\bremind (?:me|us) (?:what|of|about|where|which|who|how we|how i)\b/,
   /\bhow (?:we|i) got (?:here|to (?:this|where))\b/,
@@ -102,7 +158,7 @@ export function isRehearsal(args: {
 }
 
 const OVERVIEW: readonly RegExp[] = [
-  /\b(?:get|getting|be|help me|help us) (?:more )?organized\b|\borganize (?:me|us|my (?:thoughts|work|plan|ideas?|venture|startup|business|time|week))\b/,
+  /\b(?:get|getting|be|help me|help us) (?:(?:more|me|us|it|this|that|all of (?:it|this)|everything|my (?:\w+ ){0,2}\w+) )?organized\b|\borganize (?:me|us|my (?:thoughts|work|plan|ideas?|venture|startup|business|time|week))\b/,
   /\bwhat (?:do|should|would|can|must) (?:i|we) (?:do|work on|focus on|tackle|start with)(?: (?:now|next|first|today|this week|from here))?\s*[?.!]*$/,
   /\bwhat (?:is|are|comes?|would be) (?:(?:the|my|our|your) )?(?:next|first|following|right|best) (?:step|thing|move|action|task|priorit)/,
   /\bwhat (?:(?:is|come|comes) )?next(?: (?:for|on|with) (?:me|us|my|our|the)\b.*)?\s*[?.!]*$|\bnext steps?\s*[?.!]*$/,
@@ -210,7 +266,16 @@ export interface MessageReport {
 }
 
 const ACTED =
-  '(?:did|done|finished|completed|sent|emailed|messaged|called|talked|spoke|spoken|met|interviewed|asked|ran(?! out\\b)|run|launched|posted|published|shipped|signed|built|made|wrote|written|drafted|tested|surveyed|visited|collected|got(?! it\\b)|closed|sold|presented|pitched|submitted|recorded|listed|booked|filed|set up|put up|showed|observed|counted|charged|invoiced|heard)';
+  '(?:did|done|finished|completed|sent|emailed|messaged|called|talked|spoke|spoken|met|interviewed|asked|ran(?! out\\b)|run|launched|posted|published|shipped|signed|built|made|wrote|written|drafted|tested|surveyed|visited|collected|got(?! it\\b| (?:an?|this|another|my|some) (?:\\w+ ){0,2}(?:idea|question|problem|feeling|plan)\\b)|closed|sold|presented|pitched|submitted|recorded|listed|booked|filed|set up|put up|showed|observed|counted|charged|invoiced|heard)';
+/** "Got five people to try it", "Talked to my uncle": what they did, told without its "I". */
+const TELLS_DONE = new RegExp(`^(?:(?:so|and|ok|okay|well|also|yes|yeah|just|finally)[, ]+)*${ACTED}\\b`);
+
+/** Whether a statement asks for help ({@link NEEDS}): a plain fact, a report or a story does not. */
+export function statesNeed(text: string): boolean {
+  const said = plain(text);
+  return NEEDS.test(said) && !TELLS_DONE.test(said);
+}
+
 const BARE_DONE =
   /^(?:(?:yes|yep|yeah|ok|hi|hey|update|quick update|good news)[,:.! ]+)*(?:done|finished|completed|all done|did it|(?:i|we) did(?: it| that| them)?|it went out|sent(?: it| them)?|it is done|that is done|it worked)\b/;
 const ACTED_BY_THEM = new RegExp(

@@ -414,6 +414,13 @@ is still in flight at the moment measured instead of filling the model's wait. A
 one more: its usage row is still written before its only unit (plan item 7 below, not taken). In production two of
 the 13 (the retrieval transaction's begin and context) overlap the ~155-200 ms query embedding.
 
+Since 2026-11-25 a turn whose ask no phrase of the playbook names waits for one round trip more before its first text
+and its first spoken unit (14, 15 with a FULL face), and none before its stream opens: the plays it is nearest to are read
+once the query is embedded and before the search they decide (docs/architecture/founder-path.md, "Which play"). That is
+most questions asked in their own words. Its step card waits for that too (the embedding at most 400 ms, then one round
+trip). A turn a phrase or a rule decides (and a report, a recall, courtesy, a follow-up) is as above: 10 and 13. Both are
+pinned in the same test.
+
 A returning founder's opener is pinned the same way (`perf/round-trips.db.test.ts`, coaching v3): with the line the
 distillation wrote ahead current, `GET /ventures/:id/opener` waits for 15 round trips one after another and creating
 the conversation for 30, no model call on either. Coaching v3 first read the stored line's closing-question check

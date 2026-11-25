@@ -7,6 +7,7 @@ import {
   type TextChunkHandler,
 } from '@foundry/ai';
 import { PLAYBOOK } from '@foundry/core';
+import { BLIND_ASKS, NO_ASKS } from '@foundry/core/play-benchmark';
 import { benchmarkPassages, benchmarkQueries } from '@foundry/db/retrieval-benchmark';
 import { describe, expect, it } from 'vitest';
 
@@ -95,8 +96,18 @@ describe('lab-models (offline, on the mock)', () => {
     expect(report.budgetReached).toBe(false);
     // Without a database production's search is not measured.
     expect(report.search).toEqual([]);
+    // The path's matching needs none: every model at production's size.
+    expect(report.playMatching.map((m) => [m.id, m.dimensions])).toEqual(
+      report.embeddings.filter((e) => e.dimensions === 1024 && e.code === null).map((e) => [e.id, 1024]),
+    );
+    for (const m of report.playMatching) {
+      expect(m.messages).toBeGreaterThan(900);
+      expect(m.scores.production.asks.blind.messages).toBeGreaterThanOrEqual(120);
+    }
 
     const printed = JSON.stringify(report);
+    for (const { ask } of BLIND_ASKS) expect(printed).not.toContain(ask);
+    for (const { text } of NO_ASKS) expect(printed).not.toContain(text);
     for (const q of benchmarkQueries()) expect(printed).not.toContain(q.query);
     for (const p of benchmarkPassages(PLAYBOOK.plays)) expect(printed).not.toContain(p.text.slice(0, 60));
     for (const r of kept.replies) expect(printed).not.toContain(r.text.slice(0, 40));
