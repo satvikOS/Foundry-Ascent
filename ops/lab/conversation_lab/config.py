@@ -22,7 +22,8 @@ SUITES: tuple[str, ...] = ("recall", "voice", "matrix", "ui")
 #: E-crisis corpus; conversation_lab/safety.py), ``face`` (the HeyGen LiveAvatar FULL stock face against the
 #: vendor's free sandbox, with the vendor key; conversation_lab/face.py) and ``models`` (the candidate reasoning,
 #: embedding and rerank models, before the app uses any; conversation_lab/models_bench.py).
-EXTRA_SUITES: tuple[str, ...] = ("agenda", "safety", "face", "models", "live")
+#: ``understand`` compares the models the understand call of a turn may run on (conversation_lab/understand_bench.py).
+EXTRA_SUITES: tuple[str, ...] = ("agenda", "safety", "face", "models", "live", "understand")
 
 #: Share of a suite's budget the app itself may spend (its own metering, hard-capped by the app's daily cap); the
 #: rest is for the lab's own calls (judge, simulator, the founder's synthesized voice). The UI suite makes none, nor
@@ -38,6 +39,7 @@ APP_SHARE: dict[str, float] = {
     "safety": 1.0,
     "face": 1.0,
     "models": 1.0,
+    "understand": 1.0,
     # The live suite: the coach's turns are about three quarters of the estimate (conversation_lab/live/plan.py); the
     # simulator and the judge (lab) the rest.
     "live": 0.75,
@@ -53,6 +55,7 @@ SUITE_WEIGHT: dict[str, int] = {
     "safety": 1,
     "face": 1,
     "models": 1,
+    "understand": 1,
     "live": 3,
 }
 
@@ -61,6 +64,8 @@ MAX_BUDGET_USD = 50.0
 #: Most a models run may be given, whatever was approved: it compares candidates, at an expected USD 0.25
 #: (apps/api lab-models.ts refuses more as well).
 MODELS_MAX_BUDGET_USD = 2.0
+#: The same for an understand run (apps/api lab-understand.ts refuses more as well): the owner's cap on a paid run.
+UNDERSTAND_MAX_BUDGET_USD = 2.0
 
 
 @dataclass(frozen=True)
@@ -74,6 +79,23 @@ class BackgroundModels:
 
 
 @dataclass(frozen=True)
+class UnderstandSettings:
+    """The understand call of a turn (``models.understand``, docs/architecture/understand.md): whether it is made, its own
+    model and whether that reasons first. Absent from production.json: the API's default, off."""
+
+    enabled: bool
+    model_id: str | None = None
+    think: str | None = None
+
+    def env(self) -> dict[str, str]:
+        return {
+            "CORE_UNDERSTAND": "on" if self.enabled else "off",
+            **({"MODEL_UNDERSTAND_ID": self.model_id} if self.model_id else {}),
+            **({"MODEL_UNDERSTAND_THINK": self.think} if self.think else {}),
+        }
+
+
+@dataclass(frozen=True)
 class AppModels:
     """The app's effective models, exactly as infra/cdk/src/lib/models.ts `effectiveModels` derives them: the coach
     (``primary``, ``fallback``: every purpose a founder reads) and the background route, when there is one."""
@@ -82,6 +104,7 @@ class AppModels:
     fallback: str
     embeddings: str
     background: BackgroundModels | None = None
+    understand: UnderstandSettings | None = None
 
     def env(self) -> dict[str, str]:
         """The gateway's runtime-contract variables (packages/ai router.ts ``modelGatewayConfigFromEnv``)."""
@@ -93,6 +116,7 @@ class AppModels:
             "MODEL_BACKGROUND_PRIMARY_ID": background.primary if background else "",
             "MODEL_BACKGROUND_FALLBACK_ID": background.fallback if background else "",
             "MODEL_BACKGROUND_PURPOSES": ",".join(background.purposes) if background else "",
+            **(self.understand.env() if self.understand else {}),
         }
 
     def for_purpose(self, purpose: str) -> tuple[str, str]:
@@ -110,6 +134,16 @@ def app_models(path: Path = PRODUCTION_CONFIG) -> AppModels:
         if isinstance(raw, dict)
         else None
     )
+    asked = models.get("understand")
+    understand = (
+        UnderstandSettings(
+            enabled=asked.get("enabled") is True,
+            model_id=asked.get("modelId"),
+            think=asked.get("think"),
+        )
+        if isinstance(asked, dict)
+        else None
+    )
     luna = models.get("luna") or {}
     if luna.get("enabled") is True:
         return AppModels(
@@ -117,12 +151,14 @@ def app_models(path: Path = PRODUCTION_CONFIG) -> AppModels:
             fallback=models["primary"],
             embeddings=models["embeddings"],
             background=background,
+            understand=understand,
         )
     return AppModels(
         primary=models["primary"],
         fallback=models["fallback"],
         embeddings=models["embeddings"],
         background=background,
+        understand=understand,
     )
 
 
@@ -148,6 +184,12 @@ class LabModels:
     #: may put the lab's API process on (``client`` in models.json; never production's).
     client_judge: tuple[str, ...] = ()
     client_coach: tuple[str, ...] = ()
+    #: The models the understand call is compared on (``understand`` in models.json), each with its reasoning efforts.
+    understand: tuple[tuple[str, tuple[str, ...]], ...] = ()
+
+    @property
+    def understand_models(self) -> tuple[str, ...]:
+        return tuple(model for model, _ in self.understand)
 
 
 def foundation_model_id(model_id: str) -> str:
@@ -170,7 +212,9 @@ def lab_models(path: Path = MODELS_FILE) -> LabModels:
     client = raw.get("client") or {}
     client_judge = tuple(client.get("judge") or ())
     client_coach = tuple(client.get("coach") or ())
+    understand = tuple((str(c["id"]), tuple(c["efforts"])) for c in raw.get("understand") or ())
     for model in (
+        *(model for model, _ in understand),
         *simulator,
         *judge,
         *live_simulator,
@@ -190,6 +234,7 @@ def lab_models(path: Path = MODELS_FILE) -> LabModels:
         live_coach=live_coach,
         client_judge=client_judge,
         client_coach=client_coach,
+        understand=understand,
     )
 
 
@@ -197,6 +242,28 @@ def lab_models(path: Path = MODELS_FILE) -> LabModels:
 #: process's CORE_THINK (packages/core orchestrator/think.ts): which typed turns let Nova 2 reason before it answers.
 DEFAULT_THINK = "default"
 THINK_CHOICES: tuple[str, ...] = (DEFAULT_THINK, "off", "judgement", "typed")
+
+#: The client suite's ``understand``: ``default`` (the deployment's own, off unless it says otherwise) or the API process's
+#: CORE_UNDERSTAND (packages/core orchestrator/understand.ts); ``understand_model``: its MODEL_UNDERSTAND_ID.
+DEFAULT_UNDERSTAND = "default"
+UNDERSTAND_CHOICES: tuple[str, ...] = (DEFAULT_UNDERSTAND, "off", "on")
+
+
+def understand_env(choice: str, model: str, lab: LabModels) -> dict[str, str]:
+    """The API process's variables for the client suite's inputs; raises ValueError on one it does not offer."""
+    if choice not in UNDERSTAND_CHOICES:
+        raise ValueError(f"understand must be one of {', '.join(UNDERSTAND_CHOICES)}")
+    named = "" if model in ("", DEFAULT_UNDERSTAND) else model
+    if named and named not in lab.understand_models:
+        raise ValueError(
+            f"understand_model must be {DEFAULT_UNDERSTAND} or one of {', '.join(lab.understand_models)}"
+        )
+    if named and choice != "on":
+        raise ValueError("understand_model is for understand=on")
+    if choice == DEFAULT_UNDERSTAND:
+        return {}
+    return {"CORE_UNDERSTAND": choice, **({"MODEL_UNDERSTAND_ID": named} if named else {})}
+
 
 #: The ``coach_model`` input that keeps the production model configuration.
 DEFAULT_COACH = "default"
@@ -217,7 +284,13 @@ def coach_app_models(
         raise ValueError(
             f"coach_model must be {DEFAULT_COACH} or one of {', '.join(known) or '(none listed)'}"
         )
-    return AppModels(primary=choice, fallback=choice, embeddings=base.embeddings, background=base.background)
+    return AppModels(
+        primary=choice,
+        fallback=choice,
+        embeddings=base.embeddings,
+        background=base.background,
+        understand=base.understand,
+    )
 
 
 def judges_for(coach_model: str, candidates: Sequence[str]) -> tuple[str, ...]:
@@ -318,7 +391,11 @@ def floor_cents(value: float) -> float:
 def split_budget(total_usd: float, suites: Sequence[str]) -> dict[str, float]:
     """Each suite's hard cap, in proportion to its weight, rounded down to the cent (the sum never exceeds the
     total)."""
-    most = MODELS_MAX_BUDGET_USD if "models" in suites else MAX_BUDGET_USD
+    most = MAX_BUDGET_USD
+    if "models" in suites:
+        most = MODELS_MAX_BUDGET_USD
+    if "understand" in suites:
+        most = UNDERSTAND_MAX_BUDGET_USD
     if not 0 < total_usd <= most:
         raise ValueError(f"budget must be more than 0 and at most {most:g} USD")
     weights = sum(SUITE_WEIGHT[s] for s in suites)

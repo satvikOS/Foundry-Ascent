@@ -39,6 +39,8 @@ _VERB = (
     r"(?:write|ask|make|list|send|talk|call|sell|pick|choose|put|book|test|count|run|offer|try|set|take|find|start|email|"
     r"message|mark|fill|read|check|look|keep|bring|decide|show|work|contact|build|draft|collect|get|copy|rehearse|deliver)"
 )
+#: The server's line before the step: the one thing to do first ("Start with: ring the hall.").
+_STARTS = re.compile(r"^\W*start with\W{0,3}:", re.IGNORECASE)
 #: "Next, run an interview": a step said with a comma.
 _NEXT_DO = re.compile(rf"^\W*next,? {_VERB}\b", re.IGNORECASE)
 _DONE = re.compile(
@@ -112,6 +114,7 @@ def _declares(sentence: str) -> bool:
 def _is_step_line(sentence: str, targets: Iterable[set[str]]) -> bool:
     return bool(
         _declares(sentence)
+        or _STARTS.match(sentence)
         or _DONE.search(sentence)
         or _DO_BY.search(sentence)
         or _is_step_text(sentence, targets)
@@ -227,13 +230,16 @@ def _day_key(t: ReplyTurn, said: str) -> str:
 
 
 def single_step_line(t: ReplyTurn) -> Grade:
-    """One step said once: one declaration, one deadline, one done-check."""
+    """One step said once: one declaration, one deadline, one done-check, and at most one line of what to do first."""
     if t.expect.kind in ("crisis", "rehearsal", "recall") or not t.reply.strip():
         return NA
     said = reading.sentences(t.text)
     labels = [s for s in said if _declares(s)]
     if len(labels) > 1:
         return fail("declared_twice: " + " | ".join(labels))
+    starts = [s for s in said if _STARTS.match(s)]
+    if len(starts) > 1:
+        return fail("starts_twice: " + " | ".join(starts))
     done = [s for s in said if _DONE.search(s)]
     if len(done) > 1:
         return fail("done_twice: " + " | ".join(done))
@@ -530,7 +536,9 @@ def news_interpreted(t: ReplyTurn) -> Grade:
     )
     if not authored and not result:
         return NA
-    said = [s for s in reading.sentences(t.text) if not _LABEL.search(s) and not _DONE.search(s)]
+    said = [
+        s for s in reading.sentences(t.text) if not (_LABEL.search(s) or _DONE.search(s) or _STARTS.match(s))
+    ]
     said = [s for s in said if not s.endswith("?") and not _EMPTY_PRAISE.match(s)]
     text = " ".join(said)
     if authored and not any(fact_named(text, t.facts[f]) for f in t.expect.news):

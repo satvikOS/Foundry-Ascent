@@ -6,6 +6,7 @@
  * becomes primary and the configured `primary` becomes the fallback. The background route (`models.background`) is
  * never changed by Luna. The runtime contract (MODEL_PRIMARY_ID / MODEL_FALLBACK_ID / MODEL_EMBEDDINGS_ID and
  * MODEL_BACKGROUND_PRIMARY_ID / MODEL_BACKGROUND_FALLBACK_ID / MODEL_BACKGROUND_PURPOSES) carries the effective ids.
+ * The understand call's own model (`models.understand`) is granted with them when it names one.
  */
 import type { BackgroundPurpose, PlatformConfig } from '../config.js';
 
@@ -19,13 +20,18 @@ export interface EffectiveModels {
     readonly fallback: string;
     readonly purposes: readonly BackgroundPurpose[];
   };
+  /** The understand call's own model, when the configuration names one (docs/architecture/understand.md). */
+  readonly understand?: string;
 }
 
 /** Cross-region inference profile prefixes (`us.amazon.nova-2-lite-v1:0`, `global.…`). */
 const PROFILE_PREFIX = /^(us|us-gov|eu|apac|jp|au|ca|in|global)\./;
 
 export function effectiveModels(models: PlatformConfig['models']): EffectiveModels {
-  const background = models.background ? { background: models.background } : {};
+  const background = {
+    ...(models.background ? { background: models.background } : {}),
+    ...(models.understand?.modelId === undefined ? {} : { understand: models.understand.modelId }),
+  };
   if (models.luna?.enabled) {
     return {
       primary: models.luna.modelId,
@@ -37,12 +43,13 @@ export function effectiveModels(models: PlatformConfig['models']): EffectiveMode
   return { primary: models.primary, fallback: models.fallback, embeddings: models.embeddings, ...background };
 }
 
-/** Every reasoning model id the app may call: the conversation's pair and the background pair. */
+/** Every reasoning model id the app may call: the conversation's pair, the background pair and the understand call's. */
 export function reasoningModelIds(models: EffectiveModels): string[] {
   return unique([
     models.primary,
     models.fallback,
     ...(models.background ? [models.background.primary, models.background.fallback] : []),
+    ...(models.understand === undefined ? [] : [models.understand]),
   ]);
 }
 
@@ -57,6 +64,20 @@ export function isMantleModel(modelId: string): boolean {
 
 export function isInferenceProfile(modelId: string): boolean {
   return PROFILE_PREFIX.test(modelId);
+}
+
+/**
+ * The understand call's variables, for the API alone (turns run there): none while the configuration does not name it, as
+ * SITE_ORIGIN without a custom domain; the API then reads its own default (off).
+ */
+export function understandEnvironment(models: PlatformConfig['models']): Record<string, string> {
+  const { understand } = models;
+  if (understand === undefined) return {};
+  return {
+    CORE_UNDERSTAND: understand.enabled ? 'on' : 'off',
+    ...(understand.modelId === undefined ? {} : { MODEL_UNDERSTAND_ID: understand.modelId }),
+    ...(understand.think === undefined ? {} : { MODEL_UNDERSTAND_THINK: understand.think }),
+  };
 }
 
 /** Foundation model behind an inference profile id (`global.amazon.x` -> `amazon.x`). */

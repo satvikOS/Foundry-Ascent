@@ -140,8 +140,10 @@ _PICK_LEAD = r"^\W*(?:(?:so|then|yes|no|now|for now|i'd|i would|you should|my (?
 
 
 def _picked(option: str, sentence: str) -> bool:
-    # A short option is a whole word ("no" is not "now"); a longer one may be inflected ("consult", "consulting").
-    word = rf"\b{re.escape(option)}" + (r"\b" if len(option) < 4 else r"\w*")
+    # A short option is a whole word ("no" is not "now"); a longer one, or one with a star as in the facts, may be inflected
+    # ("consult", "consulting").
+    stem = option.rstrip("*")
+    word = rf"\b{re.escape(stem)}" + (r"\b" if len(stem) < 4 and stem == option else r"\w*")
     if _OPTION_VERB.match(option) and re.search(_PICK_LEAD + word, sentence, re.IGNORECASE):
         return True
     return bool(

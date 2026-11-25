@@ -365,13 +365,13 @@ export async function keepDecided(
       metadata: { how: 'founder_words' },
     });
   }
-  if (applied?.stage != null)
-    await pathRepo.advanceStage(tx, {
-      ventureId,
-      stage: applied.stage,
-      order: stageOrder(playbook),
-      playbookVersion: playbook.version,
-    });
+  // The stage this turn stands at is the path's from now on (what they reported, or the program's change of it).
+  await pathRepo.advanceStage(tx, {
+    ventureId,
+    stage: decision.state.stage,
+    order: stageOrder(playbook),
+    playbookVersion: playbook.version,
+  });
   if (step !== null) await keepStep(scope, ids, ventureId, step, sessionId);
   if (completes !== null || applied !== null || pivot !== null)
     await settlePath(scope, ids, playbook, ventureId, args.today);
@@ -380,6 +380,7 @@ export async function keepDecided(
 /** Whether a decision changes anything stored. */
 export function changesPath(decision: Decision): boolean {
   return (
+    decision.begins ||
     decision.completes !== null ||
     decision.applied !== null ||
     decision.pivot !== null ||

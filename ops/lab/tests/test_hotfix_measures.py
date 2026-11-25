@@ -68,6 +68,20 @@ LOG = [
 ]
 
 
+def test_logstats_counts_the_understand_call_by_code_and_channel() -> None:
+    lines = [
+        '{"event":"turn.understand","code":"ok","ms":900,"channel":"text","kind":"sum"}',
+        '{"event":"turn.understand","code":"late","ms":2500,"channel":"text"}',
+        '{"event":"turn.understand","code":"ok","ms":700,"channel":"voice"}',
+        '{"event":"turn.understand","code":"what they said!","ms":"x","channel":"voice"}',
+    ]
+    out = summarize(lines)["understand"]
+    assert out["codes"] == {"ok": 2, "late": 1, "other": 1}
+    assert out["ms"]["text"] == {"p50": 900.0, "p95": 2500.0, "n": 2}
+    assert out["ms"]["voice"]["n"] == 1
+    assert summarize([])["understand"]["codes"] == {}
+
+
 def test_logstats_counts_first_attempt_failures_by_purpose_and_groups_issue_codes() -> None:
     out = summarize(LOG)
     turn = out["model_attempts"]["turn"]

@@ -422,6 +422,8 @@ export class NovaProvider implements StructuredProvider {
   readonly #claudeEffort: ConverseReasoningEffort | null;
   /** Bedrock refused a request that reasons: this instance asks for no reasoning from then on. */
   #thinkRefused = false;
+  /** Bedrock refused a forced tool beside reasoning: a request that reasons asks for the tool in words from then on. */
+  #thinkAsksTool = false;
   /** Bedrock refused a request with cache checkpoints: this instance sends none from then on. */
   #cacheRefused = false;
   #useProfile = false;
@@ -731,10 +733,14 @@ export class NovaProvider implements StructuredProvider {
     let maxTokens = request.maxOutputTokens;
     let openAi = this.#openAi;
     let dropped: string[] = [];
+    let think = thinksOnRequest(this.modelId) && !this.#thinkRefused ? (request.think ?? null) : null;
 
     for (;;) {
       const modelId = this.effectiveModelId;
       const started = performance.now();
+      const cancelledBeforeSend = deadline.aborted;
+      const toolChoice: ToolChoice =
+        think !== null && this.#thinkAsksTool ? { auto: {} } : this.#toolChoice(modelId, openAi);
       let output: ConverseCommandOutput;
       try {
         output = await this.#converse(
@@ -742,7 +748,7 @@ export class NovaProvider implements StructuredProvider {
             modelId,
             system: prompt.system,
             messages,
-            ...this.#modelConfig(modelId, maxTokens, request.temperature, openAi),
+            ...this.#modelConfig(modelId, maxTokens, request.temperature, openAi, think),
             toolConfig: {
               tools: [
                 {
@@ -753,20 +759,28 @@ export class NovaProvider implements StructuredProvider {
                   },
                 },
               ],
-              toolChoice: this.#toolChoice(modelId, openAi),
+              toolChoice,
             },
           },
           deadline.signal,
         );
       } catch (error) {
         const mapped = mapAwsError(error, deadline, modelId);
+        const outcome = mapped.reason === 'config' ? 'client_error' : mapped.reason;
         rawAttempts.push({
           provider: 'nova',
           modelId,
           kind,
-          outcome: mapped.reason === 'config' ? 'client_error' : mapped.reason,
+          outcome,
           latencyMs: Math.round(performance.now() - started),
-          usage: { inputTokens: 0, outputTokens: 0 },
+          usage: request.estimateCut
+            ? estimatedStreamUsage({ ...request, maxOutputTokens: maxTokens }, '', {
+                outcome,
+                opened: false,
+                cancelledBeforeSend,
+                reasoning: think !== null || this.#oss,
+              })
+            : { inputTokens: 0, outputTokens: 0 },
           ...(prompt.cachePoints > 0 ? { cachePoints: prompt.cachePoints } : {}),
           errorName: mapped.errorName,
           ...(dropped.length > 0 ? { issues: dropped } : {}),
@@ -774,6 +788,19 @@ export class NovaProvider implements StructuredProvider {
         if (this.#profileRetry(error, kind)) {
           this.#useProfile = true; // cached for every later call on this instance
           kind = 'profile_retry';
+          continue;
+        }
+        // The reasoning first, as a stream drops it; but a forced tool beside it goes before it does.
+        if (think !== null && kind !== 'repair' && isRefusedRequest(error)) {
+          const forced = toolChoice.tool !== undefined;
+          if (forced && error instanceof Error && /tool[_ ]?choice/i.test(error.message)) {
+            this.#thinkAsksTool = true; // for every later call on this instance
+            dropped = [...dropped, 'dropped:tool_choice'];
+          } else {
+            think = null;
+            dropped = [...dropped, 'dropped:reasoning_config'];
+          }
+          kind = 'field_retry';
           continue;
         }
         if (this.#cacheRetry(error, prompt.cachePoints, kind)) {
@@ -809,6 +836,7 @@ export class NovaProvider implements StructuredProvider {
         return fail(mapped);
       }
       // Bedrock took the request without them: for every later call on this instance.
+      if (dropped.includes('dropped:reasoning_config')) this.#thinkRefused = true;
       if (dropped.length > 0 && openAi !== null) this.#openAi = openAi;
 
       const latencyMs = Math.round(performance.now() - started);
@@ -866,6 +894,8 @@ export class NovaProvider implements StructuredProvider {
       if (repairs >= this.#maxRepairAttempts || deadline.remainingMs() < MIN_REPAIR_BUDGET_MS) break;
       repairs += 1;
       kind = 'repair';
+      // A repair puts a form right: nothing left to reason about.
+      think = null;
       // Cut off at the output bound: the repair gets room to finish (a second answer at the same bound would be
       // cut off again).
       if (truncated) maxTokens = Math.max(maxTokens, Math.min(maxTokens * 2, MAX_REPAIR_OUTPUT_TOKENS));

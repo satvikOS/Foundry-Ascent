@@ -15,8 +15,10 @@ in `packages/core/src/path/playbook/`; everything here is the machinery that rea
 | `state.ts`, `progress.ts`        | Stage and criteria from the stored path and the record; work a founder reports ("8 of 10")                                    |
 | `steps.ts`                       | One step: from its row or its play, cut to the time they have, taken up again, as it is shown                                 |
 | `engine.ts`                      | `decide(input) -> Decision`: pure (no I/O, model or clock); the turn's step, the path's own, what follows                     |
+| `understood.ts`                  | A checked reading as the turn uses it: who decides, the one opening, the first action                                         |
 | `calc.ts`, `calc-read.ts`        | The sums students ask for, from the numbers they gave and their roles; the one number that is missing                         |
 | `reading.ts`                     | What they have and what is missing for a judgement, and the program's answer to it made for them                              |
+| `price-change.ts`, `stated.ts`   | The line a changed price has to beat; who, today and why them of the page, in their words                                     |
 | `heard.ts`                       | What a call heard badly, put right from the venture's own words                                                               |
 | `news.ts`, `tell.ts`             | What news means, by rule; the record said as a mentor says it, the one prior fact, the story                                  |
 | `brief.ts`, `turn.ts`            | The founder brief (at most 1,200 characters), the arc, and what the prompt and the record carry                               |
@@ -35,6 +37,8 @@ A turn's step is the step of what the message is about, never the path's own ste
    ticks. Otherwise it is **offered**: `TurnGuidance.offered`, not stored, with the path's own step in `pathStep`. Nothing
    displaces a step in the founder's own words.
 2. **A follow-up** with no ask of its own stays on the step of the turn before (its stored guidance, in this conversation).
+   How to do one of its parts, in words of that part (`partAsked`), is answered by that part; what is never shared answers
+   only a message about what others here do (`namesOthers`).
 3. **"Get me organised", what next, a report, a recall, the start of a conversation**: the path's own step.
 4. **Another idea** (not this venture's): the first step of the first stage, offered beside the path.
 5. **What they just told** that moves the customer, whatever the path's own step is (`engine.ts` `NEWS_PLAYS`): somebody
@@ -47,7 +51,8 @@ there is none), `tick`, `complete`, or "I'll do that" in the conversation (then 
 What they were shown is what is stored (`pathRepo.shownStep`).
 
 "That's too much", "I only have an hour", "exam week", "something smaller": the same step, same id, cut to its first items
-that fit the minutes, done when those are, due soon. Finishing the small part brings the rest of it back.
+that fit the minutes, done when those are, due soon. Finishing the small part brings the rest of it back. A step that is only offered is kept in its smaller form
+(status `later`, not on the path): asked again, it is that step and no other.
 
 A message in distress, or that only says how hard their life is (`isHardship`), gets no step when it asks nothing of the
 work, and is never matched to a play by meaning. Anger at the work or at the advice ("this is useless", "ugh") does: every
@@ -120,6 +125,9 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
   person decides (what can be said and by when, never the ruling: `holdsAnswer`), "do I need one now?" by their stage, what a
   finding means for what they build (`readMeaning`), a doubter's doubt of a pick, a no, "is it worth my hours?", "what did you
   tell me to do?", how the others seem to do, friends' praise.
+- **One reading** (`validators/second-reading.ts`): under a lead that read a result or worked a sum, the model's own reading of
+  it ("What this shows is…") goes, as do a number it refuses, their message said back, and a question of something nobody
+  told of. A market asked for in dollars is the sum with what they told in it, and the one number to get (`marketLead`).
 - **Two things asked** (`parts`) are listed for the model to answer one after the other, and what they set ("10", "this
   month", "one evening": `limits`) is to be kept to; a part or a limit the reply leaves out is said from the play.
 - **Nothing twice** (`validators/said-before.ts`): a sentence an earlier reply said, or this one above, is left out, typed and
@@ -178,7 +186,7 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
     ("raise it by 2") or another currency means it says nothing. Below zero is told only when price and costs are both
     explicit. It covers what one leaves (several costs, a share taken), so many less a fixed cost, a month, break-even, an
     hour, a quarter hour, shares and churn, the same share again, two groups compared, what a customer cost, the price that
-    keeps a share, what it takes to start, payback, runway, and follow-ups ("and if I do sixty a week?"). With one number
+    keeps a share, a price raised or cut with both prices known (`price-change.ts`: the share of buyers it must keep), what it takes to start, payback, runway, and follow-ups ("and if I do sixty a week?"). With one number
     missing and nothing that could be it, that number is the question.
   - Otherwise (`PromptGuidance.asksSum`) the model writes the sum as a **marker**, `[[a - b dollars]]`, and never its result
     (`packages/ai` `validators/sums.ts`). The gate works it out and says it: "a - b = c dollars", on a call "a minus b, so c
@@ -187,6 +195,10 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
     be read never reaches the founder. What is stored is what was shown.
   - A sum the model works out itself all the same ("a minus b leaves c") is checked: a wrong result is put right when its
     numbers are theirs and it reads one way, else it goes; nothing after it builds on the wrong one.
+  - A figure the model works out in plain words from given numbers it shows (`validators/worked.ts`: a share of an amount, an amount
+    over a percentage, up to three numbers in a row, "90k", "$0.6 million") is no invented one and stays; where a sum was asked, so
+    does one in the shape of a sum of theirs, and the figure is the whole answer. One that nothing given comes to goes, and a sum
+    nobody could work out asks for its amounts, never the step's parts.
 - **The method** (`validators/method.ts`): a sentence of the model's that contradicts what the programme teaches, or reads
   more into a fact than it shows, is put right or left out, unit by unit as it streams and again in the whole reply. A
   question about the future to ask someone ("How much would you pay?") becomes the programme's own about the past (a fixed
@@ -203,6 +215,8 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
   `JUDGEMENT_PLAYS`, "is that good?", "what am I missing?") and an ask nothing answers, the turn's part of the prompt says
   what a reading holds: what the fact shows, what it does not, another explanation, what would change the mind, one verdict.
   Every other turn pays nothing for it.
+- **Understand first** (`orchestrator/understand.ts`, `CORE_UNDERSTAND`, off): a short structured call may read the message against
+  the record before the path decides; code keeps what it can check (docs/architecture/understand.md).
 - **Reasoning first** (`orchestrator/think.ts`, `CORE_THINK=off|judgement|typed`, off): Nova 2 may reason at low effort
   before a typed reply that judges something, or before every typed coaching reply; never on a call, a recall, a social turn
   or a crisis. The lead and the card are shown before it starts. docs/runbooks/latency.md, "Reasoning before a reply".
@@ -218,12 +232,58 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
   plan, a denial is not counted. A number taken back ("seven, not ten") is the number from then on, and what it had reached
   is open again.
 
+## Resting on a reading
+
+With a checked reading of the message (`PathTurnInput.understanding`, docs/architecture/understand.md) the turn rests on it;
+without one, or with one that says nothing, every decision, prompt and reply is the same to the byte. A reading is set aside on
+a crisis, a rehearsal, a social turn, and a wellbeing or conflict risk. What a report, a commitment or a pivot writes is never
+the reading's. A message that is only about how they feel has no step; one that also asks something of the work is answered
+although it is in distress (`contractApplies`).
+
+**Who decides** where the rules and the reading disagree is one table, `understood.ts` `PRECEDENCE`; the first row that holds
+decides, and each row is a test.
+
+| What     | The rules decide when                                                                                                                                                        | The reading decides when                                              | Otherwise                    |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------- |
+| kind     | their own report, commitment or smaller ask; a change of direction, another idea; something done with the conversation (said again, the template, when it is enough, a plan) | any other message                                                     |                              |
+| recall   | a phrase asks for the record and the reading finds no sum, pick, result or contradiction in it                                                                               | it reads a recall                                                     | the reading                  |
+| play     | a referral's phrase; what is never shared; a push on either; a report, change or operation; a phrase, when the reading is not sure of another                                | it is sure of a play; it names one, or who decides, and no phrase did | the rules (meaning, or none) |
+| step     | a report, change or operation; a referral's phrase or what is never shared; a recall                                                                                         | it names the step, a play or who decides                              | the step they are on         |
+| referral | the rules find one                                                                                                                                                           | the rules find none                                                   | none (never taken away)      |
+| sum      | both come to the same figure (the calculator's words); the reading has none and the calculator is sure                                                                       | it works out what they ask                                            | what is missing              |
+| choice   | both name the same option (their counts say why); the reading picks none                                                                                                     | it picks                                                              | none                         |
+| opening  | a report, change or operation; the record's own shapes (story, which idea, has and has not)                                                                                  | any other message                                                     |                              |
+
+- **The step** is the reading's when the playbook has it and it is the ask's own play or of a stage next to theirs; who decides
+  comes before anything else. It is offered beside an open step, which is never replaced in storage by a reading, and not given
+  when the open one is about the same thing, or when they only ask for a figure of their own. A step that is not about the ask
+  only stands ("On your path, next is:").
+- **One opening** (`openingsOf`): the sum with its working, the number that is missing (then the reply's one question), what their
+  record denies, what a person decides (no yes, no no, no price), the pick with what would change it, the result (what it shows,
+  what it does not, what settles it), a push (what is not known, their numbers, the test and its day), a refusal of made-up work,
+  the record. Asked for a figure, the figure is first; otherwise what the record denies. The others go to the writer as claims. No
+  canned reading of news or judgement opens.
+- **The writer** (`renderGuidance`, `PromptGuidance.reading`) gets what they ask, the claims to make, the record lines, what not to
+  say and, short, the program's method, in place of the program's lines: shorter than without a reading. The claims stand when it
+  writes too little; of several things at once each is said, in order, after one sentence that they were heard.
+- **What stands beside it** (`validators/reading.ts`): under an opening a sentence stays only when it adds a figure, a name, a fact,
+  a claim or something to do; a bare verdict goes; nothing agrees with what was denied, rules on what a person decides, defends
+  itself to a push, or names friends as evidence for made-up work.
+- **`**Start with:**`** (`firstActionOf`): the one thing to do first, before the step line, only when one can start on it, it sets no
+  day of its own, says more than the step and belongs to it; on a call it is part of the step's sentence.
+- **A record line** is added whole, and only when the reply names none of the reading's.
+
 ## Rules the code keeps
 
 - **One id per step.** A step's id is derived (venture, play, origin, how often the play was closed): known before it is
   stored, the same in every conversation; two turns that give it at once insert one row.
-- **Stage.** The furthest of: the stage the path reached, the program's stage when the venture's record holds work of its
-  own, and every stage whose criteria are all claimed or met. It goes back in one case only: a change of direction.
+- **Stage.** The furthest of: the stage the path reached, every stage whose criteria are all claimed or met, and the
+  program's: before the path has begun when the record holds work of its own (seeded, imported, from before), afterwards
+  only when the program set another one than it had then (`venture_paths.program_stage`, migration 0037). The first turn that
+  gives a step, offered or not, begins the path and fixes its start; nothing noted later moves it. It goes back in one case
+  only: a change of direction, which also takes the program's stage of its day.
+- **What the mentor kept by itself** (origin `ai`, approved or corrected by nobody) is no work of the venture's: it counts for
+  a criterion only when its own sentence says it happened, with more than the idea again, and no plan in it.
 - **The record claims, plans do not.** Confirmed evidence, experiments with a result, decisions, milestones and facts claim
   a criterion (a count it asks for must be reached); hypotheses, offers, plans and proposals never do.
 - **Due dates.** Today plus the play's days, on a weekday, pulled in by a deadline in the intake. A step past its day is

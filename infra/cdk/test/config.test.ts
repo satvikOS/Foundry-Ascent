@@ -457,6 +457,20 @@ describe('config', () => {
     expect(refused({ ...background, primary: 'Nova Lite' })).toThrow(/models.background.primary/);
   });
 
+  it('reads the understand call’s settings: on or off, its model, whether it reasons', () => {
+    const understand = { enabled: true, modelId: 'openai.gpt-oss-120b-1:0', think: 'low' as const };
+    const read = (value: unknown) =>
+      parseConfig(withChange(['models', 'understand'], value)).models.understand;
+    expect(read(understand)).toEqual(understand);
+    expect(read({ enabled: false, note: 'why' })).toEqual({ enabled: false });
+    expect(parseConfig(valid()).models.understand).toBeUndefined();
+    expect(() => read({})).toThrow(/models.understand.enabled/);
+    expect(() => read({ enabled: 'yes' })).toThrow(/models.understand.enabled/);
+    expect(() => read({ ...understand, modelId: 'GPT OSS' })).toThrow(/models.understand.modelId/);
+    expect(() => read({ ...understand, think: 'high' })).toThrow(/models.understand.think/);
+    expect(() => read({ ...understand, model: 'x' })).toThrow(/models.understand.model/);
+  });
+
   it('lists as background purposes exactly the gateway’s model purposes but speech and embedding', () => {
     const types = readFileSync(join(REPO_ROOT, 'packages', 'ai', 'src', 'gateway', 'types.ts'), 'utf8');
     const list = /export const MODEL_PURPOSES = \[([^\]]*)\]/.exec(types)?.[1] ?? '';

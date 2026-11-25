@@ -22,6 +22,7 @@ over it at run time from the client's pack, which is never committed.
 | `c13-memory.yaml`     | memory      | one founder, five sessions over six weeks, a pivot and a pivot back               |
 | `c14-hard.yaml`       | hard        | two ventures mixed, a hard critique, broken English, one ask four ways, a page    |
 | `c15-heldout.yaml`    | heldout     | sixteen held-out conversations, played only when named; never tuned against       |
+| `c16-heldoutb.yaml`   | heldoutb    | sixteen more, written after the first were read; played only when named           |
 
 The judge's hand-graded set is beside this folder (`../client-calibration.yaml`).
 

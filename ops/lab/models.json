@@ -1,5 +1,5 @@
 {
-  "$comment": "Models the conversation lab (docs/runbooks/conversation-lab.md) calls itself, besides the app's own models from infra/cdk/config/production.json. Each list is tried in order; the first model that answers a one-token probe is used, and the run prints which. The FoundryAscent-ConversationLab role (infra/cdk/src/stacks/foundation-stack.ts) may invoke exactly these ids and the app's. Prices: Amazon Bedrock on-demand, us-east-1, USD per million tokens (checked 2026-10-17); the lab meters its own calls with them. The live suite (conversation_lab/live) uses its own lists under \"live\": a simulator and a judge from model families other than the app's (Amazon Nova), falling back to Nova when the account has not enabled them; the run reports which family played and judged. Their prices are the higher of the published on-demand figures checked 2026-11-05 (verify on the Bedrock pricing page): metering high keeps the hard caps safe. The production coach is Amazon Nova 2 Lite (infra/cdk/config/production.json, ADR-0024), so the live suite's judge on auto is the first \"judge\" candidate of another family: Claude Haiku 4.5, then Llama 4 Maverick (Nova Premier never judges a Nova coach). The live suite's \"coach\" list holds the alternative coach models a lab run may put the app's coach on for an A/B (the coach_model input of ops-live-evals.yml; the lab's API process only, never production's configuration): Nova 2 Lite (production's coach since 2026-11-24, here as primary and fallback alone), Claude Sonnet 4.6 and GPT-6 Luna (ADR-0024; its input is priced at its cache-write rate, the most a Luna input token can be billed). Claude prices are the us. (regional) on-demand rates, 10% above the global list price. The client suite (conversation_lab/client) has its own lists under \"client\": a strict judge (Claude Haiku 4.5 for a Nova or Luna coach; never one of the coach's family), and the coach models its coach_model input may put the lab's API process on (Claude Haiku 5.5, released 2026-10-07, at the us. rate for prompts up to 100,000 tokens, its input at the cache-write rate; GPT-6 Luna): benchmark and A/B only, production unchanged. The open-weight candidates (gpt-oss 120B and 20B, Qwen3 Next 80B A3B, DeepSeek V3.2, Mistral Large 3: coach and benchmark, production unchanged) are served in us-east-1 under their bare runtime ids, with no inference profile (their Bedrock model cards, checked 2026-11-25); their prices are the standard on-demand rates of the AWS Price List API (offer AmazonBedrock, us-east-1, published 2026-11-23; https://aws.amazon.com/bedrock/pricing/ lists the same, but for Qwen3 Next's input, USD 0.15 there against 0.14: the higher is used). \"benchmark\" is the models suite (conversation_lab/models_bench.py): reasoning models (each at the reasoning efforts listed; for Nova 2 Lite, low is its extended thinking on the streamed replies, as CORE_THINK asks for it), embedding models (at the vector sizes listed) and rerankers it compares, with production's own search measured on each model's vectors; a candidate the account cannot call is reported by its AWS error code, never fatal. Embedding and reasoning prices there are packages/ai/src/pricing.ts's; a reranker is billed per query (at most 100 documents), in the region named (Amazon Rerank 1.0 is not offered in us-east-1).",
+  "$comment": "Models the conversation lab (docs/runbooks/conversation-lab.md) calls itself, besides the app's own models from infra/cdk/config/production.json. Each list is tried in order; the first model that answers a one-token probe is used, and the run prints which. The FoundryAscent-ConversationLab role (infra/cdk/src/stacks/foundation-stack.ts) may invoke exactly these ids and the app's. Prices: Amazon Bedrock on-demand, us-east-1, USD per million tokens (checked 2026-10-17); the lab meters its own calls with them. The live suite (conversation_lab/live) uses its own lists under \"live\": a simulator and a judge from model families other than the app's (Amazon Nova), falling back to Nova when the account has not enabled them; the run reports which family played and judged. Their prices are the higher of the published on-demand figures checked 2026-11-05 (verify on the Bedrock pricing page): metering high keeps the hard caps safe. The production coach is Amazon Nova 2 Lite (infra/cdk/config/production.json, ADR-0024), so the live suite's judge on auto is the first \"judge\" candidate of another family: Claude Haiku 4.5, then Llama 4 Maverick (Nova Premier never judges a Nova coach). The live suite's \"coach\" list holds the alternative coach models a lab run may put the app's coach on for an A/B (the coach_model input of ops-live-evals.yml; the lab's API process only, never production's configuration): Nova 2 Lite (production's coach since 2026-11-24, here as primary and fallback alone), Claude Sonnet 4.6 and GPT-6 Luna (ADR-0024; its input is priced at its cache-write rate, the most a Luna input token can be billed). Claude prices are the us. (regional) on-demand rates, 10% above the global list price. The client suite (conversation_lab/client) has its own lists under \"client\": a strict judge (Claude Haiku 4.5 for a Nova or Luna coach; never one of the coach's family), and the coach models its coach_model input may put the lab's API process on (Claude Haiku 5.5, released 2026-10-07, at the us. rate for prompts up to 100,000 tokens, its input at the cache-write rate; GPT-6 Luna): benchmark and A/B only, production unchanged. The open-weight candidates (gpt-oss 120B and 20B, Qwen3 Next 80B A3B, DeepSeek V3.2, Mistral Large 3: coach and benchmark, production unchanged) are served in us-east-1 under their bare runtime ids, with no inference profile (their Bedrock model cards, checked 2026-11-25); their prices are the standard on-demand rates of the AWS Price List API (offer AmazonBedrock, us-east-1, published 2026-11-23; https://aws.amazon.com/bedrock/pricing/ lists the same, but for Qwen3 Next's input, USD 0.15 there against 0.14: the higher is used). \"benchmark\" is the models suite (conversation_lab/models_bench.py): reasoning models (each at the reasoning efforts listed; for Nova 2 Lite, low is its extended thinking on the streamed replies, as CORE_THINK asks for it), embedding models (at the vector sizes listed) and rerankers it compares, with production's own search measured on each model's vectors; a candidate the account cannot call is reported by its AWS error code, never fatal. Embedding and reasoning prices there are packages/ai/src/pricing.ts's; a reranker is billed per query (at most 100 documents), in the region named (Amazon Rerank 1.0 is not offered in us-east-1). \"understand\" is the understand suite (conversation_lab/understand_bench.py; docs/architecture/understand.md): the models the understand call of a turn is compared on, each at the reasoning efforts listed, and the ones the client suite's understand_model input may name (the lab's API process only). Nova Micro and Nova Lite are metered at their published on-demand list prices (cached tokens at the full input rate).",
   "simulator": ["us.amazon.nova-pro-v1:0", "us.amazon.nova-2-lite-v1:0"],
   "judge": ["us.amazon.nova-premier-v1:0", "us.amazon.nova-pro-v1:0"],
   "usdPerMillionTokens": {
@@ -54,6 +54,14 @@
     "mistral.mistral-large-3-675b-instruct": {
       "input": 0.5,
       "output": 1.5
+    },
+    "amazon.nova-micro-v1:0": {
+      "input": 0.035,
+      "output": 0.14
+    },
+    "amazon.nova-lite-v1:0": {
+      "input": 0.06,
+      "output": 0.24
     }
   },
   "live": {
@@ -83,6 +91,32 @@
       "mistral.mistral-large-3-675b-instruct"
     ]
   },
+  "understand": [
+    {
+      "id": "us.amazon.nova-2-lite-v1:0",
+      "efforts": ["none", "low"]
+    },
+    {
+      "id": "openai.gpt-oss-120b-1:0",
+      "efforts": ["low"]
+    },
+    {
+      "id": "openai.gpt-oss-20b-1:0",
+      "efforts": ["low"]
+    },
+    {
+      "id": "qwen.qwen3-next-80b-a3b",
+      "efforts": []
+    },
+    {
+      "id": "us.amazon.nova-micro-v1:0",
+      "efforts": []
+    },
+    {
+      "id": "us.amazon.nova-lite-v1:0",
+      "efforts": []
+    }
+  ],
   "benchmark": {
     "reasoning": [
       {

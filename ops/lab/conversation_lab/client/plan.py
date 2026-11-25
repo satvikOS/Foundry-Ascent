@@ -28,6 +28,9 @@ SIMULATOR_TOKENS = (560, 40)
 #: allows 2,000), and the share of the typed turns that do.
 THINK_TOKENS = 700
 THINK_SHARE = {"judgement": 0.5, "typed": 1.0}
+#: The understand call of a turn, in and out (its prompt is mostly the provider's cached prefix, so fewer tokens are paid
+#: for than it reads; not measured yet, so planned high).
+UNDERSTAND_TOKENS = (5_000, 420)
 #: The most a run is planned at: what is left to USD 2 is for what an estimate does not see.
 PLAN_LIMIT_USD = 1.8
 
@@ -87,6 +90,8 @@ def estimate(
     simulator: str | None,
     calibration_cases: int = 0,
     think: str = DEFAULT_THINK,
+    understand: bool = False,
+    understand_model: str | None = None,
 ) -> Estimate:
     factor = coach_cost_factor(prices, coach)
     turns = sum(s.turns for s in scenarios)
@@ -106,11 +111,14 @@ def estimate(
         output = prices[foundation_model_id(coach or COACH_BASELINE_MODEL)].output
         # The ``us.`` profile is billed 10% above the global rate the price list holds.
         app += thought * output * 1.1 / 1_000_000
+    if understand:
+        reader = prices[foundation_model_id(understand_model or coach or COACH_BASELINE_MODEL)]
+        app += turns * _tokens_usd(reader, UNDERSTAND_TOKENS) * 1.1
     return Estimate(len(scenarios), turns, judged, round(app, 4), round(lab, 4))
 
 
 def parse_groups(text: str) -> tuple[str, ...]:
-    """``numbers,news`` -> the groups, in run order; empty: every group but the held-out one (``in_groups``)."""
+    """``numbers,news`` -> the groups, in run order; empty: every group but the held-out ones (``in_groups``)."""
     named = [g.strip() for g in (text or "").split(",") if g.strip()]
     unknown = sorted(set(named) - set(GROUPS))
     if unknown:
@@ -134,6 +142,8 @@ def refusal(
     coach: str | None,
     judge: str | None,
     think: str = DEFAULT_THINK,
+    understand: bool = False,
+    understand_model: str | None = None,
 ) -> str | None:
     """Why the run must not start (its estimate does not fit), in numbers and group names; None when it may."""
     limit = min(budget_usd, PLAN_LIMIT_USD)
@@ -143,7 +153,16 @@ def refusal(
     for group in GROUPS:
         mine = [s for s in scenarios if s.group == group]
         if mine:
-            one = estimate(mine, prices=prices, coach=coach, judge=judge, simulator=None, think=think)
+            one = estimate(
+                mine,
+                prices=prices,
+                coach=coach,
+                judge=judge,
+                simulator=None,
+                think=think,
+                understand=understand,
+                understand_model=understand_model,
+            )
             parts.append(f"{group} {one.total_usd:.2f}")
     return (
         f"the {found.turns} turns and {found.judged} judged replies of {found.scenarios} scenarios are estimated at USD "

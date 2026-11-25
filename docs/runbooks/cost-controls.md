@@ -32,6 +32,10 @@ Reasoning before a reply (`CORE_THINK`, off) is output like any other on Nova 2 
 profile): at most 2,000 tokens more a turn (USD 0.0055), planned at 700 (USD 0.002) by the lab. It is in the `outputTokens`
 Bedrock reports, so it is metered and capped as every call is.
 
+Reading a message first (`CORE_UNDERSTAND`, off; docs/architecture/understand.md) is one more call a turn: about 7,200 tokens in (some
+5,700 of them a prefix the provider caches) and 420 out, planned by the lab at USD 0.003 on Nova 2 Lite and not measured yet. It is
+metered as `turn`, an attempt its budget cut off included, so the caps count it.
+
 At the default global cap of **$15.00/day**, AI spend (models, embeddings, distillation and speech) is at
 most ≈ $450/month, about 2,500 Nova turns a day at the uncached ≈ $0.006. The per-person cap is **$1.00/day** and counts a person's
 models, embeddings and distillation, **not call speech** (usage purpose `speech`), so a call never ends early

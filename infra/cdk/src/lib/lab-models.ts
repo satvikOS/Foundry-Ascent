@@ -42,6 +42,11 @@ export interface LabModels {
    */
   readonly client: { readonly judge: readonly string[]; readonly coach: readonly string[] };
   /**
+   * The models the understand call of a turn is compared on (`understand` in models.json; ops/lab
+   * conversation_lab/understand_bench.py), and the client suite's `understand_model`. Empty when the file has no section.
+   */
+  readonly understand: readonly string[];
+  /**
    * The models suite's candidates (`benchmark` in models.json; ops/lab conversation_lab/models_bench.py): reasoning
    * models, embedding models and rerankers compared before the app uses any. Empty when the file has no section.
    */
@@ -136,6 +141,10 @@ export function parseLabModels(raw: unknown): LabModels {
       coach: modelList(c.coach, '$.client.coach', 10),
     };
   }
+  const understand =
+    root.understand === undefined
+      ? []
+      : candidates(root.understand, '$.understand', 8, (_item, modelId) => modelId);
   const prices = root.usdPerMillionTokens;
   if (typeof prices !== 'object' || prices === null || Array.isArray(prices))
     fail('$.usdPerMillionTokens', 'must be an object');
@@ -162,11 +171,20 @@ export function parseLabModels(raw: unknown): LabModels {
     ...live.coach,
     ...client.judge,
     ...client.coach,
+    ...understand,
   ]) {
     if (!Object.hasOwn(usdPerMillionTokens, foundationModelId(id)))
       fail('$.usdPerMillionTokens', `has no price for ${foundationModelId(id)}`);
   }
-  return { simulator, judge, live, client, benchmark: parseBenchmark(root.benchmark), usdPerMillionTokens };
+  return {
+    simulator,
+    judge,
+    live,
+    client,
+    understand,
+    benchmark: parseBenchmark(root.benchmark),
+    usdPerMillionTokens,
+  };
 }
 
 export const LAB_MODELS: LabModels = parseLabModels(
@@ -177,7 +195,7 @@ export const LAB_MODELS: LabModels = parseLabModels(
  * Every Bedrock resource the lab invokes: the app's effective reasoning and embeddings models (it runs the app
  * with the production model configuration) and the lab's simulator and judge models, the live evaluation's included,
  * the alternative coach models a lab run may run the app's coach on (`live.coach`, `client.coach`: an A/B, the lab
- * only), the client suite's judges and the models suite's candidates (`benchmark`). Each foundation model is granted where its profiles route (lib/models.ts
+ * only), the client suite's judges, the understand suite's candidates (`understand`) and the models suite's (`benchmark`). Each foundation model is granted where its profiles route (lib/models.ts
  * `runtimeAccess`), the widest of its ways in; a reranker, and a coach or reasoning candidate with no profile (served in
  * region: gpt-oss, Qwen, DeepSeek, Mistral), only in the region it is called in.
  */
@@ -186,7 +204,7 @@ export function conversationLabAccess(
   lab: LabModels,
   region = 'us-east-1',
 ): BedrockRuntimeAccess {
-  const candidates = [...lab.live.coach, ...lab.client.coach, ...lab.benchmark.reasoning];
+  const candidates = [...lab.live.coach, ...lab.client.coach, ...lab.understand, ...lab.benchmark.reasoning];
   const inRegion = [...new Set(candidates.filter((id) => !isInferenceProfile(id)))];
   const own = [
     ...lab.simulator,

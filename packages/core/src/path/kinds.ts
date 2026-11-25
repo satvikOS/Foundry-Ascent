@@ -248,6 +248,25 @@ export function asksHowTo(text: string): boolean {
   return sentences(text).some((s) => HOW_TO.some((r) => r.test(s)));
 }
 
+/** How they would do one thing themselves ("so how exactly do I search for…"). */
+const HOW_WOULD_I =
+  /\b(?:how|where) (?:exactly |even |on earth |the heck |the hell )*(?:do|can|should|would|could|am|will) (?:i|we) (?:even |actually |exactly |best |ever |supposed to |meant to |go about )*[a-z]+/;
+
+/** Which part of the step just given they ask how to do, in words of its own; null: none of them. */
+export function partAsked(text: string, items: readonly { readonly do: string }[]): number | null {
+  const asked = sentences(text).filter((s) => HOW_WOULD_I.test(s));
+  if (asked.length === 0) return null;
+  const words = new Set(contentStems(asked.join(' ')));
+  const best = items
+    .map((item, at) => {
+      const own = contentStems(item.do).filter((w) => !/^\d+$/.test(w));
+      return { at, own: own.length, shared: own.filter((w) => words.has(w)).length };
+    })
+    .filter((x) => x.shared >= 2 && x.shared * 2 >= x.own)
+    .sort((a, b) => b.shared - a.shared)[0];
+  return best?.at ?? null;
+}
+
 const WHEN_DONE =
   /\bhow (?:will|do|would|can|should) (?:i|we) (?:know|tell)(?: that| if| when)? (?:i|we|it|this|that)(?: am| are| is| have|'ve)? (?:done|finished|enough|did|worked|works|good enough|ready|complete|through)\b|\bhow (?:will|do|would|can) (?:i|we) know (?:(?:i|we) have |(?:i|we) |it is |that is |this is )?(?:(?:done )?enough|when to stop|when it is (?:done|enough))\b|\bwhen (?:is|am|are|will) (?:it|this|that|i|we|the step)(?: be)? (?:done|finished|enough|complete|through)\b|\bwhat (?:does|would) (?:done|enough|good enough) (?:look like|mean)\b|\bwhat counts as (?:done|enough|finished)\b|\bhow (?:much|many) is enough\b/;
 
@@ -782,9 +801,25 @@ const PUSHES =
   /\b(?:who (?:exactly |else )?(?:do|should|can|would) (?:i|we) (?:ask|see|talk|speak|go|contact|call|email|meet|write)|what (?:exactly )?(?:do|should) (?:i|we) (?:bring|take|tell|show|say|ask)|lawyers?|attorneys?|you decide|your call|just (?:decide|tell|say|answer|give)|a hint|come on|yes or no|guarantee|promise me|sign(?:ing|ed)?|take it away|off the record|between (?:us|you and me)|hypothetically|said (?:that )?(?:you|it is)|you can tell|you (?:also )?(?:coach|know) (?:them|him|her|that team)|your (?:opinion|guess|view)|what would you do|is (?:that|it) (?:right|legal|allowed|ok|okay|safe)|are you sure|but (?:you|i) (?:must|have to|need)|on (?:the )?(?:\w+ ){0,3}(?:staff|team)|work (?:for|at) the (?:center|program|office)|i am (?:an? )?(?:admin|staff|the program lead|an eir))\b/;
 /** Another try at what another founder does. */
 const ASKS_OF_OTHERS =
-  /\bhints?\b|\bwho else\b|\bother (?:founders?|teams?|students?|ventures?|startups?|people|groups?)\b|\bwhat (?:they|he|she|others) (?:are|is|do|does|charge|charges)\b|\b(?:their|his|her) (?:plan|pitch|price|idea|deck|numbers|customers?)\b|\bsomeone else here\b/;
+  /\bhints?\b|\bwho else\b|\bother (?:founders?|teams?|students?|ventures?|startups?|people|groups?)\b|\bwhat (?:they|he|she|others) (?:are|is|do|does|charge|charges)\b|\b(?:their|his|her) (?:plan|pitch|price|idea|deck|numbers|customers?)\b|\bsomeone else here\b|\bthat (?:team|founder|venture|startup|group)\b/;
+/** People in the program other than them, by any name. */
+const ANOTHER_TEAM =
+  /\b(?:other|another|that|those|someone|somebody|anyone) (?:else )?(?:here|founders?|teams?|students?|ventures?|groups?)\b|\b(?:in|at|of) (?:the|this|my) (?:program|cohort|center|class)\b|\bhints?\b|\b(?:he|she)\b/;
+/** Whether a message is about what others here do or may see: only then is it answered by what is never shared. */
+export function namesOthers(text: string): boolean {
+  const said = plain(text);
+  return (
+    ANOTHER_TEAM.test(said) ||
+    ASKS_OF_OTHERS.test(said) ||
+    /\b(?:private|privacy|confidential|secret|coach(?:es|ed|ing)?|founders?|teams?|cohort|program|classmates?|rivals?|competitors? here)\b/.test(
+      said,
+    )
+  );
+}
 export function pushesOn(text: string, ofOthers = false): boolean {
   const said = plain(text);
+  // "How do I search for similar products if I don't know what they are called?": their own work, and a question of it.
+  if (ofOthers && HOW_WOULD_I.test(said) && !ANOTHER_TEAM.test(said)) return false;
   return PUSHES.test(said) || (ofOthers && ASKS_OF_OTHERS.test(said));
 }
 

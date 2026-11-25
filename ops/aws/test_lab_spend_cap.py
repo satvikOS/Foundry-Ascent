@@ -47,6 +47,8 @@ VALID = {
         "SCENARIO_GROUPS": "",
         "COACH_MODEL": "default",
         "COACH_THINK": "default",
+        "UNDERSTAND": "default",
+        "UNDERSTAND_MODEL": "default",
         "JUDGE_MODEL": "auto",
     },
     LIVE: {
@@ -290,6 +292,15 @@ def test_an_approval_never_lifts_the_hard_ceiling(
     assert rc == 1
 
 
+def test_the_understand_suite_stays_under_the_cap_whatever_was_approved(
+    tmp_path: Path,
+) -> None:
+    assert validate(tmp_path, LAB, "2", SUITE="understand")[0] == 0
+    rc, out, _ = validate(tmp_path, LAB, "7", code("7"), SUITE="understand")
+    assert rc == 1
+    assert "at most USD 2" in out
+
+
 def test_the_runbook_documents_the_cap_and_the_approval() -> None:
     runbook = (REPO / "docs" / "runbooks" / "conversation-lab.md").read_text(
         encoding="utf-8"
@@ -316,6 +327,24 @@ def test_the_runbook_documents_the_cap_and_the_approval() -> None:
         ({"SUITE": "client", "COACH_THINK": "judgement"}, True),
         ({"SUITE": "client", "COACH_THINK": "high"}, False),
         ({"SUITE": "recall", "COACH_THINK": "typed"}, False),
+        ({"SUITE": "client", "UNDERSTAND": "on"}, True),
+        (
+            {"SUITE": "client", "UNDERSTAND": "on", "UNDERSTAND_MODEL": "openai.gpt-oss-120b-1:0"},
+            True,
+        ),
+        ({"SUITE": "understand"}, True),
+        (
+            {"SUITE": "understand", "SCENARIO_GROUPS": "heldout,numbers"},
+            True,
+        ),
+        ({"SUITE": "understand", "UNDERSTAND_MODEL": "qwen.qwen3-next-80b-a3b"}, True),
+        ({"SUITE": "client", "UNDERSTAND": "yes"}, False),
+        ({"SUITE": "client", "UNDERSTAND": "on", "UNDERSTAND_MODEL": "us.amazon.nova-pro-v1:0"}, False),
+        # A model is named for a call that is made.
+        ({"SUITE": "client", "UNDERSTAND_MODEL": "qwen.qwen3-next-80b-a3b"}, False),
+        ({"SUITE": "understand", "UNDERSTAND": "on"}, False),
+        ({"SUITE": "recall", "UNDERSTAND_MODEL": "qwen.qwen3-next-80b-a3b"}, False),
+        ({"SUITE": "understand", "SCENARIO_GROUPS": "$(id)"}, False),
         # A name the suite does not have, text that is no list of names, a model that is no option.
         ({"SUITE": "client", "SCENARIO_GROUPS": "sums"}, False),
         ({"SUITE": "client", "SCENARIO_GROUPS": "numbers;id"}, False),

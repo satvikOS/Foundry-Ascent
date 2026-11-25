@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { loadConfig, type PlatformConfig } from '../src/config.js';
 import {
   effectiveModels,
+  understandEnvironment,
   embeddingsAccess,
   foundationModelId,
   geoDestinations,
@@ -215,6 +216,61 @@ describe('GPT-6 Luna as the coach (ADR-0024: prepared, off)', () => {
         (s) => s.Sid === 'BedrockEmbeddings',
       )?.Resource,
     ).toEqual(foundationModel('amazon.titan-embed-text-v2:0'));
+  });
+});
+
+describe('the understand call (models.understand)', () => {
+  const OSS = 'openai.gpt-oss-120b-1:0';
+  const api = (models: PlatformConfig['models']) => {
+    const { templates } = synthesize({}, { ...loadConfig(), models });
+    const found = (name: string) =>
+      resourcesOfType(templates.app, 'AWS::Lambda::Function').find(([, p]) => p.FunctionName === name)?.[1];
+    const variables = (name: string) =>
+      (found(name)?.Environment as { Variables: Record<string, unknown> } | undefined)?.Variables ?? {};
+    return { templates, variables };
+  };
+
+  it('production names none: no variable is passed and no model is granted for it', () => {
+    const { models } = loadConfig();
+    expect(models.understand).toBeUndefined();
+    expect(understandEnvironment(models)).toEqual({});
+    expect(effectiveModels(models)).not.toHaveProperty('understand');
+    for (const name of ['FoundryAscent-Api', 'FoundryAscent-Worker'])
+      expect(Object.keys(api(models).variables(name)).filter((k) => k.includes('UNDERSTAND'))).toEqual([]);
+  });
+
+  it('is passed to the API alone, and its model granted, when it is set', () => {
+    const models = {
+      ...loadConfig().models,
+      understand: { enabled: true, modelId: OSS, think: 'low' as const },
+    };
+    const { templates, variables } = api(models);
+    expect(variables('FoundryAscent-Api')).toMatchObject({
+      CORE_UNDERSTAND: 'on',
+      MODEL_UNDERSTAND_ID: OSS,
+      MODEL_UNDERSTAND_THINK: 'low',
+    });
+    expect(Object.keys(variables('FoundryAscent-Worker')).filter((k) => k.includes('UNDERSTAND'))).toEqual(
+      [],
+    );
+    expect(effectiveModels(models).understand).toBe(OSS);
+    const runtime = functionPolicyStatements(templates.app, 'FoundryAscent-Api').find(
+      (s) => s.Sid === 'BedrockRuntimeModels',
+    );
+    expect(runtime?.Resource).toEqual(expect.arrayContaining([foundationModel(OSS)]));
+    // OpenAI's open-weight models are Converse's: no Mantle permission.
+    expect(usesMantle(effectiveModels(models))).toBe(false);
+  });
+
+  it('on the coach itself it grants nothing more', () => {
+    const models = { ...loadConfig().models, understand: { enabled: true } };
+    expect(reasoningAccess(effectiveModels(models))).toEqual(
+      reasoningAccess(effectiveModels(loadConfig().models)),
+    );
+    expect(understandEnvironment(models)).toEqual({ CORE_UNDERSTAND: 'on' });
+    expect(understandEnvironment({ ...models, understand: { enabled: false } })).toEqual({
+      CORE_UNDERSTAND: 'off',
+    });
   });
 });
 

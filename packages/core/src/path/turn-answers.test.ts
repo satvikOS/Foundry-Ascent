@@ -548,7 +548,7 @@ describe('what they say back is answered', () => {
       ['x'],
       ['Some reply.'],
     );
-    expect(text).toContain('So one thing, for SailMend');
+    expect(text).toMatch(/^One thing, for SailMend/);
     expect(text).not.toMatch(/,[:,]|It is for your idea/);
   });
 

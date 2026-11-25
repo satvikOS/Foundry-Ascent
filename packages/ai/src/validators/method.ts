@@ -249,6 +249,10 @@ const PRICE_RULE: readonly RegExp[] = [
 const NO_BASIS =
   /\bif (?:it(?:'s| is)?|that(?:'s| is)?|the (?:total|money|profit|sum|amount)|what (?:you keep|is left|'s left)|you keep|you make)(?: is| comes?(?: out)?| ends? up)? (?:higher|more|greater|above|bigger|over|better|lower|less) (?:than )?\$\s?\d[^.;]{0,40}?\b(?:raise|price|fee|increase|change|it) (?:is|was|works|holds|makes sense|was right)\b/iu;
 
+/** "If they don't, you'll know $25 was the right price": a no to one price proves nothing of the other. */
+const OTHER_PRICE_PROVEN =
+  /\byou(?:'ll| will|'d| would) (?:then )?know (?:that )?(?:the )?\$?\s?\d[\d.,]* ?(?:dollars |price )?(?:is|was) (?:the |a )?(?:right|best|correct|better|fair)\b/iu;
+
 /** "Their answer will tell us if there's a paying market", "this will show what price works": what words cannot tell. */
 const WORDS_WILL_TELL =
   /\b(?:(?:their|the|these|those|your) (?:answers?|replies|responses|feedback|survey|results?)|(?:this|that|it)) (?:will|would|should|can|helps?|lets?) (?:also )?(?:(?:us|you|to) )?(?:help (?:us|you) )?(?:tell|show|reveal|prove|confirm|validate|know|see|learn|understand)(?: (?:us|you))? (?:if|whether|how much|what (?:price|they(?:'d| would))|which price|who(?:'d| would)|(?:that )?there(?:'s| is)) ?(?:there(?:'s| is)|they(?:'ll| will|'d| would)? ?(?:pay|buy|use|want)?|people|customers|students|works?|would|the|to charge|a)\b/iu;
@@ -354,6 +358,8 @@ const PRAISE_LINE: readonly RegExp[] = [
 const PRAISED_IDEA =
   /^\s*(?:your|this|that|the) (?:\w+ )?(?:idea|concept|venture|plan|product|approach|startup|business) (?:sounds?|is|looks?|seems?|feels?) (?:already |really |very |so |truly |genuinely |like an? |an? )*(?:exciting|great|amazing|promising|interesting|fantastic|brilliant|impressive|cool|wonderful|excellent|awesome|compelling|clever|smart)\b/iu;
 const FILLER: readonly RegExp[] = [
+  // A plan with nobody, no day and no number in it.
+  /^\s*[^.!?:\d]{0,90}\bdiscuss (?:the |your |our )?next steps\b[^.!?:\d]{0,90}[.!]*\s*$/iu,
   /^\s*(?:(?:that|this|it) is for (?:your|this) idea\b|(?:put|set|hold) (?:that|this|it) (?:beside|next to|against) your idea\b|for you,? that means your idea\b)/iu,
   /^\s*(?:that(?:'s| is) (?:a )?(?:tough|hard|rough|difficult) (?:feeling|spot|place|one),? (?:but|and|so) )?(?:so |now |ok(?:ay)?,? )?let(?:'s| us) (?:just )?look at the (?:facts|numbers|evidence|data)[.!]*\s*$/iu,
   /^\s*we (?:haven't|have not) hit (?:our|the) target\b[^.!?]*[.!]*\s*$/iu,
@@ -822,7 +828,7 @@ export function methodUnit(unit: string, context: MethodContext = {}): MethodUni
   // All of it is a draft in quotes, over several sentences.
   if (own.trim() === '' && (inDraft || /"[^"]*$/u.test(body))) return { text: unit, findings: [] };
   if (PRICE_RULE.some((re) => re.test(own)) && !DENIES.test(own.slice(0, 30))) return out('', 'price_rule');
-  if (NO_BASIS.test(own)) return out('', 'verdict_without_basis');
+  if (NO_BASIS.test(own) || OTHER_PRICE_PROVEN.test(own)) return out('', 'verdict_without_basis');
   const question = QUESTION_END.test(own.trim());
   if (
     !question &&

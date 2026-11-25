@@ -128,6 +128,18 @@ export interface GenerateStructuredRequest<T> {
   maxOutputTokens?: number;
   /** Where the prompt's unchanging prefix ends, for the provider's prompt cache (see {@link PromptCacheHint}). */
   promptCache?: PromptCacheHint;
+  /**
+   * The call of the model named for it (`MODEL_UNDERSTAND_ID`; the purpose's own models when none is), with the purpose's
+   * primary as its fallback. Absent: the purpose's models.
+   */
+  route?: 'understand';
+  /** Let the model reason first, as {@link StreamTextRequest.think} does (default: what the route says, else not). */
+  think?: ThinkEffort;
+  /**
+   * Meter an attempt that was cut off (its deadline, the caller) by an estimate of its prompt: for a call whose budget is
+   * short enough that cut-off attempts are ordinary. Absent: an attempt with no answer costs nothing.
+   */
+  estimateCut?: boolean;
   /** Budget for the primary model including its repair retry. Default 25 000 ms. */
   timeoutMs?: number;
   /** Correlates log lines and ledger rows. */
@@ -245,6 +257,8 @@ export interface ModelGatewayInfo {
   fallbackModelId: string;
   /** The background purposes' own models, or null when every purpose uses the primary and fallback. */
   background: BackgroundModels | null;
+  /** The understand call's own model (`MODEL_UNDERSTAND_ID`); absent: the purpose's primary. */
+  understandModelId?: string;
   embeddingsModelId: string;
   embeddingDimensions: number;
 }

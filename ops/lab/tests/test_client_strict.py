@@ -112,6 +112,9 @@ CASES: dict[str, tuple[list[ReplyTurn], list[ReplyTurn]]] = {
         [
             turn("Your next step: list each cost one kite uses up, by Monday."),
             turn(
+                "**Start with:** Weigh the paper of one kite.\n\n**Next:** List each cost one kite uses up by Monday."
+            ),
+            turn(
                 "List each cost one kite uses up, paper, rods, string and the stall fee.",
                 "That is useless. Give me something real.",
             ),
@@ -151,6 +154,15 @@ CASES: dict[str, tuple[list[ReplyTurn], list[ReplyTurn]]] = {
                 "Finish the table by Friday, as you said. Next: list each cost by Monday.",
                 "I can do it by Friday, is it ok?",
             ),
+            # The one thing to do first stands before the step: one plan, on text and on a call.
+            turn(
+                "It pays.\n\n**Start with:** Weigh the paper of one kite.\n\n"
+                "**Next:** List each cost by Monday, November 30. Done when the list is full."
+            ),
+            turn(
+                "It pays. Your next step: list each cost by Monday, and start with this: weigh the paper of one kite.",
+                channel="call",
+            ),
         ],
         [
             turn(
@@ -165,6 +177,13 @@ CASES: dict[str, tuple[list[ReplyTurn], list[ReplyTurn]]] = {
             ),
             turn("List each cost by Friday. Next: work out what one kite leaves by Monday."),
             turn("Do that by Monday. Your next step: work out what one kite leaves, by Monday."),
+            # Two things to do first, or a day of its own for one, are two plans.
+            turn(
+                "Start with: weigh the paper of one kite.\n\nStart with: ask five parents.\n\nNext: list each cost by Monday."
+            ),
+            turn(
+                "**Start with:** Weigh the paper of one kite by Friday.\n\n**Next:** List each cost by Monday."
+            ),
         ],
     ),
     "no_step_by_model_dates": (

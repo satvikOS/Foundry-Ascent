@@ -84,6 +84,8 @@ export interface BedrockGatewayConfig {
   credentials?: AwsCredentials | AwsCredentialProvider;
   embeddingConcurrency?: number;
   lunaReasoningEffort?: LunaReasoningEffort;
+  /** The understand call's own model and how much it reasons (`MODEL_UNDERSTAND_ID`, `MODEL_UNDERSTAND_THINK`). */
+  understand?: { readonly modelId?: string; readonly think?: ThinkEffort };
   /**
    * OpenAI models on Converse (`us.`/`global.` profiles; `MODEL_REASONING_EFFORT`): how much they reason before
    * answering. Default `none`.
@@ -180,6 +182,9 @@ class BedrockModelGateway implements ModelGateway {
   /** The background purposes' route, or null when there is none. */
   readonly #background: Route | null;
   readonly #backgroundPurposes: ReadonlySet<GatewayPurpose>;
+  /** The understand call's own model; null: the purpose's. */
+  readonly #understand: StructuredProvider | null;
+  readonly #understandThink: ThinkEffort | null;
   readonly #embedder: TitanEmbedder;
   readonly #pricing: PricingTable;
   readonly #logger: ModelLogger;
@@ -208,9 +213,11 @@ class BedrockModelGateway implements ModelGateway {
     const usesConverse =
       (!config.providers?.primary && reasoningAdapterFor(config.primaryModelId) === 'converse') ||
       (!config.providers?.fallback && reasoningAdapterFor(config.fallbackModelId) === 'converse') ||
-      [config.background?.primaryModelId, config.background?.fallbackModelId].some(
-        (id) => id !== undefined && reasoningAdapterFor(id) === 'converse',
-      );
+      [
+        config.background?.primaryModelId,
+        config.background?.fallbackModelId,
+        config.understand?.modelId,
+      ].some((id) => id !== undefined && reasoningAdapterFor(id) === 'converse');
     const needsRuntime =
       (usesConverse && (!config.transports?.converse || !config.transports.converseStream)) ||
       (!config.providers?.embedder && !config.transports?.invokeModel);
@@ -269,6 +276,9 @@ class BedrockModelGateway implements ModelGateway {
             fallback: reasoningProvider(background.fallbackModelId),
           };
     this.#backgroundPurposes = new Set(background?.purposes ?? []);
+    const understandId = config.understand?.modelId;
+    this.#understand = understandId === undefined ? null : reasoningProvider(understandId);
+    this.#understandThink = config.understand?.think ?? null;
     const invokeModel = config.transports?.invokeModel ?? runtime?.invokeModel;
     this.#embedder =
       config.providers?.embedder ??
@@ -292,6 +302,7 @@ class BedrockModelGateway implements ModelGateway {
               fallbackModelId: this.#background.fallback.modelId,
               purposes: [...background.purposes],
             },
+      ...(this.#understand === null ? {} : { understandModelId: this.#understand.modelId }),
       embeddingsModelId: this.#embedder.modelId,
       embeddingDimensions: this.#embedder.dimensions,
     };
@@ -302,10 +313,15 @@ class BedrockModelGateway implements ModelGateway {
   }
 
   /** The providers a purpose is served by. */
-  #routeFor(purpose: GatewayPurpose): Route {
-    return this.#background !== null && this.#backgroundPurposes.has(purpose)
-      ? this.#background
-      : this.#route;
+  #routeFor(purpose: GatewayPurpose, own?: 'understand'): Route {
+    const route =
+      this.#background !== null && this.#backgroundPurposes.has(purpose) ? this.#background : this.#route;
+    return own === undefined || this.#understand === null
+      ? route
+      : {
+          primary: this.#understand,
+          fallback: this.#understand === route.primary ? route.fallback : route.primary,
+        };
   }
 
   /** The request's own sampling temperature: the conversation's, or none (the adapter's default). */
@@ -343,12 +359,14 @@ class BedrockModelGateway implements ModelGateway {
       throw new TypeError(`Unknown model purpose: ${request.purpose}`);
     }
     const started = performance.now();
-    const route = this.#routeFor(request.purpose);
+    const route = this.#routeFor(request.purpose, request.route);
+    const think = request.think ?? (request.route === undefined ? null : this.#understandThink);
     const strict = toStrictJsonSchema(request.zodSchema);
     const maxOutputTokens = request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
     const raw: RawModelAttempt[] = [];
 
-    const run = async (provider: StructuredProvider, timeoutMs: number) => {
+    // The fallback never reasons: it answers for a primary that was late or failed.
+    const run = async (provider: StructuredProvider, timeoutMs: number, thinking: ThinkEffort | null) => {
       const deadline = new Deadline(timeoutMs, request.signal);
       try {
         const result = await provider.generate({
@@ -361,6 +379,8 @@ class BedrockModelGateway implements ModelGateway {
           deadline,
           requestId: request.requestId,
           ...(request.promptCache ? { promptCache: request.promptCache } : {}),
+          ...(thinking === null ? {} : { think: thinking }),
+          ...(request.estimateCut ? { estimateCut: true } : {}),
           ...this.#sampling(request.purpose),
         });
         raw.push(...result.rawAttempts);
@@ -398,7 +418,7 @@ class BedrockModelGateway implements ModelGateway {
 
     let primaryError: unknown;
     try {
-      const result = await run(route.primary, request.timeoutMs ?? this.#primaryTimeoutMs);
+      const result = await run(route.primary, request.timeoutMs ?? this.#primaryTimeoutMs, think);
       return finish(result.value, result.modelId, false);
     } catch (error) {
       if (!shouldFallback(error)) return failWith(error);
@@ -416,7 +436,7 @@ class BedrockModelGateway implements ModelGateway {
           : (primaryError as ModelGatewayError).code,
     });
     try {
-      const result = await run(route.fallback, this.#fallbackTimeoutMs);
+      const result = await run(route.fallback, this.#fallbackTimeoutMs, null);
       return finish(result.value, result.modelId, true);
     } catch (error) {
       return failWith(error);
@@ -595,6 +615,9 @@ const EnvSchema = z.object({
   MODEL_COACH_TEMPERATURE: z
     .union([z.literal(''), z.string().regex(/^(?:0(?:\.\d{1,3})?|1(?:\.0{1,3})?)$/)])
     .optional(),
+  /** The understand call's own model, and whether it reasons first (Amazon Nova 2); empty or unset: neither. */
+  MODEL_UNDERSTAND_ID: z.string().optional(),
+  MODEL_UNDERSTAND_THINK: z.union([z.literal(''), z.literal('low')]).optional(),
   /** The background purposes' own models (all three, or none): see {@link BackgroundModels}. */
   // Empty is unset (the deployed functions always receive the three; empty when there is no background route).
   MODEL_BACKGROUND_PRIMARY_ID: z.string().optional(),
@@ -646,7 +669,8 @@ function backgroundFromEnv(e: z.infer<typeof EnvSchema>): BackgroundModels | nul
  * (`MODEL_PROVIDER`, `MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`, `MODEL_EMBEDDINGS_ID`, `BEDROCK_REGION`), the
  * optional `MODEL_PROMPT_CACHE` (`on` by default, `off` sends no cache checkpoints; the mock ignores it),
  * `MODEL_REASONING_EFFORT` and `MODEL_COACH_TEMPERATURE` (empty is the default), a reranker (`MODEL_RERANK_ID`,
- * `MODEL_RERANK_REGION`; empty is none), and the
+ * `MODEL_RERANK_REGION`; empty is none), the understand call's model (`MODEL_UNDERSTAND_ID`,
+ * `MODEL_UNDERSTAND_THINK`; empty is the purpose's own, not reasoning), and the
  * optional background route (`MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID`,
  * `MODEL_BACKGROUND_PURPOSES`: all three or none).
  * `MODEL_PROVIDER` defaults to `mock` outside production and is mandatory in production.
@@ -666,6 +690,8 @@ export function modelGatewayConfigFromEnv(
   const background = backgroundFromEnv(e);
   if (provider === 'mock') return { provider: 'mock' };
   const rerankId = e.MODEL_RERANK_ID?.trim() ?? '';
+  const understandId = e.MODEL_UNDERSTAND_ID?.trim() ?? '';
+  const understandThink = e.MODEL_UNDERSTAND_THINK === 'low' ? 'low' : null;
   const rerankRegion = (e.MODEL_RERANK_REGION ?? '') === '' ? 'us-west-2' : (e.MODEL_RERANK_REGION ?? '');
   return {
     provider: 'bedrock',
@@ -673,6 +699,14 @@ export function modelGatewayConfigFromEnv(
     primaryModelId: e.MODEL_PRIMARY_ID,
     fallbackModelId: e.MODEL_FALLBACK_ID,
     ...(background === null ? {} : { background }),
+    ...(understandId === '' && understandThink === null
+      ? {}
+      : {
+          understand: {
+            ...(understandId === '' ? {} : { modelId: understandId }),
+            ...(understandThink === null ? {} : { think: understandThink }),
+          },
+        }),
     ...(rerankId === '' ? {} : { reranker: { modelId: rerankId, region: rerankRegion } }),
     embeddingsModelId: e.MODEL_EMBEDDINGS_ID,
     promptCache: e.MODEL_PROMPT_CACHE === 'on',

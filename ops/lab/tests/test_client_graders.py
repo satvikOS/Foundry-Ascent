@@ -153,6 +153,7 @@ CASES: dict[str, tuple[list[ReplyTurn], list[ReplyTurn]]] = {
             turn("Keep going for two weeks, with a pass line.", pick=("keep", "stop")),
             turn("For now, stop selling it and talk to six of them.", pick=("keep", "stop")),
             turn("I'd raise it to 40 for new buyers only.", pick=("40", "raise")),
+            turn("Sell the jars this weekend; Friday can wait.", pick=("friday*", "jar*")),
         ],
         [
             turn(

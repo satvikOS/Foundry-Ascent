@@ -103,9 +103,55 @@ function isShown(m: pathRepo.PathMemory): boolean {
   return true;
 }
 
-/** Whether the venture's record holds work of its own (it then starts at the stage the program has it at). */
-export function hasEvidence(memory: readonly pathRepo.PathMemory[]): boolean {
-  return memory.some((m) => m.status === 'confirmed' && EVIDENCE_TYPES.has(m.type));
+/** A note the mentor kept by itself, that no person has approved or corrected. */
+const isKeptNote = (m: pathRepo.PathMemory): boolean => m.origin === 'ai' && m.vouched !== true;
+
+/** What is not done yet, however it is kept. */
+const PLANNED =
+  /\b(?:plan(?:s|ned|ning)?|intends?|intend(?:ed|ing)|wants?|wanted|wish(?:es)?|hop(?:e|es|ed|ing)|consider(?:s|ed|ing)?|think(?:s|ing)? (?:about|of|that)|might|may|could|would|should|will|going to|about to|next step|needs? to|has to|have to|idea (?:is|was)|propos(?:e|es|ed|al)|suggest(?:s|ed)?|aims?|believes?|assumes?|expects?)\b/;
+
+/** Something that was done, or that people do: what a founder's work shows. */
+const HAPPENED =
+  /\b(?:interviewed|talked|spoke|met|asked|surveyed|visited|watched|tested|tried|built|made|ran|run|held|signed|paid|pays?|paying|bought|sold|ordered|pre-?ordered|booked|launched|shipped|opened|decided|chose|chosen|picked|agreed|settled|switched|dropped|offered|showed|shown|collected|got|received|told|said|described|counted|measured|found|used|uses|using|came back|renewed|filed|registered|formed|incorporated|joined|hired|won|raised|earned|charged|charges|served|finished|completed|lost|kept)\b/;
+
+/** Whether a note kept from a conversation says more than the idea again (a third of its words, at least). */
+function saysMoreThan(idea: string, m: pathRepo.PathMemory): boolean {
+  const text = m.content.trim() === '' ? m.title : m.content;
+  const held = new Set(contentStems(idea));
+  const words = contentStems(text);
+  const fresh = words.filter((w) => !held.has(w));
+  return words.length > 0 && fresh.length * 3 > words.length;
+}
+
+/** The venture's idea as its record has it: what a note that only repeats it is compared with. */
+export function ideaText(source: Pick<PathSource, 'venture' | 'reads'>): string {
+  const { venture, reads } = source;
+  const intake = reads.path?.intake;
+  return [
+    venture.name,
+    venture.oneLiner,
+    venture.currentGoal ?? '',
+    intake?.idea ?? '',
+    intake?.customer ?? '',
+  ].join('. ');
+}
+
+/**
+ * Whether the venture's record holds work of its own: it then starts at the stage the program has it at. What a person put
+ * there does; a note the mentor kept by itself only when it shows something the path asks for.
+ */
+export function hasEvidence(
+  playbook: Playbook,
+  source: Pick<PathSource, 'venture' | 'reads'>,
+  memory: readonly pathRepo.PathMemory[] = source.reads.memory,
+): boolean {
+  const idea = ideaText(source);
+  return memory.some(
+    (m) =>
+      m.status === 'confirmed' &&
+      EVIDENCE_TYPES.has(m.type) &&
+      (!isKeptNote(m) || playbook.criteria.some((c) => recordShowing(c, [m], idea) !== null)),
+  );
 }
 
 export interface Topic {
@@ -232,22 +278,31 @@ function recordCounts(m: pathRepo.PathMemory, topic: RegExp, telling: readonly s
   return counts;
 }
 
-/** The record that shows `criterion`, or null. Deterministic: the first in the read's order. */
+/**
+ * The record that shows `criterion`, or null. Deterministic: the first in the read's order. `idea`: what the venture is
+ * ({@link ideaText}), so a note that only says it again shows nothing.
+ */
 export function recordShowing(
   criterion: PathCriterion,
   memory: readonly pathRepo.PathMemory[],
+  idea = '',
 ): pathRepo.PathMemory | null {
   const topic = topicOf(criterion);
   const needed = neededFor(criterion);
   const words = contentStems(criterion.title);
   for (const m of memory) {
     if (!isShown(m)) continue;
-    const text = `${m.title}. ${m.content}${typeof m.attributes.result === 'string' ? `. ${m.attributes.result}` : ''}`;
+    const kept = isKeptNote(m);
+    if (kept && !saysMoreThan(idea, m)) continue;
+    // What a person recorded as decided stands as it is; a kept note must say, in the same sentence, that it happened.
+    const stands = (s: string): boolean =>
+      (m.type === 'decision' || statedAsFact(s)) &&
+      (!kept || (HAPPENED.test(plain(s)) && !PLANNED.test(plain(s))));
+    // The title of a kept note is a label ("Ten interviews"), not what was done.
+    const text = `${kept && m.content.trim() !== '' ? '' : `${m.title}. `}${m.content}${typeof m.attributes.result === 'string' ? `. ${m.attributes.result}` : ''}`;
     if (topic !== null) {
       if (topic.types !== undefined && !topic.types.includes(m.type)) continue;
-      const telling = text
-        .split(/(?<=[.!?])\s+/u)
-        .filter((s) => topic.record.test(plain(s)) && (m.type === 'decision' || statedAsFact(s)));
+      const telling = text.split(/(?<=[.!?])\s+/u).filter((s) => topic.record.test(plain(s)) && stands(s));
       if (telling.length === 0) continue;
       if (
         topic.counted === true &&
@@ -260,13 +315,7 @@ export function recordShowing(
     // No topic: the record must hold most of the criterion's own words, stated as fact.
     const held = new Set(contentStems(text));
     const shared = words.filter((w) => held.has(w)).length;
-    if (
-      words.length >= 2 &&
-      shared >= 2 &&
-      shared * 3 >= words.length * 2 &&
-      (m.type === 'decision' || statedAsFact(text))
-    )
-      return m;
+    if (words.length >= 2 && shared >= 2 && shared * 3 >= words.length * 2 && stands(text)) return m;
   }
   return null;
 }
@@ -280,21 +329,23 @@ export function stageOrder(playbook: Playbook): VentureStageValue[] {
 
 /**
  * Where the venture stands. The stage is the furthest of: the one its path already reached (it never goes back by
- * itself), the one the program has it at when its record holds work of its own, and every stage whose criteria are all
- * shown. A criterion is as its row says; without a row, the record may show it, and one of a stage already passed counts
- * as claimed.
+ * itself), every stage whose criteria are all shown, and the program's: before the path has begun when the record holds
+ * work of its own (seeded, imported, from before), afterwards only once the program has changed it. A path that has begun
+ * never moves because something was noted. A criterion is as its row says; without a row, the record may show it, and one
+ * of a stage already passed counts as claimed.
  */
 export function pathState(playbook: Playbook, source: PathSource): PathState {
   const order = stageOrder(playbook);
   const indexOfStage = (stage: VentureStageValue | null | undefined): number =>
     stage === null || stage === undefined ? 0 : Math.max(0, order.indexOf(stage));
   const { path, criteria: rows, memory } = source.reads;
-  // After a change of direction the path stands where that left it: the program's stage is the old venture's.
+  const idea = ideaText(source);
   const changed = path !== null && path.pivots.length > 0;
-  const started = Math.max(
-    indexOfStage(path?.stage),
-    !changed && hasEvidence(memory) ? indexOfStage(source.venture.stage) : 0,
-  );
+  const programMoved =
+    path === null
+      ? hasEvidence(playbook, source)
+      : path.programStage != null && path.programStage !== source.venture.stage;
+  const started = Math.max(indexOfStage(path?.stage), programMoved ? indexOfStage(source.venture.stage) : 0);
   const byId = new Map(rows.map((r) => [r.criterionId, r] as const));
   const own = playbook.criteria.map((criterion): CriterionState => {
     const row = byId.get(criterion.id);
@@ -306,7 +357,7 @@ export function pathState(playbook: Playbook, source: PathSource): PathState {
         : changed && row.status === 'open'
           ? memory.filter((m) => row.updatedAt !== '' && m.createdAt > row.updatedAt)
           : [];
-    const record = row === undefined || row.status === 'open' ? recordShowing(criterion, known) : null;
+    const record = row === undefined || row.status === 'open' ? recordShowing(criterion, known, idea) : null;
     if (record !== null)
       return { criterion, status: 'claimed', evidence: record.title, by: 'record', progress: null };
     if (row !== undefined)

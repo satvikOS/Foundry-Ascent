@@ -39,6 +39,8 @@ export interface PathRecord {
   readonly pivots: readonly PathPivot[];
   readonly playbookVersion: string;
   readonly version: number;
+  /** The program's stage when the path began (migration 0037): only a change of it since moves the path. Absent: unknown. */
+  readonly programStage?: Stage | null;
 }
 
 export interface PathStepRecord {
@@ -83,6 +85,8 @@ export interface PathMemory {
   readonly origin: string;
   readonly pinned: boolean;
   readonly createdAt: string;
+  /** Of origin `ai`: a person approved or corrected it since. */
+  readonly vouched?: boolean;
 }
 
 const Items = z.array(
@@ -110,6 +114,7 @@ function decodePath(r: RawRow): PathRecord {
     pivots: jsonOr<PathPivot[]>(Pivots, r.pivots, 'pivots', []),
     playbookVersion: col.text.decode(r.playbook_version, 'playbook_version'),
     version: col.int.decode(r.version, 'version'),
+    programStage: col.enum(VentureStage.options).nullable.decode(r.program_stage, 'program_stage'),
   };
 }
 
@@ -136,7 +141,8 @@ function decodeStep(r: RawRow): PathStepRecord {
   };
 }
 
-const PATH_COLUMNS = `pa.venture_id, pa.stage, pa.intake, pa.intake_by, pa.pivots, pa.playbook_version, pa.version`;
+const PATH_COLUMNS = `pa.venture_id, pa.stage, pa.intake, pa.intake_by, pa.pivots, pa.playbook_version, pa.version,
+  pa.program_stage`;
 const STEP_COLUMNS = `s.id, s.play_id, s.criterion_id, s.title, s.items, s.done_when, s.due_on::text AS due_on, s.status,
   s.origin, s.evidence, s.reason, s.citations, s.given_to, s.source_session_id, s.created_at, s.completed_at, s.version`;
 
@@ -203,6 +209,7 @@ const MEMORY_ATTRIBUTES = [
 export function memoryPart(ventureId: string): ReadPart<PathMemory[]> {
   return rowsPart(
     `SELECT m.id, m.type, m.title, left(m.content, 280) AS content, m.status, m.origin, m.pinned, m.created_at,
+            (m.approved_by IS NOT NULL) AS vouched,
             coalesce((SELECT jsonb_object_agg(a.key, CASE WHEN jsonb_typeof(a.value) = 'string'
                                                           THEN to_jsonb(left(a.value #>> '{}', 200)) ELSE a.value END)
                       FROM jsonb_each(m.attributes) a
@@ -236,6 +243,7 @@ export function memoryPart(ventureId: string): ReadPart<PathMemory[]> {
       status: col.text.decode(r.status, 'status'),
       origin: col.text.decode(r.origin, 'origin'),
       pinned: col.bool.decode(r.pinned, 'pinned'),
+      vouched: col.bool.decode(r.vouched, 'vouched'),
       createdAt: col.ts.decode(r.created_at, 'created_at'),
     }),
   );
@@ -458,6 +466,7 @@ export async function keepPivot(
      ON CONFLICT (venture_id) DO UPDATE
        SET intake = jsonb_set(coalesce(pa.intake, CAST(:intake AS jsonb)), '{idea}', to_jsonb(CAST(:idea AS text))),
            idea_session_id = :session, stage = :stage, playbook_version = :playbook,
+           program_stage = (SELECT v.stage FROM ventures v WHERE v.id = pa.venture_id),
            pivots = CASE WHEN jsonb_array_length(pa.pivots) >= :most THEN (pa.pivots - 0) ELSE pa.pivots END
                     || CAST(:pivots AS jsonb),
            version = pa.version + 1, updated_at = now()`,

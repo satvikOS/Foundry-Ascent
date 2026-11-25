@@ -261,7 +261,7 @@ function fundingNews(text: string): Pick<News, 'means' | 'spoken'> | null {
     ? 'Do not name a percentage yet: that sets a value for the whole venture, and a promise of shares has legal rules.'
     : 'Do not take it yet: money for a part of the venture, or a promise of profit, has legal rules.';
   return {
-    means: `${who} offers ${amount}. ${share} Thank them, ask what they expect back, and take both to a person who decides this. Until then, an order paid ahead is the safe way for them to help.`,
+    means: `${who} offers ${amount}. ${share} Thank them, ask what they expect back, and take both to your EIR and a startup lawyer before you answer. Until then, an order paid ahead is the safe way for them to help.`,
     spoken: `${who} offers ${amount}. ${share} Thank them and ask what they expect back.`,
   };
 }

@@ -212,6 +212,10 @@ becomes `MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID` and `MODEL
 (all three empty without it; a `turn` is never a background purpose), and Luna never moves it (ADR-0022, ADR-0024). Flipping
 the flag is a config change plus a normal deploy.
 
+`models.understand` (`enabled`, and optionally `modelId` and `think: "low"`; unset today) turns the understand call of a turn on
+(docs/architecture/understand.md): `CORE_UNDERSTAND`, `MODEL_UNDERSTAND_ID` and `MODEL_UNDERSTAND_THINK` go to the API alone, and a model
+of its own is granted with the effective models. Unset, no variable is passed and the API's default, off, stands.
+
 Production's coach model is this configuration: an A/B on another Bedrock model runs in the conversation lab first
 (`coach_model`, docs/runbooks/conversation-lab.md), never by changing production; the lab role may invoke the A/B
 candidates (`ops/lab/models.json` `live.coach`) and the models suite's (`benchmark`), the app's roles only the effective models above.

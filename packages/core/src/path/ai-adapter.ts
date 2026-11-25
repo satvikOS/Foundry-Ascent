@@ -94,7 +94,12 @@ export interface PathPromptGuidance {
     readonly dueOn: string | null;
     readonly overdue: boolean;
   } | null;
-  readonly referral: { readonly who: string; readonly bring: string; readonly told?: boolean } | null;
+  readonly referral: {
+    readonly who: string;
+    readonly bring: string;
+    readonly told?: boolean;
+    readonly before?: string;
+  } | null;
   readonly newIdea: { readonly ventureName: string; readonly fact: string | null } | null;
   /** What came of their work, in their own words. */
   readonly finding?: string;
@@ -105,6 +110,10 @@ export interface PathPromptGuidance {
   } | null;
   /** They ask for a judgement of what they have (`PromptGuidance.judgement`). */
   readonly judgement?: boolean;
+  /** What the message asks, as it was read and checked (`PromptGuidance.reading`). */
+  readonly reading?: NonNullable<ai.PromptGuidance['reading']>;
+  /** The one thing to do first, said before the step. */
+  readonly firstAction?: string;
   readonly criteria?: readonly { readonly id: string; readonly title: string; readonly evidence: string }[];
   /** How what they asked was found (`PromptGuidance.matched`). */
   readonly matched?: 'phrase' | 'semantic' | 'none';
@@ -341,6 +350,8 @@ export function guidanceWords(guidance: PathPromptGuidance): string {
     ask?.block ?? '',
     guidance.fallback?.text ?? '',
     guidance.finding ?? '',
+    ...(guidance.reading === undefined ? [] : [...guidance.reading.points, ...guidance.reading.record]),
+    guidance.firstAction ?? '',
   ]
     .filter((t) => t.trim() !== '')
     .join('\n');

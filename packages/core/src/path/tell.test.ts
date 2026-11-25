@@ -136,7 +136,7 @@ describe('the one fact on record that bears on what they ask', () => {
   it('is said as a clause, with the server’s sentence for a reply that left it out', () => {
     expect(priorFact(source())).toEqual({
       fact: 'two salons pay 60 dollars a month each',
-      sentence: 'Remember that two salons pay 60 dollars a month each.',
+      sentence: 'Keep in mind that two salons pay 60 dollars a month each.',
     });
   });
 
@@ -255,7 +255,7 @@ describe('the one fact on record that bears on what they ask', () => {
     expect(
       priorFact(source({ reads: NO_READS, earlier: ['I sold nine pouches at 4 dollars at the price test.'] }))
         ?.sentence,
-    ).toBe('Remember that you sold nine pouches at 4 dollars at the price test.');
+    ).toBe('You sold nine pouches at 4 dollars at the price test, so start from there.');
   });
 });
 

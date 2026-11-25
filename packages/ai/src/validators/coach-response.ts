@@ -780,6 +780,7 @@ export function validateCoachResponse(
     if (support !== null) {
       const held = checkCitationSupport(out, support, {
         protect: (unit) => carriesContract(unit, guidance),
+        sum: guidance?.asksSum === true,
       });
       if (held.citationsDropped > 0 && note) notes.push(`citations_unsupported:${held.citationsDropped}`);
       const claims = held.sentencesRemoved + held.sentencesNeutralised;
@@ -1204,11 +1205,14 @@ function ownFactsText(
   known: string,
 ): { readonly text: string; readonly edits: number } {
   let edits = 0;
+  let before = '';
   const kept = unitsOf(text).map((u) => {
-    if (isServerText(u.text, guidance, 'text')) return u.raw;
-    const out = ownFactsUnit(u.raw, guidance, { known });
-    if (out.findings.length > 0) edits += 1;
-    return out.text;
+    const out = isServerText(u.text, guidance, 'text')
+      ? null
+      : ownFactsUnit(u.raw, guidance, { known, before: before.slice(-400) });
+    if (out !== null && out.findings.length > 0) edits += 1;
+    before += out === null ? u.raw : out.text;
+    return out === null ? u.raw : out.text;
   });
   return {
     text:

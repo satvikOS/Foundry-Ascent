@@ -75,7 +75,7 @@ export const GUIDED_RECALL_CHARS = 2_400;
 export const GUIDED_HISTORY = { turns: 8, full: 2, fullChars: 900, reply: 260, founder: 420 } as const;
 
 /** The step line the server wrote under a reply: never the model's to copy. */
-const STEP_LINE = /\n*^\*{0,2}(?:Next|On your path, next is):\*{0,2} .*$/gmu;
+const STEP_LINE = /\n*^(?:\*{0,2}(?:Next|On your path, next is):\*{0,2}|\*\*Start with:\*\*) .*$/gmu;
 const SPOKEN_STEP_LINE = /\s*(?:Your next step|On your path, next is): [^\n]*$/u;
 
 /** An earlier reply as the history of a turn on the path shows it: without the server's step line. */

@@ -64,6 +64,9 @@ const AND_DOES = /\band (is|has|was|does|wants|needs|plans|hopes|believes|thinks
 const OWNED =
   '(?:(?:initial|original|first|own|new|old|current|next|main|early|student|startup|business|venture|app|product|course|final|four|few|free|limited|spare) )*(?:idea|venture|startup|business|company|product|app|plan|project|concept|direction|price|fee|service|offer|pitch|prototype|team|co-?founder|dorm|hall|campus|school|university|lab|thesis|advisor|exam|class|classes|hours|time|goal|customers?|users?|interviews?|research|record|experience|background|[A-Z][\\w-]*(?: (?:idea|app|venture))?)';
 const THEIRS_OF_FOUNDER = new RegExp(`\\b(?:their|his|her) (?=${OWNED}\\b)`, 'gu');
+/** A plural or a person between "you" and "their", whose it may be ("you asked buyers about their week"). */
+const OTHERS_BETWEEN =
+  /(?!\b(?:has|is|was|does|as|this|us|across|always|perhaps|besides|unless|towards|process|discuss|business)\b)\b\p{L}{2,}s\b|\b(?:people|children|women|men|staff|team|who|that|if|how|whether|about|and)\b/iu;
 /** Someone else the sentence tells of, whose "his" or "her" it may be. */
 const SOMEONE =
   /\b(?:professor|advis[eo]r|manager|nurse|engineer|co-?founder|roommate|relative|uncle|aunt|friend|boss|supervisor|owner|teacher|director|mother|father|brother|sister|customer|user|buyer|student(?! founder))\b/iu;
@@ -105,6 +108,11 @@ export function toYou(text: string, name = ''): string {
   }
   if (out !== of || /\btheir (?:initial|original|own|first)\b/u.test(out))
     out = out.replace(THEIRS_OF_FOUNDER, 'your ');
+  // "The founder has only told their roommates": nobody else stands between them and what is theirs.
+  if (out !== of)
+    out = out.replace(/\b(you(?: [\p{L}'’]+){1,5}) their\b/giu, (whole, before: string) =>
+      OTHERS_BETWEEN.test(before) ? whole : `${before} your`,
+    );
   for (const [pattern, said] of YOU) out = out.replace(pattern, said);
   return out.replace(/\s+/g, ' ').trim();
 }
@@ -151,11 +159,11 @@ export const ideaSaid = (idea: string): string => {
 };
 
 /** Words an instruction or a decision opens with ("Charge 300 dollars…"). */
-const DOES =
+export const DOES =
   /^(?:charge|sell|focus|start|stop|run|build|offer|ask|target|use|keep|launch|test|price|raise|drop|move|pick|choose|work|go|make|send|talk|interview|partner|hire|pivot|switch|rent|pause|wait|apply|join|bring|take|set|do|give|put|pay|serve|open|close|find|get|begin|limit|replace|change)\b/i;
 
 /** A verb somewhere: what it says is a sentence, not a label. */
-const SAYS =
+export const SAYS =
   /\b(?:is|are|was|were|has|have|had|said|says|told|asked|paid|pays?|sold|sells?|bought|signed|lost|kept|keeps?|costs?|takes?|came|come|comes|went|go|goes|did|does|do|made|makes?|got|gets?|gave|gives?|ran|runs?|built|found|want(?:s|ed)?|need(?:s|ed)?|described|reported|shared|tracks?|use[sd]?|will|would|can|could|charge[sd]?|decided|interviewed|talked|spoke|offered|tried|tested|booked|fell|rose|grew|dropped|left|stayed|brought|won)\b/i;
 
 const CLAUSE_CHARS = 170;
@@ -203,15 +211,26 @@ export function toldAs(m: Pick<pathRepo.PathMemory, 'type' | 'title' | 'content'
     !(hasFigure(title) && !hasFigure(content))
       ? content
       : title;
-  const you = toYou(says, name);
+  const you = toYou(says.replace(LABEL, ''), name);
   if (m.type === 'decision') {
     if (/^you (?:have )?(?:decided|agreed|chose)\b/i.test(you)) return lowerFirst(you);
+    // "Told investors growth is steady" was said, and decides nothing.
+    if (CLAIMED.test(you)) return /^you\b/i.test(you) ? lowerFirst(you) : `you ${lowerFirst(you)}`;
     if (DOES.test(you)) return `you decided to ${lowerFirst(you)}`;
-    return /\b(?:is|are|will)\b/.test(you) ? lowerFirst(you) : `you decided: ${lowerFirst(you)}`;
+    return /\b(?:is|are|will)\b/.test(you) || you.includes(':')
+      ? lowerFirst(you)
+      : `you decided: ${lowerFirst(you)}`;
   }
   // Who someone is to them opens with a name ("Ben joined …"), and a kind of people with none ("Caterers pay …").
   return m.type === 'relationship' && !KIND_OF_PEOPLE.test(you) ? you : lowerFirst(you);
 }
+
+/** What a record calls itself before it says it ("Next: ask five clubs", "Your math: …"). */
+const LABEL =
+  /^(?:(?:your|my|our|the) )?(?:next(?: steps?)?|decision|decided|agreed|plan|to[- ]?do|action|math|maths|sum|calculation|note|update|status|result)\s*:\s*/iu;
+/** Something said to someone, kept as a decision. */
+export const CLAIMED =
+  /^(?:you )?(?:have )?(?:told|said|claimed|promised|assured|stated|mentioned|explained|reported)\b/iu;
 
 const KIND_OF_PEOPLE =
   /^\p{Lu}\p{Ll}+s (?:are|were|have|had|pay|paid|say|said|want|need|use|do|buy|bought|ask|asked|would|will|who|and|of|in|at|from)\b/u;
@@ -330,7 +349,7 @@ const PRIOR_TYPES: Readonly<Record<string, number>> = {
 };
 
 /** Advice to founders in general, as a course or a book gives it: no fact of this one's. */
-const ADVICE =
+export const ADVICE =
   /\b(?:you (?:need|should|must|have to|want to)|founders? (?:should|need|must|often|always)|a good (?:pitch|founder|startup|interview)|the (?:worst|best) (?:answer|way|thing|time)|always|module \d|unit \d|the (?:course|lecture|video|programme|program|playbook|curriculum) (?:says|teaches|asks))\b/i;
 
 /** The record's facts, their own words of this conversation and, last, the idea. */
@@ -343,6 +362,8 @@ function candidatesOf(s: PriorSource): Candidate[] {
     if (ADVICE.test(`${m.title}. ${m.content}`)) continue;
     if (m.type === 'milestone' && !milestoneReached(m)) continue;
     if (m.type === 'decision' && !decisions.has(m.id)) continue;
+    // What they told somebody is their claim, and nothing to build on.
+    if (m.type === 'decision' && CLAIMED.test(toldAs(m, s.founder))) continue;
     const result = typeof m.attributes.result === 'string' ? m.attributes.result : '';
     if (m.type === 'experiment' && result === '') continue;
     const fact =
@@ -511,17 +532,16 @@ const THINGS_HAD =
 /** A fact as a mentor brings it up. */
 export function broughtUp(fact: string, seed: string, decision = false): string {
   const up = upperFirst(fact);
-  if (decision || /^you (?:have )?(?:decided|agreed|chose)\b/i.test(fact))
-    return pick([`${up}, so keep to that.`, `Remember that ${fact}.`, `${up}, and that stands.`], seed) ?? up;
-  if (/^you\b(?!r)/i.test(fact))
-    return (
-      pick([`${up}, so start from there.`, `Remember that ${fact}.`, `${up}, and that counts here.`], seed) ??
-      up
-    );
+  if (/^you (?:have )?(?:decided|agreed|chose)\b/i.test(fact) && !fact.includes(':'))
+    return pick([`${up}, so keep to that.`, `${up}, and that stands.`], seed) ?? up;
+  if (/^you decided: [^:]+$/i.test(fact)) return `${up}.`;
+  if (decision && !fact.includes(':') && !CLAIMED.test(fact)) return `${up}, so keep to that.`;
+  if (/^you\b(?!r)/i.test(fact) && !fact.includes(':'))
+    return pick([`${up}, so start from there.`, `${up}, and that counts here.`], seed) ?? up;
   // Something they have, and no sentence of its own: "two paid pilots at 40 dollars".
   if (THINGS_HAD.test(fact) && !fact.includes(':')) return `You have ${fact} to build on.`;
   if (!isClause(fact)) return `Keep this in mind: ${fact}.`;
-  return pick([`Remember that ${fact}.`, `Keep in mind that ${fact}.`], seed) ?? up;
+  return `Keep in mind that ${fact}.`;
 }
 
 /** Whether a fact is a sentence of its own, and not a thing named ("4 of 9 skippers named the wait"). */
@@ -616,7 +636,21 @@ export function priorFact(s: PriorSource): PriorFact | null {
   const ofTheIdea = /\bmy (?:own )?(?:startup |business )?(?:idea|startup|venture|business)\b/i.test(
     s.message,
   );
-  const tells = (c: Ranked): boolean => isNear(s, c) && (c.kind === 'idea' || concrete(c.fact));
+  // Nor is it brought up in other words: the same figures, of mostly the same things.
+  const now = digitsOf(s.message);
+  const own = new Set(contentStems(s.message));
+  const toldNow = (c: Ranked): boolean => {
+    const figures = [...digitsOf(c.fact)];
+    const again = figures.filter((d) => now.has(d)).length;
+    const words = contentStems(c.fact);
+    return (
+      again > 0 &&
+      again >= Math.min(2, figures.length) &&
+      words.filter((w) => own.has(w)).length >= words.length * 0.4
+    );
+  };
+  const tells = (c: Ranked): boolean =>
+    isNear(s, c) && (c.kind === 'idea' || (concrete(c.fact) && !toldNow(c)));
   const justSaid = (c: Ranked): boolean => {
     // Asked about the idea itself, the answer names it.
     if (c.kind === 'idea' && ofTheIdea) return false;
@@ -662,7 +696,7 @@ export function ideaNamed(idea: string, venture = ''): string {
       : name;
   const head = bare(
     said.split(
-      /\s+(?:that|which|who|where|when|so|because|written|printed|sold|made|run|rented|shared|led|used|built|grown|mended|matched|for|by|with|from|without|at|in|on|near|near|between|late|every|each)\b|[,:;(]/u,
+      /\s+(?:that|which|who|where|when|so|because|written|printed|woven|knitted|baked|brewed|carved|painted|dried|sold|made|run|rented|shared|led|used|built|grown|mended|matched|for|by|with|from|without|at|in|on|near|near|between|late|every|each)\b|[,:;(]/u,
     )[0] ?? said,
   );
   if (head === '' || /^(?:your plan to|something)\b/u.test(head) || head.split(' ').length > 5)

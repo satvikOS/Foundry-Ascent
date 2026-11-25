@@ -27,7 +27,7 @@ from conversation_lab.client.plan import (
     parse_groups,
     refusal,
 )
-from conversation_lab.client.scenarios import GROUPS, ScenarioError, load
+from conversation_lab.client.scenarios import GROUPS, HELD_OUT, ScenarioError, load
 from tests.conftest import AwsError, FakeConverse
 
 DAY = dt.date(2026, 11, 25)
@@ -37,7 +37,7 @@ HAIKU = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 HAIKU_5_5 = "us.anthropic.claude-haiku-5-5"
 LUNA = "us.openai.gpt-6-luna"
 ALL = list(load(DAY).scenarios)
-#: What an unnamed run plays: the held-out group is beside it.
+#: What an unnamed run plays: the held-out groups are beside it.
 EVERY = in_groups(ALL, ())
 
 
@@ -147,16 +147,27 @@ def test_groups_are_read_in_run_order() -> None:
     assert len(in_groups(EVERY, ())) == len(EVERY)
 
 
-def test_the_held_out_group_is_played_only_when_named() -> None:
-    assert "heldout" not in {s.group for s in EVERY}
-    held = in_groups(ALL, parse_groups("heldout"))
+@pytest.mark.parametrize(("group", "first"), [("heldout", "HO-01"), ("heldoutb", "HB-01")])
+def test_a_held_out_group_is_played_only_when_named(group: str, first: str) -> None:
+    assert group in HELD_OUT
+    assert group not in {s.group for s in EVERY}
+    held = in_groups(ALL, parse_groups(group))
     assert len(held) == 16
-    assert len(ALL) == len(EVERY) + len(held)
+    assert {s.group for s in held} == {group}
+    assert len(ALL) == len(EVERY) + len(in_groups(ALL, tuple(HELD_OUT)))
     assert all(judged_turns(s) for s in held)
     assert plan(held, think="typed").total_usd <= PLAN_LIMIT_USD
-    assert [s.id for s in suite.planned(("HO-01", "CP-01"), "", DAY)] == ["CP-01", "HO-01"]
+    assert [s.id for s in suite.planned((first, "CP-01"), "", DAY)] == ["CP-01", first]
     assert suite.planned((), "", DAY) == EVERY
-    assert [s.id for s in suite.planned((), "heldout", DAY)] == [s.id for s in held]
+    assert [s.id for s in suite.planned((), group, DAY)] == [s.id for s in held]
+
+
+def test_the_second_held_out_group_is_nearly_all_judged() -> None:
+    held = in_groups(ALL, parse_groups("heldoutb"))
+    turns = sum(s.turns for s in held)
+    assert 60 <= turns <= 75
+    assert sum(judged_turns(s) for s in held) >= turns - 2
+    assert sum(1 for s in held if any(x.channel == "call" for x in s.sessions)) == 3
 
 
 # The models ---------------------------------------------------------------------------------------------------------
@@ -204,6 +215,29 @@ def test_reasoning_is_planned_for() -> None:
         plan(in_groups(EVERY, ("news", "followups", "hard")), think="judgement").total_usd <= PLAN_LIMIT_USD
     )
     assert set(plan_module.THINK_SHARE) | {"default", "off"} == set(config.THINK_CHOICES)
+
+
+def test_the_understand_call_is_planned_for() -> None:
+    def planned(understand: bool, model: str | None = None) -> float:
+        return estimate(
+            EVERY,
+            prices=LAB.prices,
+            coach=NOVA,
+            judge=None,
+            simulator=None,
+            understand=understand,
+            understand_model=model,
+        ).app_usd
+
+    off, nova = planned(False), planned(True)
+    assert off < planned(True, "openai.gpt-oss-20b-1:0") < nova
+    # Every turn pays for it: a run that would not fit is refused before any call.
+    assert nova - off < 1.0
+    held = in_groups(ALL, ("heldout",))
+    assert (
+        estimate(held, prices=LAB.prices, coach=NOVA, judge=HAIKU, simulator=None, understand=True).total_usd
+        <= PLAN_LIMIT_USD
+    )
 
 
 def test_each_model_family_gets_the_request_it_takes() -> None:
@@ -268,6 +302,8 @@ def test_the_workflow_offers_the_groups_the_coaches_and_the_judges_of_the_code()
     assert inputs["coach_model"]["options"] == [config.DEFAULT_COACH, *LAB.client_coach]
     assert inputs["judge_model"]["options"] == [config.JUDGE_AUTO, *LAB.client_judge]
     assert inputs["coach_model"]["default"] == config.DEFAULT_COACH
+    assert inputs["understand"]["options"] == list(config.UNDERSTAND_CHOICES)
+    assert inputs["understand_model"]["options"] == [config.DEFAULT_UNDERSTAND, *LAB.understand_models]
     assert inputs["groups"]["default"] == ""
     listed = re.search(r"for known in ([a-z ]+); do", text)
     assert listed is not None
@@ -277,9 +313,17 @@ def test_the_workflow_offers_the_groups_the_coaches_and_the_judges_of_the_code()
         '--groups "${LAB_GROUPS}"',
         '--coach-model "${LAB_COACH_MODEL}"',
         '--judge-model "${LAB_JUDGE_MODEL}"',
+        '--understand "${LAB_UNDERSTAND}"',
+        '--understand-model "${LAB_UNDERSTAND_MODEL}"',
     ):
         assert flag in run["run"]
     # Only the client suite is given them.
     env = doc["jobs"]["lab"]["env"]
-    for name in ("LAB_GROUPS", "LAB_COACH_MODEL", "LAB_JUDGE_MODEL"):
+    for name in (
+        "LAB_GROUPS",
+        "LAB_COACH_MODEL",
+        "LAB_JUDGE_MODEL",
+        "LAB_UNDERSTAND",
+        "LAB_UNDERSTAND_MODEL",
+    ):
         assert "matrix.suite == 'client'" in env[name]

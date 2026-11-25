@@ -497,9 +497,9 @@ describe('a reply that does not help is repaired from the path (the client’s l
     );
     expect(out.findings).toContain('missing_referral');
     expect(out.repaired).toContain(
-      'A qualified person decides this: the university technology transfer office',
+      'Talk to the university technology transfer office, and a lawyer, before you sign anything.',
     );
-    expect(out.repaired).toContain('bring them the invention history page');
+    expect(out.repaired).toContain('Bring them the invention history page');
   });
 
   it('never drops a new idea or the venture silently, in one sentence', () => {
@@ -626,10 +626,10 @@ describe('who decides', () => {
   it('is said with what to bring, once, on a call too', () => {
     const out = check(ANSWER, IP_REFERRAL, 'voice');
     expect(out.findings).toContain('missing_referral');
-    expect(out.repaired?.match(/A qualified person decides this/g)).toHaveLength(1);
+    expect(out.repaired?.match(/Talk to the university technology transfer office/g)).toHaveLength(1);
     expect(out.repaired).toContain('the university technology transfer office');
     expect(out.repaired).toContain(
-      'bring them the invention history page, the lab agreement and any grant terms.',
+      'Bring them the invention history page, the lab agreement and any grant terms.',
     );
     expect(check(out.repaired ?? '', IP_REFERRAL, 'voice').findings).not.toContain('missing_referral');
   });
@@ -637,7 +637,7 @@ describe('who decides', () => {
   it('adds only what to bring when the reply named who', () => {
     const out = check(`${ANSWER} The technology transfer office decides it.\n\n${IP_NEXT}`, IP_REFERRAL);
     expect(out.findings).toEqual(['missing_referral']);
-    expect(out.repaired).not.toContain('A qualified person');
+    expect(out.repaired).not.toContain('Talk to');
     // To them, in the same sentence: never "Bring …" to nobody.
     expect(out.repaired).toContain(
       'Bring the university technology transfer office the invention history page, the lab agreement and any grant terms.',
@@ -655,7 +655,7 @@ describe('who decides', () => {
     };
     const line = /bring [^.]*\./i.exec(composeFromGuidance(long, 'voice', TODAY))?.[0] ?? '';
     expect(line).toBe(
-      'bring them a one-page timeline, the lab and its funding, everyone involved, papers you signed.',
+      'Bring them a one-page timeline, the lab and its funding, everyone involved, papers you signed.',
     );
     expect(composeFromGuidance(long, 'text', TODAY)).toContain('any talk or post already made about it');
   });
@@ -675,7 +675,7 @@ describe('who decides', () => {
         today: TODAY,
       }).before,
     ).toBe(
-      'A qualified person decides this: the university technology transfer office, and a lawyer before you sign anything; bring them the invention history page, the lab agreement and any grant terms.',
+      'Talk to the university technology transfer office, and a lawyer, before you sign anything. Bring them the invention history page, the lab agreement and any grant terms.',
     );
   });
 });
@@ -1035,7 +1035,7 @@ describe('who decides is said once', () => {
     const reply =
       'Only the university technology transfer office can say, and a yes or no from me would be a guess today.';
     expect(check(reply, told).repaired).not.toContain('Bring');
-    expect(check(reply, told).repaired).not.toContain('A qualified person decides');
+    expect(check(reply, told).repaired).not.toContain('Talk to');
   });
 });
 

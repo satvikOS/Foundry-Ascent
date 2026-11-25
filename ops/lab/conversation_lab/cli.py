@@ -4,7 +4,8 @@
   client-local --out DIR                   the client's test on the mock model: no AWS, no cost (conversation_lab/client)
   run  --suite S --budget-usd B --out DIR  starts the app with the real models and runs one suite (safety: no app,
                                            the safety screen on the app's models over the E-crisis corpus; models:
-                                           no app either, the candidate models' benchmark; face:
+                                           no app either, the candidate models' benchmark; understand: no app, the
+                                           understand call of a turn on its candidate models; face:
                                            the HeyGen sandbox face, its key from LAB_HEYGEN_API_KEY to the API only;
                                            --face-mode full|lite|both picks the in-app call arm's face mode)
 
@@ -30,6 +31,7 @@ from typing import Any
 from conversation_lab.config import (
     DEFAULT_COACH,
     DEFAULT_THINK,
+    DEFAULT_UNDERSTAND,
     EXTRA_SUITES,
     FACE_MODES,
     JUDGE_AUTO,
@@ -39,6 +41,8 @@ from conversation_lab.config import (
     REPO,
     SUITES,
     THINK_CHOICES,
+    UNDERSTAND_CHOICES,
+    UNDERSTAND_MAX_BUDGET_USD,
     app_models,
     budget_parts,
     coach_app_models,
@@ -49,6 +53,7 @@ from conversation_lab.config import (
     polly_usd_per_million_characters,
     split_budget,
     suites_for,
+    understand_env,
 )
 
 PUBLIC_REPORTER = REPO / "apps" / "web" / "e2e" / "lab" / "public-reporter.ts"
@@ -112,6 +117,9 @@ class Context:
     coach_model: str = DEFAULT_COACH
     #: The client suite's CORE_THINK for the lab's API process (config.THINK_CHOICES).
     coach_think: str = DEFAULT_THINK
+    #: The client suite's understand call (config.UNDERSTAND_CHOICES) and the model it names ("" the deployment's own).
+    understand: str = DEFAULT_UNDERSTAND
+    understand_model: str = ""
     #: The live judge policy (config.live_judges): ``auto``, ``ab`` (one judge for every A/B arm) or a live.judge id.
     judge_model: str = JUDGE_AUTO
     live_picks: list[Any] = field(default_factory=list)
@@ -194,6 +202,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         return cmd_run_safety(args)
     if args.suite == "models":
         return cmd_run_models(args)
+    if args.suite == "understand":
+        return cmd_run_understand(args)
     import boto3
     from botocore.config import Config
     from pydantic import SecretStr
@@ -258,6 +268,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         live_approve_memory=bool(args.live_approve_memory),
         coach_model=str(getattr(args, "coach_model", DEFAULT_COACH) or DEFAULT_COACH),
         coach_think=str(getattr(args, "coach_think", DEFAULT_THINK) or DEFAULT_THINK),
+        understand=str(getattr(args, "understand", DEFAULT_UNDERSTAND) or DEFAULT_UNDERSTAND),
+        understand_model=_named(getattr(args, "understand_model", "")),
         judge_model=str(getattr(args, "judge_model", JUDGE_AUTO) or JUDGE_AUTO),
         client_pack=str(getattr(args, "client_pack", "") or ""),
         client_groups=str(getattr(args, "groups", "") or ""),
@@ -271,6 +283,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         models = coach_app_models(
             ctx.coach_model, lab, offered=lab.client_coach if suite == "client" else None
         )
+        understand = understand_env(ctx.understand, ctx.understand_model, lab)
         if suite == "client":
             from conversation_lab.client.judge import judge_candidates
             from conversation_lab.client.suite import check_plan, planned
@@ -301,6 +314,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                     judge=client_judges[0],
                     simulator=lab.live_simulator[0],
                     think=ctx.coach_think,
+                    understand={**models.env(), **understand}.get("CORE_UNDERSTAND") == "on",
+                    understand_model={**models.env(), **understand}.get("MODEL_UNDERSTAND_ID"),
                 )
                 app_share = plan.app_share
                 ctx.client["plan"] = plan.public()
@@ -324,6 +339,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             "app": {"primary": models.primary, "fallback": models.fallback, "embeddings": models.embeddings},
             "coach_choice": ctx.coach_model,
             "coach_think": ctx.coach_think,
+            "understand": ctx.understand,
+            "understand_model": ctx.understand_model or "default",
             "judge_policy": judge_policy,
         },
     }
@@ -398,6 +415,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         web_port=args.web_port,
         mock=args.mock,
         coach_think=ctx.coach_think,
+        understand=understand,
     )
     # The local API's own environment: the face suite adds the vendor key there and nowhere else (not in ctx.env,
     # which Playwright and the scripts get).
@@ -607,6 +625,73 @@ def cmd_run_models(args: argparse.Namespace) -> int:
     except Exception as exc:  # noqa: BLE001 - reported by class name only; the job fails
         error = type(exc).__name__
     return finish_script_run(args, summary, out, started, (app_budget, lab_budget), error)
+
+
+def cmd_run_understand(args: argparse.Namespace) -> int:
+    """Suite ``understand`` (conversation_lab/understand_bench.py): apps/api lab-understand.ts reads the client and held-out
+    scenarios' messages with the understand call on each candidate of models.json, with the run's budget as its hard cap.
+    No app, browser, database or lab model. The messages, readings and grades per case stay in the private folder; the
+    summary keeps numbers, candidate ids, group names and codes."""
+    from conversation_lab.client.plan import parse_groups
+    from conversation_lab.client.scenarios import ScenarioError
+    from conversation_lab.models_bench import models_env
+    from conversation_lab.stack import PNPM
+    from conversation_lab.understand_bench import run_understand
+
+    budget = float(args.budget_usd)
+    if not 0 < budget <= UNDERSTAND_MAX_BUDGET_USD:
+        print(f"run: the understand suite takes at most USD {UNDERSTAND_MAX_BUDGET_USD:g}", file=sys.stderr)
+        return 2
+    lab = lab_models()
+    model = _named(args.understand_model)
+    if model and model not in lab.understand_models:
+        print("run: understand_model names no candidate of models.json", file=sys.stderr)
+        return 2
+    try:
+        groups = parse_groups(str(args.groups or ""))
+    except ScenarioError as exc:
+        print(f"run: understand: {exc}", file=sys.stderr)
+        return 2
+    out = Path(args.out)
+    (out / "private").mkdir(parents=True, exist_ok=True)
+    (out / "public").mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    app_budget, lab_budget = budget_parts("understand", budget)
+    summary: dict[str, Any] = {
+        "suite": "understand",
+        "budget_usd": budget,
+        "stopped_by": None,
+        "models": {"app": {}},
+        "provider": "mock" if args.mock else "bedrock",
+    }
+    error: str | None = None
+    try:
+        result, code = run_understand(
+            out,
+            env=models_env(os.environ, mock=args.mock, region=os.environ.get("AWS_REGION", "us-east-1")),
+            budget_usd=app_budget,
+            pnpm=PNPM,
+            lab=lab,
+            groups=groups,
+            model=model,
+            scenario_ids=tuple(i.strip() for i in (args.scenarios or "").split(",") if i.strip()),
+        )
+        summary["result"] = result
+        if code != 0 or not result.get("report"):
+            error = "UnderstandBenchScriptFailed"
+        elif result["budget_reached"]:
+            summary["stopped_by"] = "budget_app"
+    except ScenarioError as exc:
+        print(f"run: understand: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:  # noqa: BLE001 - reported by class name only; the job fails
+        error = type(exc).__name__
+    return finish_script_run(args, summary, out, started, (app_budget, lab_budget), error)
+
+
+def _named(model: Any) -> str:
+    """A model input as it is meant: ``default`` and empty name none."""
+    return "" if str(model or "") in ("", DEFAULT_UNDERSTAND) else str(model)
 
 
 def finish_script_run(
@@ -1349,6 +1434,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         "Amazon Nova 2 only)",
     )
     run.add_argument(
+        "--understand",
+        choices=UNDERSTAND_CHOICES,
+        default=DEFAULT_UNDERSTAND,
+        help="client: whether a message is read against the record first (CORE_UNDERSTAND of the lab's API process)",
+    )
+    run.add_argument(
+        "--understand-model",
+        default=DEFAULT_UNDERSTAND,
+        help="client, with --understand on: that call's model; understand: compare this candidate alone; default or one "
+        "of models.json understand",
+    )
+    run.add_argument(
         "--judge-model",
         default=JUDGE_AUTO,
         help="live: auto (another family than the coach; an A/B arm uses ab), ab (one judge independent of every "
@@ -1364,7 +1461,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument(
         "--groups",
         default="",
-        help="client: only these groups of scenarios, comma-separated (client-list names them)",
+        help="client and understand: only these groups of scenarios, comma-separated (client-list names them)",
     )
     run.add_argument(
         "--client-pack",

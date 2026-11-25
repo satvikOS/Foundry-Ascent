@@ -43,7 +43,7 @@ export interface Reading {
 const NOT_THEIR_DOING =
   /\b(?:would|will|could|might|may|if|should|hopes?|plans?|wants? to pay|nobody|no one|none|not|never|no|zero|free)\b/;
 const PAID =
-  /\b(?:pays?|paying|paid|bought|buys|ordered|orders|pre-?ordered|purchased|subscribed|subscribes|renewed|signed(?! (?:up|in|on|off)\b)|sold(?! for\b| out\b))\b/;
+  /\b(?:pays?|paying|paid|bought|buys|(?:they|people|students?|customers?|parents|guests|clients) (?:\w+ )?buy|ordered|orders|pre-?ordered|purchased|subscribed|subscribes|renewed|signed(?! (?:up|in|on|off)\b)|sold(?! for\b| out\b))\b/;
 /** What they spend themselves, or what a thing costs, is nobody's payment to them. */
 const OWN_SPEND =
   /^(?:you|i|we) (?:(?:have|had|just|also|already) )*(?:paid|pay|spent|bought|ordered)\b|\b(?:sells?|goes|go) for\b|\b(?:rider|courier|supplier|maker|worker)s? (?:gets?|is paid|are paid)\b|\bfor (?:the )?(?:flyers|ads|table|stall|rent)\b/;
@@ -153,7 +153,7 @@ function lacksOf(
   switch (level) {
     case 'none':
       return args.customer === ''
-        ? 'Nobody outside your own circle has told you about the last time they had this problem yet.'
+        ? 'You have not heard yet, from anyone outside your own circle, about the last time they had this problem.'
         : `You have not heard from ${args.customer} about the last time they had this problem yet.`;
     case 'told':
       return 'You do not have a stranger who paid or signed yet.';
@@ -735,8 +735,18 @@ const OF_MONEY: ReadonlySet<string> = new Set([
   'elevator-pitch',
   'qa-prep',
 ]);
+/** Judgements of what it is worth: what is missing is what would move it. */
+const OF_WORTH: ReadonlySet<string> = new Set([
+  'valuation',
+  'grants-angels-vc',
+  'raise-or-grow',
+  'find-investors',
+  'investor-meeting',
+]);
 /** Asks about whom to find, or what happens after: what is missing is said by the answer itself. */
 const NO_GAP: ReadonlySet<string> = new Set([
+  'biotech-path',
+  'term-sheet',
   'find-ten-people',
   'quit-or-continue',
   'start-from-zero',
@@ -748,16 +758,26 @@ const NO_GAP: ReadonlySet<string> = new Set([
 export function gapFor(playId: string, r: Reading, venture: string): string {
   if (NO_GAP.has(playId)) return '';
   if (r.level === 'one_paid' || r.level === 'some_paid') return r.lacks;
-  if (!OF_MONEY.has(playId)) return r.lacks;
+  if (!OF_MONEY.has(playId) && !OF_WORTH.has(playId)) return r.lacks;
   const name = bare(venture);
   const it = name === '' || /^new venture\b/iu.test(name) ? 'it' : name;
+  if (OF_WORTH.has(playId))
+    return playId === 'valuation'
+      ? `No stranger has paid for ${it} yet, and that would move the figure more than any formula.`
+      : `No stranger has paid for ${it} yet, and that is the first thing anyone with money asks.`;
   return `No stranger has paid for ${it} yet.`;
 }
 
 /** The program's answer to a judgement, made for them; null: it stands as it is. */
 export function personalAnswer(playId: string, source: AnswerSource): PersonalAnswer | null {
   const make = ANSWERS[playId];
-  return make === undefined ? null : make(source);
+  if (make === undefined) return null;
+  const { reading } = source;
+  // What is missing is said once, the same way in the answer and beside it.
+  const gap = OF_WORTH.has(playId) && reading.lacks !== '' ? gapFor(playId, reading, source.venture) : '';
+  // The answer itself says what that moves.
+  const lacks = playId === 'valuation' ? gap.replace(/, and that would move [^.]+/u, '') : gap;
+  return make(lacks === '' ? source : { ...source, reading: { ...reading, lacks } });
 }
 
 /** Whether a text already says most of another (the reading, said a moment ago). */

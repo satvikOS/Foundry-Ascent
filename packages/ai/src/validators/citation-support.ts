@@ -11,6 +11,7 @@ import {
 import { isProtectedLine } from './social.js';
 import { sharedCount, stemsOf } from './stems.js';
 import { isBlockUnit, renumbered, unitsOf, wordsIn } from './units.js';
+import { operandsIn, workedFrom, workedShape, type Operand } from './worked.js';
 
 /**
  * Whether what a reply states is in what it was given (owner, 2026-11-24: "zero hallucination, cited"). Deterministic,
@@ -262,12 +263,32 @@ function shownArithmetic(value: number, text: string, numbers: readonly number[]
   // A result shown on the way counts ("that is $80 a month, or $960 a year").
   const steps = [...new Set(all.filter((n) => !shown.includes(n) && isKnownNumber(n, shown)))];
   const operands = [...shown, ...steps].slice(0, 12);
-  return (
+  if (
     operands.length > 0 &&
     (isKnownNumber(value, operands, false) ||
       isKnownNumber(value, operands, true) ||
       operands.some((n) => PERIODS.some((f) => Math.abs(n * f - value) <= Math.abs(value) * 0.011)))
-  );
+  )
+    return true;
+  return workedFrom(value, chainShown(value, text, numbers));
+}
+
+/**
+ * The numbers shown that a figure may be worked out from: given ones, and what was worked out of them on the way; where a
+ * sum was asked for (`theirs`), a step of it in the shape of one of theirs too.
+ */
+function chainShown(
+  value: number,
+  text: string,
+  numbers: readonly number[],
+  theirs: readonly number[] = [],
+): Operand[] {
+  const out: Operand[] = [];
+  for (const o of operandsIn(text)) {
+    if (Math.abs(o.value - value) < 0.0051) continue;
+    if (given(o.value, numbers) || workedFrom(o.value, out) || workedShape(o.value, theirs)) out.push(o);
+  }
+  return out;
 }
 
 /** A product of two of the founder's own numbers, said without its operands ("that is $80 a month"). */
@@ -444,6 +465,7 @@ function unsupportedFigures(
   text: string,
   before: string,
   index: SupportIndex,
+  sum = false,
 ): { readonly start: number; readonly end: number; readonly text: string }[] {
   const context = `${before.slice(-400)} ${text}`;
   return figureSpans(text).filter((f) => {
@@ -455,13 +477,17 @@ function unsupportedFigures(
       (v) =>
         given(v, index.knownNumbers) ||
         shownArithmetic(v, context, index.knownNumbers) ||
-        (!percent && founderArithmetic(v, index)),
+        (!percent && founderArithmetic(v, index)) ||
+        (sum &&
+          !percent &&
+          (workedShape(v, index.founderNumbers) ||
+            workedFrom(v, chainShown(v, context, index.knownNumbers, index.founderNumbers)))),
     );
   });
 }
 
 /** The claims of a sentence nothing given this turn supports. */
-function unsupportedClaims(text: string, index: SupportIndex, before: string): Claim[] {
+function unsupportedClaims(text: string, index: SupportIndex, before: string, sum = false): Claim[] {
   const out: Claim[] = [];
   const quoted = quotedSpans(text);
   const inQuote = (at: number): boolean => quoted.some(([a, b]) => at > a && at < b);
@@ -501,7 +527,7 @@ function unsupportedClaims(text: string, index: SupportIndex, before: string): C
     }
   }
   if (!index.askedNumber) {
-    for (const f of unsupportedFigures(text, before, index))
+    for (const f of unsupportedFigures(text, before, index, sum))
       out.push({ finding: 'figure_unsupported', start: f.start, end: f.end });
     for (const m of text.matchAll(STATISTIC)) {
       const values = [...numbersIn(m[0]), ...spelledNumbersIn(m[0])].filter((n) => n > 3);
@@ -629,6 +655,8 @@ export function supportUnit(
     readonly protect?: boolean;
     /** What the reply said before it (its operands may be there). */
     readonly before?: string;
+    /** They asked for a sum: a figure in the shape of one of theirs is no invented one. */
+    readonly sum?: boolean;
   } = {},
 ): UnitSupport {
   const findings: SupportFinding[] = [];
@@ -641,7 +669,7 @@ export function supportUnit(
   if (options.protect !== true && !isProtectedLine(unit, true) && !/^\s*(?:```|\|)/.test(unit)) {
     const before = options.before ?? '';
     for (let round = 0; round < 5; round += 1) {
-      const claims = unsupportedClaims(text, index, before);
+      const claims = unsupportedClaims(text, index, before, options.sum === true);
       const claim = claims[0];
       if (claim === undefined) break;
       for (const c of claims) if (!findings.includes(c.finding)) findings.push(c.finding);
@@ -712,7 +740,7 @@ export interface CitationSupport {
 export function checkCitationSupport(
   answer: string,
   index: SupportIndex,
-  options: { readonly protect?: (unit: string) => boolean } = {},
+  options: { readonly protect?: (unit: string) => boolean; readonly sum?: boolean } = {},
 ): CitationSupport {
   const findings = new Set<SupportFinding>();
   let citationsDropped = 0;
@@ -724,6 +752,7 @@ export function checkCitationSupport(
     const out = supportUnit(unit.raw, index, {
       protect: options.protect?.(unit.raw) === true,
       before: kept.join('').slice(-400),
+      ...(options.sum === undefined ? {} : { sum: options.sum }),
     });
     for (const f of out.findings) findings.add(f);
     citationsDropped += out.keysDropped;

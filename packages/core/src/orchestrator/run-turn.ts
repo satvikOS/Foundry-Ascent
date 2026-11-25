@@ -13,6 +13,7 @@ import {
   type HistoryTurn,
   type ModelAttempt,
   type RiskClassification,
+  type Understanding,
 } from '@foundry/ai';
 import {
   CreateTurnRequest,
@@ -103,6 +104,7 @@ import {
 } from './retrieval.js';
 import { safetyScreenDue, screenIndirectIdeation } from './safety-screen.js';
 import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
+import { understandDue, understandTurn } from './understand.js';
 import {
   readTurnContext,
   sameTurnContextKeys,
@@ -1029,6 +1031,8 @@ export function createOrchestrator(
     readonly query: string;
     /** Started while the turn was admitted. */
     readonly embedding: Promise<number[] | null> | null;
+    /** What the message asks, being read since the turn was admitted (orchestrator/understand.ts); null: not read. */
+    readonly understanding: Promise<Understanding | null> | null;
     readonly speechKey: Promise<SessionSigningKey> | null;
     /**
      * The call's FULL face pre-approval, started while the turn was admitted (null: not a spoken turn of a call, or
@@ -1059,6 +1063,8 @@ export function createOrchestrator(
     risk: RiskClassification,
     /** The plays the message is nearest to, when no phrase named one (path/semantic.ts), or that they cannot be read. */
     near: retrievalRepo.NearPlays | 'unavailable' | null = null,
+    /** What the message asks, read beforehand; null: not read, or nothing of it held. */
+    understanding: Understanding | null = null,
   ): PathTurn | null {
     if (playbook === null) return null;
     try {
@@ -1083,6 +1089,7 @@ export function createOrchestrator(
         earlierReplies: coach.heardHistory.map((t) => t.answer ?? ''),
         channel: pre.channel,
         near,
+        understanding,
       });
     } catch (err) {
       logger.error('turn.path_undecided', {
@@ -1092,6 +1099,49 @@ export function createOrchestrator(
       });
       return null;
     }
+  }
+
+  /**
+   * Starts reading what the message asks (orchestrator/understand.ts): null when it is not read at all. Started once the
+   * turn is admitted, so it overlaps the query's embedding. Never rejects.
+   */
+  function startUnderstanding(
+    ctx: RequestContext,
+    pre: Proceed,
+    input: z.output<typeof RunTurnInput>,
+    crisis: boolean,
+    signal: AbortSignal | undefined,
+    tails: Promise<void>[],
+  ): Promise<Understanding | null> | null {
+    const { coach } = pre;
+    if (!cfg.turns.understand || playbook === null || coach === null) return null;
+    const previousReply = previousReplyOf(coach);
+    const due = understandDue({
+      text: input.text,
+      crisis,
+      mode: pre.mode,
+      counterpart: input.rehearsalCounterpart ?? null,
+      conversationMode: pre.session.mode,
+      previousReply,
+    });
+    if (!due) return null;
+    return understandTurn(
+      kit,
+      { ctx, ventureId: pre.session.ventureId, purpose: 'turn' },
+      {
+        playbook,
+        ventureId: pre.session.ventureId,
+        venture: pre.venture,
+        reads: coach.path,
+        continuity: coach.memory.continuity,
+        today: kit.now().toISOString().slice(0, 10),
+        message: input.text,
+        history: coach.heardHistory,
+        opener: coach.opener,
+        channel: pre.channel,
+      },
+      { tails, ...(signal ? { signal } : {}) },
+    );
   }
 
   /**
@@ -1212,6 +1262,10 @@ export function createOrchestrator(
     // What the founder path decides for this turn, shown at once (before the first text of the reply). An ask no phrase
     // names is matched by meaning first, with the embedding the turn's retrieval waits for anyway (below).
     const comparable = cfg.turns.semanticPlays && matchesPlays;
+    // What the message asks, read since the admission (a message the safety screen read starts here): the decision the
+    // turn makes and announces is the one made with it.
+    const reading = a.understanding ?? startUnderstanding(ctx, pre, input, risk.crisis, signal, a.tails);
+    let understanding: Understanding | null = null;
     let path = decidePath(ctx, pre, coach, input, risk, comparable ? null : 'unavailable');
     const byMeaning = comparable && path?.decision.open != null;
     const announce = async (
@@ -1237,10 +1291,21 @@ export function createOrchestrator(
         completes: decision.completes !== null,
         offered: decision.offered,
         carried: decision.carried,
+        ...(reading === null ? {} : { understood: understanding !== null }),
+        // Which of the rules and the reading decided what (path/understood.ts): ids, never words.
+        ...(decision.decidedBy === null
+          ? {}
+          : {
+              read: decision.reading?.kind ?? 'none',
+              byRule: Object.entries(decision.decidedBy)
+                .filter(([, by]) => by === 'rule')
+                .map(([field]) => field)
+                .join(','),
+            }),
       });
       if (guidance !== null) await emit({ event: 'turn.guidance', turnId: turn.id, guidance });
     };
-    if (!byMeaning) await announce(path, null);
+    if (!byMeaning && reading === null) await announce(path, null);
 
     // Step 3: authorized, scoped retrieval. "Where you left off" (the latest earlier conversations, read as they
     // were said when not distilled yet) has been loading since the preflight, in its own transaction: it never waits
@@ -1264,6 +1329,15 @@ export function createOrchestrator(
             input.text,
           );
     if (own !== null) a.tails.push(kit.later(own));
+    if (reading !== null) {
+      // Before the retrieval's transaction (a transaction that holds a connection waits for no model), beside the
+      // embedding it needs anyway: which play it is decides what the search looks for.
+      understanding = await reading;
+      if (understanding !== null)
+        path =
+          decidePath(ctx, pre, coach, input, risk, comparable ? null : 'unavailable', understanding) ?? path;
+      if (!byMeaning) await announce(path, null);
+    }
     const ownVector = own === null ? null : settledWithin(own, PLAY_MATCH_WAIT_MS);
     const announced: Promise<void>[] = [];
     // The retrieval transaction opens while the query is embedded (its begin and context run beside the embedding,
@@ -1285,7 +1359,7 @@ export function createOrchestrator(
                 embedding: message,
                 limit: PLAY_MATCH_TOP,
               });
-        path = decidePath(ctx, pre, coach, input, risk, near ?? 'unavailable') ?? path;
+        path = decidePath(ctx, pre, coach, input, risk, near ?? 'unavailable', understanding) ?? path;
         // Sent in order, never waited for while the transaction holds a connection.
         announced.push(announce(path, near));
       }
@@ -2063,6 +2137,7 @@ export function createOrchestrator(
         let addressees: readonly string[];
         let query: string;
         let embedding: Promise<number[] | null> | null = null;
+        let understanding: Promise<Understanding | null> | null = null;
         let speechKey: Promise<SessionSigningKey> | null = null;
         let faceApproval: Promise<FaceApproval | null> | null = null;
         let crisis = false;
@@ -2178,6 +2253,7 @@ export function createOrchestrator(
               tails,
               input.text,
             );
+            understanding = startUnderstanding(ctx, pre, input, crisis, options.signal, tails);
           }
         } catch (err) {
           const error = asDomainError(err);
@@ -2205,6 +2281,7 @@ export function createOrchestrator(
             addressees,
             query,
             embedding,
+            understanding,
             speechKey,
             faceApproval,
             emit,

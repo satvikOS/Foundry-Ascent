@@ -67,6 +67,7 @@ import {
   onlyVerdict,
   overTyped,
   pointsNowhere,
+  repeatsFirstAction,
   repeatsLead,
   repeatsReferral,
   restates,
@@ -78,7 +79,9 @@ import {
   spokenReserve,
   withoutDeadline,
 } from './reply-contract.js';
+import { againstReading } from './reading.js';
 import { saidSentences, saysAgain, type SaidSentence } from './said-before.js';
+import { danglingAsk, danglingLine, echoesThem, readsAgain, refusesUnderLead } from './second-reading.js';
 import { coverage, stemsOf } from './stems.js';
 import { clampWords, toSpeakable } from './speech.js';
 import { SumFacts, mayHoldSum, sumsUnit } from './sums.js';
@@ -1314,7 +1317,9 @@ export class SentenceGate {
           saysAgain(unit, this.#saidBefore, this.#leadShown ? RESTATED_AGAIN : this.#sayAgainShare)) ||
         ((guidance.more ?? []).length > 0 && this.#ofMore(unit, guidance)) ||
         (guidance.rejected === true && this.#ofRejected(unit)) ||
-        saysNothing(unit, guidance)
+        saysNothing(unit, guidance) ||
+        echoesThem(unit, this.#options.founderText ?? '') ||
+        danglingLine(unit, this.#releasedText, guidance)
       ) {
         this.#leaveOut('contract', rawUnit);
         this.#leanedOn = true;
@@ -1326,9 +1331,27 @@ export class SentenceGate {
           this.#onlyRestates(unit) ||
           onlyVerdict(unit) ||
           saidInLead(unit, this.#lead) ||
-          announcesLead(unit, this.#lead))
+          announcesLead(unit, this.#lead) ||
+          refusesUnderLead(unit, this.#leadStems) ||
+          readsAgain(unit, guidance, this.#leadStems, this.#founderStems))
       ) {
         // "This is under what lofts charge" of a sentence that went leans on nothing.
+        this.#leanedOn = true;
+        this.#leaveOut('contract', rawUnit);
+        return 'out';
+      }
+      // What was read of the message decides what stands beside it (validators/reading.ts).
+      if (
+        guidance.reading !== undefined &&
+        (repeatsFirstAction(unit, guidance) ||
+          (!isServerText(unit, guidance, channel) &&
+            againstReading(
+              unit,
+              guidance,
+              this.#leadShown ? this.#lead : '',
+              this.#raw.slice(0, this.#cursor),
+            ) !== null))
+      ) {
         this.#leanedOn = true;
         this.#leaveOut('contract', rawUnit);
         return 'out';
@@ -1463,6 +1486,7 @@ export class SentenceGate {
       const out = supportUnit(unit, this.#support, {
         protect: carriesContract(unit, this.#contract),
         before: this.#shown.slice(-400),
+        sum: this.#contract?.asksSum === true,
       });
       if (out.text === '') {
         this.#supportEdits += 1;
@@ -1482,7 +1506,10 @@ export class SentenceGate {
       !isProtectedLine(unit, this.#keepReferrals) &&
       !isServerText(unit, this.#contract, channel)
     ) {
-      const out = ownFactsUnit(unit, this.#contract, { known: this.#figures ?? '' });
+      const out = ownFactsUnit(unit, this.#contract, {
+        known: this.#figures ?? '',
+        before: this.#releasedText.slice(-400),
+      });
       if (out.findings.length > 0) {
         this.#supportEdits += 1;
         this.#rewritten = true;
@@ -1659,6 +1686,7 @@ export class SentenceGate {
           !(voice && onlyAsked) &&
           fits &&
           this.#options.noQuestions !== true &&
+          !danglingAsk(question, this.#contract) &&
           !pointsNowhere(
             question,
             [this.#releasedText, this.#contract.said ?? '', this.#options.founderText ?? ''].join(' '),

@@ -435,7 +435,8 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     social === null &&
     !wrapUp &&
     !risk.categories.includes('safety_wellbeing') &&
-    !inDistress(spec.founderText) &&
+    // Read, they ask something of the work, and it is answered, as a person first.
+    (guidance.reading !== undefined || !inDistress(spec.founderText)) &&
     !identityAsked;
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).

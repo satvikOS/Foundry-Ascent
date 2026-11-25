@@ -202,11 +202,26 @@ export class SumFacts {
     return same(value, 100) || this.#percents.some((p) => same(p, value) || same(100 - p, value));
   }
 
-  /** Whether a number may stand in a sum: given, or a share of a given percentage ("0.4", "0.6"). */
+  /** Whether a number was told as a percentage. */
+  toldPercent(value: number): boolean {
+    return this.#percents.some((p) => same(p, value));
+  }
+
+  /** Whether a number may stand in a sum: given, or a share of a given percentage ("0.4", "0.6", "1.4" on top). */
   operand(value: number, percent: boolean): boolean {
     if (percent) return this.givenPercent(value) || this.given(value);
     if (this.given(value)) return true;
+    if (value > 1 && value < 2 && this.toldPercent(Math.round((value - 1) * 1e8) / 1e6)) return true;
+    // "3.25" of "2.80 for tea and 0.45 for the cup": two amounts of theirs together, to the cent.
+    if (!Number.isInteger(value) && this.#together(value)) return true;
     return value > 0 && value < 1 && this.#percents.length > 0 && this.givenPercent(value * 100);
+  }
+
+  #together(value: number): boolean {
+    const amounts = [...this.#dims].filter(([, d]) => d.has('money')).map(([v]) => v);
+    return amounts.some((a, i) =>
+      amounts.some((b, j) => i < j && same(Math.round((a + b) * 100) / 100, value)),
+    );
   }
 
   /** What a number is of, when everything that gave it agrees. */
@@ -381,7 +396,10 @@ function grounded(e: Expr, facts: SumFacts): boolean {
       restOf &&
       right.t === 'num' &&
       (right.percent || facts.givenPercent(right.value) || facts.givenPercent(right.value * 100));
-    return visit(x.left, false, isShare) && visit(x.right, false, false);
+    // "1 + 45%": the whole with its part on top.
+    const onTop =
+      x.op === '+' && right.t === 'num' && facts.toldPercent(right.percent ? right.value : right.value * 100);
+    return visit(x.left, false, isShare || onTop) && visit(x.right, false, false);
   };
   return visit(e, false, false) && own > 0;
 }
@@ -417,8 +435,8 @@ interface ReadMarker {
   readonly percent: boolean;
 }
 
-/** Reads what stands in a marker; null when it is no sum. */
-function readMarker(content: string): ReadMarker | null {
+/** Reads what stands in a marker; null when it is no sum. `told`: whether a number was told as a percentage. */
+function readMarker(content: string, told: (value: number) => boolean = () => false): ReadMarker | null {
   let t = content.normalize('NFKC');
   for (const [pattern, to] of SYMBOLS) t = t.replace(pattern, to);
   t = spelledAsDigits(t)
@@ -534,13 +552,16 @@ function readMarker(content: string): ReadMarker | null {
     const root = inner(expr);
     const others = leavesOf(expr).slice(0, -1);
     const glued = /%\s*$/u.test(t.trim());
+    // "90,000 / 15%": a percentage of theirs that divides is its own, never the result's.
+    const theirs = root.t === 'bin' && root.op === '/' && others.every((l) => !l.percent) && told(last.value);
     const resultOwn =
+      !theirs &&
       root.t === 'bin' &&
       (root.op === '/' ||
         ((root.op === '+' || root.op === '-') && others.length > 0 && others.every((l) => !l.percent))) &&
       !(glued && root.op !== '/');
     const hundred =
-      others.some((l) => l.value === 100) || (last.value === 100 && hasDivision(expr) && !glued);
+      !theirs && (others.some((l) => l.value === 100) || (last.value === 100 && hasDivision(expr) && !glued));
     if (resultOwn || hundred) {
       const plain = tokens.slice(0, -1).concat({ ...last, percent: false });
       expr = parse(plain);
@@ -625,7 +646,7 @@ function renderMarker(
   facts: SumFacts,
   around: { readonly before: string; readonly after: string; readonly spoken: boolean },
 ): Rendered | null {
-  const read = readMarker(content);
+  const read = readMarker(content, (v) => facts.toldPercent(v));
   if (read === null) return null;
   const { expr, unit, spoken } = { ...read, spoken: around.spoken };
   const root = inner(expr);
@@ -1000,7 +1021,14 @@ export function sumsText(
 // A sum written out ---------------------------------------------------------------------------------------------------
 
 type Lex =
-  | (Leaf & { readonly start: number; readonly end: number; readonly sign: string | null })
+  | (Leaf & {
+      readonly start: number;
+      readonly end: number;
+      readonly sign: string | null;
+      /** Written in thousands or millions ("$0.6 million"): the number as written, and what it stands for. */
+      readonly scale?: number;
+      readonly said?: string;
+    })
   | {
       readonly t: 'op';
       readonly op: Op;
@@ -1014,36 +1042,37 @@ type Lex =
   | { readonly t: 'other'; readonly char: string; readonly start: number; readonly end: number };
 
 const LEX =
-  /([$£€₦₵¥₹₩]\s?)?(?<![\p{L}\d.])(\d[\d,]*(?:\.\d+)?)(?![\d\p{L}]|\.\d)(\s?(?:%|percent\b|per cent\b))?|([$£€₦₵¥₹₩]\s?)(\d[\d,]*(?:\.\d+)?)(k)\b|(\p{L}[\p{L}'’]*)|(=)|([()])|([-−–+*×/÷@])|([^\s])/gu;
+  /([$£€₦₵¥₹₩]\s?)?(?<![\p{L}\d.])(\d[\d,]*(?:\.\d+)?)(?:(k)\b|\s(thousand|million|billion)\b)?(?![\d\p{L}]|\.\d)(\s?(?:%|percent\b|per cent\b))?|(\p{L}[\p{L}'’]*)|(=)|([()])|([-−–+*×/÷@])|([^\s])/giu;
 
 function lex(text: string): Lex[] {
   const out: Lex[] = [];
   for (const m of text.matchAll(LEX)) {
     const start = m.index;
     const end = start + m[0].length;
-    if (m[2] !== undefined || m[5] !== undefined) {
-      const digits = (m[2] ?? m[5] ?? '').replace(/,(?=\d{3})/g, '').replace(/,$/, '');
-      const value = Number(digits) * (m[6] === undefined ? 1 : 1000);
+    if (m[2] !== undefined) {
+      const digits = m[2].replace(/,(?=\d{3})/g, '').replace(/,$/, '');
+      const scale = SCALE[(m[3] ?? m[4] ?? '').toLowerCase()] ?? 1;
       // "1,200," ends a clause: the comma is not the number's.
-      const trailing = (m[2] ?? '').endsWith(',') && m[3] === undefined;
-      const sign = (m[1] ?? m[4] ?? '').trim();
+      const trailing = m[2].endsWith(',') && m[5] === undefined && scale === 1;
+      const sign = (m[1] ?? '').trim();
       out.push({
         t: 'num',
-        value,
-        percent: m[3] !== undefined,
-        shown: digits,
+        value: Number(digits) * scale,
+        percent: m[5] !== undefined,
+        shown: scale === 1 ? digits : grouped(String(Number(digits) * scale)),
         money: sign !== '',
         sign: sign === '' ? null : sign,
+        ...(scale === 1 ? {} : { scale, said: digits }),
         start,
         end: trailing ? end - 1 : end,
       });
       if (trailing) out.push({ t: 'other', char: ',', start: end - 1, end });
-    } else if (m[7] !== undefined) out.push({ t: 'word', word: m[7].toLowerCase(), start, end });
-    else if (m[8] !== undefined) out.push({ t: 'eq', start, end });
-    else if (m[9] !== undefined) out.push({ t: m[9] === '(' ? 'lp' : 'rp', start, end });
-    else if (m[10] !== undefined) {
+    } else if (m[6] !== undefined) out.push({ t: 'word', word: m[6].toLowerCase(), start, end });
+    else if (m[7] !== undefined) out.push({ t: 'eq', start, end });
+    else if (m[8] !== undefined) out.push({ t: m[8] === '(' ? 'lp' : 'rp', start, end });
+    else if (m[9] !== undefined) {
       const spaced = /\s/.test(text.charAt(start - 1)) && /\s/.test(text.charAt(end));
-      const c = m[10];
+      const c = m[9];
       const op: Op | null = /[-−–]/.test(c)
         ? '-'
         : c === '+'
@@ -1055,7 +1084,7 @@ function lex(text: string): Lex[] {
               : null;
       if (op === null) out.push({ t: 'other', char: c, start, end });
       else out.push({ t: 'op', op, start, end, compact: !spaced, word: null });
-    } else out.push({ t: 'other', char: m[11] ?? '', start, end });
+    } else out.push({ t: 'other', char: m[10] ?? '', start, end });
   }
   return out;
 }
@@ -1400,15 +1429,20 @@ function plainSums(
         resultMoney || dim === 'money' ? 'money' : w.result.percent ? 'percent' : 'count';
       const fits =
         dim !== undefined && !(resultMoney && dim === 'count') && !(w.result.percent && dim === 'money');
+      const scale = w.result.scale ?? 1;
       const loose = (v: number): boolean =>
-        agrees(v, w.result.value, w.result.shown, {
-          divides: hasDivision(w.expr),
+        agrees(v / scale, w.result.value / scale, w.result.said ?? w.result.shown, {
+          divides: hasDivision(w.expr) || scale > 1,
           hedged: w.hedged,
           count: !resultMoney && !w.result.percent,
         });
       if (loose(value)) {
         // A sum of an earlier reply was checked when it was said.
-        if ((own || !options.repair) && fits) facts.addResult(cents ? value / 100 : value, kind, w.expr);
+        if ((own || !options.repair) && fits) {
+          facts.addResult(cents ? value / 100 : value, kind, w.expr);
+          // As it was written, rounded ("= $151,724").
+          if (!cents) facts.rendered += `\n${kind === 'money' ? '$' : ''}${decimals(w.result.value, 2)}`;
+        }
         i = w.at - 1;
         continue;
       }

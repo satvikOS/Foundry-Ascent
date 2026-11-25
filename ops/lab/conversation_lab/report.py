@@ -123,6 +123,14 @@ def _log_tables(logs: Mapping[str, Any] | None) -> list[str]:
         f"Polly first audio {_ms_cell(logs.get('polly_first_audio_ms'))} ms. Stream fallbacks: "
         f"{logs.get('stream_fallbacks') or 'none'}; interrupt requests: {logs.get('interrupt_requests', 0)}."
     )
+    understand = logs.get("understand") or {}
+    if understand.get("codes"):
+        times = understand.get("ms") or {}
+        out.append(
+            "Understand call: "
+            + ", ".join(f"{code} x{n}" for code, n in understand["codes"].items())
+            + f"; chat {_ms_cell(times.get('text'))} ms, voice {_ms_cell(times.get('voice'))} ms."
+        )
     if logs.get("face_approval_ms"):
         out.append(
             f"FULL face pre-approval, per spoken unit before it is sent: {_ms_cell(logs.get('face_approval_ms'))} ms "
@@ -729,6 +737,10 @@ def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
         from conversation_lab.models_bench import tables
 
         return tables(result)
+    if suite == "understand":
+        from conversation_lab.understand_bench import tables as understand_tables
+
+        return understand_tables(result)
     if suite == "face":
         return _face_tables(result.get("face") or {})
     if suite == "client":

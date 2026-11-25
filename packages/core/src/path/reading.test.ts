@@ -73,7 +73,7 @@ describe('what they have and what is missing, from the record', () => {
   it('with nothing on record it says so, and names the first thing to find out', () => {
     expect([read(null).have, read(null).lacks]).toEqual([
       '',
-      'Nobody outside your own circle has told you about the last time they had this problem yet.',
+      'You have not heard yet, from anyone outside your own circle, about the last time they had this problem.',
     ]);
     expect(read(null, {}, 'Skippers').lacks).toBe(
       'You have not heard from skippers about the last time they had this problem yet.',
@@ -100,7 +100,11 @@ describe('what they have and what is missing, from the record', () => {
     const r = read('One harbour master asked for a trial on one boat.');
     expect(gapFor('pricing', r, 'SailMend')).toBe('No stranger has paid for SailMend yet.');
     expect(gapFor('pricing', r, 'New venture')).toBe('No stranger has paid for it yet.');
-    expect(gapFor('valuation', r, 'SailMend')).toBe('You do not have anyone who paid or signed yet.');
+    expect(gapFor('valuation', r, 'SailMend')).toBe(
+      'No stranger has paid for SailMend yet, and that would move the figure more than any formula.',
+    );
+    // Which rules a science idea falls under is not about who has the problem.
+    expect(gapFor('biotech-path', r, 'SailMend')).toBe('');
     for (const about of ['find-ten-people', 'first-100-users', 'quit-or-continue'])
       expect(gapFor(about, r, 'SailMend')).toBe('');
   });
@@ -156,7 +160,7 @@ describe('the program’s answer to a judgement, made for them', () => {
     [
       'grants-angels-vc',
       'One harbour master asked for a trial on one boat.',
-      /^A grant or a campus competition .*asked for a trial on one boat\. You do not have anyone who paid/,
+      /^A grant or a campus competition .*asked for a trial on one boat\. No stranger has paid for SailMend yet, and that is the first thing/,
     ],
     ['grants-angels-vc', 'One sail loft pays 300 dollars a month.', /^The second customer first/],
     ['raise-or-grow', 'Two lofts pay 80 dollars a month each.', /^Your customers first/],

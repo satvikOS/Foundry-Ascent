@@ -97,11 +97,55 @@ def test_the_live_workflow_offers_every_coach_of_models_json() -> None:
 
 def test_lab_models_refuse_an_unpriced_model(tmp_path: Path) -> None:
     raw = json.loads(config.MODELS_FILE.read_text(encoding="utf-8"))
-    raw["judge"] = ["us.amazon.nova-micro-v1:0"]
+    raw["judge"] = ["us.acme.model-v1:0"]
     path = tmp_path / "models.json"
     path.write_text(json.dumps(raw), encoding="utf-8")
     with pytest.raises(ValueError, match="no price"):
         config.lab_models(path)
+    raw = json.loads(config.MODELS_FILE.read_text(encoding="utf-8"))
+    raw["understand"].append({"id": "us.acme.model-v1:0", "efforts": []})
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    with pytest.raises(ValueError, match="no price"):
+        config.lab_models(path)
+
+
+def test_the_understand_call_is_the_deployments_unless_a_run_says_otherwise(tmp_path: Path) -> None:
+    lab = config.lab_models()
+    nova = "us.amazon.nova-2-lite-v1:0"
+    assert config.understand_env("default", "default", lab) == {}
+    assert config.understand_env("off", "", lab) == {"CORE_UNDERSTAND": "off"}
+    assert config.understand_env("on", nova, lab) == {"CORE_UNDERSTAND": "on", "MODEL_UNDERSTAND_ID": nova}
+    for choice, model, said in (
+        ("yes", "", "understand must be"),
+        ("on", "us.amazon.nova-pro-v1:0", "understand_model must be"),
+        ("default", nova, "understand=on"),
+        ("off", nova, "understand=on"),
+    ):
+        with pytest.raises(ValueError, match=said):
+            config.understand_env(choice, model, lab)
+    # Production names none today; once it does, the lab's API process gets the same variables.
+    assert config.app_models().understand is None
+    raw = json.loads(config.PRODUCTION_CONFIG.read_text(encoding="utf-8"))
+    raw["models"]["understand"] = {"enabled": True, "modelId": nova, "think": "low"}
+    path = tmp_path / "production.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    assert config.app_models(path).env() == {
+        **config.app_models().env(),
+        "CORE_UNDERSTAND": "on",
+        "MODEL_UNDERSTAND_ID": nova,
+        "MODEL_UNDERSTAND_THINK": "low",
+    }
+    arm = config.coach_app_models(nova, lab, config.app_models(path))
+    assert arm.understand == config.app_models(path).understand
+
+
+def test_an_understand_run_is_never_split_above_its_cap() -> None:
+    assert config.suites_for("understand") == ["understand"]
+    assert "understand" not in config.suites_for("all")
+    assert config.split_budget(2, ["understand"]) == {"understand": 2.0}
+    with pytest.raises(ValueError, match="at most 2"):
+        config.split_budget(2.01, ["understand"])
+    assert config.budget_parts("understand", 2) == (2.0, 0.0)
 
 
 def test_polly_is_metered_at_the_price_the_app_meters_it_at() -> None:

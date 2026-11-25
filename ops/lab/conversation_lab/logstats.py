@@ -6,6 +6,7 @@ and drops any code that does not look like one).
   the validation issue codes (`path: code`) grouped, and how often `(root): max_tokens` appears;
 * turn timing (server): total and first speech, p50/p95; Polly first audio per unit; a FULL face's pre-approval of
   each spoken unit as it is signed (`turn.face_approval`), p50/p95 and how many units it admitted;
+* the understand call of a turn (`turn.understand`): how many ended with each code, and its time by channel, p50/p95;
 * streamed turns that fell back to a whole reply, by reason; interrupt requests.
 """
 
@@ -140,6 +141,8 @@ def summarize(lines: Iterable[str]) -> dict[str, Any]:
     first_audio_ms: list[float] = []
     face_approval_ms: list[float] = []
     face_approved = 0
+    understood: Counter[str] = Counter()
+    understand_ms: dict[str, list[float]] = {"text": [], "voice": []}
     interrupts = 0
     events = list(_events(lines))
     for e in events:
@@ -172,6 +175,12 @@ def summarize(lines: Iterable[str]) -> dict[str, Any]:
             if isinstance(e.get("ms"), int | float) and not isinstance(e.get("ms"), bool):
                 face_approval_ms.append(float(e["ms"]))
             face_approved += 1 if e.get("approved") is True else 0
+        elif name == "turn.understand":
+            code = str(e.get("code") or "unknown")
+            understood[code if SAFE_CODE.match(code) else "other"] += 1
+            spent = _ms(e.get("ms"))
+            if spent is not None:
+                understand_ms["voice" if e.get("channel") == "voice" else "text"].append(spent)
         elif name == "turn.stream_fallback":
             reason = str(e.get("fallback") or e.get("reason") or "unknown")
             fallbacks[reason if SAFE_CODE.match(reason) else "other"] += 1
@@ -196,6 +205,10 @@ def summarize(lines: Iterable[str]) -> dict[str, Any]:
         # What admitting each unit to a FULL face held it on the server before it was sent (and how many it admitted).
         "face_approval_ms": _percentiles(face_approval_ms),
         "face_units_approved": face_approved,
+        "understand": {
+            "codes": dict(understood),
+            "ms": {channel: _percentiles(values) for channel, values in understand_ms.items()},
+        },
         "stream_fallbacks": dict(fallbacks),
         "interrupt_requests": interrupts,
         "turns": turn_breakdown(events),

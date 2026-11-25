@@ -136,7 +136,10 @@ def test_the_public_summary_says_how_the_judge_agreed_in_numbers_only() -> None:
     )
     text = render(summary)
     assert "NOT calibrated" in text
-    assert "Coach: us.amazon.nova-2-lite-v1:0 (coach_model default, coach_think judgement)" in text
+    assert (
+        "Coach: us.amazon.nova-2-lite-v1:0 (coach_model default, coach_think judgement, understand default, "
+        "understand_model default)" in text
+    )
     assert "Groups: numbers, news" in text
     assert "KB-02" in text
     public = text + json.dumps(summary)

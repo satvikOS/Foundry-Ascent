@@ -38,11 +38,12 @@ def api_env(
     web_port: int = WEB_PORT,
     mock: bool = False,
     coach_think: str = DEFAULT_THINK,
+    understand: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     """The API's environment: the production model configuration (infra/cdk/config/production.json), the
     lab's database, generous turn limits, and speech (Polly + Transcribe) only when the suite calls. ``mock``
     (the harness's own dry run, no AWS) runs the deterministic mock model without speech instead. ``coach_think`` but
-    ``default`` is the process's CORE_THINK."""
+    ``default`` is the process's CORE_THINK; ``understand`` its understand call's variables (config.understand_env)."""
     env = dict(base)
     env.update(
         {
@@ -73,6 +74,7 @@ def api_env(
     )
     if coach_think != DEFAULT_THINK:
         env["CORE_THINK"] = coach_think
+    env.update(understand or {})
     if mock:
         env.update({"MODEL_PROVIDER": "mock", "LOCAL_AWS_SPEECH": "false"})
     return env

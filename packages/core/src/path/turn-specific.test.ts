@@ -456,9 +456,9 @@ describe('one thing to do, a rejection, and a fee', () => {
   ])('%s is no page to fill in', (message) => {
     expect(asksOneThing(message)).toBe(true);
     const text = leadOf(message, {}, ['x'], ['Some reply.']);
-    // Whose it is, what nobody has shown yet, and the part that starts on it.
+    // Whose it is and the part that starts on it: what nobody has told them yet is about another step.
     expect(text).toMatch(
-      /^Nobody outside your own circle .* So one thing, for SailMend, which mends sails on the pier in two days: write the five lines/,
+      /^One thing, for SailMend, which mends sails on the pier in two days: write the five lines/,
     );
     expect(text).not.toContain('[');
   });

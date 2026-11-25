@@ -320,7 +320,7 @@ describe('who decides, named with what to bring in the same sentence', () => {
       'Assume the university may own part of it until you know, and do not share or sell it as yours yet: ownership turns on who paid for the work.';
     for (const shown of both(none, IP_REFERRAL, 'Who owns it?'))
       expect(shown).toMatch(
-        /A qualified person decides this: the university technology transfer office, [^.]*; bring them the invention history page/,
+        /Talk to the university technology transfer office, [^.]*\. Bring them the invention history page/,
       );
   });
 

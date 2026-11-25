@@ -518,7 +518,7 @@ export const IDEA_PLAYS: readonly Play[] = [
     steps: [
       step(
         'Search what is public about similar products',
-        'Their site, app store page, reviews and campus posts. Write who they serve and what people complain about.',
+        'You need no names: search the problem in the words a customer would use, then the same words with "app", "service" or "alternative". Read the site, reviews and campus posts of what comes up. Write who they serve and what people complain about.',
         40,
       ),
       step(

@@ -52,6 +52,8 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
     expect(access.foundationModels.slice().sort()).toEqual([
       'amazon.nova-2-lite-v1:0',
       'amazon.nova-2-multimodal-embeddings-v1:0',
+      'amazon.nova-lite-v1:0',
+      'amazon.nova-micro-v1:0',
       'amazon.nova-premier-v1:0',
       'amazon.nova-pro-v1:0',
       'amazon.titan-embed-text-v2:0',
@@ -85,6 +87,8 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       'global.anthropic.claude-haiku-5-5',
       'global.openai.gpt-6-luna',
       'us.amazon.nova-2-lite-v1:0',
+      'us.amazon.nova-lite-v1:0',
+      'us.amazon.nova-micro-v1:0',
       'us.amazon.nova-premier-v1:0',
       'us.amazon.nova-pro-v1:0',
       'us.anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -206,6 +210,25 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
     ).toThrow(/1 to 3 model ids/);
   });
 
+  it('grants the understand suite’s candidates to the lab only, priced, and never to the app', () => {
+    expect(LAB_MODELS.understand).toEqual([
+      'us.amazon.nova-2-lite-v1:0',
+      'openai.gpt-oss-120b-1:0',
+      'openai.gpt-oss-20b-1:0',
+      'qwen.qwen3-next-80b-a3b',
+      'us.amazon.nova-micro-v1:0',
+      'us.amazon.nova-lite-v1:0',
+    ]);
+    const { understand: _understand, ...without } = raw();
+    expect(parseLabModels(without).understand).toEqual([]);
+    expect(() => parseLabModels({ ...raw(), understand: [{ id: 'openai.gpt-6-luna' }] })).toThrow(/Mantle/);
+    expect(() => parseLabModels({ ...raw(), understand: [{ id: 'us.acme.model-v1:0' }] })).toThrow(
+      /no price/,
+    );
+    const granted = JSON.stringify(reasoningAccess(effectiveModels(loadConfig().models)));
+    expect(granted).not.toMatch(/gpt-oss|qwen|nova-micro|nova-lite/);
+  });
+
   it('follows the app when its models change (Luna enabled: Mantle stays out of the lab grant)', () => {
     const models = loadConfig().models;
     const access = conversationLabAccess(
@@ -213,7 +236,7 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       LAB_MODELS,
     );
     // The bare (Mantle) id adds nothing: without the lab's own Luna profiles, no OpenAI model is granted.
-    const { benchmark: _benchmark, live: _live, client: _client, ...own } = raw();
+    const { benchmark: _benchmark, live: _live, client: _client, understand: _understand, ...own } = raw();
     const appOnly = conversationLabAccess(
       effectiveModels({ ...models, luna: { modelId: 'openai.gpt-6-luna', enabled: true } }),
       parseLabModels(own),

@@ -24,6 +24,13 @@ name: Ops - conversation lab
 #           (packages/db/knowledge/retrieval-benchmark): each embedding model alone, and production's own search with its
 #           vectors in the job's reset database. No app or browser. At most USD 2 a run (expected about 0.30). The summary
 #           prints numbers, the candidates' ids and codes; the models' replies and AWS's refusal messages are sealed.
+#   understand (on its own, never in `all`) the understand call of a turn (docs/architecture/understand.md) on the models
+#           it may run on (ops/lab/models.json `understand`): apps/api/src/scripts/lab-understand.ts reads the messages of
+#           the client and held-out scenarios with a turn's own prompt, checks and sums, each on every model, and the lab
+#           grades the readings against the scenarios' expectations without a judge. No app, browser or database. At most
+#           USD 2. `groups` and `scenario_ids` narrow the scenarios (empty = all of them, held-out included: nothing is
+#           played), `understand_model` compares one model alone. The summary prints numbers, model ids, group names and
+#           codes; the messages, the readings and each case's grades are sealed.
 #   face    (on its own, never in `all`) the HeyGen LiveAvatar FULL stock face against the vendor's free SANDBOX
 #           (the Wayne avatar, sessions of about a minute, no credits): the app runs with the face wired as for the
 #           presentation (provider heygen-liveavatar, mode full, sandbox, audience admins), the seeded founder is
@@ -58,7 +65,8 @@ name: Ops - conversation lab
 #           group's estimate. `coach_model` puts this suite's API process on another coach for an A/B (GPT-6 Luna,
 #           Claude Haiku 5.5, gpt-oss, Qwen3, DeepSeek, Mistral: benchmark only, production unchanged; the summary names
 #           the coach), `coach_think` lets a Nova 2 coach reason before the replies that judge something, or every typed
-#           one (CORE_THINK of the lab's API process), `judge_model` names
+#           one (CORE_THINK of the lab's API process), `understand` reads every message against the record first
+#           (CORE_UNDERSTAND) on `understand_model`, `judge_model` names
 #           the judge (never one of the coach's family). Capped at USD 2. The exact wording of the client's questions and the other tools'
 #           recorded scores come from the optional repository secret LAB_CLIENT_PACK (never committed, run step
 #           only); without it our equivalent wording is used and the summary says so.
@@ -86,7 +94,7 @@ on:
       suite:
         description: Which suite to run (all = every suite, in parallel jobs)
         type: choice
-        options: [recall, matrix, voice, ui, agenda, safety, models, face, client, all]
+        options: [recall, matrix, voice, ui, agenda, safety, models, understand, face, client, all]
         default: recall
       budget_usd:
         description: Hard cap in USD for the whole run, split across the suites (0.5 to 2; up to 50 only with approved_over_cap)
@@ -105,7 +113,7 @@ on:
         type: string
         default: ''
       scenario_ids:
-        description: matrix and client - run just these scenarios (comma-separated ids, e.g. SM-13,SM-39 or CP-01,CQ-14); empty = all up to max_scenarios (client, all)
+        description: matrix, client and understand - run just these scenarios (comma-separated ids, e.g. SM-13,SM-39 or CP-01,CQ-14); empty = all up to max_scenarios (client, all)
         type: string
         default: ''
       repeat:
@@ -118,7 +126,7 @@ on:
         options: [builtin, evals]
         default: builtin
       groups:
-        description: client only - just these groups of scenarios, comma-separated (protocol, questions, organise, calls, arcs, numbers, news, followups, novice, odd, memory, hard, repeats, adversarial, heldout); empty = all but heldout
+        description: client and understand - just these groups of scenarios, comma-separated (protocol, questions, organise, calls, arcs, numbers, news, followups, novice, odd, memory, hard, repeats, adversarial, heldout, heldoutb); empty = all but the held-out two (understand - all)
         type: string
         default: ''
       coach_model:
@@ -140,6 +148,23 @@ on:
         description: client only - which typed turns let the coach reason before it answers, Amazon Nova 2 only (lab only; default = the deployment's own, off)
         type: choice
         options: [default, 'off', judgement, typed]
+        default: default
+      understand:
+        description: client only - read each message against the record before the path decides (lab only; default = the deployment's own, off)
+        type: choice
+        options: [default, 'off', 'on']
+        default: default
+      understand_model:
+        description: client with understand=on - the model that reads it; understand - compare this model alone; default = the coach's model (client), every candidate (understand)
+        type: choice
+        options:
+          - default
+          - us.amazon.nova-2-lite-v1:0
+          - openai.gpt-oss-120b-1:0
+          - openai.gpt-oss-20b-1:0
+          - qwen.qwen3-next-80b-a3b
+          - us.amazon.nova-micro-v1:0
+          - us.amazon.nova-lite-v1:0
         default: default
       judge_model:
         description: client only - the judge (auto = the first of another family than the coach); one named for both arms of an A/B must be of neither coach's family
@@ -200,10 +225,12 @@ jobs:
           SCENARIO_GROUPS: ${{ inputs.groups }}
           COACH_MODEL: ${{ inputs.coach_model }}
           COACH_THINK: ${{ inputs.coach_think }}
+          UNDERSTAND: ${{ inputs.understand }}
+          UNDERSTAND_MODEL: ${{ inputs.understand_model }}
           JUDGE_MODEL: ${{ inputs.judge_model }}
         run: |
           # Values are checked, never echoed (except the suite and the numbers, which are public).
-          case "${SUITE}" in recall|matrix|voice|ui|agenda|safety|models|face|client|all) ;; *) echo "::error::suite must be recall, matrix, voice, ui, agenda, safety, models, face, client or all."; exit 1;; esac
+          case "${SUITE}" in recall|matrix|voice|ui|agenda|safety|models|understand|face|client|all) ;; *) echo "::error::suite must be recall, matrix, voice, ui, agenda, safety, models, understand, face, client or all."; exit 1;; esac
           if [[ ! "${BUDGET}" =~ ^[0-9]{1,2}(\.[0-9]{1,2})?$ ]] || ! awk -v b="${BUDGET}" 'BEGIN { exit !(b >= 0.5 && b <= 50) }'; then
             echo "::error::budget_usd must be a number from 0.5 to 50."
             exit 1
@@ -244,13 +271,13 @@ jobs:
             echo "::error::repeat must be a whole number from 1 to 10."
             exit 1
           fi
-          if [[ ! "${SCENARIO_GROUPS}" =~ ^([a-z]{3,12}(,[a-z]{3,12}){0,14})?$ ]]; then
+          if [[ ! "${SCENARIO_GROUPS}" =~ ^([a-z]{3,12}(,[a-z]{3,12}){0,15})?$ ]]; then
             echo "::error::groups must be empty or comma-separated group names like numbers,news."
             exit 1
           fi
           for group in ${SCENARIO_GROUPS//,/ }; do
             found=no
-            for known in protocol questions organise calls arcs numbers news followups novice odd memory hard repeats adversarial heldout; do
+            for known in protocol questions organise calls arcs numbers news followups novice odd memory hard repeats adversarial heldout heldoutb; do
               if [ "${group}" = "${known}" ]; then found=yes; fi
             done
             if [ "${found}" = no ]; then
@@ -261,8 +288,22 @@ jobs:
           case "${COACH_MODEL}" in default|us.amazon.nova-2-lite-v1:0|us.anthropic.claude-haiku-5-5|global.anthropic.claude-haiku-5-5|us.openai.gpt-6-luna|openai.gpt-oss-120b-1:0|openai.gpt-oss-20b-1:0|qwen.qwen3-next-80b-a3b|deepseek.v3.2|mistral.mistral-large-3-675b-instruct) ;; *) echo "::error::coach_model is not one of its options."; exit 1;; esac
           case "${COACH_THINK}" in default|off|judgement|typed) ;; *) echo "::error::coach_think must be default, off, judgement or typed."; exit 1;; esac
           case "${JUDGE_MODEL}" in auto|us.anthropic.claude-haiku-4-5-20251001-v1:0|us.amazon.nova-pro-v1:0|us.meta.llama4-maverick-17b-instruct-v1:0) ;; *) echo "::error::judge_model is not one of its options."; exit 1;; esac
-          if [ "${SUITE}" != client ] && { [ -n "${SCENARIO_GROUPS}" ] || [ "${COACH_MODEL}" != default ] || [ "${COACH_THINK}" != default ] || [ "${JUDGE_MODEL}" != auto ]; }; then
-            echo "::error::groups, coach_model, coach_think and judge_model are the client suite's."
+          if [ "${SUITE}" != client ] && { [ "${COACH_MODEL}" != default ] || [ "${COACH_THINK}" != default ] || [ "${UNDERSTAND}" != default ] || [ "${JUDGE_MODEL}" != auto ]; }; then
+            echo "::error::coach_model, coach_think, understand and judge_model are the client suite's."
+            exit 1
+          fi
+          if [ "${SUITE}" != client ] && [ "${SUITE}" != understand ] && { [ -n "${SCENARIO_GROUPS}" ] || [ "${UNDERSTAND_MODEL}" != default ]; }; then
+            echo "::error::groups and understand_model are the client and understand suites'."
+            exit 1
+          fi
+          case "${UNDERSTAND}" in default|off|on) ;; *) echo "::error::understand must be default, off or on."; exit 1;; esac
+          case "${UNDERSTAND_MODEL}" in default|us.amazon.nova-2-lite-v1:0|openai.gpt-oss-120b-1:0|openai.gpt-oss-20b-1:0|qwen.qwen3-next-80b-a3b|us.amazon.nova-micro-v1:0|us.amazon.nova-lite-v1:0) ;; *) echo "::error::understand_model is not one of its options."; exit 1;; esac
+          if [ "${SUITE}" = client ] && [ "${UNDERSTAND_MODEL}" != default ] && [ "${UNDERSTAND}" != on ]; then
+            echo "::error::understand_model is for understand=on."
+            exit 1
+          fi
+          if [ "${SUITE}" = understand ] && ! awk -v b="${BUDGET}" 'BEGIN { exit !(b <= 2) }'; then
+            echo "::error::the understand suite takes at most USD 2."
             exit 1
           fi
           case "${FACE_MODE}" in both|full|lite|lite-probe) ;; *) echo "::error::face_mode must be both, full, lite or lite-probe."; exit 1;; esac
@@ -339,7 +380,9 @@ jobs:
       LAB_REPEAT: ${{ inputs.repeat }}
       LAB_MATRIX_SOURCE: ${{ inputs.matrix_source }}
       LAB_FACE_MODE: ${{ inputs.face_mode }}
-      LAB_GROUPS: ${{ matrix.suite == 'client' && inputs.groups || '' }}
+      LAB_GROUPS: ${{ (matrix.suite == 'client' || matrix.suite == 'understand') && inputs.groups || '' }}
+      LAB_UNDERSTAND: ${{ matrix.suite == 'client' && inputs.understand || 'default' }}
+      LAB_UNDERSTAND_MODEL: ${{ (matrix.suite == 'client' || matrix.suite == 'understand') && inputs.understand_model || 'default' }}
       LAB_COACH_THINK: ${{ matrix.suite == 'client' && inputs.coach_think || 'default' }}
       LAB_COACH_MODEL: ${{ matrix.suite == 'client' && inputs.coach_model || 'default' }}
       LAB_JUDGE_MODEL: ${{ matrix.suite == 'client' && inputs.judge_model || 'auto' }}
@@ -391,18 +434,18 @@ jobs:
         run: python -m pip install -r ops/lab/requirements.txt
 
       - name: Install Playwright Chromium
-        if: matrix.suite != 'matrix' && matrix.suite != 'agenda' && matrix.suite != 'safety' && matrix.suite != 'models' && matrix.suite != 'client'
+        if: matrix.suite != 'matrix' && matrix.suite != 'agenda' && matrix.suite != 'safety' && matrix.suite != 'models' && matrix.suite != 'understand' && matrix.suite != 'client'
         run: pnpm --filter @foundry/web exec playwright install --with-deps chromium
 
       - name: Build the web app
-        if: matrix.suite != 'matrix' && matrix.suite != 'agenda' && matrix.suite != 'safety' && matrix.suite != 'models' && matrix.suite != 'client'
+        if: matrix.suite != 'matrix' && matrix.suite != 'agenda' && matrix.suite != 'safety' && matrix.suite != 'models' && matrix.suite != 'understand' && matrix.suite != 'client'
         run: pnpm --filter @foundry/web build
 
       # Creates database "foundry", migrates it and seeds the synthetic tenant with a fresh owner access code
-      # (masked; handed to the harness, never printed). The safety suite needs none; the models suite starts no app and
-      # measures production's own search in it.
+      # (masked; handed to the harness, never printed). The safety and understand suites need none; the models suite starts no
+      # app and measures production's own search in it.
       - name: Reset and seed the lab database
-        if: matrix.suite != 'safety'
+        if: matrix.suite != 'safety' && matrix.suite != 'understand'
         run: |
           SEED_OWNER_RELEASES="$(jq -r '(.homeTenant.ownerReleases // []) | join(",")' infra/cdk/config/production.json)"
           export SEED_OWNER_RELEASES
@@ -492,7 +535,8 @@ jobs:
             --baseline-run-id "${LAB_BASELINE_RUN_ID}" --baseline-file "${RUNNER_TEMP}/baseline/summary.json" \
             --scenarios "${LAB_SCENARIO_IDS}" --repeat "${LAB_REPEAT}" --matrix-source "${LAB_MATRIX_SOURCE}" \
             --face-mode "${LAB_FACE_MODE}" --groups "${LAB_GROUPS}" --coach-model "${LAB_COACH_MODEL}" \
-            --judge-model "${LAB_JUDGE_MODEL}" --coach-think "${LAB_COACH_THINK}"
+            --judge-model "${LAB_JUDGE_MODEL}" --coach-think "${LAB_COACH_THINK}" \
+            --understand "${LAB_UNDERSTAND}" --understand-model "${LAB_UNDERSTAND_MODEL}"
 
       - name: Seal the private outputs
         if: always() && env.LAB_PUBLIC_KEY != ''

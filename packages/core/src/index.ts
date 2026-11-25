@@ -196,6 +196,15 @@ export {
   type RetrievalArgs,
 } from './orchestrator/retrieval.js';
 export { playRefId } from './orchestrator/evidence.js';
+export {
+  prepareUnderstand,
+  understandCatalogue,
+  understandDue,
+  understandTurn,
+  type PreparedUnderstand,
+  type UnderstandInput,
+} from './orchestrator/understand.js';
+export { recordLines, type RecordSource } from './path/record-lines.js';
 export { SYNTHETIC_WARM_UP_GUARDS, warmTurnEngine, type TurnWarmUpGuards } from './orchestrator/warm-up.js';
 export { assembleContext, estimateTokens, type AssembledContext } from './orchestrator/context-budget.js';
 export { secondsUntilUtcMidnight, shouldSampleForReview } from './orchestrator/sampling.js';

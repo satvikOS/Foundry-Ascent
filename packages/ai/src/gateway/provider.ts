@@ -29,6 +29,10 @@ export interface ProviderRequest<T> {
   promptCache?: PromptCacheHint;
   /** Sampling temperature, for a model that takes one (default: the provider's own). */
   temperature?: number;
+  /** Reason before answering, for a model that can (`GenerateStructuredRequest.think`). */
+  think?: ThinkEffort;
+  /** Meter a cut-off attempt by an estimate (`GenerateStructuredRequest.estimateCut`). */
+  estimateCut?: boolean;
 }
 
 export interface ProviderResult<T> {

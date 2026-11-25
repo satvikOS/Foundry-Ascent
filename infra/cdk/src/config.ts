@@ -52,6 +52,16 @@ export interface PlatformConfig {
       readonly fallback: string;
       readonly purposes: readonly BackgroundPurpose[];
     };
+    /**
+     * The understand call of a turn (docs/architecture/understand.md): whether the API makes it (`CORE_UNDERSTAND`), on
+     * which model (`MODEL_UNDERSTAND_ID`; default: `primary`) and whether that model reasons first
+     * (`MODEL_UNDERSTAND_THINK`, Amazon Nova 2). Absent: the API's own default, off, and no variable is passed.
+     */
+    readonly understand?: {
+      readonly enabled: boolean;
+      readonly modelId?: string;
+      readonly think?: 'low';
+    };
     readonly embeddings: string;
     /** GPT-6 Luna on Bedrock Mantle, gated per account by AWS. See lib/models.ts for how it is applied. */
     readonly luna?: { readonly modelId: string; readonly enabled: boolean };
@@ -366,6 +376,20 @@ function parseBackground(raw: unknown): NonNullable<PlatformConfig['models']['ba
     primary: str(background, 'primary', path, MODEL_ID),
     fallback: str(background, 'fallback', path, MODEL_ID),
     purposes: purposes as BackgroundPurpose[],
+  };
+}
+
+function parseUnderstand(raw: unknown): NonNullable<PlatformConfig['models']['understand']> {
+  const path = '$.models.understand';
+  const understand = obj(raw, path);
+  const unknown = Object.keys(understand).find((k) => !['enabled', 'modelId', 'think', 'note'].includes(k));
+  if (unknown !== undefined) throw new ConfigError(`${path}.${unknown}`, 'is not a setting of it');
+  if (understand.think !== undefined && understand.think !== 'low')
+    throw new ConfigError(`${path}.think`, 'must be low (or left out)');
+  return {
+    enabled: bool(understand, 'enabled', path),
+    ...(understand.modelId === undefined ? {} : { modelId: str(understand, 'modelId', path, MODEL_ID) }),
+    ...(understand.think === undefined ? {} : { think: 'low' as const }),
   };
 }
 
@@ -723,6 +747,7 @@ export function parseConfig(raw: unknown): PlatformConfig {
       primary: str(models, 'primary', '$.models', MODEL_ID),
       fallback: str(models, 'fallback', '$.models', MODEL_ID),
       ...(models.background === undefined ? {} : { background: parseBackground(models.background) }),
+      ...(models.understand === undefined ? {} : { understand: parseUnderstand(models.understand) }),
       embeddings: str(models, 'embeddings', '$.models', MODEL_ID),
       ...(models.luna === undefined ? {} : { luna: parseLuna(models.luna) }),
     },

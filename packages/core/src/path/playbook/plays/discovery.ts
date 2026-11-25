@@ -461,7 +461,7 @@ export const DISCOVERY_PLAYS: readonly Play[] = [
       ),
       step(
         'Find 2 companies with public pages that serve the same need',
-        'Read their prices and their worst reviews. Keep the links.',
+        'No names yet? Search the problem in the words of your interviewees, with "app", "service" or "alternative". Read their prices and their worst reviews. Keep the links.',
         45,
       ),
       step(

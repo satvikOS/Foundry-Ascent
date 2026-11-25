@@ -164,6 +164,47 @@ export * from './prompts/index.js';
 // Distillation (digest, notebook, memory and lesson candidates) -------------------------------------
 export * from './distill/index.js';
 
+// Understanding (what a message asks, read against the record) -----------------------------------------
+export {
+  checkUnderstanding,
+  readUnderstanding,
+  type ReadUnderstanding,
+  type UnderstandContext,
+  type UnderstandExchange,
+  type UnderstandPlay,
+  type UnderstandReport,
+} from './understand/check.js';
+export {
+  UNDERSTAND_EXAMPLES,
+  exchangesInView,
+  understandCacheHint,
+  understandMessages,
+  understandSystemPrompt,
+  type UnderstandPrompt,
+} from './understand/prompt.js';
+export {
+  RawUnderstanding,
+  UNDERSTAND_MAX_OUTPUT_TOKENS,
+  UNDERSTAND_SCHEMA_NAME,
+  UNDERSTAND_TIMEOUT_MS,
+} from './understand/schema.js';
+export { type SumDrop } from './understand/sums.js';
+export {
+  RESULT_VERDICTS,
+  SUM_UNITS,
+  UNDERSTOOD_KINDS,
+  UNDERSTOOD_REFERRALS,
+  type RecordLine,
+  type ResultVerdict,
+  type SumUnit,
+  type Understanding,
+  type UnderstoodChoice,
+  type UnderstoodKind,
+  type UnderstoodReferral,
+  type UnderstoodResult,
+  type UnderstoodSum,
+} from './understand/types.js';
+
 // Risk ------------------------------------------------------------------------------------------------
 export {
   classifyRisk,

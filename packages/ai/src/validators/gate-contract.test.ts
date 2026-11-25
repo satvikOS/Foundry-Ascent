@@ -180,7 +180,7 @@ describe('the gate holds a streamed reply to the contract', () => {
       'Assume the university may own part of it; ownership turns on who paid for the work, whose equipment you used and what you signed.',
       { guidance: IP_REFERRAL, founderText: 'Who owns it?' },
     );
-    expect(out.text).toContain('A qualified person decides this: the university technology transfer office');
+    expect(out.text).toContain('Talk to the university technology transfer office');
     expect(out.text).toContain('**Next:** Write a one-page invention history');
   });
 
@@ -403,8 +403,8 @@ describe('a call', () => {
       'Assume the university may own part of it until its office says otherwise. Ownership turns on who paid for the work, whose equipment you used and what you signed. Every lab has its own rules and its own history, and a lot of teams never look at any of it.',
       { ...voice, guidance: IP_REFERRAL, founderText: 'Who owns what I made in the lab?' },
     );
-    expect(out.said.match(/A qualified person decides this/g)).toHaveLength(1);
-    expect(out.said).toContain('bring them the invention history page');
+    expect(out.said.match(/Talk to the university technology transfer office/g)).toHaveLength(1);
+    expect(out.said).toContain('Bring them the invention history page');
     expect(out.said).toMatch(/Your next step: write a one-page invention history .* by Monday\.$/);
     expect(out.said.split(/\s+/).length).toBeLessThanOrEqual(SPOKEN_MAX_WORDS + 35);
   });

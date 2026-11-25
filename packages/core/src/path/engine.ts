@@ -1,3 +1,4 @@
+import { type Understanding } from '@foundry/ai';
 import {
   type PathCheckIn,
   type PathCriterion,
@@ -35,10 +36,12 @@ import {
   isRehearsal,
   isSocial,
   isVenting,
+  namesOthers,
   needsAPerson,
   rejectsAdvice,
   ownSentences,
   ownWords,
+  partAsked,
   pivotOf,
   pushesOn,
   reportFinishes,
@@ -71,6 +74,7 @@ import {
   earlierDay,
   earlierEvidence,
   hasEvidence,
+  ideaText,
   isShownCriterion,
   missingOf,
   pathState,
@@ -101,7 +105,18 @@ import {
 } from './steps.js';
 import { concrete, currentOnes, stillTrue, toYou, toldAs } from './tell.js';
 import { type PathIntent, type Playbook } from './types.js';
-import { contentStems, countsIn, plain, sentences, subjectStems } from './words.js';
+import {
+  asksOfWork,
+  asksWholePath,
+  decides,
+  NOTHING,
+  referralPlayOf,
+  speaks,
+  type Decides,
+  type Weighed,
+  type WeighedField,
+} from './understood.js';
+import { contentStems, countsIn, numberOf, plain, sentences, subjectStems } from './words.js';
 
 export { stepView, type ChosenStep, type StepContext } from './steps.js';
 
@@ -147,6 +162,8 @@ export interface DecideInput extends PathSource {
    * (match.ts `NEAREST_WORDS`). Absent or null: not read yet, and the phrases alone.
    */
   readonly near?: retrievalRepo.NearPlays | 'unavailable' | null;
+  /** What the message asks, read against the record and checked (understood.ts). Null or absent: the rules alone. */
+  readonly understanding?: Understanding | null;
 }
 
 /** A change of direction: the idea it was and is, and what the old customer had shown, open again. */
@@ -172,7 +189,7 @@ export interface Decision {
   readonly kind: TurnKind;
   /** The ask's intent in the playbook's table, `overview` for "get me organized", or null. */
   readonly intent: string | null;
-  readonly matched: IntentMatch['how'] | 'risk' | 'rule' | 'previous' | 'semantic' | null;
+  readonly matched: IntentMatch['how'] | 'risk' | 'rule' | 'previous' | 'semantic' | 'reading' | null;
   /** The similarity of the nearest play, when the message was compared with them (whether or not it was chosen). */
   readonly score: number | null;
   /** No phrase names what they ask, and it may be matched by meaning (semantic.ts); null: nothing to match. */
@@ -195,6 +212,8 @@ export interface Decision {
    * of those this week"); null: nothing to store.
    */
   readonly keeps: ChosenStep | null;
+  /** The first turn that gives this venture a step: its path begins, at the stage it stands at. */
+  readonly begins: boolean;
   /** The turn goes on about the step of the turn before. */
   readonly carried: boolean;
   /** What follows the step, in order. */
@@ -261,6 +280,10 @@ export interface Decision {
   readonly weak: Ratio | null;
   /** The day the turn's step was due, when it passed and the step has another day now. */
   readonly wasDue: string | null;
+  /** The reading the turn rests on; null: the rules alone decided. */
+  readonly reading: Understanding | null;
+  /** Who decided what, where a reading was weighed (understood.ts `PRECEDENCE`): ids for the log, never words. */
+  readonly decidedBy: Readonly<Record<WeighedField, Decides>> | null;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -447,7 +470,16 @@ function askStep(context: StepContext, state: PathState, play: Play, own: Chosen
   const theirs = own?.view.origin === 'founder' && own.view.status === 'now';
   if (here !== null && row?.status !== 'blocked' && !theirs)
     return { step: nowStep(context, play, here), offered: false };
-  if (row !== undefined) return { step: asItIs(stepView(row), row), offered: false };
+  if (row !== undefined) {
+    const view = stepView(row);
+    if (row.status !== 'later') return { step: asItIs(view, row), offered: false };
+    // Offered before in the form they asked for (a smaller one): the same step, with a day they can still make.
+    const dueOn =
+      view.dueOn !== null && view.dueOn < context.today
+        ? dueOnFor(context.today, play.days, deadlineOf(context))
+        : view.dueOn;
+    return { step: asItIs({ ...view, dueOn }, row), offered: true };
+  }
   const { view } = stepFor(context, play, {
     status: 'later',
     criterionId: here ?? openCriterionOf(state, play, false),
@@ -602,7 +634,13 @@ function cut(context: StepContext, turn: TurnStep, ask: SmallerAsk): ChosenStep 
   if (step === null) return null;
   const view = smallerStep(step.view, ask, context.today);
   if (view === null) return null;
-  if (turn.offered) return { view, write: null, storedVersion: null };
+  // Offered, it is kept in this form (not on their path): asked again, it is this step and no other.
+  if (turn.offered)
+    return {
+      view,
+      write: step.storedVersion === null ? 'insert' : 'change',
+      storedVersion: step.storedVersion,
+    };
   return {
     view,
     write: step.write === 'insert' || step.write === 'promote' ? step.write : 'change',
@@ -770,6 +808,7 @@ function withPivot(
       idea: pivot.idea,
     },
     pivots: [...(reads.path?.pivots ?? []), { on: input.today, from: old, to: pivot.to, sessionId: null }],
+    programStage: input.venture.stage,
   };
   // A step in their own words was about the old direction: it ends with it.
   const ends = reads.steps.filter((s) => s.status === 'now' && s.origin === 'founder');
@@ -835,8 +874,8 @@ function restoredBy(input: DecideInput, idea: string): AppliedPivot['restored'] 
         },
       ];
     }
-    if (row.status !== 'open' || row.evidence !== null || !hasEvidence(memory)) return [];
-    const record = recordShowing(criterion, memory);
+    if (row.status !== 'open' || row.evidence !== null || !hasEvidence(playbook, input, memory)) return [];
+    const record = recordShowing(criterion, memory, ideaText(input));
     return record === null
       ? []
       : [{ criterion, status: 'claimed' as const, evidence: record.title, sourceSessionId: null }];
@@ -940,6 +979,7 @@ export function decide(input: DecideInput): Decision {
     offered: false,
     pathStep: null,
     keeps: null,
+    begins: false,
     carried: false,
     then: [],
     missing: missingOf(before),
@@ -974,6 +1014,8 @@ export function decide(input: DecideInput): Decision {
     vents: false,
     weak: null,
     wasDue: null,
+    reading: null,
+    decidedBy: null,
   } as const;
 
   if (input.crisis) return { ...base, kind: 'crisis' };
@@ -990,6 +1032,11 @@ export function decide(input: DecideInput): Decision {
 
   const { message } = input;
   const previous = input.previous ?? null;
+  // What the message asks, as it was read; never of a turn a wellbeing or conflict risk is found on.
+  const read = input.understanding ?? null;
+  const u = read !== null && speaks(read) && !input.riskCategories.some((c) => SUPPORT.has(c)) ? read : null;
+  // The work is asked of, however they feel.
+  const works = u !== null && asksOfWork(u);
   const on = currentStep(input, before);
   const onRow = input.reads.steps.find((s) => s.id === on?.view.id && s.status === 'now') ?? null;
   const reacts = isReaction(message);
@@ -1013,7 +1060,20 @@ export function decide(input: DecideInput): Decision {
   )
     return { ...base, kind: 'social', commitment, keeps: accepted(input, commitment, earlier) };
 
-  const recallAsked = referralMatch === null && asksRecall(message);
+  const recallPhrase = referralMatch === null && asksRecall(message);
+  const readsMore =
+    u !== null &&
+    u.kind !== 'recall' &&
+    (u.sums.some((s) => s.asked) ||
+      u.choice !== null ||
+      u.result !== null ||
+      u.contradicts !== null ||
+      ['sum', 'choice', 'result', 'pushback', 'draft', 'integrity', 'feelings'].includes(u.kind));
+  const recallAsked =
+    recallPhrase &&
+    (u === null ||
+      u.kind === 'recall' ||
+      decides('recall', { ...NOTHING, recallPhrase, readsMore }) === 'rule');
   const pivot = recallAsked ? null : pivotIn(input, pivotOf(theirs));
   const isNote = (i: PathIntent): boolean => i.note === true;
   // "How do I price it, and what's next?": the question a play answers is answered, and its step is the next one.
@@ -1023,14 +1083,31 @@ export function decide(input: DecideInput): Decision {
       !asksOverview(s) &&
       phraseIntent(playbook, s, (i) => !isNote(i) && i.overview === undefined) !== null,
   );
+  const wholePath = u === null || asksWholePath(message, u);
   const asksPath =
-    referralMatch === null && !recallAsked && !asksElse && !needsAPerson(message) && asksOverview(message);
+    referralMatch === null &&
+    !recallAsked &&
+    !asksElse &&
+    !needsAPerson(message) &&
+    asksOverview(message) &&
+    wholePath;
   const newIdea =
     referralMatch === null && !recallAsked && pivot === null && bringsNewIdea(message, recordOf(input));
 
   // The founder's explicit ask: a phrase of the playbook (a plain report that happens to hold one asks nothing).
   const told = { record: recordTexts(input), earlier: input.earlierMessages ?? [] };
-  const howTo = earlier !== null && !recallAsked && asksHowTo(message);
+  // How to do one part of the step just given, asked in words of that part that no phrase of a play reads.
+  const part =
+    earlier?.step == null ||
+    recallAsked ||
+    referralMatch !== null ||
+    phraseIntent(playbook, message, (i) => !isNote(i)) !== null
+      ? null
+      : partAsked(
+          message,
+          earlier.step.view.items.filter((i) => !i.done),
+        );
+  const howTo = earlier !== null && !recallAsked && (asksHowTo(message) || part !== null);
   const whenDone = earlier !== null && !recallAsked && !howTo && asksWhenDone(message);
   // What they want done with the reply just given is done to it: it asks for nothing else.
   const restates =
@@ -1074,10 +1151,18 @@ export function decide(input: DecideInput): Decision {
   // A push on what a qualified person decides, or on what is never shared, keeps the answer of the turn before.
   const ownAsk =
     referralMatch !== null || match !== null || recallAsked || asksPath || newIdea || pivot !== null;
-  const pushes = heldIntent !== null && !ownAsk && pushesOn(message, heldIntent.holds === true);
+  const pushes =
+    heldIntent !== null &&
+    !ownAsk &&
+    part === null &&
+    pushesOn(message, heldIntent.holds === true) &&
+    (u === null || (['pushback', 'privacy', 'feelings'].includes(u.kind) && !readsMoreThanPush(u)));
   const risky =
     referralMatch === null && !pushes ? referralForRisk(playbook, input.riskCategories, message) : null;
-  const recall = recallAsked || (referralMatch === null && match === null && risky === null && recorded);
+  const recall =
+    recallAsked ||
+    (u?.kind === 'recall' && referralMatch === null && pivot === null && !newIdea) ||
+    (referralMatch === null && match === null && risky === null && recorded && !readsMore);
   // A risk the classifier found is the ask itself unless a phrase of the playbook named another one: then that is
   // answered, and who decides comes with it.
   const ruled: PathIntent | null =
@@ -1120,8 +1205,11 @@ export function decide(input: DecideInput): Decision {
   const open = unread ? opennessOf(input, asking, askLike) : null;
   const near = input.near ?? null;
   const compared = near !== null && near !== 'unavailable' && playMatchProfile(near.modelId) !== null;
-  const semantic: SemanticMatch | null =
+  const nearest: SemanticMatch | null =
     open === null || !compared ? null : pickPlay(playbook, message, near, open);
+  // A question of their own work is never answered by what is not shared here, however near its words are.
+  const semantic =
+    nearest?.intent?.holds === true && !namesOthers(message) ? { ...nearest, intent: null } : nearest;
   const words: IntentMatch | null =
     open === null || near === null || compared
       ? null
@@ -1130,9 +1218,55 @@ export function decide(input: DecideInput): Decision {
           // A few words that name a thing are a question of it ("cofounder shares").
           guarded: open === 'guarded' && !(asking === 'ask' && report === null),
         });
-  const intent = ruled ?? semantic?.intent ?? words?.intent ?? null;
-  const overview = asksPath || intent?.overview !== undefined;
-  const answered = playOf(playbook, intent?.playId ?? null) ?? (recall ? null : sumPlay);
+  const found = ruled ?? semantic?.intent ?? words?.intent ?? null;
+  // Where the rules and the reading disagree, one table decides (understood.ts).
+  const referralPlay = u === null ? null : referralPlayOf(playbook, u, message);
+  // What they say they did or will do, and ask nothing beside it; a promise inside an argument is no report.
+  const ownReport =
+    smaller?.strict === true ||
+    (!readsMore &&
+      !asksNow(u) &&
+      (commitment !== null || (report !== null && (report.state !== 'blocked' || reportsOnStep))));
+  const weighed: Weighed | null =
+    u === null
+      ? null
+      : {
+          ownReport,
+          turned: pivot !== null || newIdea,
+          operation:
+            asksPath ||
+            whenDone ||
+            toSend ||
+            (restates !== null && u.kind !== 'pushback') ||
+            (asksForTemplate(message) && earlier !== null) ||
+            (howTo && message.trim() === HOW_FOLLOW_UP),
+          referralPhrase: referralMatch !== null,
+          heldPhrase: match?.intent.holds === true,
+          heldPush: pushes,
+          recallPhrase,
+          phrase: match !== null && match.intent.overview === undefined,
+          namesPlay: playOf(playbook, u.playId) !== null,
+          sure: u.sure,
+          namesStep: playOf(playbook, u.stepPlayId) !== null,
+          refers: referralPlay !== null,
+          readsRecall: recall && u.kind === 'recall',
+          readsMore,
+          ...weighedSums(u, () => calcOf({ message, ...told, ask: null })),
+          ...weighedChoice(u, () => choiceIn({ message: theirs, earlier: told.earlier, told: told.record })),
+        };
+  const decidedBy = weighed === null ? null : decidedFields(weighed);
+  const readPlayId =
+    u === null
+      ? null
+      : u.kind === 'privacy' && u.playId === null
+        ? (playbook.intents.find((i) => i.holds === true)?.playId ?? null)
+        : (u.playId ?? (u.referral === null ? null : (referralPlay?.id ?? null)));
+  const byReading = decidedBy?.play === 'reading' || (u?.kind === 'privacy' && found === null);
+  const intent: PathIntent | null = !byReading ? found : intentOfPlay(playbook, readPlayId);
+  const overview = asksPath || (intent?.overview !== undefined && wholePath);
+  const answered =
+    (byReading ? playOf(playbook, readPlayId) : playOf(playbook, intent?.playId ?? null)) ??
+    (recall || byReading ? null : sumPlay);
   // "Get me organized" is answered by where this venture stands: a play of another stage ("you are on move one") is not.
   const play =
     intent?.overview === 'path' || (overview && answered?.stage !== before.stage) ? null : answered;
@@ -1143,18 +1277,22 @@ export function decide(input: DecideInput): Decision {
         ? 'risk'
         : pushes
           ? 'previous'
-          : intent !== null && intent === match?.intent
-            ? match.how
-            : ruled === null && intent !== null
-              ? words === null
-                ? 'semantic'
-                : words.how
-              : overview || (sumPlay !== null && play === sumPlay)
-                ? 'rule'
-                : null;
+          : byReading && play !== null
+            ? 'reading'
+            : intent !== null && intent === match?.intent
+              ? match.how
+              : ruled === null && intent !== null
+                ? words === null
+                  ? 'semantic'
+                  : words.how
+                : overview || (sumPlay !== null && play === sumPlay)
+                  ? 'rule'
+                  : null;
   const passing =
     playOf(playbook, (risky ?? note?.intent)?.playId ?? null)?.referral ?? semantic?.referral ?? null;
-  const referral = play?.referral ?? passing;
+  // The rules' own stands whatever was read; the reading's is only added.
+  const referral =
+    (byReading ? (passing ?? play?.referral) : (play?.referral ?? passing)) ?? referralPlay?.referral ?? null;
 
   // What they report: the step finished, work of the path's criteria, or a step not done.
   const told1 =
@@ -1166,7 +1304,10 @@ export function decide(input: DecideInput): Decision {
     input.riskCategories.some((c) => SUPPORT.has(c)) ||
     ((upset || (hardship && reported === null)) &&
       intent === null &&
-      !(smaller !== null && earlier !== null));
+      !works &&
+      !(smaller !== null && earlier !== null)) ||
+    // Only how they feel: no task.
+    (u?.kind === 'feelings' && !works && reported === null && play === null);
 
   const completes = reported === null && pivot !== null ? null : finished(input, report, onRow, work);
 
@@ -1210,12 +1351,12 @@ export function decide(input: DecideInput): Decision {
   const now: StepContext = { ...input, reads };
   const own = currentStep(now, state);
 
-  const asks = intent !== null || overview;
+  const asks = intent !== null || overview || (byReading && play !== null);
   const news =
     recall || newIdea || pivot !== null || support
       ? null
       : newsOf({ message: theirs, before: [...told.record, ...told.earlier] });
-  const kind: TurnKind = newIdea
+  const ruledKind: TurnKind = newIdea
     ? 'new_idea'
     : recall
       ? 'recall'
@@ -1237,6 +1378,16 @@ export function decide(input: DecideInput): Decision {
                 statedIdea(theirs, input.venture.name) === null))
           ? 'news'
           : 'coaching';
+  // Their report is written whatever the reading says; how the turn is answered is the reading's.
+  const kind: TurnKind =
+    u === null ||
+    decidedBy?.kind !== 'reading' ||
+    recall ||
+    (ruledKind === 'report' && (completes !== null || work.length > 0))
+      ? ruledKind
+      : !askLike && u.secondAsk === null && (u.kind === 'update' || u.kind === 'result')
+        ? 'news'
+        : 'coaching';
 
   // The turn's step.
   const carriable = earlier !== null && completes === null && pivot === null;
@@ -1245,8 +1396,29 @@ export function decide(input: DecideInput): Decision {
   let movedTo: string | null = null;
   let smallerOffer: PathStepView | null = null;
   let cutTo: SmallerAsk | null = null;
+  const byTheReading =
+    u !== null &&
+    decidedBy?.step === 'reading' &&
+    !recall &&
+    // Work of the path they report moves it; a result that finished nothing may have a step of its own.
+    (kind !== 'report' ||
+      (completes === null && commitment === null && pivot === null && weighed?.namesStep === true));
   if (newIdea) turn = ideaStep(now) ?? turn;
-  else if (recall && sumPlay !== null) turn = newsStep(now, state, sumPlay, own);
+  else if (byTheReading) {
+    const chosen = readStep(now, state, own, {
+      u,
+      play,
+      phrased: ruled === null ? null : playOf(playbook, ruled.playId),
+      referral: referralPlay,
+      message,
+      told,
+    });
+    if (chosen !== null) turn = chosen;
+    else if (carriable && !support && (!earlier.offered || goesOn(input, earlier, askLike))) {
+      turn = earlier;
+      carried = true;
+    }
+  } else if (recall && sumPlay !== null) turn = newsStep(now, state, sumPlay, own);
   else if (pivot !== null && referral === null) {
     // "The plan is to ask 5 caterers this week": the first step of the new direction, in their own words.
     const theirs = commitment === null ? null : said(now, state, commitment);
@@ -1290,7 +1462,14 @@ export function decide(input: DecideInput): Decision {
   // What they just told is acted on, whatever the path's own step is (what they said they would do comes first).
   const theirOwn = own?.view.origin === 'founder' && own.view.status === 'now';
   const actsOn =
-    news === null || support || recall || newIdea || pivot !== null || commitment !== null || theirOwn
+    news === null ||
+    decidedBy?.step === 'reading' ||
+    support ||
+    recall ||
+    newIdea ||
+    pivot !== null ||
+    commitment !== null ||
+    theirOwn
       ? null
       : kind === 'news' ||
           (kind === 'report' && MOVES_THE_CUSTOMER.has(news.kind) && reported?.state !== 'not_yet') ||
@@ -1344,7 +1523,14 @@ export function decide(input: DecideInput): Decision {
   const calc =
     recall && !calcAsked(message)
       ? NO_CALC
-      : calcOf({ message, ...told, ask: SUM_PLAYS[play?.id ?? ''] ?? null });
+      : calcOf({
+          message,
+          ...told,
+          ask:
+            u !== null && u.kind !== 'sum' && !u.also.includes('sum')
+              ? null
+              : (SUM_PLAYS[play?.id ?? ''] ?? null),
+        });
   const explicit = play !== null && !pushes;
   const due = checkInOf(input, input.reads.steps);
   const checkIn =
@@ -1375,13 +1561,15 @@ export function decide(input: DecideInput): Decision {
     offered: turn.offered && step !== null,
     pathStep: turn.offered && ownView !== null && ownView.id !== step?.view.id ? ownView : null,
     keeps: turn.step?.write == null ? null : turn.step,
+    begins: input.reads.path === null && step !== null,
     carried,
     then: step === null || newIdea ? [] : following.slice(0, 2).map((s) => shownStep(s, state)),
     missing: missingOf(state),
     // Still on what a qualified person decides.
     referral:
       referral ??
-      (carried ? (previous?.referral ?? null) : null) ??
+      // What was said before of who decides, while they go on about it.
+      (carried && u?.referral !== null ? (previous?.referral ?? null) : null) ??
       (news !== null && DECIDED_BY_A_PERSON.has(news.kind) ? (actsOn?.referral ?? null) : null),
     pushes,
     report: reported,
@@ -1429,10 +1617,147 @@ export function decide(input: DecideInput): Decision {
       (kind === 'coaching' && restates === null && asksMeaning(message)
         ? findingIn(theirs) || lastFinding(input)
         : ''),
-    vents: vents && reported === null,
+    vents: vents && reported === null && !works,
     weak: turn.step === null ? null : weak,
     wasDue,
+    reading:
+      works &&
+      !support &&
+      kind !== 'new_idea' &&
+      // The reply just given, said again: from that reply alone.
+      (restates === null || decidedBy?.lead !== 'rule')
+        ? u
+        : null,
+    decidedBy,
   };
+}
+
+/** As it is sent with one tap (turn.ts `followUpsOf`). */
+export const HOW_FOLLOW_UP = 'How do I do the first part?';
+
+const decidedFields = (w: Weighed): NonNullable<Decision['decidedBy']> => ({
+  kind: decides('kind', w),
+  recall: decides('recall', w),
+  play: decides('play', w),
+  step: decides('step', w),
+  referral: decides('referral', w),
+  sum: decides('sum', w),
+  choice: decides('choice', w),
+  lead: decides('lead', w),
+});
+
+/** The reading finds something asked beside what they tell. */
+const asksNow = (u: Understanding | null): boolean =>
+  u !== null && (u.secondAsk !== null || !['update', 'result', 'social', 'recall'].includes(u.kind));
+
+/** The reading finds another ask than the push: a sum, a pick, a result. */
+const readsMoreThanPush = (u: Understanding): boolean =>
+  u.sums.some((s) => s.asked) || u.choice !== null || u.result !== null;
+
+function weighedSums(
+  u: Understanding,
+  calc: () => CalcResult,
+): Pick<Weighed, 'readSum' | 'ruleSum' | 'sameSum'> {
+  const asked = u.sums.filter((s) => s.asked);
+  const { ask, lines } = calc();
+  const ruleSum = ask !== null && lines.length > 0;
+  const said = lines.join(' ').replace(/,(?=\d{3})/g, '');
+  return {
+    readSum: asked.length > 0,
+    ruleSum,
+    sameSum:
+      ruleSum &&
+      asked.length === 1 &&
+      asked.every((s) =>
+        [...said.matchAll(/\d+(?:\.\d+)?/g)].some((m) => Math.abs(Number(m[0]) - Math.abs(s.value)) < 0.0051),
+      ),
+  };
+}
+
+function weighedChoice(
+  u: Understanding,
+  choice: () => Choice | null,
+): Pick<Weighed, 'picks' | 'countsPick' | 'samePick'> {
+  const option = choice()?.pick?.option ?? null;
+  const words = new Set(contentStems(option ?? ''));
+  return {
+    picks: u.choice !== null,
+    countsPick: option !== null,
+    samePick: option !== null && u.choice !== null && contentStems(u.choice.pick).some((w) => words.has(w)),
+  };
+}
+
+/** An intent of the playbook's that leads to a play: its referral or never-shared one first. */
+function intentOfPlay(playbook: Playbook, playId: string | null): PathIntent | null {
+  const all = playbook.intents.filter((i) => i.playId === playId && i.note !== true);
+  return (
+    all.find((i) => i.referral === true || i.holds === true) ??
+    all.find((i) => i.overview === undefined) ??
+    null
+  );
+}
+
+/**
+ * The step that serves what they ask, as it was read: the play the reading names for it, else the one that answers, else who
+ * decides. One already under way that is about the same thing stands, and theirs in their own words always does: another is
+ * offered beside it. Null: the reading asks for none.
+ */
+function readStep(
+  context: StepContext,
+  state: PathState,
+  own: ChosenStep | null,
+  args: {
+    readonly u: Understanding;
+    readonly play: Play | null;
+    /** The play a phrase named. */
+    readonly phrased: Play | null;
+    readonly referral: Play | null;
+    readonly message: string;
+    readonly told: { readonly record: readonly string[]; readonly earlier: readonly string[] };
+  },
+): TurnStep | null {
+  const { u, play, phrased, referral } = args;
+  const stay: TurnStep = { step: own, offered: false };
+  const named = allowedStep(context, state, playOf(context.playbook, u.stepPlayId), play, phrased);
+  // Who decides comes before anything else is done about it.
+  const deciding =
+    referral !== null && (named === null || (named.referral === null && !u.sure)) && u.kind !== 'sum';
+  const wanted = deciding ? referral : (named ?? allowedStep(context, state, play, play, phrased));
+  if (wanted === null) return null;
+  if (wanted.id === own?.view.playId) return stay;
+  // A figure is no reason for another step, unless the sum is the play itself.
+  const sumOnly = u.kind === 'sum' && !u.also.some((k) => k !== 'sum' && k !== 'question');
+  if (sumOnly && wanted.id !== phrased?.id && !(u.sure && wanted.id === u.playId)) return stay;
+  if (u.kind === 'sum' && u.also.includes('feelings')) return stay;
+  const open = own !== null && own.write === null && own.view.status === 'now';
+  if (wanted.id === phrased?.id || !open)
+    return askStep(context, state, untested(context, args.told, wanted) ?? wanted, own);
+  const about = wanted.referral !== null || !sameSubject(own.view, `${args.message} ${u.ask}`);
+  return about || (u.sure && wanted.id === u.playId)
+    ? newsStep(context, state, untested(context, args.told, wanted) ?? wanted, own)
+    : stay;
+}
+
+/** A step the path allows now: of the ask's own play, or of a stage next to the one they are on. */
+function allowedStep(
+  context: StepContext,
+  state: PathState,
+  wanted: Play | null,
+  play: Play | null,
+  phrased: Play | null,
+): Play | null {
+  if (wanted === null) return null;
+  if (wanted.id === play?.id || wanted.id === phrased?.id) return wanted;
+  const order = stageOrder(context.playbook);
+  return Math.abs(order.indexOf(wanted.stage) - state.stageIndex) <= 1 ? wanted : null;
+}
+
+/** Whether what they ask is about the step they are on: they share a word that says something. */
+export function sameSubject(view: PathStepView, asked: string): boolean {
+  const stems = (text: string): string[] =>
+    contentStems(text).filter((w) => numberOf(w) === null && !/^\d+$/.test(w));
+  const about = new Set(stems(`${view.title}. ${view.doneWhen}. ${view.items.map((i) => i.do).join('. ')}`));
+  return stems(asked).some((w) => about.has(w));
 }
 
 /** "Go on or stop?" of what nobody has tried: there are no tests to list, so the step is the first one. */
@@ -1442,7 +1767,7 @@ function untested(
   play: Play,
 ): Play | null {
   if (play.id !== 'quit-or-continue' || lastResult([...told.record, ...told.earlier]) !== null) return null;
-  if (hasEvidence(context.reads.memory) || context.reads.criteria.some((c) => c.evidence !== null))
+  if (hasEvidence(context.playbook, context) || context.reads.criteria.some((c) => c.evidence !== null))
     return null;
   return playOf(context.playbook, 'smallest-test');
 }

@@ -310,9 +310,12 @@ describe('FoundryAscent-Foundation', () => {
             // The app's models (infra/cdk/config/production.json: the Claude Haiku 4.5 coach with Nova 2 Lite behind
             // it, Nova 2 Lite for the background purposes, Titan embeddings), the lab's simulator and judge
             // (ops/lab/models.json), the live evaluation's simulator, judge and A/B coaches ("live"), the client
-            // suite's ("client") and the models suite's candidates ("benchmark"); sorted.
+            // suite's ("client"), the understand suite's ("understand") and the models suite's candidates
+            // ("benchmark"); sorted.
             'arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0',
             'arn:aws:bedrock:*::foundation-model/amazon.nova-2-multimodal-embeddings-v1:0',
+            'arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v1:0',
+            'arn:aws:bedrock:*::foundation-model/amazon.nova-micro-v1:0',
             'arn:aws:bedrock:*::foundation-model/amazon.nova-premier-v1:0',
             'arn:aws:bedrock:*::foundation-model/amazon.nova-pro-v1:0',
             'arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0',
@@ -342,6 +345,8 @@ describe('FoundryAscent-Foundation', () => {
             profile('global.anthropic.claude-haiku-5-5'),
             profile('global.openai.gpt-6-luna'),
             profile('us.amazon.nova-2-lite-v1:0'),
+            profile('us.amazon.nova-lite-v1:0'),
+            profile('us.amazon.nova-micro-v1:0'),
             profile('us.amazon.nova-premier-v1:0'),
             profile('us.amazon.nova-pro-v1:0'),
             profile('us.anthropic.claude-haiku-4-5-20251001-v1:0'),

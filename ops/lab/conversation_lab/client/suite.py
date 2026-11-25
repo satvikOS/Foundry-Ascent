@@ -55,6 +55,8 @@ def check_plan(
     judge: str | None,
     simulator: str | None,
     think: str = DEFAULT_THINK,
+    understand: bool = False,
+    understand_model: str | None = None,
 ) -> Any:
     """The run's estimate; raises ``PlanRefusedError`` when it does not fit its budget."""
     from conversation_lab.client.calibration import load as load_calibration
@@ -69,8 +71,20 @@ def check_plan(
         simulator=simulator,
         calibration_cases=len(load_calibration()) if judge is not None else 0,
         think=think,
+        understand=understand,
+        understand_model=understand_model,
     )
-    why = refusal(found, budget_usd, scenarios, prices=prices, coach=coach, judge=judge, think=think)
+    why = refusal(
+        found,
+        budget_usd,
+        scenarios,
+        prices=prices,
+        coach=coach,
+        judge=judge,
+        think=think,
+        understand=understand,
+        understand_model=understand_model,
+    )
     if why is not None:
         raise PlanRefusedError(why)
     return found
@@ -168,6 +182,8 @@ def run_suite(
             "coach": ctx.coach_primary if live else "mock",
             "coach_choice": ctx.coach_model if live else "mock",
             "coach_think": ctx.coach_think,
+            "understand": ctx.understand,
+            "understand_model": ctx.understand_model or "default",
             "groups": list(parse_groups(ctx.client_groups)) or "all",
             "plan": state.get("plan"),
             "calibration": calibration,
@@ -305,6 +321,8 @@ def cmd_local(args: argparse.Namespace) -> int:
         "--groups",
         args.groups,
     ]
+    if args.understand:
+        argv += ["--understand", args.understand]
     if args.client_pack:
         argv += ["--client-pack", args.client_pack]
     code = main(argv)
@@ -327,6 +345,12 @@ def add_commands(sub: Any) -> None:
     local.add_argument("--groups", default="", help="only these groups, comma-separated")
     local.add_argument(
         "--client-pack", default="", help="the client's pack (client-pack), for the exact wording"
+    )
+    local.add_argument(
+        "--understand",
+        default="",
+        choices=("", "off", "on"),
+        help="read each message first (the mock's reading)",
     )
     local.add_argument("--api-port", type=int, default=8893)
     local.add_argument("--concurrency", type=int, default=4)

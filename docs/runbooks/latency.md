@@ -747,6 +747,13 @@ typed reply: `additionalModelRequestFields.reasoningConfig` `{type: enabled, max
   answers at once, without reasoning. The budget is the turn's own (25 s, then the fallback's).
 - `turn.phase_a` says whether the turn reasoned (`think`) and how many units the method lint changed (`methodEdits`).
 
+### Reading the message first (2026-11-25; off, not measured yet)
+
+`CORE_UNDERSTAND=on` (docs/architecture/understand.md) makes one structured call from the admission on, beside the query's embedding.
+The turn waits for it before its search (which play it is decides what is looked for), at most 2.5 s typed and 1.2 s on a call, so
+the step's card and the first word come that much later than with the rules alone: by what the call takes beyond the embedding.
+`turn.understand` logs `ms` and the code (`late` when the budget ended it); nothing here has measured them.
+
 ### The coach on Claude Haiku 4.5 (2026-11-06 to 2026-11-24)
 
 What changed: the coach (every turn's streamed reply and its fields) runs on Claude Haiku 4.5 instead of Nova 2 Lite

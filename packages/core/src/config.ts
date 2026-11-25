@@ -99,6 +99,11 @@ export const CoreConfig = z.object({
      */
     rerank: z.boolean(),
     /**
+     * A message is read against the record by a short structured call before the path decides (orchestrator/understand.ts;
+     * `CORE_UNDERSTAND=on|off`, off by default): off, the rules alone read it, as before.
+     */
+    understand: z.boolean(),
+    /**
      * Which typed turns let the model reason before it answers (orchestrator/think.ts; `CORE_THINK=off|judgement|typed`,
      * off by default): a model that cannot (any but Amazon Nova 2) answers as always.
      */
@@ -198,6 +203,7 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
     semanticPlays: true,
     semanticNotes: true,
     rerank: false,
+    understand: false,
     think: 'off',
   },
   // The persona's library gives two items, not four (live pilot 42099643194: its method notes were injected on almost
@@ -271,7 +277,7 @@ function intFrom(env: EnvLike, name: string, fallback: number): number {
  * APP_VERSION, HOME_TENANT_SLUG, SITE_ORIGIN, plus optional tuning knobs
  * (CORE_TURN_RATE_LIMIT, CORE_REVIEW_SAMPLE_RATE_PCT, CORE_SESSION_CACHE_SECONDS, CORE_SAFETY_SCREEN=on|off,
  * CORE_FOUNDER_PATH=on|off, CORE_SEMANTIC_PLAYS=on|off, CORE_SEMANTIC_NOTES=on|off, CORE_RERANK=on|off,
- * CORE_THINK=off|judgement|typed, and
+ * CORE_UNDERSTAND=on|off, CORE_THINK=off|judgement|typed, and
  * for local demos CORE_DISTILL_DELAY_SECONDS / CORE_DISTILL_ACTIVE_SECONDS).
  */
 export function loadConfig(env: EnvLike): CoreConfig {
@@ -299,6 +305,7 @@ export function loadConfig(env: EnvLike): CoreConfig {
       semanticPlays: switchFrom(env, 'CORE_SEMANTIC_PLAYS', DEFAULT_CORE_CONFIG.turns.semanticPlays),
       semanticNotes: switchFrom(env, 'CORE_SEMANTIC_NOTES', DEFAULT_CORE_CONFIG.turns.semanticNotes),
       rerank: switchFrom(env, 'CORE_RERANK', DEFAULT_CORE_CONFIG.turns.rerank),
+      understand: switchFrom(env, 'CORE_UNDERSTAND', DEFAULT_CORE_CONFIG.turns.understand),
       think: thinkFrom(env),
     },
     distillation: {

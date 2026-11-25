@@ -2,6 +2,7 @@ import type { PromptGuidance } from '../prompts/guidance.js';
 import { knownNumbersIn, numbersIn } from './figures.js';
 import { TO_FILL, withoutEmptyBrackets } from './method.js';
 import { sharedCount, stemOf, stemsOf } from './stems.js';
+import { operandsIn, workedFrom, workedShape, type Operand } from './worked.js';
 
 /**
  * What a reply claims about the founder and their venture is what they said (first live run on Nova 2 Lite: templates were
@@ -200,15 +201,15 @@ function soFar(unit: string, guidance: PromptGuidance): string | null {
 /** Our own words for the method, said to a founder. */
 const OUR_WORDS: readonly (readonly [RegExp, string])[] = [
   [
-    /(?<=^\s*|[.!?]\s+)(?:as )?the (?:playbook|play|program(?:me)?) (?:says|suggests|recommends|tells (?:you|us))(?: to| that)?,?\s+/giu,
+    /(?<=^\s*|[.!?]\s+)(?:as )?(?:the|our) (?:program(?:me)?(?:['’]s)? (?:playbook|method)|playbook|play|program(?:me)?) (?:says|suggests|recommends|asks you|tells (?:you|us))(?: to| that)?,?\s+/giu,
     '',
   ],
   [
-    /[,—–-]?\s*(?:exactly |just )?(?:(?:what|the \w+(?: \w+){0,3}) )?(?:the|our) (?:playbook|path engine) (?:says|suggests|recommends|asks for|tells (?:you|us))(?: to [^,.;!?]+)?(?=[ ,.;:!?]|$)/giu,
+    /[,—–-]?\s*(?:exactly |just )?(?:(?:what|the \w+(?: \w+){0,3}) )?(?:the|our) (?:program(?:me)?(?:['’]s)? )?(?:playbook|path engine) (?:says|suggests|recommends|asks for|tells (?:you|us))(?: to [^,.;!?]+)?(?=[ ,.;:!?]|$)/giu,
     '',
   ],
-  [/\b(?:according to|per|from|in) (?:the|our) (?:playbook|play),?\s*/giu, ''],
-  [/\b(?:the|this|our|your) playbook['’]?s?\b/giu, 'the method'],
+  [/\b(?:according to|per|from|in) (?:the|our) (?:program(?:me)?(?:['’]s)? )?(?:playbook|play),?\s*/giu, ''],
+  [/\b(?:the|this|our|your) (?:program(?:me)?(?:['’]s)? )?playbook['’]?s?\b/giu, 'the method'],
 ];
 
 /** The unit without our own words for the method, its sentence still a sentence. */
@@ -238,7 +239,7 @@ export interface OwnFacts {
 }
 
 const MONEY =
-  /\$\s?(\d[\d,]*(?:\.\d+)?)(k\b)?(?:\s?[-–—~]\s?\$?\s?(\d[\d,]*(?:\.\d+)?))?|\b(\d[\d,]*(?:\.\d+)?)(?:\s?[-–—]\s?(\d[\d,]*(?:\.\d+)?))? (?:dollars|bucks|usd)\b/giu;
+  /\$\s?(\d[\d,]*(?:\.\d+)?)(k\b|\s?(?:thousand|million|billion)\b)?(?:\s?[-–—~]\s?\$?\s?(\d[\d,]*(?:\.\d+)?))?|\b(\d[\d,]*(?:\.\d+)?)(?:\s?[-–—]\s?(\d[\d,]*(?:\.\d+)?))? (?:dollars|bucks|usd)\b/giu;
 /** A price said without its unit ("offer 35 to ten next week", "raise it to 40"). */
 const BARE_PRICE =
   /\b(?:offer|charge|price (?:it )?at|ask(?:ing)? for|raise (?:it |the price )?to|lower (?:it |the price )?to|sell (?:it |them )?(?:at|for)) (?:about |around |maybe )?(\d{1,6}(?:\.\d+)?)(?= (?:to|and|for|this|next|instead|per|a|an|each|now)\b|[.,;!?]|$)/giu;
@@ -251,13 +252,23 @@ function saidMoney(text: string): number[] {
   return [
     ...moneyValues(text),
     ...[...text.matchAll(SAID_PRICE)].map((m) => Number((m[1] ?? '').replace(/,/g, ''))),
+    // "They cap it at 220k": nobody counts people like that.
+    ...[...text.matchAll(/(?<![\p{L}\d.])\d[\d,]*(?:\.\d+)?\s?(?:k|grand|million)\b/giu)].flatMap((m) =>
+      numbersIn(m[0].replace(/ ?grand$/iu, 'k')),
+    ),
   ];
 }
 
 function moneyValues(text: string): number[] {
   const out: number[] = [];
   for (const m of text.matchAll(MONEY)) {
-    const k = m[2] === undefined ? 1 : 1000;
+    const k = /million/iu.test(m[2] ?? '')
+      ? 1e6
+      : /billion/iu.test(m[2] ?? '')
+        ? 1e9
+        : m[2] === undefined
+          ? 1
+          : 1000;
     for (const raw of [m[1], m[3], m[4], m[5]])
       if (raw !== undefined) out.push(Number(raw.replace(/,/g, '')) * k);
   }
@@ -265,7 +276,7 @@ function moneyValues(text: string): number[] {
 }
 
 /** Money of a sentence that is neither theirs, the program's, nor a sum given or worked out from theirs. */
-function inventedMoney(unit: string, guidance: PromptGuidance, known: string): number[] {
+function inventedMoney(unit: string, guidance: PromptGuidance, known: string, before = ''): number[] {
   const said = `${guidance.said ?? ''}\n${(guidance.calc ?? []).join('\n')}`;
   const given = [...moneyValues(known), ...saidMoney(said)];
   const counts = knownNumbersIn(said);
@@ -280,11 +291,36 @@ function inventedMoney(unit: string, guidance: PromptGuidance, known: string): n
       bare.push(Number(m[1]));
   // A sum shown on the way counts for the next one ("13 a lamp, so 20 lamps bring 260, and 165 after the stall").
   const shown = numbersIn(unit);
+  const asked = guidance.asksSum === true ? [...given, ...counts] : [];
+  const worked = workedOn(`${before.slice(-400)} ${unit}`, [...given, ...counts], asked);
   return [...moneyValues(unit), ...bare].filter((v) => {
-    const fine = ok(v) || onTheWay.some((s) => shown.some((n) => stepOf(v, s, n)));
+    const fine =
+      ok(v) || onTheWay.some((s) => shown.some((n) => stepOf(v, s, n))) || worked(v) || workedShape(v, asked);
     if (fine && !given.some((g) => Math.abs(g - v) < 0.005)) onTheWay.push(v);
     return !fine;
   });
+}
+
+/** Whether a value is worked out from numbers of theirs that the text shows (validators/worked.ts). */
+function workedOn(
+  text: string,
+  theirs: readonly number[],
+  asked: readonly number[],
+): (value: number) => boolean {
+  const all = operandsIn(text);
+  return (value) => {
+    const out: Operand[] = [];
+    for (const o of all) {
+      if (Math.abs(o.value - value) < 0.0051) continue;
+      if (
+        theirs.some((n) => Math.abs(n - o.value) < 0.005) ||
+        workedFrom(o.value, out) ||
+        workedShape(o.value, asked)
+      )
+        out.push(o);
+    }
+    return workedFrom(value, out);
+  };
 }
 
 /** Whether a value is one step of arithmetic on two shown ones. */
@@ -364,7 +400,7 @@ function besideTheCount(unit: string, guidance: PromptGuidance): boolean {
 export function ownFactsUnit(
   unit: string,
   guidance: PromptGuidance | null,
-  options: { readonly known?: string } = {},
+  options: { readonly known?: string; readonly before?: string } = {},
 ): OwnFacts {
   const findings: OwnFacts['findings'][number][] = [];
   if (guidance === null) return { text: unit, findings };
@@ -424,7 +460,7 @@ export function ownFactsUnit(
     return { text: '', findings };
   }
   if (guidance.said !== undefined) {
-    const invented = inventedMoney(text, guidance, options.known ?? '');
+    const invented = inventedMoney(text, guidance, options.known ?? '', options.before ?? '');
     if (invented.length > 0) {
       findings.push('money_unsupported');
       return { text: '', findings };
