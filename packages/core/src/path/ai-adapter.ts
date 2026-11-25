@@ -112,8 +112,8 @@ export interface PathPromptGuidance {
   readonly judgement?: boolean;
   /** What the message asks, as it was read and checked (`PromptGuidance.reading`). */
   readonly reading?: NonNullable<ai.PromptGuidance['reading']>;
-  /** The one thing to do first, said before the step. */
-  readonly firstAction?: string;
+  /** The method the writer fits to them as their step (`PromptGuidance.fit`). */
+  readonly fit?: NonNullable<ai.PromptGuidance['fit']>;
   readonly criteria?: readonly { readonly id: string; readonly title: string; readonly evidence: string }[];
   /** How what they asked was found (`PromptGuidance.matched`). */
   readonly matched?: 'phrase' | 'semantic' | 'none';
@@ -350,8 +350,20 @@ export function guidanceWords(guidance: PathPromptGuidance): string {
     ask?.block ?? '',
     guidance.fallback?.text ?? '',
     guidance.finding ?? '',
-    ...(guidance.reading === undefined ? [] : [...guidance.reading.points, ...guidance.reading.record]),
-    guidance.firstAction ?? '',
+    ...(guidance.reading === undefined
+      ? []
+      : [
+          ...guidance.reading.points,
+          ...guidance.reading.record,
+          guidance.reading.result?.shows ?? '',
+          guidance.reading.result?.settles ?? '',
+          guidance.reading.choice?.because ?? '',
+          guidance.reading.choice?.flipsIf ?? '',
+          guidance.reading.contradicts?.line ?? '',
+        ]),
+    ...(guidance.fit === undefined
+      ? []
+      : [guidance.fit.title, guidance.fit.doneWhen, ...guidance.fit.parts, guidance.fit.way ?? '']),
   ]
     .filter((t) => t.trim() !== '')
     .join('\n');

@@ -1,5 +1,5 @@
 import { type Understanding, type UnderstoodReferral, type UnderstoodSum } from '@foundry/ai';
-import { type Play, type RiskCategory, type TurnGuidance } from '@foundry/contracts';
+import { type Play, type RiskCategory } from '@foundry/contracts';
 
 import { asksFor, asksOverview } from './kinds.js';
 import { asksToStop } from './openings.js';
@@ -529,162 +529,10 @@ export function referralPlayOf(playbook: Playbook, u: Understanding, message: st
   return byId(plainly ? asked : referralForRisk(playbook, [category], message)?.playId);
 }
 
-// What stands before the step ---------------------------------------------------------------------------------------
+// Which step fits ----------------------------------------------------------------------------------------------------
 
-const NOT_AN_ACTION =
-  /^(?:you|i|we|they|it|this|that|the|an?|your|consider|think|reflect|focus|continue|keep going|keep doing|explore|be|try to|aim|remember|understand|evaluate|assess|decide|plan|prepare|stay|feel|make sure|ensure|wait)\b/i;
-const DAY =
-  '(?:(?:next |this )?(?:mon|tues|wednes|thurs|fri|satur|sun)day|today|tonight|tomorrow|(?:the )?end of (?:the |this )?week|(?:january|february|march|april|may|june|july|august|september|october|november|december) \\d{1,2})';
-const BY_DAY = new RegExp(`,?\\s*\\b(?:by|before|no later than) (${DAY})\\b`, 'gi');
-
-/** A sentence of the program's method put in for a question about the future: it says nothing of this ask. */
-const FROM_THE_TABLE =
-  /\bwhat (?:they|he|she) spent on (?:this|it) last time\b|\bwhen (?:they|he|she) last (?:dealt with|had|did) (?:it|this)\b/i;
-/** Asking what somebody would do, pay or like. */
-const OF_THE_FUTURE =
-  /\bwhat (?:they|he|she|people) would (?:pay|do|like|want|use)\b|\b(?:whether|if) (?:they|he|she|people) would\b/i;
-const OF_THE_PERSON =
-  /\b(?:lawyers?|attorney|accountant|eir|entrepreneur in residence|program lead|ur ventures|technology transfer|international services|iso|regulatory specialist|specialist|counsel(?:or|ing)?)\b/i;
-const MAIN_WORDS = 9;
-
-/** What they themselves propose to do, in stems. */
-const proposedIn = (message: string): ReadonlySet<string> => {
-  const said =
-    /\b(?:i['’]?d rather|i(?:['’]?m| am) (?:going to|gonna|thinking (?:of|about))|i(?:['’]?ll| will)|we(?:['’]?ll| will)|i want to|can i|should i|so i['’]?ll)\b([^.?!]+)/i.exec(
-      message,
-    )?.[1];
-  return new Set(contentStems(said ?? ''));
-};
-
-/** One thing one could start on, said so it can be read aloud. */
-export function actionSaid(text: string, message: string): string {
-  const told = plain(message);
-  return (
-    bare(text.replace(BY_DAY, (whole, day: string) => (told.includes(day.toLowerCase()) ? whole : '')))
-      // "Call Ada and ask them what …": one person is no "them".
-      .replace(
-        /\b(ask) (?:them|him|her|he|she) (?=(?:what|how|when|whether|why|if|which|who|where)\b)/gi,
-        '$1 ',
-      )
-  );
-}
-
-/**
- * The one thing to do first, as it is said before the step; null when it says nothing one could start on, sets a day of its
- * own beside the step's, is the step itself, has nothing to do with the ask or the step, is who decides once more, or goes
- * against what the reply answers (two plans are none; none is better than a wrong one).
- */
-export function firstActionOf(
-  u: Understanding,
-  step: (NonNullable<TurnGuidance['step']> & { readonly standing: boolean }) | null,
-  message: string,
-  beside: {
-    /** What the reply opens with, and which opening that is. */
-    readonly lead?: string;
-    readonly opened?: string | null;
-    readonly used?: boolean;
-    readonly referral?: Play['referral'];
-  } = {},
-): string | null {
-  if (u.firstAction === null || step === null || beside.used === true) return null;
-  const said = actionSaid(u.firstAction, message);
-  const count = said.split(/\s+/u).length;
-  if (count < 4 || count > 28 || NOT_AN_ACTION.test(said) || said.endsWith('?')) return null;
-  if (FROM_THE_TABLE.test(said) || OF_THE_FUTURE.test(said)) return null;
-  const own = contentStems(said);
-  if (own.length < 3) return null;
-  // Who decides is said once in the reply, with what to bring.
-  const main = said.split(/\s+/u).slice(0, MAIN_WORDS).join(' ');
-  if (beside.referral != null && OF_THE_PERSON.test(main)) return null;
-  // Nothing to sign, take or send for what a person decides first.
-  if (u.referral !== null && /^(?:sign|accept|take the|agree|send (?:it|the) (?:signed|offer))\b/i.test(said))
-    return null;
-  // What the opening speaks against, or leaves open, is no first thing to do.
-  const proposed = proposedIn(message);
-  const against =
-    beside.opened === 'contradiction' || beside.opened === 'pushback' || beside.opened === 'held';
-  if (
-    against &&
-    proposed.size >= 2 &&
-    own.filter((w) => proposed.has(w)).length >= Math.min(3, proposed.size * 0.6)
-  )
-    return null;
-  if (u.choice !== null) {
-    const pick = new Set(contentStems(u.choice.pick));
-    const others = new Set(
-      u.choice.options
-        .filter((o) => contentStems(o).filter((w) => pick.has(w)).length < contentStems(o).length * 0.6)
-        .flatMap((o) => contentStems(o))
-        .filter((w) => !pick.has(w)),
-    );
-    if (own.some((w) => others.has(w)) && !own.some((w) => pick.has(w))) return null;
-    // A pick of giving it away for now is no ask for money.
-    if (FREE.test(u.choice.pick) && MONEY_ASKED.test(said)) return null;
-  }
-  const title = new Set(contentStems(step.title));
-  const parts = contentStems(
-    `${step.title}. ${step.doneWhen}. ${step.items.map((i) => `${i.do} ${i.how}`).join('. ')}`,
-  );
-  const held = new Set(parts);
-  // The step in other words.
-  if (title.size > 0 && own.filter((w) => title.has(w)).length / own.length >= 0.75) return null;
-  if (
-    step.items.some(
-      (i) =>
-        new Set(contentStems(i.do)).size >= 3 &&
-        [...new Set(contentStems(i.do))].every((w) => own.includes(w)),
-    )
-  )
-    return null;
-  // The same thing with another number is a second plan.
-  const numbers = (t: string): number[] => [
-    ...(t.match(/(?<![\d.$])\d{1,4}(?![\d.]*%)/g) ?? []).map(Number),
-    ...contentStems(t).flatMap((w) => numberOf(w) ?? []),
-  ];
-  const ofStep = numbers(`${step.title} ${step.doneWhen}`);
-  const ofOwn = numbers(said);
-  const subjects = subjectsOf(said);
-  const sharedTitle = subjects.filter((w) => title.has(w)).length;
-  if (ofOwn.length > 0 && ofStep.length > 0 && sharedTitle >= 1 && !ofOwn.some((n) => ofStep.includes(n)))
-    return null;
-  // Said already, by what opens.
-  const lead = new Set(contentStems(beside.lead ?? ''));
-  if (lead.size > 0 && own.filter((w) => lead.has(w)).length >= own.length * 0.85) return null;
-  // About what they ask: their own words, or the answer's.
-  const asked = new Set(
-    contentStems(
-      [message, u.ask, u.secondAsk ?? '', ...u.points, u.choice?.pick ?? '', u.result?.settles ?? ''].join(
-        '. ',
-      ),
-    ),
-  );
-  const about = own.filter((w) => asked.has(w) && numberOf(w) === null && !/^\d+$/.test(w)).length;
-  if (about === 0) return null;
-  // Of several things at once, only what the step is about, or the one that comes first.
-  const shared = own.filter((w) => held.has(w)).length;
-  if (needsOrder(u)) {
-    const first = new Set(contentStems(u.points[0] ?? ''));
-    return shared >= 2 || own.filter((w) => first.has(w)).length >= 2 ? said : null;
-  }
-  // What opens is what they can say or do now, or the step only stands: it need not be about it.
-  if (about >= 2 && (step.standing || SAYS_NOW.has(beside.opened ?? ''))) return said;
-  const stepText = `${step.title}. ${step.doneWhen}`;
-  const belongs =
-    subjects.some((w) => held.has(w)) || SUBJECT_GROUPS.some((g) => g.test(stepText) && g.test(said));
-  return belongs ? said : null;
-}
-const SAYS_NOW: ReadonlySet<string> = new Set([
-  'held',
-  'contradiction',
-  'integrity',
-  'quit',
-  'pushback',
-  'result',
-]);
 const FREE = /\b(?:free|for nothing|not? charge|no price|charge (?:later|nothing))\b/i;
 const MONEY_ASKED = /\b(?:pay|charge|price|buy|order|deposit|money|\$ ?\d|dollars?)\b/i;
-
-// Which step fits ----------------------------------------------------------------------------------------------------
 
 /** Words a step and an ask share whatever either is about. */
 const OF_ANY_STEP = new Set(
@@ -773,11 +621,3 @@ export const handsOn = (u: Understanding): boolean => u.choice !== null && HANDS
 /** A step that asks for money, where the pick is not to ask for it yet. */
 export const picksAgainst = (u: Understanding, play: Pick<Play, 'title'>): boolean =>
   u.choice !== null && FREE.test(u.choice.pick) && MONEY_ASKED.test(play.title);
-
-/** Whether a line of the record is about what they ask: they share a subject. */
-export function bearsOn(text: string, asked: string): boolean {
-  const said = new Set(subjectsOf(asked));
-  return (
-    subjectsOf(text).some((w) => said.has(w)) || SUBJECT_GROUPS.some((g) => g.test(text) && g.test(asked))
-  );
-}

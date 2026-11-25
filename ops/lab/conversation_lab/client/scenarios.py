@@ -40,9 +40,10 @@ GROUPS: tuple[str, ...] = (
     "adversarial",
     "heldout",
     "heldoutb",
+    "heldoutc",
 )
 #: Never tuned against, and beside the whole set's price: played only when the group or the scenario is named.
-HELD_OUT = frozenset({"heldout", "heldoutb"})
+HELD_OUT = frozenset({"heldout", "heldoutb", "heldoutc"})
 KINDS = frozenset({"coaching", "report", "recall", "social", "rehearsal", "new_idea", "crisis", "privacy"})
 #: Kinds whose reply must carry a next step (the reply contract's exemptions: social, recall, rehearsal, crisis).
 STEP_KINDS = frozenset({"coaching", "report", "new_idea"})

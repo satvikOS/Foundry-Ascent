@@ -77,8 +77,8 @@ PARTS: dict[str, tuple[str, ...]] = {
     "sums": ("number", "number_said"),
     "judge": ("pick", "news", "friends"),
 }
-#: The group that is never read unless it is named: what nobody has looked at.
-UNSEEN = frozenset({"heldoutb"})
+#: The groups that are never read unless they are named: what nobody has looked at.
+UNSEEN = frozenset({"heldoutb", "heldoutc"})
 #: Kinds of reading that agree with what a scenario expects of the turn.
 KINDS: dict[str, frozenset[str]] = {
     "recall": frozenset({"recall"}),
@@ -553,7 +553,7 @@ def run_understand(
     """Chooses the cases, runs the script and grades what it read: the public result and the script's exit code."""
     day = today or dt.datetime.now(dt.UTC).date()
     every = load(day).scenarios
-    # Every client group and the held-out one; the unseen one only where it is named, by group or by scenario.
+    # Every client group and the held-out one; the unseen ones only where they are named, by group or by scenario.
     scenarios = [s for s in every if (s.id in set(scenario_ids) if scenario_ids else True)]
     client = tuple(g for g in groups if g not in OWN_GROUPS)
     scenarios = [] if groups and not client else in_groups(scenarios, client, named=True)

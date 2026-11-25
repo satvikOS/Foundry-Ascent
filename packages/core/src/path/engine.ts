@@ -111,7 +111,6 @@ import {
 import { concrete, currentOnes, stillTrue, toYou, toldAs } from './tell.js';
 import { type PathIntent, type Playbook } from './types.js';
 import {
-  askedOf,
   asksOfWork,
   asksWholePath,
   decides,
@@ -120,7 +119,6 @@ import {
   NOTHING,
   picksAgainst,
   referralPlayOf,
-  sameSubject,
   settled,
   speaks,
   tellsLegalLetter,
@@ -128,6 +126,8 @@ import {
   type Decides,
   type Weighed,
   type WeighedField,
+  askedOf,
+  sameSubject,
 } from './understood.js';
 import { contentStems, countsIn, plain, sentences, subjectStems } from './words.js';
 
@@ -218,6 +218,10 @@ export interface Decision {
   readonly step: ChosenStep | null;
   /** The turn's step is not on their path: stored only when they tick, finish or add it. */
   readonly offered: boolean;
+  /** The path's own step, whatever the turn's is. */
+  readonly own: ChosenStep | null;
+  /** Where a step fitted to the ask goes when the turn's only stands on their path: a small test, beside it. */
+  readonly fitInto: ChosenStep | null;
   /** The path's own open step, when the turn's is another one that is only offered. */
   readonly pathStep: PathStepView | null;
   /**
@@ -1006,6 +1010,8 @@ export function decide(input: DecideInput): Decision {
     stageTitle: titleOf(before),
     stageCount: playbook.stages.length,
     step: null,
+    own: null,
+    fitInto: null,
     offered: false,
     pathStep: null,
     keeps: null,
@@ -1619,6 +1625,11 @@ export function decide(input: DecideInput): Decision {
     stageTitle: titleOf(state),
     stageCount: playbook.stages.length,
     step,
+    own: own === null || ownView === null ? null : { ...own, view: ownView },
+    fitInto:
+      u === null || step === null
+        ? null
+        : methodStep(now, state, own, step, { u, play, referral: referralPlay, message, told }),
     offered: turn.offered && step !== null,
     pathStep: turn.offered && ownView !== null && ownView.id !== step?.view.id ? ownView : null,
     keeps: turn.step?.write == null ? null : turn.step,
@@ -1856,6 +1867,39 @@ const FOLLOWS_RESULT: ReadonlySet<string> = new Set([
   'synthesize-interviews',
   'interview-debrief',
 ]);
+
+/**
+ * The method the writer fits to what they ask: what a person decides first, else the reading's play, whatever its own title is
+ * about; with none, the step they are on when it is about the ask, or a small test.
+ */
+function methodStep(
+  context: StepContext,
+  state: PathState,
+  own: ChosenStep | null,
+  turn: ChosenStep,
+  args: {
+    readonly u: Understanding;
+    readonly play: Play | null;
+    readonly referral: Play | null;
+    readonly message: string;
+    readonly told: { readonly record: readonly string[]; readonly earlier: readonly string[] };
+  },
+): ChosenStep {
+  const { u, play, referral, message } = args;
+  const here = allowedStep(context, state, playOf(context.playbook, u.stepPlayId), play, null);
+  const picked = pickStep(context, own, u, here, message);
+  const deciding =
+    referral !== null && (here === null || (here.referral === null && !u.sure)) && u.kind !== 'sum';
+  const wanted = picked ?? (deciding ? referral : (here ?? allowedStep(context, state, play, play, null)));
+  const method =
+    wanted === null
+      ? sameSubject(turn.view, askedOf(u, message))
+        ? null
+        : playOf(context.playbook, 'smallest-test')
+      : (untested(context, args.told, wanted) ?? wanted);
+  if (method === null || method.id === turn.view.playId) return turn;
+  return newsStep(context, state, method, own).step ?? turn;
+}
 
 /**
  * The step of a choice made: handing it over has the hand-over page, "may I stop?" the choice with its evidence; an

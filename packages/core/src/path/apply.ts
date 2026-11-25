@@ -97,6 +97,7 @@ export async function keepStep(
         ...(step.write === 'promote'
           ? { status: 'now' as const, givenTo: ids.principalId, reason: null }
           : {}),
+        ...(step.fitted === true ? { title: step.view.title } : {}),
         items: step.view.items,
         doneWhen: step.view.doneWhen,
         dueOn: step.view.dueOn,

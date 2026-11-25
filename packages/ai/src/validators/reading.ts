@@ -1,19 +1,16 @@
 import type { PromptGuidance } from '../prompts/guidance.js';
-import { numbersIn, spelledNumbersIn } from './figures.js';
+import { knownNumbersIn, numbersIn, spelledNumbersIn } from './figures.js';
 import { sharedCount, stemOf, stemsOf } from './stems.js';
-import { isListUnit, wordsIn } from './units.js';
 
 /**
- * A reply whose message was read (`PromptGuidance.reading`): what of the model's own stands beside what was read and what
- * the server opened with. Deterministic, per unit, the same for a streamed unit and a whole reply.
+ * A reply whose message was read (`PromptGuidance.reading`): the writer writes all of it, and a sentence of it goes only for
+ * what is false or not the writer's to say. Deterministic, per unit, with the reason in a word.
  *
- * 1. under an opening a sentence stays only when it adds something: a figure, a name, a fact of the record, a claim it was
- *    given, or something to do;
- * 2. a verdict that says nothing of theirs ("Good. The numbers show it's good.") goes, whatever opens;
- * 3. nothing agrees with what the opening just denied, or rules on what it left to a person;
- * 4. a push is never answered with a claim to have had evidence, and made-up work never with friends in its place;
- * 5. nothing speaks of how the turn was prepared ("The opening says …"), goes against the figure code worked out (its sign,
- *    its size) or says that something is what a claim says it is not.
+ * 1. nothing speaks of how the turn was prepared, or of them as someone else;
+ * 2. nothing goes against the figure code worked out (its sign, its size), says that something is what a claim says it is
+ *    not, says a number they took back, or concludes a sum that nobody worked out;
+ * 3. nothing agrees with what the record denies, or rules on what a person decides;
+ * 4. friends are no evidence, and made-up work never has friends in its place.
  */
 
 type Reading = NonNullable<PromptGuidance['reading']>;
@@ -26,92 +23,10 @@ const plain = (text: string): string =>
     .replace(/^\s*(?:[-•+]|\d{1,3}[.)])\s+/u, '')
     .trim();
 
-/** Words a verdict is made of, and that bear on nothing by themselves. */
-const EMPTY = new Set(
-  (
-    'good great strong solid promising positive encouraging excellent nice clear real important useful valuable key big fair ' +
-    'number result show sign signal mean tell us thing way point start step work worth night day look sound seem make ' +
-    'sense data fact far interest interested demand potential progress success bad tough hard challenge opportunity ' +
-    'something what how that this it you your they so now yet just very really still also need want help focus keep go move'
-  )
-    .split(' ')
-    .map(stemOf),
-);
-
 const DOES =
   /^(?:(?:so|and|then|now|first|next|instead|today|tonight|tomorrow|this week)[,:]? )*(?:(?:you (?:can|could|should|need to|might)|i(?:'d| would)|let's) (?:(?:just|also|first) )?)?(?:ask|call|ring|email|e-mail|message|text|write|send|offer|sell|charge|count|track|mark|list|show|bring|take|tell|visit|talk|meet|book|try|run|test|set|price|cut|stop|drop|pick|choose|give|get|put|make|print|post|check|read|open|close|hand|pay|split|compare|measure|start|begin|use|say|reply|answer|wait|hold)\b/iu;
 
-const VERDICT =
-  /\b(?:good|great|strong|solid|promising|positive|encouraging|excellent|nice|fantastic|amazing|bad|tough|hard|big|real|clear|fair|important|useful|valuable|success\w*|progress|challenge|opportunity)\b/iu;
-
-/** Whether a unit only says how good or bad it is. */
-export function emptyVerdict(unit: string): boolean {
-  const text = plain(unit);
-  if (text === '' || /\?["'”’)]*$/u.test(text) || isListUnit(unit) || /\d/.test(text)) return false;
-  if (/["“]/u.test(text)) return false;
-  const said = [...stemsOf(text)];
-  if (!VERDICT.test(text)) return false;
-  return wordsIn(text) <= 14 && said.every((w) => EMPTY.has(w));
-}
-
-/** Different words for one thing said of a talk, money or a wish. */
-const SAME: Readonly<Record<string, string>> = Object.fromEntries(
-  (
-    [
-      ['talk', 'talk chat speak conversation call meet interview'],
-      ['pay', 'pay spend charge cost price fee'],
-      ['keep', 'keep hold retain stay'],
-      ['again', 'again second repeat return'],
-      ['want', 'want wish like love'],
-    ] as const
-  ).flatMap(([to, words]) => words.split(' ').map((w) => [stemOf(w), to])),
-);
-
-/** Names a text says mid-sentence. */
-const namesIn = (text: string): string[] =>
-  [...text.matchAll(/(?<=[\p{L}\p{N},;:)'’-]\s)\p{Lu}[\p{L}'’-]{2,}/gu)].map((m) => m[0].toLowerCase());
-
 const figures = (text: string): number[] => [...numbersIn(text), ...spelledNumbersIn(text)];
-
-/** Whether a unit adds something to what the server opened with. */
-export function addsToLead(unit: string, reading: Reading, lead: string): boolean {
-  const text = plain(unit);
-  const held = stemsOf(lead);
-  const given = [...figures(lead), ...(reading.figures ?? []).map((f) => f.value)];
-  if ((TO_ANYONE.test(text) || GREETS.test(text)) && !/\d/.test(text)) return false;
-  // "About six months" under 6.2 months is that figure again.
-  if (
-    figures(text).some(
-      (n) =>
-        n > 1 &&
-        !given.some(
-          (g) =>
-            Math.abs(g * 100 - n) < 0.005 ||
-            // "150k" and "1.2 million" under the same in full.
-            [1, 1_000, 1_000_000].some((x) => Math.abs(g - n * x) <= Math.abs(g) * 0.05),
-        ),
-    )
-  )
-    return true;
-  // The opening's own sum once more.
-  if (figures(text).length >= 3 && !DOES.test(text)) return false;
-  const names = namesIn(lead);
-  const said = stemsOf(text);
-  const telling = [...said].filter((w) => !EMPTY.has(w));
-  const same = new Set([...held].map((w) => SAME[w] ?? w));
-  const fresh = new Set(telling.filter((w) => !same.has(SAME[w] ?? w)));
-  if (fresh.size === 0) return false;
-  // Mostly what was just said, in other words: a name in it adds nothing.
-  const doing = DOES.test(text);
-  if (!doing && telling.length >= 5 && fresh.size / telling.length <= 0.5) return false;
-  if (namesIn(text).some((n) => !names.includes(n))) return true;
-  const from = (source: string): boolean => {
-    const own = [...stemsOf(source)].filter((w) => !held.has(w) && !EMPTY.has(w));
-    return sharedCount(new Set(own), fresh) >= Math.min(2, own.length) && own.length > 0;
-  };
-  if ([...reading.points, ...reading.record].some(from)) return true;
-  return fresh.size >= 3 && (doing || /["“][^"”]{12,}["”]/u.test(text));
-}
 
 const AGREES =
   /^(?:yes|yeah|yep|sure|absolutely|exactly|right|that(?:'s| is) (?:fair|right|true|fine|ok(?:ay)?|honest|accurate)|it(?:'s| is) (?:fair|fine|honest|accurate)|you(?:'re| are) (?:right|correct)|fair enough|agreed)\b|\b(?:matches|is consistent with|lines up with|fits with|is in line with) what (?:you|the|your)\b/iu;
@@ -121,29 +36,10 @@ const RULES_TERMS =
 const ASKS_FIRST =
   /\b(?:before (?:you (?:sign|answer|agree|say|take|accept)|(?:an?|the|your) (?:lawyer|office|\w+ (?:has|have) (?:read|said)))|until|unless|whether|not|never|don't|only|ask|lawyer|who decides|decides?)\b/iu;
 
-/** "I'm not asserting anything without evidence.": a mentor's own defence. */
-const DEFENDS =
-  /\bi(?:'m| am| was|'ve| have)(?: not|n't)? (?:just |simply )?(?:assert|claim|making (?:this|that|it) up|guess|saying (?:this|that) without|(?:got )?evidence|basing)\w*|\bmy (?:evidence|claim|advice) (?:is|comes)\b|\bthe evidence (?:i|we) have\b/iu;
-
-/** Good advice to anyone. */
-const TO_ANYONE =
-  /^(?:(?:also|and|just|then),? )?(?:make sure|be sure|ensure|keep (?:this|that|it|the \w+(?: \w+)?|in) (?:in )?mind|remember (?:to|that)|don['’]t forget|stay focused|take (?:your|the) time)\b/iu;
-
-/** "Hi Ana and Bo, great to see you both." under what already opened. */
-const INTRODUCES = /^I(?:['’]m| am) \p{Lu}\p{L}+[.!]$/u;
-const GREETS = /^(?:hi|hello|hey|good (?:morning|afternoon|evening))\b[^.!?]{0,60}[.!]+$/iu;
-
-/** A line of what to do first: the server's alone. */
-const STARTS_WITH = /^(?:start with\s*[:—–]|next(?: up)?, )/iu;
-
 const FRIENDS =
   /\b(?:friends?|roommates?|room mates?|flatmates?|family|your (?:mom|dad|parents|sister|brother))\b/iu;
 const NO_FRIENDS =
   /\b(?:not|no|never|n't|except|without|instead of|rather than|other than|beyond|outside|do not count|don't count)\b/iu;
-
-/** Comfort in place of help. */
-const COMFORTS =
-  /\b(?:focus on what you can control|one (?:step|thing|day) at a time|take a (?:deep )?breath|every (?:reaction|talk|no|answer|conversation|reply) (?:teaches|tells|helps|is data)|it(?:'s| is) (?:all )?(?:just )?(?:data|learning)\b|(?:that|this)(?:'s| is) (?:good|great|real|solid) progress|(?:that|it)(?:'s| is) a relief|it(?:'s| is) going to be (?:ok|okay|fine|all right)|you(?:'ve| have) got this|don't panic|things will work out)\b/iu;
 
 // How the turn was prepared ------------------------------------------------------------------------------------------
 
@@ -194,7 +90,7 @@ export const echoesReferral = (unit: string): boolean =>
 /** Who decides, as a line with nobody doing anything ("A startup lawyer, and you start with your EIR."). */
 export function namesWho(unit: string, who: string): boolean {
   const said = stemsOf(plain(unit));
-  if (said.size < 2) return false;
+  if (said.size < 2 || !/^(?:an?|the|your)\b/iu.test(plain(unit))) return false;
   const own = stemsOf(`${who} start lawyer office person`);
   return (
     sharedCount(said, own) / said.size >= 0.75 &&
@@ -210,6 +106,9 @@ const LOSES =
   /\b(?:you(?:['’]re| are)? (?:still |now |actually )*(?:los(?:e|ing) (?:money|overall|\$)|in the red|at a loss|underwater|negative)|(?:that|this|it)(?:['’]s| is) (?:still )?a loss|los(?:e|ing) money (?:overall|on (?:each|every|it))|don['’]t (?:make|earn|keep) (?:anything|money)|nothing (?:is )?left)\b|\b(?:leaves?|left with|keep) (?:you )?(?:with )?\$0(?![\d.,])|\$0 (?:is )?left\b/iu;
 const GAINS =
   /\b(?:you(?:['’]re| are)? (?:still |now )*(?:mak(?:e|ing) (?:money|a profit)|profitable|in the black|earn(?:ing)? money|ahead)|(?:that|this|it)(?:['’]s| is) (?:still )?a profit)\b/iu;
+/** A loss that is there already, whatever the rest supposes. */
+const THE_LOSS =
+  /\b(?:the|this|that|your) loss(?:es)? (?:will |would |can |could |only |still )?(?:gets?|grows?|widens?|doubles?|shrinks?)\b/iu;
 const IF = /\b(?:if|unless|once|until|would|could|might|when|without|before)\b/iu;
 const COMPARES =
   /^(?:so |and )?(?:that(?:['’]s| is)|this is|it(?:['’]s| is)|you (?:keep|make|earn|need|have)|which is) (?:only |just |still |about )?(less than|under|below|fewer than|more than|over|above|at least|at most) (\$?)([\d][\d,.]*)/iu;
@@ -220,6 +119,7 @@ export function againstFigure(unit: string, figures: Reading['figures']): boolea
   if (all.length === 0) return false;
   const text = plain(unit);
   const money = all.filter((f) => f.unit === '$');
+  if (money.length > 0 && money.every((f) => f.value > 0) && THE_LOSS.test(text)) return true;
   if (money.length > 0 && !IF.test(text)) {
     if (money.every((f) => f.value > 0) && LOSES.test(text)) return true;
     if (money.every((f) => f.value <= 0) && GAINS.test(text)) return true;
@@ -308,21 +208,6 @@ function picksHeld(text: string, options: readonly string[]): boolean {
   });
 }
 
-/** Something brought to who decides that is none of theirs ("Bring the new price to the visa office"). */
-function wrongErrand(text: string, guidance: PromptGuidance): boolean {
-  const { referral } = guidance;
-  if (referral === null) return false;
-  const m = /^(?:bring|take|send|show|give) (.{3,70}?) to (?:the |your |an? )?(.{3,70})/iu.exec(text);
-  if (m === null) return false;
-  const office = stemsOf(referral.who.split(/[,;(]/u)[0] ?? referral.who);
-  if (sharedCount(office, stemsOf(m[2] ?? '')) < Math.min(2, office.size)) return false;
-  const brought = stemsOf(m[1] ?? '');
-  return (
-    brought.size > 0 &&
-    sharedCount(brought, stemsOf(`${referral.bring} ${referral.who} question list note page summary`)) === 0
-  );
-}
-
 /** A number they took back in this message, said as it was. */
 function saysGone(text: string, gone: readonly number[]): boolean {
   return (
@@ -339,7 +224,8 @@ function concludes(text: string, guidance: PromptGuidance): boolean {
   const { reading } = guidance;
   if (reading === undefined || (reading.figures ?? []).length > 0 || text.includes('[[')) return false;
   if (guidance.asksSum !== true && (guidance.calc ?? []).length === 0) return false;
-  return CONCLUDES.test(text) && figures(text).length > 0;
+  const known = knownNumbersIn(`${guidance.said ?? ''}\n${(guidance.calc ?? []).join('\n')}`);
+  return CONCLUDES.test(text) && figures(text).some((n) => !known.some((k) => Math.abs(k - n) < 0.005));
 }
 
 /** Whether a quotation is open at the end of `before`. */
@@ -353,55 +239,44 @@ function inQuote(before: string): boolean {
   return open;
 }
 
-/** Why a unit of the model's own does not stand beside the reading; null: it does. */
-export function againstReading(
-  unit: string,
-  guidance: PromptGuidance,
-  lead: string,
-  before = '',
-): string | null {
+/** Friends who like it, said as if it showed something. */
+const FRIENDS_LIKE =
+  /\b(?:friends?|roommates?|flatmates?|classmates?|family|dorm|hall|floor)\b[^.!?]{0,40}\b(?:love|loves|loved|like|likes|liked|want|wants|said|say)\b/iu;
+const SHOWS_IT =
+  /\b(?:shows?|proves?|means?|validat\w+|confirms?|signal|sign|proof|demand|evidence|promising|great)\b/iu;
+
+/** Why a unit is cut from a reply whose message was read. */
+export type FalseReason =
+  | 'broken'
+  | 'works'
+  | 'against_figure'
+  | 'denies_claim'
+  | 'agrees'
+  | 'rules'
+  | 'gone'
+  | 'own_sum'
+  | 'friends';
+
+/** Why a unit of the writer's is false, or not theirs to say; null: it stands. */
+export function falseUnit(unit: string, guidance: PromptGuidance, before = ''): FalseReason | null {
   const { reading } = guidance;
   if (reading === undefined) return null;
   const text = plain(unit);
   if (text === '') return null;
+  if (ofTheWorks(unit) || (guidance.referral !== null && echoesReferral(unit))) return 'works';
+  if (guidance.referral !== null && namesWho(unit, guidance.referral.who)) return 'broken';
   // A line to say or send is theirs to change: none of its sentences is read alone.
   if (/^["“]/u.test(text) || inQuote(before)) return null;
-  if (emptyVerdict(unit) || bareVerdict(unit)) return 'empty_verdict';
-  if ((GREETS.test(text) || INTRODUCES.test(text)) && guidance.kind !== 'social' && reading.kind !== 'social')
-    return 'greets';
-  if (ofTheWorks(unit)) return 'scaffolding';
   if (againstFigure(unit, reading.figures)) return 'against_figure';
   if (deniesClaim(unit, reading)) return 'denies_claim';
-  if ((reading.opened === 'contradiction' || reading.opened === 'held') && AGREES.test(text)) return 'agrees';
+  if ((reading.contradicts != null || reading.opened === 'held') && AGREES.test(text)) return 'agrees';
   const decided =
     reading.referral !== null && reading.referral !== 'wellbeing' && reading.referral !== 'grants';
   if (decided && rulesTerms(unit)) return 'rules';
   if (reading.opened === 'held' && picksHeld(text, reading.heldOptions ?? [])) return 'rules';
-  // "Pick the one that …" under a pick.
-  if (
-    reading.opened === 'choice' &&
-    /^(?:pick|choose|keep|go with) (?:the one|whichever|one|any)\b/iu.test(text)
-  )
-    return 'second_pick';
-  if (STARTS_WITH.test(text)) return 'second_plan';
-  if (wrongErrand(text, guidance)) return 'wrong_errand';
   if (saysGone(text, reading.gone ?? [])) return 'gone';
   if (concludes(text, guidance)) return 'own_sum';
-  if ((reading.inOrder || reading.kind === 'result' || reading.kind === 'sum') && COMFORTS.test(text))
-    return 'comforts';
-  if (reading.kind === 'pushback' && DEFENDS.test(text)) return 'defends';
-  if (reading.kind === 'integrity' && FRIENDS.test(text) && !NO_FRIENDS.test(text)) return 'friends';
-  // A question is held apart, a line that announces waits for what it announces, and a draft is as long as it is.
-  if (lead === '' || guidance.draft === true || /[?:]["'”’)]*$/u.test(text) || isListUnit(unit)) return null;
-  return addsToLead(unit, reading, lead) ? null : 'adds_nothing';
-}
-
-/** A question of the method's own table (validators/method.ts), as it stands in a sentence. */
-export const FROM_THE_TABLE =
-  /\bwhat (?:they|he|she) spent on (?:this|it) last time\b|\bwhen (?:they|he|she) last (?:dealt with|had|did) (?:it|this)\b/iu;
-
-/** Whether a reply makes a claim it was given. */
-export function makesPoint(point: string, said: ReadonlySet<string>, share = 0.5): boolean {
-  const own = new Set([...stemsOf(point)].filter((w) => !EMPTY.has(w)));
-  return own.size === 0 || sharedCount(own, said) / own.size >= share;
+  if (NO_FRIENDS.test(text)) return null;
+  if (reading.kind === 'integrity' && FRIENDS.test(text)) return 'friends';
+  return FRIENDS_LIKE.test(text) && SHOWS_IT.test(text) ? 'friends' : null;
 }

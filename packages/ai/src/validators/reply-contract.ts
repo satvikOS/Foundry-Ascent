@@ -12,16 +12,7 @@ import { knownNumbersIn, numbersIn } from './figures.js';
 import { saidSentences, saysAgain, unsaidOf, type SaidSentence } from './said-before.js';
 import { danglingAsk, danglingLine, echoesThem, readsAgain, refusesUnderLead } from './second-reading.js';
 import { handBackCandidate, isProtectedLine, putToFounder } from './social.js';
-import {
-  againstReading,
-  agreesWith,
-  bareVerdict,
-  echoesReferral,
-  makesPoint,
-  namesWho,
-  rulesTerms,
-  withoutWorks,
-} from './reading.js';
+import { agreesWith, bareVerdict, echoesReferral, rulesTerms } from './reading.js';
 import { coverage, sharedCount, stemOf, stemsOf } from './stems.js';
 import {
   isBlockUnit,
@@ -74,8 +65,22 @@ export function contractApplies(
     guidance !== undefined &&
     guidance.kind !== 'social' &&
     guidance.kind !== 'rehearsal' &&
-    // Read, they ask something of the work: answered, as a person first, whatever they feel.
-    (founderText === undefined || guidance.reading !== undefined || !inDistress(founderText))
+    guidance.reading === undefined &&
+    (founderText === undefined || !inDistress(founderText))
+  );
+}
+
+/**
+ * Whether the writer writes the whole reply (docs/architecture/understand.md): its message was read. What it writes is checked
+ * for truth alone (validators/whole-reply.ts), whatever they feel: read, they ask something of the work.
+ */
+export function wholeApplies(guidance: PromptGuidance | null | undefined): guidance is PromptGuidance {
+  return (
+    guidance !== null &&
+    guidance !== undefined &&
+    guidance.kind !== 'social' &&
+    guidance.kind !== 'rehearsal' &&
+    guidance.reading !== undefined
   );
 }
 
@@ -229,6 +234,9 @@ function classOf(before: string, unit: string, next: string | null): UnitClass {
 }
 
 /** Whether what follows a "before we…" clause only goes on putting it off. */
+/** Whether a unit only flatters. */
+export const flatters = (unit: string): boolean => classOf('', unit, null) === 'flattery';
+
 function isPostponing(rest: string): boolean {
   return (
     rest.trim() === '' ||
@@ -426,26 +434,8 @@ function recalledStep(
   );
 }
 
-/** The one thing to do first, as the server says it before the step ('' : none). */
-export function firstActionLine(guidance: PromptGuidance): string {
-  const action = stripEnd(guidance.firstAction ?? '');
-  return action === '' || guidance.step === null ? '' : `**Start with:** ${capital(action)}.`;
-}
-
-/** Most words of it that a call says. */
-const SPOKEN_ACTION_WORDS = 18;
-
-/** The turn's step as the server says it, with what to do first; '' when the turn gives none (it was said a moment ago). */
-function sayStep(guidance: PromptGuidance, channel: TurnChannel, today?: string | null): string {
-  const line = sayStepLine(guidance, channel, today);
-  const first = line === '' ? '' : firstActionLine(guidance);
-  if (first === '') return line;
-  if (channel === 'text') return `${first}\n\n${line}`;
-  const action = lowerFirst(stripEnd(guidance.firstAction ?? ''));
-  return wordsIn(action) > SPOKEN_ACTION_WORDS ? line : `${stripEnd(line)}, and start with this: ${action}.`;
-}
-
-function sayStepLine(guidance: PromptGuidance, channel: TurnChannel, today?: string | null): string {
+/** The turn's step as the server says it; '' when the turn gives none (it was said a moment ago). */
+export function sayStep(guidance: PromptGuidance, channel: TurnChannel, today?: string | null): string {
   const { step } = guidance;
   if (step === null) return '';
   if (guidance.kind === 'recall') return recalledStep(step, channel, today);
@@ -677,7 +667,6 @@ export class StepTalk {
   drops(unit: string): boolean {
     const text = unit.trim();
     // The words themselves were asked for: its lines are theirs, whatever labels they have.
-    if (this.guidance.draft === true && this.guidance.reading !== undefined && !opensStep(text)) return false;
     const newParagraph = PARAGRAPH.test(unit);
     const item = isListUnit(text);
     // A draft in quotes ends with them: what is said after it is the answer's own.
@@ -828,10 +817,7 @@ export function withoutLabel(unit: string): string {
 }
 
 /** A unit of the model's without a label of ours, or what leads into it from the prompt. */
-export function contractUnit(unit: string, guidance: PromptGuidance): string {
-  const said = withoutLabel(unit);
-  return guidance.reading === undefined || said === '' ? said : withoutWorks(said);
-}
+export const contractUnit = (unit: string): string => withoutLabel(unit);
 
 /**
  * What says nothing, or what it may not, whether the message was read or not: the prompt's own line for who decides, a bare
@@ -839,11 +825,7 @@ export function contractUnit(unit: string, guidance: PromptGuidance): string {
  */
 export function emptyOrRuled(unit: string, guidance: PromptGuidance, before: string): boolean {
   if (guidance.restate !== undefined) return false;
-  if (
-    guidance.referral !== null &&
-    (echoesReferral(unit) || (guidance.reading !== undefined && namesWho(unit, guidance.referral.who)))
-  )
-    return true;
+  if (guidance.referral !== null && echoesReferral(unit)) return true;
   if (guidance.kind === 'rehearsal' || guidance.kind === 'social' || quoteOpen(before)) return false;
   if (bareVerdict(unit)) return true;
   // Money for a part of it (turn.ts `seenBefore`).
@@ -859,23 +841,10 @@ export function needlessQuestion(question: string, guidance: PromptGuidance): bo
   if (step === null || question.trim() === '' || guidance.restate !== undefined || guidance.kind === 'recall')
     return false;
   if ((guidance.askBack ?? '').trim() !== '') return false;
-  if (guidance.reading !== undefined) return true;
   const said = stemsOf(question);
   const held = stemsOf(`${step.title}. ${step.doneWhen}. ${step.items.map((i) => i.do).join('. ')}`);
   return OF_THE_STEP.test(bare(question)) && sharedCount(said, held) >= 2;
 }
-
-/** A question that ends a reply whose message was read, however it is set up: the step is what comes next. */
-export const closingQuestion = (unit: string, before: string, guidance: PromptGuidance): boolean =>
-  guidance.reading !== undefined &&
-  QUESTION_END.test(unit.trim()) &&
-  /\byou(?:r|['’]\p{L}+)?\b/iu.test(unit) &&
-  !/["“”]/u.test(unit) &&
-  !isListUnit(unit) &&
-  !quoteOpen(before) &&
-  !letterOpen(before) &&
-  !/:[*_\s]*$/u.test(before.trimEnd()) &&
-  needlessQuestion(unit, guidance);
 
 /** Whether a unit only announces the step's parts ("Here's what to do:"). */
 export function announcesSteps(unit: string): boolean {
@@ -1177,7 +1146,7 @@ const SPOKEN_WHO_WORDS = 16;
 const SPOKEN_BRING_WORDS = 14;
 
 /** Who decides and what to bring: what of it `reply` did not say ('' when it said both). */
-function referralRest(reply: string, guidance: PromptGuidance, channel: TurnChannel): string {
+export function referralRest(reply: string, guidance: PromptGuidance, channel: TurnChannel): string {
   const { referral } = guidance;
   if (referral === null) return '';
   const voice = channel === 'voice';
@@ -1192,7 +1161,7 @@ function referralRest(reply: string, guidance: PromptGuidance, channel: TurnChan
 }
 
 /** The same where the opening named who decides: how to reach them, and what to bring, unless the reply said it. */
-function heldRest(body: string, guidance: PromptGuidance, channel: TurnChannel): string {
+export function heldRest(body: string, guidance: PromptGuidance, channel: TurnChannel): string {
   const { referral } = guidance;
   if (referral === null || referral.told === true) return '';
   const voice = channel === 'voice';
@@ -1281,7 +1250,7 @@ export function playKey(guidance: PromptGuidance): string | null {
 
 /** What the server says first on this turn ('' when the model's answer opens the reply). */
 export function leadText(guidance: PromptGuidance | null | undefined, channel: TurnChannel): string {
-  if (!contractApplies(guidance)) return '';
+  if (!contractApplies(guidance) && !wholeApplies(guidance)) return '';
   const lead = guidance.lead ?? null;
   if (lead === null) return '';
   return (channel === 'voice' ? lead.voice.replace(/\s+/g, ' ') : lead.text).trim();
@@ -1443,8 +1412,7 @@ function partsOf(
       body = `${body.slice(0, at).trimEnd()}${body.slice(at + line.length)}`.trim();
     }
   }
-  // The claims of a reading stay where they were said.
-  const composed = guidance.reading === undefined ? composedAnswer(guidance, channel) : '';
+  const composed = composedAnswer(guidance, channel);
   const at = lead === '' && composed !== '' ? body.indexOf(composed) : -1;
   if (at >= 0)
     body = `${body.slice(0, at).trimEnd()}\n\n${body.slice(at + composed.length).trimStart()}`.trim();
@@ -1518,15 +1486,7 @@ function clean(
       if (DEFERRAL_LEAD.test(text) || PLAN_QUESTION.test(text)) findings.add('deferral');
       if (!asking.includes(i) || trailing) return; // left out, or said last
     }
-    if (
-      i === units.length - 1 &&
-      u.kind === 'asked' &&
-      closingQuestion(u.raw, source.slice(0, u.start), guidance)
-    ) {
-      leave(u, 'stacked_questions');
-      return;
-    }
-    let raw = owned ? contractUnit(u.raw, guidance) : u.raw;
+    let raw = owned ? contractUnit(u.raw) : u.raw;
     if (raw === '') return;
     if (u.kind === 'statement') {
       const without = withoutLead(raw);
@@ -1596,18 +1556,6 @@ function clean(
       leaned = true;
       return;
     }
-    // What was read of the message decides what stands beside it (validators/reading.ts).
-    if (
-      guidance.reading !== undefined &&
-      !isProtectedLine(u.text) &&
-      (repeatsFirstAction(raw, guidance) ||
-        (!isServerText(u.text, guidance, channel) &&
-          againstReading(raw, guidance, leadSaid, source.slice(0, u.start)) !== null))
-    ) {
-      leave(u, 'step_talk');
-      leaned = true;
-      return;
-    }
     raw = bringWho(raw, guidance, kept.map((k) => k.raw).join(''));
     if (
       channel === 'text' &&
@@ -1670,7 +1618,6 @@ function clean(
 
 /** Whether a unit is text of the server's own (the program's answer, who decides, what it builds on). */
 export function isServerText(unit: string, guidance: PromptGuidance, channel: TurnChannel): boolean {
-  if (isFirstAction(unit, guidance)) return true;
   const own = norm(unit);
   if (own.length < 8) return false;
   const { ask, prior, askBack } = guidance;
@@ -1684,26 +1631,9 @@ export function isServerText(unit: string, guidance: PromptGuidance, channel: Tu
     prior?.gap ?? '',
     ask?.keeps ?? '',
     askBack ?? '',
-    ...(guidance.reading?.points ?? []).map(asSentence),
-    guidance.reading === undefined ? '' : (guidance.fallback?.text ?? ''),
     referralRest('', guidance, channel),
     newIdeaLine(guidance),
   ].some((t) => norm(t).includes(own));
-}
-
-/** Whether a unit is the server's own line of what to do first. */
-const isFirstAction = (unit: string, guidance: PromptGuidance): boolean => {
-  const line = norm(firstActionLine(guidance));
-  return line !== '' && norm(unit) === line;
-};
-
-/** Whether a unit of the model's own says what the server says to do first. */
-export function repeatsFirstAction(unit: string, guidance: PromptGuidance): boolean {
-  const line = firstActionLine(guidance);
-  if (line === '' || QUESTION_END.test(unit.trim())) return false;
-  const action = stemsOf(guidance.firstAction ?? '');
-  const said = stemsOf(unit);
-  return action.size >= 3 && coverage(action, said) >= 0.75 && coverage(said, action) >= 0.5;
 }
 
 const HAS_A_VERB =
@@ -1949,9 +1879,7 @@ export function saysPrior(reply: string, guidance: PromptGuidance): boolean {
   };
   // Another fact of theirs, with its number, does as well; of what was read, any line.
   return (
-    (guidance.reading?.record ?? []).some(says) ||
-    says(prior.fact) ||
-    (guidance.facts ?? []).some((f) => /\d/.test([...stemsOf(f)].join(' ')) && says(f))
+    says(prior.fact) || (guidance.facts ?? []).some((f) => /\d/.test([...stemsOf(f)].join(' ')) && says(f))
   );
 }
 
@@ -1973,8 +1901,6 @@ function tailOf(
   const again = guidance.restate !== undefined && lead === '';
   const little =
     lead === '' &&
-    // The words they asked for are as short as they are.
-    !(guidance.draft === true && guidance.reading !== undefined && answerWords > 0) &&
     !saysTheSum(said, guidance) &&
     answerWords < (again ? LEAST_RESTATED : voice ? MIN_SPOKEN_ANSWER_WORDS : MIN_ANSWER_WORDS);
   const recall = guidance.kind === 'recall';
@@ -1987,48 +1913,13 @@ function tailOf(
   else if (little) {
     findings.add(answerWords < MIN_HELP_WORDS ? 'question_only' : 'missing_answer');
     const whole = composedAnswer(guidance, channel);
-    const there = guidance.reading !== undefined && norm(said).includes(norm(whole));
-    const given = there ? '' : fresh(whole);
+    const given = fresh(whole);
     // All of it is there already: the rest of the program's answer, or nothing.
-    const other = given === '' && guidance.reading === undefined ? fresh(answerOf(guidance, channel)) : given;
+    const other = given === '' ? fresh(answerOf(guidance, channel)) : given;
     parts.push(other === '' && wordsIn(said) < LEAST_RESTATED ? whole : other);
   } else if (!again && lacksAnswer(said, guidance, founderText, channel)) {
     findings.add('missing_answer');
     parts.push(cited(fresh(answerOf(guidance, channel)), guidance, channel));
-  }
-  // Under an opening that denies, holds or only reads, the first claim that says what to do with it.
-  const opened = guidance.reading?.opened ?? null;
-  if (opened !== null && OPENS_MORE.has(opened)) {
-    const told = stemsOf([said, ...parts, firstActionLine(guidance)].join(' '));
-    const points = guidance.reading?.points ?? [];
-    const leadStems = stemsOf(lead);
-    const missed = points.filter((p) => !makesPoint(p, told, UNDER_LEAD));
-    // Too little of the model's own, or none of the claims made in the little there is.
-    const little1 =
-      answerWords < LEAST_UNDER ||
-      (!voice &&
-        answerWords < LEAST_OWN &&
-        (guidance.reading?.secondAsk != null || points.every((p) => !makesPoint(p, told))));
-    const next = little1 ? missed.find((p) => !repeatsLead(p, leadStems) && !onlyVerdict(p)) : undefined;
-    if (next !== undefined) {
-      findings.add('missing_part');
-      parts.push(asSentence(next));
-    }
-  }
-  // Several things happened: each is said, in order, and the reply is never only comfort.
-  if (guidance.reading?.inOrder === true && opened !== 'order' && !again) {
-    const told = stemsOf([said, ...parts].join(' '));
-    const made = (p: string): boolean => makesPoint(p, told, WELL_MADE);
-    const missed = guidance.reading.points.filter((p) => !made(p));
-    // Most of them missed: all of them, so the order is whole.
-    const left = missed.length * 2 >= guidance.reading.points.length ? guidance.reading.points : missed;
-    if (!voice && lead === '' && !HEARD.test(said)) parts.unshift(HEARS);
-    if (missed.length > 0) {
-      findings.add('missing_part');
-      parts.push(
-        ...(voice || left.length === 1 ? [left.slice(0, 2).map(asSentence).join(' ')] : [inOrder(left)]),
-      );
-    }
   }
   // Each thing they asked is answered, and what they set themselves is kept to.
   if (!recall && !again) {
@@ -2065,7 +1956,7 @@ function tailOf(
     parts.push(idea);
   }
   if (!recall && lead === '' && !again) {
-    const told = [said, ...parts, firstActionLine(guidance)].join(' ');
+    const told = [said, ...parts].join(' ');
     const prior = (voice ? guidance.prior?.spoken : guidance.prior?.sentence) ?? '';
     const gap = voice && guidance.prior?.spoken === undefined ? '' : (guidance.prior?.gap ?? '');
     const held = norm(told);
@@ -2081,10 +1972,7 @@ function tailOf(
     }
   }
   const whole = [said, ...parts].join(' ');
-  const referral =
-    opened === 'held' && lead !== ''
-      ? heldRest(withoutStart(whole, lead) ?? whole, guidance, channel)
-      : referralRest(whole, guidance, channel);
+  const referral = referralRest(whole, guidance, channel);
   if (referral !== '') {
     findings.add('missing_referral');
     parts.push(referral);
@@ -2123,34 +2011,9 @@ function saysLimit(said: string, limit: string): boolean {
   return norm(said).includes(limit.toLowerCase());
 }
 
-const HEARD =
-  /\b(?:i hear (?:you|that)|sorry|that(?:['’]s| is) (?:a lot|hard|tough|rough)|a lot at once|no wonder|understandable)\b/iu;
-
 /** Several claims, each on its line. */
 const inOrder = (points: readonly string[]): string =>
   `In this order:\n\n${points.map((p, i) => `${String(i + 1)}. ${asSentence(p)}`).join('\n')}`;
-const HEARS = 'That is a lot at once.';
-/** Share of a claim's words that make it, where all of them are said in order. */
-const WELL_MADE = 0.65;
-
-/** Openings that leave something to say, and the fewest words of the model's own that say it. */
-const OPENS_MORE: ReadonlySet<string> = new Set([
-  'contradiction',
-  'held',
-  'missing',
-  'choice',
-  'result',
-  'pushback',
-  'integrity',
-  'sum',
-  'quit',
-  'answer',
-]);
-const LEAST_UNDER = 5;
-const LEAST_OWN = 22;
-/** Share of a claim's words that make it under an opening that holds some of them. */
-const UNDER_LEAD = 0.65;
-
 const asSentence = (text: string): string => `${capital(stripEnd(text))}.`;
 
 /** Fewest words of a reply said again in other words. */
@@ -2294,7 +2157,6 @@ export function contractTail(
  */
 export function carriesContract(unit: string, guidance: PromptGuidance | null | undefined): boolean {
   if (!contractApplies(guidance)) return false;
-  if (isFirstAction(unit, guidance)) return true;
   if (isTemplateLine(unit, guidance)) return true;
   const own = norm(unit);
   if (
@@ -2342,7 +2204,6 @@ export function carriesContract(unit: string, guidance: PromptGuidance | null | 
  */
 export function mayRepeat(unit: string, guidance: PromptGuidance | null | undefined): boolean {
   if (!contractApplies(guidance)) return false;
-  if (isFirstAction(unit, guidance)) return true;
   if (isTemplateLine(unit, guidance)) return true;
   const own = norm(unit);
   if (
@@ -2375,9 +2236,6 @@ export function mayRepeat(unit: string, guidance: PromptGuidance | null | undefi
 
 /** Most words of the model's own in a typed answer, and beside what the server says first (fewest of it, whatever opens). */
 const TYPED_WORDS = { alone: 110, whole: 125, least: 20 } as const;
-/** The same where the message was read: the claims, and no more. */
-const SAYS_MOST: ReadonlySet<string> = new Set(['order', 'held', 'solo', 'quit']);
-const READ_WORDS = { alone: 78, whole: 88, least: 20 } as const;
 /** What a list, once begun, may run over by: an item left out would be a hole in it. */
 const LIST_OVER = 60;
 
@@ -2391,13 +2249,8 @@ export function overTyped(unit: string, words: number, before: string, guidance:
   if (isServerText(unit, (guidance.lead ?? null) === null ? guidance : { ...guidance, ask: null }, 'text'))
     return false;
   const lead = (guidance.lead?.text ?? '').split(/\n\n(?=Here it is|\s*(?:1\. |Who:|"))/u)[0] ?? '';
-  const limit = guidance.reading === undefined ? TYPED_WORDS : READ_WORDS;
-  const most =
-    lead === ''
-      ? limit.alone
-      : SAYS_MOST.has(guidance.reading?.opened ?? '')
-        ? limit.least
-        : Math.max(limit.least, limit.whole - wordsIn(lead));
+  const limit = TYPED_WORDS;
+  const most = lead === '' ? limit.alone : Math.max(limit.least, limit.whole - wordsIn(lead));
   const inList =
     isListUnit(unit) && /(?:^|\n)\s*(?:[-*+•]|\d{1,3}[.)])\s[^\n]*$|:[*_\s]*$/u.test(before.trimEnd());
   const announces = /:[*_\s]*$/u.test(unit) ? 25 : 0;
@@ -2424,7 +2277,7 @@ export function spokenReserve(
   released: string,
   today?: string | null,
 ): number {
-  if (!contractApplies(guidance)) return 0;
+  if (!contractApplies(guidance) && !wholeApplies(guidance)) return 0;
   return (
     wordsIn(referralRest(released, guidance, 'voice')) +
     wordsIn(sayStep(guidance, 'voice', today)) +

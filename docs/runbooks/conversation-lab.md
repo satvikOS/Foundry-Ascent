@@ -525,8 +525,8 @@ gh workflow run ops-conversation-lab.yml -f suite=understand -f understand_model
 - **Cases.** Every turn of the client and held-out scenarios with an expectation (a number, a referral, a pick, news, history, a
   kind, friends offered as proof): 229 today. A case is the message, the founder's lines before it in that conversation, what they
   told in earlier ones (as dated facts) and the scenario's record; no reply exists, so follow-ups that lean on the mentor's words are
-  harder here than in a turn. `groups` and `scenario_ids` narrow them (empty: all, the first held-out group too; `heldoutb`, which
-  nobody has looked at, only where it is named).
+  harder here than in a turn. `groups` and `scenario_ids` narrow them (empty: all, the first held-out group too; `heldoutb` and
+  `heldoutc`, which nobody has looked at, only where they are named).
 - **Own cases.** `ops/lab/scenarios/understand/*.yaml` holds 90 cases invented for the suite (50 of sums, 40 of results, referrals, second
   questions and picks), in two halves of the same shapes. They are read first; `groups=own` or `ownheld` names a half. The held-back
   half is counted and kept nowhere: its messages, readings and grades are taken out of the sealed files, and its totals alone are public.

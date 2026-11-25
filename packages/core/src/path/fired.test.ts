@@ -163,7 +163,7 @@ describe('who has the answer', () => {
       on('price-test'),
     );
     expect(t.decision.decidedBy?.answer).toBe('reading');
-    expect(t.prompt.lead?.text).toMatch(/^Your own numbers (?:speak|say)/);
+    expect(t.prompt.reading?.contradicts?.says).toMatch(/^Your own numbers (?:speak|say)/);
   });
 });
 
@@ -181,26 +181,6 @@ describe('a verdict opens over an outcome alone', () => {
   });
 });
 
-describe('the test and the step are one plan', () => {
-  const said = (settles: string, step: string) =>
-    readTurnOf(
-      'the tasting went so so, a few took a jar home and paid, the rest said yum',
-      understood({ kind: 'result', result: { ...WEAK, settles }, stepPlayId: step }),
-      on(step),
-    ).prompt.lead?.text ?? '';
-  it('of one kind with another number: the step is named', () => {
-    expect(said('Ask ten of them to pay 8 dollars.', 'will-anyone-pay')).toMatch(
-      /The step below settles it\.$/,
-    );
-    expect(said('Ask 20 of them to pay 8 dollars.', 'will-anyone-pay')).toMatch(/20 of them/);
-  });
-  it('of another kind: only the step is left, and what the test was may come before it', () => {
-    expect(said('Ask ten of them to pay 8 dollars.', 'value-proposition')).not.toMatch(
-      /ten of them|step below/,
-    );
-  });
-});
-
 describe('praise asked for is no push', () => {
   it('says why not yet, what is real, and what would show it', () => {
     const t = readTurnOf(
@@ -214,8 +194,8 @@ describe('praise asked for is no push', () => {
         previousReply: 'Hi.',
       },
     );
-    expect(t.prompt.lead?.text).toMatch(/^I cannot call it great yet, because/);
-    expect(t.prompt.lead?.text).not.toMatch(/Fair:/);
+    expect(t.prompt.reading?.points[0]).toMatch(/^It cannot be called great yet/);
+    expect(t.prompt.reading?.kind).toBe('question');
   });
 });
 

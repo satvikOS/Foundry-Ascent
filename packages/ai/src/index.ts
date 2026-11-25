@@ -384,9 +384,19 @@ export {
   spokenReserve,
   standingLine,
   stepLine,
+  wholeApplies,
   type ContractVerdict,
   type ReplyContractInput,
 } from './validators/reply-contract.js';
+export {
+  checkStep,
+  readNext,
+  splitNext,
+  withFitted,
+  type Fitted,
+  type FittedStep,
+} from './validators/fitted-step.js';
+export { repairBrief } from './validators/whole-reply.js';
 export {
   SentenceGate,
   findUnitEnd,

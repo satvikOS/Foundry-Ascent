@@ -18,6 +18,13 @@ path decides and the reply is written. Code checks every field, works out every 
 | `packages/core/src/orchestrator/understand.ts`    | `prepareUnderstand` (pure), `understandDue`, `understandTurn` (metered, with its budget)                 |
 | `packages/ai/src/gateway/mock-understand.ts`      | The mock model's readings, so a turn with it on runs offline                                             |
 
+## What a turn does with it
+
+Where no rule read the message precisely, the reading decides the turn and goes to the writer as notes: the writer writes the whole reply
+and its one fitted step, and code checks them (founder-path.md, "Resting on a reading"). Where a rule did, or the switch is off, the turn is
+the one without a reading, to the byte. A reply that is none once its false sentences are out is written again once, within
+`REPAIR_BUDGET_MS` (`orchestrator/generate.ts`: 2.5 s typed, 1.2 s on a call, counted from the end of the first draft).
+
 ## The three calls
 
 One call wrote about 380 tokens: 2.3 s at the median and 4.7 s at the 95th percentile on Nova 2 Lite, so most typed turns went on

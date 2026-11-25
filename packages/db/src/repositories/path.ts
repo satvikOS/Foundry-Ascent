@@ -550,6 +550,8 @@ export async function demoteOtherSteps(
 }
 
 export interface StepChange {
+  /** A step fitted to the founder (the same play's, in other words). */
+  readonly title?: string;
   readonly status?: StepStatus;
   readonly items?: readonly PathStepItem[];
   readonly doneWhen?: string;
@@ -586,6 +588,7 @@ export function updateStep(
       sets.push('completed_at = NULL', 'completed_by = NULL');
     }
   }
+  if (change.title !== undefined) set('title = :title', 'title', p.text(change.title));
   if (change.items !== undefined) set('items = :items', 'items', p.json(change.items));
   if (change.doneWhen !== undefined) set('done_when = :doneWhen', 'doneWhen', p.text(change.doneWhen));
   if (change.dueOn !== undefined)

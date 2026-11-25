@@ -2,19 +2,21 @@
 import { type RecordLine, type Understanding } from '@foundry/ai';
 import { describe, expect, it } from 'vitest';
 
-import { asksToStop, byUrgency, openingsOf, type OpeningContext } from './openings.js';
+import {
+  asksToStop,
+  byUrgency,
+  contradictionSaid,
+  isItSaid,
+  listPick,
+  openingOf,
+  recallSaid,
+  type OpeningContext,
+} from './openings.js';
 import { PLAYBOOK } from './playbook/index.js';
 import { NO_READS, TODAY } from './testing/inputs.js';
 import { onStep, readTurnOf, replyOf, sumOf, understood } from './testing/understood.js';
-import {
-  actionSaid,
-  bearsOn,
-  firstActionOf,
-  fitsAsk,
-  settled,
-  tellsLegalLetter,
-  testsAPick,
-} from './understood.js';
+import { fitTurn } from './turn.js';
+import { fitsAsk, settled, tellsLegalLetter, testsAPick } from './understood.js';
 
 const line = (text: string, kind = 'fact'): RecordLine => ({
   key: 'R1',
@@ -27,84 +29,16 @@ const context = (over: Partial<OpeningContext> = {}): OpeningContext => ({
   yesNo: false,
   today: TODAY,
   referral: null,
-  step: null,
   message: '',
   ...over,
 });
 const opens = (over: Partial<Understanding>, c: Partial<OpeningContext> = {}) =>
-  openingsOf(understood(over), context(c))[0] ?? null;
-const result = (over: Partial<NonNullable<Understanding['result']>>): Partial<Understanding> => ({
-  kind: 'result',
-  result: {
-    verdict: 'mixed',
-    shows: 'Twelve of 30 tasters bought a jar.',
-    doesNotShow: 'Whether they come back.',
-    settles: null,
-    ...over,
-  },
-});
+  openingOf(understood(over), context(c));
 const referralOf = (playId: string) => PLAYBOOK.plays.find((p) => p.id === playId)?.referral ?? null;
 const about = (message: string, earlier: readonly string[] = []) => ({
   message,
   earlier,
   titles: PLAYBOOK.plays.map((p) => p.title),
-});
-
-describe('a result as a mentor reads it', () => {
-  it.each(['strong', 'promising', 'mixed', 'weak', 'too_early', 'bad'] as const)(
-    '%s: no form to fill in',
-    (verdict) => {
-      const said = opens(
-        result({ verdict, settles: 'Ask the next 20 tasters to pay $8 and count who does.' }),
-      );
-      expect(said?.text).not.toMatch(/Here is what|What would settle|It is (?:mixed|weak)\b/);
-      expect(said?.text).toMatch(/twelve of 30 tasters bought a jar\./);
-      expect(said?.text).toMatch(/whether they come back/);
-      expect(said?.text).toMatch(/sk the next 20 tasters to pay \$8 and count who does/);
-      expect(said?.voice.split(/(?<=[.])\s+(?=\p{Lu})/u)).toHaveLength(2);
-      expect(said?.uses).toBe('firstAction');
-    },
-  );
-
-  it('is said in more than one shape, the same every time for the same words', () => {
-    const shapes = new Set<string>();
-    for (const n of ['Four', 'Five', 'Six', 'Seven', 'Nine', 'Ten', 'Two', 'Three']) {
-      const over = result({ shows: `${n} of 30 tasters bought a jar.`, settles: 'Ask 20 more to pay.' });
-      const text = opens(over)?.text ?? '';
-      expect(opens(over)?.text).toBe(text);
-      shapes.add(text.replace(/\b(?:four|five|six|seven|nine|ten|two|three)\b/g, 'n'));
-    }
-    expect(shapes.size).toBeGreaterThan(2);
-  });
-
-  it('a test is an act with a number: a wish is not said', () => {
-    expect(opens(result({ settles: 'Whether the stall meets a need.' }))?.text).not.toContain('meets a need');
-    expect(opens(result({ settles: 'Talk to some of them.' }))?.text).not.toContain('Talk to some');
-    expect(opens(result({ settles: 'Whether 8 of the next 20 come back.' }))?.text).toContain(
-      'What settles it is whether 8 of the next 20 come back.',
-    );
-    // The first action is the test when nothing else is.
-    expect(
-      opens({ ...result({}), firstAction: 'Ring six of the twelve and count who ate it.' })?.text,
-    ).toContain('ing six of the twelve');
-  });
-
-  it.each([
-    ['The number of jars they finished.', /It says nothing yet about the number of jars they finished\./],
-    ['You do not know who came twice.', /You do not know who came twice\./],
-    ['It does not show whether the rest found it dear.', /whether the rest found it dear\./],
-    ['If they would pay more.', /whether they would pay more\./],
-  ])('what it leaves open: %s', (doesNotShow, said) => {
-    expect(opens(result({ doesNotShow }))?.text).toMatch(said);
-  });
-
-  it('of half a reading, only that half', () => {
-    expect(opens(result({ shows: '', doesNotShow: 'Whether they come back.' }))?.text).toMatch(
-      /whether they come back\.$/,
-    );
-    expect(opens(result({ shows: '', doesNotShow: null }))).toBeNull();
-    expect(opens(result({ doesNotShow: null }))?.text).toMatch(/twelve of 30 tasters bought a jar\.$/);
-  });
 });
 
 describe('what a person decides is nobody’s pick', () => {
@@ -200,16 +134,6 @@ describe('a pick', () => {
   ])('what would change it: %s (%s)', (flipsIf, kept) => {
     expect(settled(u('plum', { flipsIf }), about(message)).choice?.flipsIf !== null).toBe(kept);
   });
-  it('keeps the first clauses of a long reason', () => {
-    const because =
-      'Plum sold out twice at the corner table in October; quince takes four hours to peel for one batch, while fig needs a tree nobody here has and a drive of two hours each way to fetch them every week of the season.';
-    expect(
-      opens({ kind: 'choice', choice: { options: ['plum', 'fig'], pick: 'plum', because, flipsIf: null } })
-        ?.text,
-    ).toBe(
-      'My pick: plum. Plum sold out twice at the corner table in October; quince takes four hours to peel for one batch.',
-    );
-  });
 });
 
 describe('what is not said to them', () => {
@@ -236,17 +160,6 @@ describe('what is not said to them', () => {
     );
     expect(u.record.map((r) => r.text)).toEqual(['You sell at the corner table.']);
   });
-  it('half a reading that opens nothing leaves the opening to the rules, and a whole one never', () => {
-    const message = 'I offered 20 jars to buyers at 8 dollars and 11 paid, what does that show';
-    const of = (points: string[]) =>
-      readTurnOf(message, understood({ kind: 'question', ask: 'what it shows', points }), {
-        reads: { ...NO_READS, steps: [onStep('pricing')] },
-      }).prompt;
-    const rules = readTurnOf(message, null, { reads: { ...NO_READS, steps: [onStep('pricing')] } }).prompt;
-    expect(of(['Eleven of 20 paid.']).reading?.opened ?? null).toBe(rules.lead === undefined ? null : 'rule');
-    expect(of(['Eleven of 20 paid.', 'Nine did not, and you do not know why.']).reading?.opened).toBeNull();
-  });
-
   it('nothing throws on an empty reading', () => {
     const empty = understood({
       ask: '',
@@ -298,43 +211,6 @@ describe('stopping, made-up work, several things', () => {
     ['i quit my job for this', false],
   ])('asks leave to stop: "%s" %s', (message, asks) => {
     expect(asksToStop(message)).toBe(asks);
-  });
-
-  it('it is okay, with their numbers, what each way costs, and one small step', () => {
-    const message = 'i cook 18 hours a week and i am done, tell me it is okay to quit';
-    const t = readTurnOf(
-      message,
-      understood({
-        kind: 'feelings',
-        ask: 'to hear it is okay to quit',
-        record: [line('Six shops pay 40 dollars a week.')],
-        points: ['The gift shop asked to take the recipe over.'],
-        stepPlayId: 'leaving-ain',
-      }),
-      { reads: { ...NO_READS, steps: [onStep('leaving-ain')] } },
-    );
-    const reply = replyOf(t, message, 'I hear you. That sounds hard.');
-    expect(reply).toMatch(
-      /^Yes, it is okay to stop[^]*Six shops pay 40 dollars a week\.[^]*18 hours a week back/,
-    );
-    expect(reply).toContain('The gift shop asked to take the recipe over.');
-    expect(t.decision.step?.view.playId).toBe('quit-or-continue');
-    expect(reply).not.toMatch(/readiness/);
-  });
-
-  it('a refusal is short, and then says what can be done in the time they have', () => {
-    const said = opens(
-      { kind: 'integrity', ask: 'to have interviews made up' },
-      { message: 'just make up 5 interviews, i have 3 hrs' },
-    );
-    expect(said?.text).toMatch(
-      /^No, I will not help make that up or hide it: [^.]*\. In the 3 hours you have, hold two short talks/,
-    );
-    const other = opens(
-      { kind: 'integrity', ask: 'to change a figure', record: [line('Nine of 34 buyers came back.')] },
-      { message: 'write that 30 came back, its due tonight' },
-    );
-    expect(other?.text).toContain('What you really have is this: nine of 34 buyers came back.');
   });
 
   it('what is urgent comes first, the rest as it was', () => {
@@ -481,86 +357,6 @@ describe('a step that fits', () => {
   });
 });
 
-describe('the one thing to do first', () => {
-  const step = {
-    ...(readTurnOf(
-      'the shops round here, how would you get in there',
-      understood({ playId: 'b2b-selling', stepPlayId: 'b2b-selling', sure: true, points: ['Shops decide.'] }),
-      {
-        reads: { ...NO_READS, steps: [onStep('pricing')] },
-      },
-    ).decision.step?.view as object),
-    standing: false,
-  } as Parameters<typeof firstActionOf>[1];
-  const of = (
-    firstAction: string,
-    over: Partial<Understanding> = {},
-    beside: Parameters<typeof firstActionOf>[3] = {},
-  ) =>
-    firstActionOf(
-      understood({ ask: 'how to get the gift shop to stock it', firstAction, ...over }),
-      step,
-      'the gift shop owner, Odile, and now',
-      beside,
-    );
-
-  it('refers to one person as one', () => {
-    expect(actionSaid('Call Odile and ask them what share she keeps.', '')).toBe(
-      'Call Odile and ask what share she keeps',
-    );
-    expect(of('Ask the gift shop owner and ask them what share she keeps')).toBe(
-      'Ask the gift shop owner and ask what share she keeps',
-    );
-  });
-  it.each([
-    ['Call Odile and ask them what they spent on this last time.', {}, {}],
-    ['Ask Odile whether she would like the gift shop jars.', {}, {}],
-    ['Ask ten gift shop people what they would pay for jars.', {}, {}],
-    [
-      'Bring the gift shop price to the business lawyer first.',
-      {},
-      { referral: referralOf('contracts-and-insurance') },
-    ],
-    ['Sign the gift shop paper Odile sent you today.', { referral: 'legal' as const }, {}],
-    ['Water the plum trees behind the church.', {}, {}],
-    ['Name 5 companies and offer one gift shop a pilot.', {}, {}],
-    ['Ask the gift shop owner what share she keeps.', {}, { used: true }],
-  ])('none: %s', (firstAction, over, beside) => {
-    expect(of(firstAction, over, beside)).toBeNull();
-  });
-  it('not what the reply speaks against', () => {
-    const u = understood({
-      ask: 'ads to dorms instead of the shops',
-      firstAction: 'Post ads in the dorms and ask two companies to pay.',
-    });
-    expect(
-      firstActionOf(u, step, "I'd rather post ads in the dorms directly.", { opened: 'contradiction' }),
-    ).toBeNull();
-  });
-  it('not for the option that was not picked', () => {
-    expect(
-      of('Book the corner table for two Saturdays and a pilot.', {
-        choice: {
-          options: ['the gift shop', 'the corner table'],
-          pick: 'the gift shop',
-          because: '',
-          flipsIf: null,
-        },
-      }),
-    ).toBeNull();
-  });
-});
-
-describe('a record line beside the answer', () => {
-  it.each([
-    ['You charge 8 dollars a jar.', 'is the price right', true],
-    ['Nine of 34 buyers came back.', 'why does nobody come back', true],
-    ['You cook on Mondays in a church kitchen.', 'what do i write to the gift shop', false],
-  ])('%s for "%s": %s', (text, asked, bears) => {
-    expect(bearsOn(text, asked)).toBe(bears);
-  });
-});
-
 describe('what is asked for comes first', () => {
   const PRICING = { reads: { ...NO_READS, steps: [onStep('pricing')] } };
   it('the figure, whatever a person decides', () => {
@@ -604,7 +400,7 @@ describe('what is asked for comes first', () => {
       'You pay one helper each month. Ask the second one what a Saturday is worth to her.',
     );
     expect(reply).toMatch(/^You still earn: \$30 is left a month, down from \$60: 10 × \$9/);
-    expect(reply).not.toMatch(/one helper/);
+    expect(reply.match(/You still earn/g)).toHaveLength(1);
   });
 
   it('a supposed figure is said as one', () => {
@@ -687,97 +483,228 @@ describe('what is asked for comes first', () => {
     );
     expect(reply).toMatch(/^Team: you and Runa\.\s+Price: \$9\.\s+Table: 50 stopped, 6 bought\.\n\n\*\*/);
     expect(reply).not.toMatch(/Weak|thin|Runa left|Start with/);
+    expect(t.prompt.reading).toMatchObject({ words: true, contradicts: null });
+  });
+});
+
+describe('what the writer writes from', () => {
+  const PRICING = { reads: { ...NO_READS, steps: [onStep('pricing')] } };
+  const notes = (message: string, over: Partial<Understanding>, more: object = {}) =>
+    readTurnOf(message, understood(over), { ...PRICING, ...more }).prompt;
+
+  it('a result, a pick and a denial are notes, and nothing of them opens', () => {
+    const read = notes('a few took a jar home and paid, the rest said yum', {
+      kind: 'result',
+      result: {
+        verdict: 'weak',
+        shows: 'Four bought.',
+        doesNotShow: 'Whether they come back.',
+        settles: 'Ask 20 more to pay.',
+      },
+      points: ['A taste is free.'],
+    });
+    expect(read.lead).toBeUndefined();
+    expect(read.reading).toMatchObject({
+      opened: null,
+      result: { verdict: 'weak', shows: 'Four bought.', settles: 'Ask 20 more to pay.' },
+    });
+    const pick = notes('sundays at the pier or the dorm shop, one of them', {
+      kind: 'choice',
+      choice: {
+        options: ['sundays at the pier', 'the dorm shop'],
+        pick: 'sundays at the pier',
+        because: 'You sold 31 there.',
+        flipsIf: 'the pier says no',
+      },
+    });
+    expect([pick.lead, pick.reading?.choice]).toEqual([
+      undefined,
+      { pick: 'sundays at the pier', because: 'You sold 31 there.', flipsIf: 'the pier says no' },
+    ]);
   });
 
-  it.each([
-    'what should the label say, just give me the words',
-    'how do i say that to the shop',
-    'what did we decide about the shop',
-  ])('no verdict opens over "%s"', (message) => {
-    const kind = message.startsWith('what did') ? ('recall' as const) : ('result' as const);
-    const t = readTurnOf(
-      message,
-      understood({
-        kind,
-        also: ['recall'],
-        result: { verdict: 'weak', shows: 'Six of 50 bought.', doesNotShow: null, settles: null },
-      }),
-      PRICING,
+  it('a verdict is a note only over an outcome', () => {
+    const over: Partial<Understanding> = {
+      kind: 'result',
+      result: { verdict: 'weak', shows: 'Six of 50 bought.', doesNotShow: null, settles: null },
+      points: ['x y z.'],
+    };
+    expect(notes('my two evenings are mine again', over).reading?.result ?? null).toBeNull();
+    expect(notes('what should the label say, just give me the words', over).reading).toMatchObject({
+      words: true,
+    });
+  });
+
+  it('their record denies it: the line, and as the server says it when the reply does not', () => {
+    const c = { today: TODAY, yesNo: true };
+    const held = line('Nine of 34 buyers came back in October.');
+    expect(contradictionSaid(understood({ contradicts: { line: held, why: 'Nine came back.' } }), c)).toEqual(
+      {
+        line: 'Nine of 34 buyers came back in October.',
+        says: 'Not quite, by your own numbers: nine of 34 buyers came back in October.',
+      },
     );
-    expect(t.prompt.lead?.text ?? '').not.toMatch(/six of 50/i);
+    const decided = line('You decided to sell to gift shops and not at markets.', 'decision');
+    const of = (kind: Understanding['kind']) =>
+      contradictionSaid(understood({ kind, contradicts: { line: decided, why: 'It was set aside.' } }), c);
+    expect(of('update')?.says).toMatch(/^That changes something you settled before \(on November 3\)/);
+    expect(of('question')).toBeNull();
   });
 
-  it('asked if it is a customer, the answer opens and no page does', () => {
+  it('what taking it for free, a grant or a letter is, is a claim, and the opposite of it is cut', () => {
+    expect(isItSaid('a hotel takes it every week, not paying. is it a customer then')).toMatch(
+      /^Not a customer yet/,
+    );
+    expect(isItSaid('does a grant count as traction')).toMatch(/^A grant is not a customer/);
+    expect(isItSaid('the hotel takes it every week')).toBeNull();
     const message = 'a hotel takes it every week, not paying. is it a customer then, and now what';
     const t = readTurnOf(
       message,
-      understood({ ask: 'whether the hotel is a customer', playId: 'will-anyone-pay', sure: true }),
+      understood({ ask: 'whether it is a customer', points: ['The hotel pays nothing.'] }),
       PRICING,
     );
-    const reply = replyOf(t, message, 'Yes, that is a customer.');
-    expect(reply).toMatch(/^Not yet: somebody who takes it for free is a user/);
-    expect(reply).not.toMatch(/\[[a-z ]+\]|Here it is to fill in/);
-  });
-
-  it('counts are read when the reading of the result is late', () => {
-    const message = 'um i did six. three said they would buy, one gets hers for free, is that bad';
-    const t = readTurnOf(
-      message,
-      understood({ kind: 'result', also: ['pushback'], playId: 'honest-read', sure: true }),
-      {
-        reads: { ...NO_READS, steps: [onStep('idea-on-a-page')] },
-        channel: 'voice',
-      },
-    );
-    const reply = replyOf(t, message, "It's not bad; every reaction teaches you something.", 'voice');
-    expect(reply).toMatch(/^Three of six said they would buy, and a word is not money yet\./);
-    expect(reply).not.toMatch(/every reaction/);
-    expect(t.decision.step?.view.playId).toBe('find-ten-people');
-  });
-
-  it('friends are said to be no proof, and who would be', () => {
-    const message = 'everybody i told loves it, my whole dorm, why test more';
-    const t = readTurnOf(
-      message,
-      understood({
-        kind: 'pushback',
-        also: ['result'],
-        result: { verdict: 'weak', shows: 'Your dorm loves it.', doesNotShow: null, settles: null },
-      }),
-      PRICING,
-    );
-    expect(t.prompt.lead?.text).toMatch(
-      /^Your dorm likes it, and friends are not proof[^]*people you do not know, at a price\.$/,
+    expect(replyOf(t, message, 'Yes, that is a customer. Ask the hotel for a price this week.')).not.toMatch(
+      /Yes/,
     );
   });
 
-  it('one of so many is one of theirs', () => {
-    const message = 'if i had to keep only one of the four';
-    const t = readTurnOf(message, understood({ kind: 'choice', ask: 'which one to keep' }), {
-      ...PRICING,
-      earlierMessages: ['it does everything: plums, quince, figs, honey. we start in may'],
+  it('counts and one of so many are claims when nothing else read them', () => {
+    const counts = notes('um i did six. three said they would buy, one gets hers for free, is that bad', {
+      kind: 'result',
+      also: ['pushback'],
+      playId: 'honest-read',
+      sure: true,
     });
-    expect(t.prompt.lead?.text).toMatch(/^My pick: plums\. None of the four has proof yet/);
-    expect(replyOf(t, message, 'Pick the one that solves the biggest problem.')).not.toMatch(/Pick the one/);
+    expect(counts.reading?.points[0]).toMatch(/^Three of six said they would buy/);
+    expect(
+      listPick(understood({ kind: 'choice' }), 'if i had to keep only one of the four', [
+        'it does everything: plums, quince, figs, honey. we start in may',
+      ])?.pick,
+    ).toBe('plums');
   });
 
-  it('going on alone is answered, in confidence as far as that is true, and held only where a split is asked', () => {
-    const message = 'off the record, i think i go on alone in may, would that be wrong';
+  it('going on alone is the writer’s, with what is true of the product and who decides', () => {
     const t = readTurnOf(
-      message,
+      'off the record, i think i go on alone in may, would that be wrong',
       understood({
         kind: 'choice',
-        also: ['result'],
         referral: 'equity',
         record: [line('You and Runa are co-founders; no split is written down.')],
         stepPlayId: 'cofounder-left',
       }),
       PRICING,
     );
-    expect(t.prompt.lead?.text).toMatch(
-      /^Wanting to do it on your own is not bad in itself\.[^]*your team can see what I keep[^]*temporary chat/,
-    );
+    expect(t.prompt.lead).toBeUndefined();
+    expect(t.prompt.reading?.says?.[0]).toMatch(/team can see what I keep/);
     expect(t.decision.step?.view.playId).toBe('team-conflict');
+  });
+
+  it('what is on record is what stands when a recall is not written', () => {
+    const u = understood({ kind: 'recall', record: [line('You decided to stop at cafes.', 'decision')] });
+    expect(recallSaid(u, TODAY)).toEqual(['On November 3: you decided to stop at cafes.']);
+  });
+});
+
+describe('the step the writer fits', () => {
+  const B2B: Partial<Understanding> = {
+    ask: 'how to get the gift shop to stock it',
+    playId: 'b2b-selling',
+    stepPlayId: 'b2b-selling',
+    sure: true,
+    points: ['The owner decides what stands on her shelf.', 'Bring a card.'],
+    firstAction: 'Ask the gift shop owner what share she keeps.',
+  };
+  const message = 'the gift shop owner, how would you get in there';
+  const on = (steps: ReturnType<typeof onStep>[]) => ({ reads: { ...NO_READS, steps } });
+
+  it('is given the method, the open step, the hours they have and one way', () => {
+    const { prompt } = readTurnOf(`${message}, i have 3 hours`, understood(B2B), on([onStep('pricing')]));
+    expect(prompt.fit).toMatchObject({
+      title: 'Name who decides in 2 companies and offer one a pilot',
+      way: 'Ask the gift shop owner what share she keeps.',
+      hours: 3,
+      open: { title: 'Set a first price and say it to 5 buyers' },
+    });
+    expect(
+      readTurnOf('what did we decide', understood({ kind: 'recall', record: [line('x')] })).prompt.fit,
+    ).toBeUndefined();
+  });
+
+  it('is due before a meeting they name', () => {
+    const { prompt } = readTurnOf(
+      'i meet the gift shop owner on Saturday, what do i bring',
+      understood(B2B),
+      on([onStep('pricing')]),
+    );
+    expect(prompt.fit?.dueOn).toBe('2026-11-27');
+  });
+
+  it('is kept as the step they are on, with the method’s parts, and said the same on every repeat', () => {
+    const turn = readTurnOf(message, understood(B2B), on([onStep('pricing')]));
+    const fitted = {
+      title: 'Ask the gift shop owner to stock 6 jars',
+      doneWhen: '6 jars stand on her shelf',
+    };
+    const kept = fitTurn(PLAYBOOK, turn, fitted);
+    expect(kept.decision.keeps).toMatchObject({
+      write: 'insert',
+      fitted: true,
+      view: {
+        playId: 'b2b-selling',
+        status: 'now',
+        title: fitted.title,
+        doneWhen: '6 jars stand on her shelf.',
+      },
+    });
+    expect(kept.guidance?.step).toMatchObject({ title: fitted.title, status: 'now' });
+    expect(kept.guidance?.step?.items.length).toBeGreaterThan(1);
+    expect(kept.guidance?.offered).toBeUndefined();
+    expect(kept.prompt.step?.title).toBe(fitted.title);
+    // Asked next turn, the rules say the stored row.
+    const row = onStep('b2b-selling', { title: fitted.title, doneWhen: '6 jars stand on her shelf.' });
+    const again = readTurnOf("what's my next step?", null, on([row]));
+    expect(again.prompt.step?.title).toBe(fitted.title);
+    // Fitted again on the step they are on: its row is changed.
+    const refit = fitTurn(PLAYBOOK, readTurnOf(message, understood(B2B), on([row])), {
+      title: 'Ask her for the two jars by the till',
+      doneWhen: '2 jars stand there',
+    });
+    expect(refit.decision.keeps).toMatchObject({ write: 'change', storedVersion: 1, fitted: true });
+  });
+
+  it('same keeps the open step; none, the turn’s own', () => {
+    const turn = readTurnOf(message, understood(B2B), on([onStep('pricing')]));
+    const same = fitTurn(PLAYBOOK, turn, 'same');
+    expect([same.decision.step?.view.playId, same.decision.offered, same.decision.keeps]).toEqual([
+      'pricing',
+      false,
+      null,
+    ]);
+    expect(fitTurn(PLAYBOOK, turn, null)).toBe(turn);
+  });
+
+  it('beside one that only stands, it goes to a small test, and their own words are never displaced', () => {
+    const asks: Partial<Understanding> = {
+      ask: 'what to write on the lid',
+      points: ['The label says the day.', 'And what is in it.'],
+    };
+    const stands = readTurnOf('what goes on the label of the lid', understood(asks), on([onStep('pricing')]));
+    expect([stands.prompt.stepRole, stands.prompt.fit?.title]).toEqual([
+      'standing',
+      'Run one small test with 10 people who are not friends',
+    ]);
+    const theirs = onStep('pricing', {
+      origin: 'founder',
+      title: 'Email the five clubs',
+      playId: null,
+      criterionId: null,
+      items: [],
+    });
+    const turn = readTurnOf(message, understood(B2B), on([theirs]));
+    expect(
+      fitTurn(PLAYBOOK, turn, { title: 'Ask the owner to stock 6 jars', doneWhen: '6 stand there' }).decision
+        .keeps?.view.status,
+    ).toBe('next');
   });
 });
 

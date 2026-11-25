@@ -43,7 +43,7 @@ describe('an outcome', () => {
   it('is what a verdict stands over: told now, or just before and asked about', () => {
     expect(verdictStands('is that good', ['nine ringers came'], false)).toBe(true);
     expect(verdictStands('is that good', ['we tune bells'], false)).toBe(false);
-    expect(verdictStands('and what do i say to them', ['nine ringers came'], true)).toBe(false);
+    expect(verdictStands('so how should i put it to them', ['nine ringers came'], true)).toBe(false);
     // Read as one by the call: a plain count, and no fear of it.
     expect(verdictStands('14 wardens now, 6 chapels', [], true)).toBe(true);
     expect(verdictStands('14 wardens now, 6 chapels', [], false)).toBe(false);
@@ -86,7 +86,7 @@ describe('who a message leaves no doubt must decide', () => {
   });
   it.each([
     'the warden sent a letter that he loves the bell',
-    'what do I write on the sign',
+    'which words go on the sign',
     'we shared the van with a choir',
     'ten percent of the ringers came back',
     'I asked 20 students how they sleep',

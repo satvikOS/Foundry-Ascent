@@ -66,6 +66,7 @@ import {
   carriesContract,
   checkReplyContract,
   contractApplies,
+  wholeApplies,
   isServerText,
   leadText,
   mayRepeat,
@@ -623,7 +624,10 @@ export function validateCoachResponse(
   );
   // Their news comes first: a sentence that parks it for the vEIR's own agenda is left out (LAB-R8).
   const news = options.founderText !== undefined && founderMoves(options.founderText).includes('news');
+  // A whole reply of the writer's, released by the gate, stands as it was shown: nothing in it is read a second time.
+  const asWritten = options.released === true && !identityAsked && wholeApplies(options.guidance);
   const crafted = (text: string, note: boolean): string => {
+    if (asWritten) return text;
     // What the server said first is its own: only what follows it is read as the model's.
     const lead = guidance === null ? '' : leadText(guidance, channel);
     const after = lead === '' ? null : withoutStart(text, lead);

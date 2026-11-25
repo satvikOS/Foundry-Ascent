@@ -5,30 +5,30 @@ in `packages/core/src/path/playbook/`; everything here is the machinery that rea
 
 ## Where things are
 
-| File (`packages/core/src/path/`) | What it does                                                                                                                  |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `words.ts`, `match.ts`           | Normalised words; phrase rules (word boundaries, gaps, `unless`, referral first) and the plainly nearest ask                  |
-| `semantic.ts`                    | The play an ask means when no phrase names one, by its embedding (constants per embedding model); what each play is asked for |
-| `kinds.ts`                       | Kinds of message by rule: social, recall, report, rehearsal, overview, new idea, smaller, commitment, idea, pivot and back    |
-| `counts.ts`, `choice.ts`         | How many of whom did what, exact or not counted; a choice they ask to have made, and the pick the record decides              |
-| `state.ts`, `progress.ts`        | Stage and criteria from the stored path and the record; work a founder reports ("8 of 10")                                    |
-| `steps.ts`                       | One step: from its row or its play, cut to the time they have, taken up again, as it is shown                                 |
-| `engine.ts`                      | `decide(input) -> Decision`: pure (no I/O, model or clock); the turn's step, the path's own, what follows                     |
-| `understood.ts`                  | A checked reading as the turn uses it: what of it may be said, who decides, the step that fits, the first action              |
-| `outcome.ts`, `told-counts.ts`   | Whether a message reports an outcome; what its counts show when nobody read the result                                        |
-| `asked-sums.ts`, `lint.ts`       | A figure they ask for that nobody worked out; a line of the record as a whole sentence to them                                |
-| `openings.ts`, `sum-said.ts`     | The server's one opening of a reply whose message was read; a worked figure as a mentor says it                               |
-| `denied.ts`, `referrals.ts`      | A claim of growth the record denies; money offered for a part of the company, in any words; a risk's play                     |
-| `calc.ts`, `calc-read.ts`        | The sums students ask for, from the numbers they gave and their roles; the one number that is missing                         |
-| `reading.ts`                     | What they have and what is missing for a judgement, and the program's answer to it made for them                              |
-| `price-change.ts`, `stated.ts`   | The line a changed price has to beat; who, today and why them of the page, in their words                                     |
-| `heard.ts`                       | What a call heard badly, put right from the venture's own words                                                               |
-| `news.ts`, `tell.ts`             | What news means, by rule; the record said as a mentor says it, the one prior fact, the story                                  |
-| `brief.ts`, `turn.ts`            | The founder brief (at most 1,200 characters), the arc, and what the prompt and the record carry                               |
-| `report.ts`, `apply.ts`          | The model's `path_report` held to the founder's words; the writes                                                             |
-| `service.ts`, `view.ts`          | `GET/PUT/PATCH /ventures/:id/path…`                                                                                           |
-| `opener.ts`                      | An opening that names the last step with its due state                                                                        |
-| `ai-adapter.ts`                  | `@foundry/ai`'s `renderGuidance`, `checkReplyContract`, `buildSupportIndex`; plain forms where a build has none               |
+| File (`packages/core/src/path/`) | What it does                                                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `words.ts`, `match.ts`           | Normalised words; phrase rules (word boundaries, gaps, `unless`, referral first) and the plainly nearest ask                    |
+| `semantic.ts`                    | The play an ask means when no phrase names one, by its embedding (constants per embedding model); what each play is asked for   |
+| `kinds.ts`                       | Kinds of message by rule: social, recall, report, rehearsal, overview, new idea, smaller, commitment, idea, pivot and back      |
+| `counts.ts`, `choice.ts`         | How many of whom did what, exact or not counted; a choice they ask to have made, and the pick the record decides                |
+| `state.ts`, `progress.ts`        | Stage and criteria from the stored path and the record; work a founder reports ("8 of 10")                                      |
+| `steps.ts`                       | One step: from its row or its play, cut to the time they have, taken up again, as it is shown (fitted: in the writer's words)   |
+| `engine.ts`                      | `decide(input) -> Decision`: pure (no I/O, model or clock); the turn's step, the path's own, what follows                       |
+| `understood.ts`                  | A checked reading as the turn uses it: what of it may be said, who decides, the step that fits                                  |
+| `outcome.ts`, `told-counts.ts`   | Whether a message reports an outcome; what its counts show when nobody read the result                                          |
+| `asked-sums.ts`, `lint.ts`       | A figure they ask for that nobody worked out; a line of the record as a whole sentence to them                                  |
+| `openings.ts`, `sum-said.ts`     | What the server itself says of a message that was read (an asked figure, what nobody here rules on, integrity); a worked figure |
+| `denied.ts`, `referrals.ts`      | A claim of growth the record denies; money offered for a part of the company, in any words; a risk's play                       |
+| `calc.ts`, `calc-read.ts`        | The sums students ask for, from the numbers they gave and their roles; the one number that is missing                           |
+| `reading.ts`                     | What they have and what is missing for a judgement, and the program's answer to it made for them                                |
+| `price-change.ts`, `stated.ts`   | The line a changed price has to beat; who, today and why them of the page, in their words                                       |
+| `heard.ts`                       | What a call heard badly, put right from the venture's own words                                                                 |
+| `news.ts`, `tell.ts`             | What news means, by rule; the record said as a mentor says it, the one prior fact, the story                                    |
+| `brief.ts`, `turn.ts`            | The founder brief (at most 1,200 characters), the arc, and what the prompt and the record carry                                 |
+| `report.ts`, `apply.ts`          | The model's `path_report` held to the founder's words; the writes                                                               |
+| `service.ts`, `view.ts`          | `GET/PUT/PATCH /ventures/:id/path…`                                                                                             |
+| `opener.ts`                      | An opening that names the last step with its due state                                                                          |
+| `ai-adapter.ts`                  | `@foundry/ai`'s `renderGuidance`, `checkReplyContract`, `buildSupportIndex`; plain forms where a build has none                 |
 
 ## The turn's step
 
@@ -265,7 +265,7 @@ decides, and each row is a test.
 | referral | the rules find one                                                                                                                                                           | the rules find none                                                   | none (never taken away)      |
 | sum      | both come to the same figure (the calculator's words); the reading has none and the calculator is sure                                                                       | it works out what they ask                                            | what is missing              |
 | choice   | both name the same option (their counts say why); the reading picks none                                                                                                     | it picks                                                              | none                         |
-| opening  | a report, change or operation; the record's own shapes (story, which idea, has and has not)                                                                                  | any other message                                                     |                              |
+| lead     | a report, change or operation; the record's own shapes (story, which idea, has and has not)                                                                                  | any other message                                                     |                              |
 
 - **What of it may be said** (`settled`). A claim that speaks of the mentor, the founder, the reading or the record by its key goes; a
   line of the program's, or that they are new to it, is no fact of theirs. What a person decides (a split of shares, a visa, who
@@ -278,13 +278,11 @@ decides, and each row is a test.
   same thing before stands beside the new one, "earn or lose?" is answered with the word, and what a number was before they took it
   back is not said.
 - **A verdict** is read of an outcome alone (`outcome.ts`): what somebody did, said or paid, a count, a test, a refusal, told now or
-  before and asked about. An idea, a plan, a step not done or the time they have opens none. Its test and the step are one plan: of
-  one kind with another number the opening names the step, of another kind it goes, and may stand as what to start with. Praise asked
-  for is no push: why not yet, what is real, what would show it.
-- **The words themselves** (a recap, a wording, so many lines): nothing opens, nothing is added but the step, and a line of the record
-  they took back since is not given.
-- **A part that came late** (no verdict, no claims): what the rules read of it opens, else its counts (`told-counts.ts`: the same
-  people again, a funnel that ends in money, talks and what came of each), never an empty reassurance and never a page to fill in.
+  before and asked about. An idea, a plan, a step not done or the time they have has none. Praise asked for is no push.
+- **The words themselves** (a recap, a wording, so many lines): the writer's, with nothing added but the step; a line of the record they
+  took back since is not given.
+- **A part that came late** (no verdict, no claims): what the rules read of it, else its counts (`told-counts.ts`), is a claim of the
+  reply.
 - **A line of the record** is said as a whole sentence to them or not at all (`lint.ts`).
 - **The step** is the reading's when the path allows it and its title (or the play's name) shares a subject with what they ask and
   what it is answered with (`fitsAsk`); who decides comes before anything else. An either-or that is not about money has a small
@@ -294,30 +292,26 @@ decides, and each row is a test.
   it leaves open; a letter that tells them to stop has a lawyer's read of it; after talks come more of them, never a page of the stage
   before; who wants to go on alone has the talk first. A step that is not about the ask only stands
   ("On your path, next is:"), as does one that asks for money against a pick not to.
-- **One opening** (`openings.ts`), in the words of a mentor and never as a form: the figure as a sentence, with its working and what
-  it leaves out ("You keep $42 on a Saturday: 6 × $7."); the number that is missing (then the reply's one question); what their record
-  denies; what can be said of what a person decides, who, and no pick; the pick, why, and what would change it; a result in one of
-  several shapes (the verdict with their numbers, what it does not tell, the test as an act with a number, or none); a push (what is
-  not known, their numbers once, the test and its day); leave to stop (their numbers, what each way costs); several things at once (one
-  warm sentence, then each on its line, letters and days first); a short no to made-up work, then what can be done in the time they
-  have and what they truly have; the record; the first claim, for a question that has one answer. Two sentences on a call. The others
-  go to the writer as claims. No canned reading of news or judgement opens, unless the reading opens nothing and makes fewer than
-  two claims: half a reading, where what the rules read is the better half.
-- **The writer** (`renderGuidance`, `PromptGuidance.reading`) gets what they ask, what it has just said to them, the claims to make, what
-  they told before, what not to say and, short, how it is done well, in place of the program's lines: shorter than without a reading,
-  in words that make no sense to repeat. The claims stand when it writes too little.
-- **What stands beside it** (`validators/reading.ts`): under an opening a sentence stays only when it adds a figure, a name, a fact, a
-  claim or something to do, and is not mostly the opening again; a bare verdict goes; nothing speaks of how the turn was prepared
-  ("The opening says …" is cut to what it says), goes against the figure's sign or size, says something is what a claim says it is not,
-  agrees with what was denied, rules on or picks what a person decides, brings them what is not theirs, defends itself to a push, or
-  names friends as evidence for made-up work. The reply ends with the step, not a question of the model's. A typed reply holds about 130
-  words.
-- **`**Start with:**`** (`firstActionOf`): the one thing to do first, before the step line, only when one can start on it, it sets no
-  day of its own, is about the ask, and belongs to the step, to what opens or beside a step that only stands; never the step again, who
-  decides again, the option not picked, what the opening speaks against, or a question of the method's table. On a call it is part of
-  the step's sentence.
+- **The writer writes the whole reply** (`renderGuidance`, `PromptGuidance.reading`): what they ask, the claims, the result, the pick, what
+  their record denies, each with what would settle or turn it, as notes; the answer first, then what it rests on, then what would change
+  it, then the step. The server opens only with an asked figure and its working, what nobody here rules on (ownership, terms, a visa,
+  regulation, shares), integrity, other teams' privacy and a crisis (`openings.ts`).
+- **Code checks it and replaces nothing** (`validators/whole-reply.ts`, `reading.ts`, the gate's whole path). A sentence goes when it is
+  false (against a figure's sign or size, says something is what a claim says it is not, agrees with what their record denies, a sum nobody
+  worked out, a number or source nobody gave), rules on what a person decides, offers friends as proof, speaks of how the turn was
+  prepared, was said in this reply already, or leans on a sentence that went. No rule of style cuts anything.
+- **A whole reply** has two sentences that say something (one for a yes or no, a sum, or the words they asked for) and no start that
+  points at what went. The first is shown once the second is there. Else the writer writes it again, once, with each sentence cut and why
+  (`repairBrief`), within `REPAIR_BUDGET_MS` (typed 2.5 s, call 1.2 s), checked the same way; late, failed or unfit, it is completed from
+  the claims (`composedWhole`). An asked figure, who decides and a denial are added when the reply has none of them (`missingOf`).
+  `turn.phase_a` logs `cuts`, `repair`, `repairMs`, `repairWhy` and `step`: codes and milliseconds, never words.
+- **The fitted step** (`validators/fitted-step.ts`). The writer ends with `NEXT: <what to do> | DONE: <what shows it is done>`, or
+  `NEXT: same`. It is never shown. The method, its parts, the trap, the open step and the hours they have are in its notes
+  (`PromptGuidance.fit`). Code keeps it when it is one thing to do, in their reach, of their words: no figure, name or date nobody gave, not
+  what they refused or have done, no ruling, no made-up work. The day is code's, before a meeting or deadline they named. Kept, it is the
+  step of the turn (`fitTurn`) and of its stored row, title and done-when, with the play's parts; asked next, it is said as it is stored.
+  Their own step is never displaced by it. Not kept, the step is the play's.
 - **Who decides** is said once in a conversation, and again only where the new ask is that decision (`toldEnough`).
-- **A record line** is added whole, only when the reply names none of the reading's and the line shares a subject with the ask.
 
 ## Without a reading
 

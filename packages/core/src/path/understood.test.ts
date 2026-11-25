@@ -9,11 +9,10 @@ import { PLAYBOOK } from './playbook/index.js';
 import { NO_READS, TODAY } from './testing/inputs.js';
 import { onStep, readTurnOf, replyOf, sumOf, understood } from './testing/understood.js';
 import { type PathTurnInput } from './turn.js';
-import { missingQuestion, openingsOf } from './openings.js';
+import { openingOf } from './openings.js';
 import {
   asksOfWork,
   decides,
-  firstActionOf,
   NOTHING,
   PRECEDENCE,
   referralPlayOf,
@@ -152,7 +151,7 @@ describe('who decides where the rules and the reading disagree', () => {
       points: ['Nobody was asked at $5 yet.'],
     });
     expect([decision.kind, decision.decidedBy?.lead]).toEqual(['coaching', 'reading']);
-    expect(prompt.lead?.text).toMatch(/^Fair:/);
+    expect([prompt.lead, prompt.reading?.kind]).toEqual([undefined, 'pushback']);
   });
 
   it('where to start beside what they report is answered, not only counted', () => {
@@ -186,8 +185,8 @@ describe('who decides where the rules and the reading disagree', () => {
 });
 
 describe('the server’s one opening', () => {
-  const opening = (over: Partial<Understanding>, more: Partial<Parameters<typeof openingsOf>[1]> = {}) =>
-    openingsOf(understood(over), { yesNo: false, today: TODAY, referral: null, step: null, ...more })[0];
+  const opening = (over: Partial<Understanding>) =>
+    openingOf(understood(over), { yesNo: false, today: TODAY, referral: null, message: '' });
 
   it('a sum: the figure with its working, on a call without what nobody could follow', () => {
     expect(opening({ kind: 'sum', sums: [sumOf()] })).toEqual({
@@ -195,86 +194,6 @@ describe('the server’s one opening', () => {
       text: 'The market day left you $187.50: 30 × ($8 − $1.25) − $15. It takes off only the costs you named, and counts your own time as free.',
       voice: 'The market day left you $187.50.',
     });
-  });
-
-  it('a number that is missing: which, and its question', () => {
-    expect(opening({ kind: 'sum', missing: 'what one jar costs you' })?.text).toBe(
-      'I cannot give you that figure yet, because one number is missing: what one jar costs you.',
-    );
-    expect(missingQuestion('what one jar costs you')).toBe('Can you tell me what one jar costs you?');
-    expect(missingQuestion('your rent for the kitchen')).toBe('What is your rent for the kitchen?');
-    expect(missingQuestion('sugar cost')).toBe('What is the sugar cost?');
-  });
-
-  it('a choice, with what would change it', () => {
-    expect(
-      opening({
-        kind: 'choice',
-        choice: {
-          options: ['the market', 'the gift shop'],
-          pick: 'the gift shop',
-          because: 'It takes one delivery a month.',
-          flipsIf: 'If the owner keeps more than half.',
-        },
-      }),
-    ).toEqual({
-      kind: 'choice',
-      text: 'My pick: the gift shop. It takes one delivery a month. I’d change my mind if the owner keeps more than half.',
-      voice: 'My pick: the gift shop. It takes one delivery a month.',
-    });
-  });
-
-  it('a result: the verdict, what it shows, what it does not, what settles it', () => {
-    expect(
-      opening({
-        kind: 'result',
-        result: {
-          verdict: 'weak',
-          shows: 'Four of 25 who tasted bought a jar.',
-          doesNotShow: 'Whether the others found it too dear.',
-          settles: 'What ten of them say stopped them.',
-        },
-      })?.text,
-    ).toMatch(
-      /^(?:Weak|That is thin) so far: four of 25 who tasted bought a jar\. (?:It does not tell you|What you still do not know is|That leaves open) whether the others found it too dear\. What settles it is what ten of them say stopped them\.$/,
-    );
-  });
-
-  it('what their record denies, before anything else', () => {
-    const said = opening(
-      {
-        kind: 'question',
-        contradicts: { line: BACK, why: 'Nine of 34 came back, so most did not.' },
-        choice: { options: ['a', 'b'], pick: 'a', because: 'It is first.', flipsIf: null },
-      },
-      { yesNo: true },
-    );
-    expect(said?.kind).toBe('contradiction');
-    expect(said?.text).toBe('Not quite, by your own numbers: nine of 34 buyers came back in October.');
-    const changed = opening({
-      kind: 'update',
-      contradicts: {
-        line: record('You decided to sell to gift shops and not at markets.', 'decision'),
-        why: 'The market was set aside.',
-      },
-    });
-    expect(changed?.text).toMatch(
-      /^That changes something you settled before \(on November 3\): you decided to sell/,
-    );
-  });
-
-  it('asked for a figure, the figure comes first, and the others go to the writer', () => {
-    const { prompt } = turn('what does saturday come to for me, everybody comes back anyway', {
-      kind: 'sum',
-      sums: [sumOf()],
-      contradicts: { line: BACK, why: 'Nine of 34 came back, so most did not.' },
-      points: ['The table costs the same whatever you sell.'],
-    });
-    expect(prompt.lead?.text).toMatch(/^The market day left you \$187\.50/);
-    expect(prompt.reading?.points).toEqual([
-      'Nine of 34 came back, so most did not',
-      'The table costs the same whatever you sell',
-    ]);
   });
 
   it('a rule that read the counts stands over what was read, and not where friends are counted as proof', () => {
@@ -299,8 +218,7 @@ describe('the server’s one opening', () => {
       },
       points: ['A leak nobody paid to stop is a small one.'],
     });
-    expect(prompt.lead?.text).toMatch(/^(?:Weak|That is thin) so far: nine of 12 classmates/);
-    expect(prompt.lead?.text).not.toContain('pattern');
+    expect([prompt.lead, prompt.reading?.result?.verdict]).toEqual([undefined, 'weak']);
   });
 });
 
@@ -329,47 +247,6 @@ describe('the reply a founder sees', () => {
         'voice',
       ),
     ).toContain('$187.50');
-  });
-
-  it('a missing number is the one question', () => {
-    const reply = seen(
-      'what do i make on a jar',
-      { kind: 'sum', missing: 'what one jar costs you', points: ['The price is told, and the cost is not.'] },
-      'What do you spend on sugar? And on glass?',
-    );
-    expect(reply).toContain('one number is missing: what one jar costs you.');
-    expect(reply.endsWith('Can you tell me what one jar costs you?')).toBe(true);
-    expect(reply.match(/\?/g)).toHaveLength(1);
-  });
-
-  it('under an opening a sentence stays only when it adds something', () => {
-    const reply = seen(
-      'a tasting, 25 came, four took one home and paid, the rest said yum',
-      {
-        kind: 'result',
-        result: {
-          verdict: 'weak',
-          shows: 'Four of 25 who tasted bought a jar.',
-          doesNotShow: null,
-          settles: null,
-        },
-        points: ['A taste is free, so liking it shows nothing yet.'],
-      },
-      "Good. The numbers show it's good. Four of the 25 bought one. A taste is free, so liking it shows nothing.",
-    );
-    expect(reply).not.toMatch(/good/i);
-    expect(reply).toContain('A taste is free');
-    expect(reply.match(/four of/gi)).toHaveLength(1);
-  });
-
-  it('a bare verdict goes where nothing opens too', () => {
-    const reply = seen(
-      'the shop took six jars',
-      { kind: 'update', points: ['Six jars on a shelf are not sold yet.'] },
-      "That's a great sign. Six jars on a shelf are not sold yet, so ask on Friday how many went.",
-    );
-    expect(reply).not.toMatch(/great sign/);
-    expect(reply).toContain('Six jars on a shelf');
   });
 
   it('an offer of money has a step of its own, who decides, and no verdict', () => {
@@ -402,92 +279,19 @@ describe('the reply a founder sees', () => {
       },
       "Yes, that's fair. You're right to say so.",
     );
-    expect(reply).toMatch(/own numbers say otherwise: nine of 34/);
     expect(reply).not.toMatch(/Yes|that's fair|You're right/);
-    // What to do with it is said all the same.
     expect(reply).toContain('Tell the shop nine of 34, before she counts them herself.');
-  });
-
-  it('a push is owned, with their numbers and the test that decides it', () => {
-    const reply = seen(
-      'you keep saying that and you have no evidence either',
+    // Named by the server, when nothing of the reply names it.
+    const left = seen(
+      'I wrote to the shop that everybody comes back for more, honest enough?',
       {
-        kind: 'pushback',
-        ask: 'whether there is any proof',
-        record: [BACK],
-        result: {
-          verdict: 'too_early',
-          shows: 'Nine of 34 came back.',
-          doesNotShow: null,
-          settles: 'Whether 8 of the next 20 come back',
-        },
-        points: ['Nobody has asked the other 25 why.'],
+        ask: 'whether it is fair',
+        contradicts: { line: BACK, why: 'Nine of 34 came back.' },
+        points: ['x y z.'],
       },
-      "I'm not asserting anything without evidence. The evidence we have is your buyers. Nobody has asked the other 25 why.",
+      'Say what you counted, with the day. A shop asks before it stocks anything new.',
     );
-    expect(reply).toMatch(/^Fair: what I said is a judgement, and neither of us has proof yet\./);
-    expect(reply).toContain('nine of 34 buyers came back in October');
-    expect(reply).toMatch(/What decides it by Monday is whether 8 of the next 20 come back\./);
-    expect(reply).not.toMatch(/asserting|evidence we have/);
-  });
-
-  it('several things at once are said in order, never only comfort, with one step', () => {
-    const over: Partial<Understanding> = {
-      kind: 'next',
-      also: ['feelings', 'update'],
-      ask: 'what to do first',
-      referral: 'legal',
-      playId: 'cofounder-left',
-      stepPlayId: 'cofounder-left',
-      points: [
-        'The kitchen comes first: without it nothing is cooked next week.',
-        'Your partner leaving needs a list of what each of you made and paid.',
-        'Sugar can wait until you know where you cook.',
-      ],
-    };
-    const message =
-      'my partner moved away and the landlord wants the kitchen back and sugar doubled, I am panicking, what comes first';
-    const reply = seen(
-      message,
-      over,
-      "I hear you, that is a lot at once. Let's focus on what you can control.",
-    );
-    expect(reply).not.toMatch(/what you can control/);
-    expect(reply.match(/lot at once/g)).toHaveLength(1);
-    expect(reply).toMatch(/1\. The kitchen comes first[^]*2\. Your partner leaving[^]*3\. Sugar can wait/);
-    expect(reply).toContain('lawyer');
-    expect(steps(reply)).toBe(1);
-    // With no word of the writer's at all.
-    const bare = seen(message, over, '');
-    expect(bare).toMatch(/^That is a lot at once, and it makes sense[^]* In this order:\n\n1\. The kitchen/);
-    // Said again in the writer's words, nothing of it is there twice.
-    const own = seen(
-      message,
-      over,
-      'That is hard. The kitchen comes first, because without it nothing is cooked next week. Sugar can wait until you know where you cook.',
-    );
-    expect(own.match(/kitchen comes first/gi)).toHaveLength(1);
-    expect(own.match(/Sugar can wait/g)).toHaveLength(1);
-    // On a call: one warm sentence, and the first two.
-    const heard = turn(message, over, { channel: 'voice' }).prompt.lead?.voice ?? '';
-    expect(heard).toMatch(
-      /^That is a lot at once\. First, the kitchen comes first[^]* Then, your partner leaving/,
-    );
-  });
-
-  it('a letter that needs a lawyer is said before what can wait', () => {
-    const { prompt } = turn('a lot happened, i am overwhelmed, what is first', {
-      kind: 'next',
-      also: ['feelings', 'update'],
-      points: [
-        'The second table needs a card reader.',
-        'The letter about your label goes to a lawyer before you answer it.',
-        'The jars are due back on Friday.',
-      ],
-    });
-    expect(prompt.lead?.text).toMatch(
-      /1\. The letter about your label[^]*2\. The jars are due back[^]*3\. The second table/,
-    );
+    expect(left).toMatch(/own numbers (?:say otherwise|speak against it): nine of 34/);
   });
 
   it('only how they feel is answered as a person, with no step', () => {
@@ -514,52 +318,7 @@ describe('the reply a founder sees', () => {
     expect(reply).toMatch(/^No, I will not help make that up/);
     expect(reply).not.toMatch(/friends/);
     expect(reply).toContain('Two real tastings tonight');
-    expect(reply).toContain('**Start with:** Take six jars to the dorm lobby tonight');
-  });
-
-  it('a record line is added whole, only when the reply names none of them', () => {
-    const over: Partial<Understanding> = {
-      kind: 'question',
-      record: [
-        record('First two Saturdays.'),
-        record('You are doing this for the first time.', 'founder'),
-        record('The program says to price it first with restaurants.'),
-        record('You cook on Mondays in a church kitchen.'),
-        record('The chef at Orchard House, a restaurant, asked for six jars.'),
-      ],
-      points: ['A price on a card answers before they ask.'],
-    };
-    const ask = 'how do i get restaurants to try it';
-    const left = seen(
-      ask,
-      over,
-      'A price on a card answers before they ask, so bring one with the jars you show.',
-    );
-    expect(left).toContain('The chef at Orchard House, a restaurant, asked for six jars.');
-    expect(left).not.toMatch(
-      /First two Saturdays|Keep (?:this )?in mind|Remember that|first time|program|church kitchen/,
-    );
-    const named = seen(
-      ask,
-      over,
-      'Start at Orchard House, where the chef asked for six jars, and bring a price on a card.',
-    );
-    expect(named.match(/Orchard House/g)).toHaveLength(1);
-  });
-
-  it('what is on record is told, dated, when they ask for it', () => {
-    const reply = seen(
-      'remind me why we dropped the cafes',
-      {
-        kind: 'recall',
-        ask: 'why they dropped the cafes',
-        record: [record('You decided to stop selling to cafes because they paid after 60 days.', 'decision')],
-      },
-      '',
-    );
-    expect(reply).toMatch(
-      /^On November 3: you decided to stop selling to cafes because they paid after 60 days\./,
-    );
+    expect(reply).not.toContain('Start with');
   });
 });
 
@@ -584,28 +343,10 @@ describe('the step and what to do first', () => {
     const reply = replyOf(
       t,
       'how do i get the gift shop to stock it',
-      'The owner decides what stands on her shelf.',
+      'The owner decides what stands on her shelf. Bring one jar and a card with its price.',
     );
-    expect(reply).toMatch(
-      /\*\*Start with:\*\* Ask the gift shop owner what share she keeps\.\n\n\*\*Next:\*\* Name who decides/,
-    );
+    expect(reply).not.toContain('Start with');
     expect(steps(reply)).toBe(1);
-  });
-
-  it('on a call it is part of the step', () => {
-    const t = turn('um how do i get the gift shop to stock it', B2B, { channel: 'voice' });
-    expect(replyOf(t, 'um', 'The owner decides what stands on her shelf.', 'voice')).toMatch(
-      /Your next step: name who decides in 2 companies and offer one a pilot by [^.]*, and start with this: ask the gift shop owner what share she keeps\.$/,
-    );
-  });
-
-  it('the writer’s own words for it go', () => {
-    const reply = replyOf(
-      turn('how do i get the gift shop to stock it', B2B),
-      'how do i get the gift shop to stock it',
-      'The owner decides what stands on her shelf. Ask the gift shop owner what share she keeps.',
-    );
-    expect(reply.match(/what share she keeps/g)).toHaveLength(1);
   });
 
   it('a step of a far stage is not given, one under way about the same thing stays', () => {
@@ -650,40 +391,6 @@ describe('the step and what to do first', () => {
       'Email the five clubs',
     ]);
   });
-
-  const view = {
-    ...(turn('how do i get the gift shop to stock it', B2B).decision.step?.view as never as object),
-    standing: false,
-  } as Parameters<typeof firstActionOf>[1];
-  it.each([
-    ['Ask the gift shop owner what share she keeps.', 'Ask the gift shop owner what share she keeps'],
-    [
-      'Ask the gift shop owner what share she keeps by Friday.',
-      'Ask the gift shop owner what share she keeps',
-    ],
-    ['Think about who might stock the jars.', null],
-    ['You could ask the owner what share she keeps.', null],
-    ['Ask them.', null],
-    ['Name who decides in 2 companies.', null],
-  ])('%s -> %s', (firstAction, said) => {
-    expect(firstActionOf(understood({ firstAction, stepPlayId: 'b2b-selling' }), view, 'the gift shop')).toBe(
-      said,
-    );
-  });
-
-  it('beside a step that only stands, only what is about the ask', () => {
-    const of = (firstAction: string) =>
-      turn('what goes on the label of the lid', {
-        ask: 'what to write on the lid',
-        points: ['The label says what is in it and the day.'],
-        firstAction,
-      }).prompt;
-    expect([
-      of('Write the label of one lid by hand.').stepRole,
-      of('Write the label of one lid by hand.').firstAction,
-    ]).toEqual(['standing', 'Write the label of one lid by hand']);
-    expect(of('Ring the bank and open an account.').firstAction).toBeUndefined();
-  });
 });
 
 describe('who decides, by what was read', () => {
@@ -718,7 +425,7 @@ describe('who decides, by what was read', () => {
 });
 
 describe('what the writer is given', () => {
-  it('is shorter than without a reading, and holds what was read', () => {
+  it('holds what was read, and the form of the step', () => {
     const over: Partial<Understanding> = {
       ask: 'how to get restaurants to try it',
       secondAsk: 'what to bring',
@@ -742,14 +449,13 @@ describe('what the writer is given', () => {
     }));
     const reads = { ...NO_READS, steps: [onStep('pricing')], memory };
     const read = renderGuidance(turn(message, over, { reads }).prompt, 'text', { today: TODAY });
-    const rules = renderGuidance(readTurnOf(message, null, { reads }).prompt, 'text', { today: TODAY });
-    expect(read.length).toBeLessThan(rules.length);
     for (const held of [
       'how to get restaurants to try it',
       'what to bring',
       'Start with the chef at Orchard House',
       'The chef at Orchard House asked for six jars.',
       'Avoid: Telling them to build a list of fifty.',
+      'NEXT: <one thing to do',
     ])
       expect(read).toContain(held);
   });
@@ -831,7 +537,8 @@ describe('whatever the writer writes', () => {
     'The owner decides what stands there, so ask her first. Bring a card with the price on it.\n\n1. Write the price on a card.\n2. Take it to the owner.\n3. Ask what share she keeps.',
     'You made $240 and jars cost $37.50, so you keep $187.50. That is $6.25 a jar.',
     "I'm not claiming anything without evidence. Nobody asked the 25 why they left, so ask eight of them this week by Friday.\n\nNext: call eight people by Friday. Done when eight answered.",
-    'Ask your friends to taste it. Start with: ask the shop owner what share she keeps.',
+    'Ask your friends to taste it. Say it costs $8, and ask for the money.\nNEXT: Ask the shop owner what share she keeps | DONE: She named a share',
+    'One jar is eight dollars, and a shelf is not a sale. Ask on Friday how many went.\nNEXT: same',
   ];
   const message = 'so what do i make of that, the shop and all of it?';
 
@@ -852,13 +559,9 @@ describe('whatever the writer writes', () => {
             const { lead } = t.prompt;
             if (lead !== undefined && channel === 'text')
               expect(reply.startsWith(lead.text), label).toBe(true);
-            expect(reply.match(/Start with:/g) ?? [], label).toHaveLength(
-              t.prompt.firstAction === undefined || channel === 'voice' ? 0 : 1,
-            );
-            expect(reply, label).not.toMatch(/great sign/);
+            expect(reply, label).not.toMatch(/NEXT|DONE\b/);
             if (u.referral === 'valuation') expect(reply, label).not.toMatch(/fair price|take it/i);
-            if (u.kind === 'pushback') expect(reply, label).not.toMatch(/not claiming/);
-            if (u.kind === 'integrity') expect(reply, label).not.toMatch(/your friends/);
+            if (u.kind === 'integrity') expect(reply, label).not.toMatch(/Ask your friends/);
           }
     },
   );

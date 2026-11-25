@@ -103,7 +103,7 @@ describe('a share taken from them', () => {
     expect(
       worked(
         context(
-          'the pier shop keeps 35%, how much is that',
+          'the pier shop keeps 35%, what is their cut in dollars',
           c.record.map((r) => r.text),
         ),
         ['price=20@R1', 'cut=35%@message'],

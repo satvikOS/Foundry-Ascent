@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import re
 import subprocess
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -381,13 +382,14 @@ def ran(tmp_path: Path, **over: object) -> tuple[list[str], list[str]]:
     return seen, ids
 
 
-def test_the_unseen_group_is_read_only_where_it_is_named(tmp_path: Path) -> None:
-    unseen = {s.id for s in SCENARIOS if s.group in bench.UNSEEN}
-    assert unseen
+@pytest.mark.parametrize("group", sorted(bench.UNSEEN))
+def test_an_unseen_group_is_read_only_where_it_is_named(tmp_path: Path, group: str) -> None:
+    unseen = {s.id for s in SCENARIOS if s.group == group}
+    assert len(unseen) == 16
     named = sorted(unseen)[0]
     of = {
         "default": ran(tmp_path / "a")[1],
-        "group": ran(tmp_path / "b", groups=("heldoutb",))[1],
+        "group": ran(tmp_path / "b", groups=(group,))[1],
         "scenario": ran(tmp_path / "c", scenario_ids=(named,))[1],
     }
     assert of["default"]
@@ -571,15 +573,19 @@ def test_no_prompt_or_rule_of_the_call_holds_the_wording_of_a_scenario() -> None
         *sorted((packages / "core" / "src" / "orchestrator").glob("understand*.ts")),
         *sorted((packages / "core" / "src" / "path").glob("record-lines*.ts")),
     ]
-    sources = "\n".join(p.read_text(encoding="utf-8") for p in files)
-    plain = " ".join(re.findall(r"[a-z0-9']+", sources.lower()))
+    plain = {p: " ".join(re.findall(r"[a-z0-9']+", p.read_text(encoding="utf-8").lower())) for p in files}
     for path in sorted(CLIENT_DIR.glob("*.yaml")):
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         size = 4 if doc["group"] in HELD_OUT else 5
+        found: Counter[str] = Counter()
         for s in doc["scenarios"]:
             for turn in (t for session in s["sessions"] for t in session["turns"]):
                 words = re.findall(r"[a-z0-9']+", turn["say"].lower())
                 runs = {" ".join(words[i : i + size]) for i in range(len(words) - size + 1)}
-                # A number alone: a failure shows no wording, the unseen group's least of all.
-                shared = sum(1 for r in runs if r in plain)
-                assert shared == 0, s["id"]
+                counts = {p.name: n for p, text in plain.items() if (n := sum(1 for r in runs if r in text))}
+                found.update(counts)
+                # A number alone: a failure shows no wording, and of an unseen group not even which scenario.
+                if doc["group"] not in bench.UNSEEN:
+                    assert sum(counts.values()) == 0, s["id"]
+        if found:
+            pytest.fail(f"{doc['group']} shares wording with {dict(found)}", pytrace=False)

@@ -25,6 +25,8 @@ export interface ChosenStep {
   readonly write: 'insert' | 'promote' | 'change' | null;
   /** The stored version the write expects (`promote`, `change`). */
   readonly storedVersion: number | null;
+  /** Its title and done-when are fitted to the founder: they are stored with it. */
+  readonly fitted?: boolean;
 }
 
 type Origin = PathStepView['origin'];

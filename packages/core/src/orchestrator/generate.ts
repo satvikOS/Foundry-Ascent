@@ -9,13 +9,16 @@ import {
   annotationsOfPath,
   clampWords,
   cutMetaNarration,
+  repairBrief,
   isOnlyLeadIn,
   isModelGatewayError,
   ModelUnavailableError,
   signsOff,
+  splitNext,
   withoutRepeats,
   withoutUnits,
   type ChatMessage,
+  type Fitted,
   type GateBlockReason,
   type GateResult,
   type GateStats,
@@ -64,6 +67,8 @@ export interface Generation {
    * interrupted, whose fields, if any, are in `raw`). Nothing the founder waits on waits for it.
    */
   readonly annotations?: PendingAnnotations | null;
+  /** The step the writer fitted to the founder, or kept (`PromptGuidance.fit`); null or absent: the turn's own. */
+  readonly fitted?: Fitted | null;
 }
 
 /**
@@ -345,6 +350,11 @@ export const ANNOTATION_MAX_TOKENS = 2_000;
 /** The same for a reply on the path, whose fields are few. */
 export const PATH_ANNOTATION_MAX_TOKENS = 900;
 const SPOKEN_UNIT_CHARS = 280;
+/**
+ * Longest a whole reply that is none once its false sentences are out waits to be written again (docs/architecture/understand.md):
+ * from the end of the first draft. Over it, the reply is completed from the claims it was to make.
+ */
+export const REPAIR_BUDGET_MS = { text: 2_500, voice: 1_200 } as const;
 
 function wordCount(text: string): number {
   return text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
@@ -501,6 +511,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     keepDropped: true,
     // A reply left with nothing but repeats goes on (or is written anew) below, never as a stock line.
     callerContinues: true,
+    // A whole reply that is none once its false sentences are out is written again ({@link repairReply}).
+    repairs: true,
   });
   const speech =
     voice && a.speechKey
@@ -546,7 +558,11 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       if (speech && unit.spoken !== '') await speech.queue(unit.spoken);
     }
     if (result.blocked !== null || result.fallback !== null || result.cut !== null) stop.abort();
-    else if (!said.full && (gate.full || gate.spokenFull || (voice && said.words >= SPOKEN_MAX_WORDS))) {
+    else if (
+      !said.full &&
+      !gate.waitsForStep &&
+      (gate.full || gate.spokenFull || (voice && said.words >= SPOKEN_MAX_WORDS))
+    ) {
       // All of the reply that can be said was said: a call's spoken budget, or a short reply's (a thanks).
       said.full = true;
       stop.abort();
@@ -781,6 +797,87 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     return added;
   };
 
+  /** What became of a whole reply that was none ({@link REPAIR_BUDGET_MS}): codes and times, never words. */
+  const repair = { code: 'none' as 'none' | 'ok' | 'late' | 'failed' | 'unfit', ms: 0, why: '' };
+  let fitted: Fitted | null;
+  /**
+   * A whole reply that is none once what was false is out: written again once, with each sentence cut and why, and checked the
+   * same way; else completed from the claims it was to make. Nothing of it was shown yet.
+   */
+  const repairReply = async (
+    cuts: readonly { readonly text: string; readonly why: string }[],
+  ): Promise<void> => {
+    const began = performance.now();
+    repair.why = [...new Set(cuts.map((c) => c.why))].join(',');
+    const halt = new AbortController();
+    const timer = setTimeout(() => {
+      halt.abort();
+    }, REPAIR_BUDGET_MS[a.channel]);
+    let draft = '';
+    try {
+      const extractor = new ReplyExtractor();
+      const answer = await gateway.streamText(
+        {
+          purpose: a.meter.purpose,
+          system: answerSystemPrompt(a.system, {
+            channel: a.channel,
+            mode: a.mode,
+            allowedModes: a.allowedModes,
+            stableChars: a.promptCache?.systemChars ?? 0,
+            guided: gate.guided,
+          }),
+          messages: [...a.messages, { role: 'user', content: repairBrief(gate.text, cuts) }],
+          ...(a.promptCache ? { promptCache: a.promptCache } : {}),
+          maxOutputTokens: ANSWER_MAX_TOKENS[a.channel],
+          timeoutMs: REPAIR_BUDGET_MS[a.channel],
+          requestId: a.ctx.requestId,
+          signal: a.signal ? AbortSignal.any([a.signal, halt.signal]) : halt.signal,
+        },
+        (chunk) => {
+          draft += extractor.push(chunk);
+          return Promise.resolve();
+        },
+      );
+      draft += extractor.end();
+      attempts.push(...answer.attempts);
+      await record(a, answer.attempts);
+      repair.code = 'ok';
+    } catch (err) {
+      const failed = attemptsOf(err);
+      attempts.push(...failed);
+      await record(a, failed);
+      repair.code = halt.signal.aborted ? 'late' : 'failed';
+    } finally {
+      clearTimeout(timer);
+    }
+    repair.ms = Math.round(performance.now() - began);
+    if (repair.code === 'ok') {
+      const again = new SentenceGate({
+        ...a.gate,
+        ...(voice
+          ? { maxUnitChars: SPOKEN_UNIT_CHARS, spokenWordBudget: SPOKEN_MAX_WORDS, spoken: true }
+          : {}),
+        callerContinues: true,
+        leadSaid: true,
+        repairs: true,
+      });
+      const whole =
+        /\bNEXT\b/u.test(draft) || gate.nextLine === '' ? draft : `${draft.trimEnd()}\n${gate.nextLine}`;
+      const units = [...again.push(whole).units, ...again.end().units];
+      if (again.repair === null && again.blocked === null && again.fallback === null && units.length > 0) {
+        const [first, ...rest] = units;
+        const gap = said.shown.trim() === '' ? '' : voice ? ' ' : '\n\n';
+        const opening = first === undefined ? [] : [{ ...first, text: `${gap}${first.text.trimStart()}` }];
+        await release({ units: [...opening, ...rest], blocked: null, fallback: null, cut: null });
+        fitted = again.step?.fitted ?? null;
+        return;
+      }
+      repair.code = 'unfit';
+    }
+    await release(gate.settle());
+    fitted = gate.step?.fitted ?? null;
+  };
+
   // What the server says first (a sum, what their news means, where they stand), before the model writes anything.
   const opened = gate.open();
   await release(opened);
@@ -862,7 +959,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       return blockedBy(gate.blocked, attempts.at(-1)?.modelId ?? 'unknown', phaseAMs);
     if (interruptedBy() && gate.text.trim() !== '') {
       // Spoken over during a continuation started while phase A waited: the reply is what was said of it.
-      const text = early.went === null ? gate.text : said.shown.trim();
+      const written = a.gate.guidance?.reading === undefined ? gate.text : splitNext(gate.text).body.trim();
+      const text = early.went === null ? written : said.shown.trim();
       return interruptedAt(text, attempts.at(-1)?.modelId ?? 'unknown', phaseAMs);
     }
     if (a.signal?.aborted) throw new GenerationFailure(err, attempts);
@@ -892,6 +990,9 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     // Ends the gate (nothing more once that last push stopped it).
     await release(gate.end());
   }
+  fitted = gate.step?.fitted ?? null;
+  if (gate.repair !== null && gate.blocked === null && a.signal?.aborted !== true)
+    await repairReply(gate.repair);
   // The gate ended the reply before the model's narration (while streaming, or on its last sentence at the end), or
   // a short reply's budget was used up.
   if (gate.cut !== null || gate.full) said.cut = true;
@@ -903,7 +1004,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   // Nothing presentable (an empty or whitespace reply, or one the Markdown subset removes entirely).
   // Nothing presentable, unless what was left out was the conversation again: that reply is written anew below.
   const repeatedAway = gate.trace.repeatsDropped + gate.trace.agendaDropped > 0;
-  if (gate.stats.units + gate.stats.withheld === 0 && !repeatedAway) {
+  if (gate.stats.units + gate.stats.withheld === 0 && !repeatedAway && repair.code === 'none') {
     return wholeInstead('empty', phaseAMs, null);
   }
   // Cut before narration with no reply shown before it (nothing, units withheld from the preview, or a lead-in of a few
@@ -932,7 +1033,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   // reply as it stands: what was shown is what is stored.
   const rewritten = (trace as { readonly rewritten?: boolean }).rewritten === true;
   let replyText =
-    said.cut || early.went !== null || rewritten
+    said.cut || early.went !== null || rewritten || repair.code !== 'none'
       ? said.shown.trim()
       : withoutUnits(
           reply.text,
@@ -957,6 +1058,16 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     agendaDropped: trace.agendaDropped,
     greetingDropped: trace.greetingDropped,
     methodEdits: trace.methodEdits,
+    // A whole reply of the writer's: what was cut and why, how it was repaired, and what became of its step (codes only).
+    ...(gate.step === null && repair.code === 'none'
+      ? {}
+      : {
+          cuts: trace.dropped.flatMap((d) => (d.why === undefined ? [] : [d.why])).join(','),
+          repair: repair.code,
+          repairMs: repair.ms,
+          repairWhy: repair.why,
+          step: fitted === null ? (gate.step?.reason ?? 'missing') : fitted === 'same' ? 'same' : 'fitted',
+        }),
     replyWords: wordCount(reply.text),
     shownWords: wordCount(said.shown),
     spokenWords: said.words,
@@ -1018,6 +1129,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     gateBlocked: null,
     stream: details(phaseAMs, streamed.firstTokenMs),
     annotations,
+    fitted,
   };
 }
 

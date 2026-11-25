@@ -147,7 +147,9 @@ def test_groups_are_read_in_run_order() -> None:
     assert len(in_groups(EVERY, ())) == len(EVERY)
 
 
-@pytest.mark.parametrize(("group", "first"), [("heldout", "HO-01"), ("heldoutb", "HB-01")])
+@pytest.mark.parametrize(
+    ("group", "first"), [("heldout", "HO-01"), ("heldoutb", "HB-01"), ("heldoutc", "HC-01")]
+)
 def test_a_held_out_group_is_played_only_when_named(group: str, first: str) -> None:
     assert group in HELD_OUT
     assert group not in {s.group for s in EVERY}
@@ -162,12 +164,13 @@ def test_a_held_out_group_is_played_only_when_named(group: str, first: str) -> N
     assert [s.id for s in suite.planned((), group, DAY)] == [s.id for s in held]
 
 
-def test_the_second_held_out_group_is_nearly_all_judged() -> None:
-    held = in_groups(ALL, parse_groups("heldoutb"))
+@pytest.mark.parametrize(("group", "with_calls"), [("heldoutb", 3), ("heldoutc", 4)])
+def test_a_later_held_out_group_is_nearly_all_judged(group: str, with_calls: int) -> None:
+    held = in_groups(ALL, parse_groups(group))
     turns = sum(s.turns for s in held)
     assert 60 <= turns <= 75
     assert sum(judged_turns(s) for s in held) >= turns - 2
-    assert sum(1 for s in held if any(x.channel == "call" for x in s.sessions)) == 3
+    assert sum(1 for s in held if any(x.channel == "call" for x in s.sessions)) == with_calls
 
 
 # The models ---------------------------------------------------------------------------------------------------------

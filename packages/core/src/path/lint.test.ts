@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { afterIf, isWhole, lineSaid, yourself } from './lint.js';
+import { isWhole, lineSaid, yourself } from './lint.js';
 import { broughtUp } from './tell.js';
 
 describe('a line that is said to them is a whole sentence', () => {
@@ -36,13 +36,6 @@ describe('a line that is said to them is a whole sentence', () => {
     expect(yourself('You asked the cook, who sharpens it himself.')).toBe(
       'You asked the cook, who sharpens it himself.',
     );
-  });
-  it.each([
-    ['ask the market and agree a day', 'you ask the market and agree a day'],
-    ['if the market says no.', 'the market says no'],
-    ['five of 20 pay', 'five of 20 pay'],
-  ])('a condition has who does it: %s', (text, said) => {
-    expect(afterIf(text)).toBe(said);
   });
   it('a fact with nobody in it is brought up by nobody', () => {
     expect(broughtUp('has two wheels and a van', 'x')).toBe('');

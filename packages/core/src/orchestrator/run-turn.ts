@@ -68,6 +68,7 @@ import { guardReport } from '../path/report.js';
 import { PLAY_MATCH_TOP, PLAY_MATCH_WAIT_MS, playMatchProfile } from '../path/semantic.js';
 import {
   evidenceKeysOf,
+  fitTurn,
   followUpsOf,
   nextActionsOf,
   pathTurn,
@@ -1529,8 +1530,10 @@ export function createOrchestrator(
       return { status: 'failed', turnId: turn.id, replayed: false, error };
     }
     const { context, shown, generation } = answered;
+    // The step the writer fitted to the founder is the turn's from here on: kept, shown and repeated as it is.
+    const stands = path === null || playbook === null ? path : fitTurn(playbook, path, answered.fitted);
     // A coaching turn's next action is the step the path decided, so call summaries and recaps name the same one.
-    const decidedActions = path === null ? null : nextActionsOf(path.decision);
+    const decidedActions = stands === null ? null : nextActionsOf(stands.decision);
     const withPathFields = (c: typeof answered.checked): typeof answered.checked =>
       c.blocked || path === null || playbook === null
         ? c
@@ -1541,7 +1544,7 @@ export function createOrchestrator(
               ...(decidedActions === null ? {} : { next_actions: decidedActions }),
               ...(c.response.follow_up_questions.length > 0
                 ? {}
-                : { follow_up_questions: followUpsOf(path.decision) }),
+                : { follow_up_questions: followUpsOf((stands ?? path).decision) }),
               // Only what the founder's own words support is kept, with the turn too.
               path_report: guardReport(c.response.path_report, turn.founderText, playbook),
             },
@@ -1624,7 +1627,9 @@ export function createOrchestrator(
       { founder: turn.founderText, answer: checked.response.answer },
     ]);
     // Stored beside the turn (the step's id is derived, so neither waits for the other); both before the turn completes.
-    const pathKept = checked.blocked ? Promise.resolve() : keepDecision(ctx, turn.id, pre.session, path);
+    if (stands !== path && stands?.guidance != null && !checked.blocked)
+      await emit({ event: 'turn.guidance', turnId: turn.id, guidance: stands.guidance });
+    const pathKept = checked.blocked ? Promise.resolve() : keepDecision(ctx, turn.id, pre.session, stands);
     const persisted = await kit.inRequest(ctx, async (scope) => {
       const { tx } = scope;
       const finished = await turnsRepo.finishTurn(tx, {
@@ -1643,7 +1648,7 @@ export function createOrchestrator(
         firstTokenMs,
         sampledForReview: sampled,
         mode: checked.response.mode,
-        guidance: checked.blocked ? null : (path?.guidance ?? null),
+        guidance: checked.blocked ? null : (stands?.guidance ?? null),
       });
       if (finished === null) throw fail.conflict('The turn is no longer pending', 'turn_not_pending');
       await turnsRepo.insertTurnEvidence(

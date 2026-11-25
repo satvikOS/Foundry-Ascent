@@ -17,6 +17,9 @@ import {
   YES_NO_BUDGET,
   socialTurnOf,
   validateCoachResponse,
+  SentenceGate,
+  withFitted,
+  type Fitted,
   statedPreferences,
   stuckOn,
   wrapUpOf,
@@ -28,6 +31,7 @@ import {
   type PromptRelease,
   type PromptVentureContext,
   type RiskClassification,
+  type SentenceGateOptions,
 } from '@foundry/ai';
 import {
   type CoachMode,
@@ -175,6 +179,8 @@ export type AnswerOutcome =
        * spoken form, to be said after the reply's last unit. Null: the reply names it, or owes none.
        */
       readonly spokenStep: string | null;
+      /** The step the writer fitted to the founder, or kept; null: the turn's own stands. */
+      readonly fitted: Fitted | null;
     }
   | {
       /** The model failed; every billable attempt made is already in the usage ledger. */
@@ -399,36 +405,38 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
   ].join('\n');
 
   // What the reply is held to: the path's decision, and what may be stated (the founder's words, the sources, the path).
-  const checks = replyChecks(guidance, today, {
-    evidence: shown.map((k) => ({ key: k.item.key, title: k.item.title, excerpt: k.item.excerpt })),
-    founderText: knownFigures,
-    ...(guidance === null
-      ? {}
-      : {
-          guidanceText: guidanceWords(guidance),
-          citable: [
-            ...(spec.earlierFounderFigures ?? []),
-            ...spec.history.map((t) => t.founderText),
-            spec.founderText,
-            ...rememberedText(spec.continuity, spec.venture),
-            guidance.step === null
-              ? ''
-              : [
-                  guidance.step.title,
-                  guidance.step.doneWhen,
-                  ...guidance.step.items.map((i) => `${i.do} ${i.how}`),
-                ].join('\n'),
-          ].join('\n'),
-        }),
-    alsoKnown: [
-      spec.personaName,
-      spec.personaEirName ?? '',
-      spec.venture?.name ?? '',
-      ...guards.addressees,
-      JSON.stringify(spec.release.doctrine),
-      today,
-    ].join('\n'),
-  });
+  const checksFor = (path: PathPromptGuidance | null): ReturnType<typeof replyChecks> =>
+    replyChecks(path, today, {
+      evidence: shown.map((k) => ({ key: k.item.key, title: k.item.title, excerpt: k.item.excerpt })),
+      founderText: knownFigures,
+      ...(guidance === null
+        ? {}
+        : {
+            guidanceText: guidanceWords(guidance),
+            citable: [
+              ...(spec.earlierFounderFigures ?? []),
+              ...spec.history.map((t) => t.founderText),
+              spec.founderText,
+              ...rememberedText(spec.continuity, spec.venture),
+              guidance.step === null
+                ? ''
+                : [
+                    guidance.step.title,
+                    guidance.step.doneWhen,
+                    ...guidance.step.items.map((i) => `${i.do} ${i.how}`),
+                  ].join('\n'),
+            ].join('\n'),
+          }),
+      alsoKnown: [
+        spec.personaName,
+        spec.personaEirName ?? '',
+        spec.venture?.name ?? '',
+        ...guards.addressees,
+        JSON.stringify(spec.release.doctrine),
+        today,
+      ].join('\n'),
+    });
+  const checks = checksFor(guidance);
   // A social turn, a wrap-up, a sincere question about the coach and a founder in distress owe no step.
   const owesContract =
     guidance !== null &&
@@ -438,6 +446,34 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     // Read, they ask something of the work, and it is answered, as a person first.
     (guidance.reading !== undefined || !inDistress(spec.founderText)) &&
     !identityAsked;
+
+  const gateOptions: SentenceGateOptions = {
+    personaName: spec.personaName,
+    eirNames: guards.eirNames,
+    personaEirName: spec.personaEirName,
+    mentor: spec.presence?.mentor === true,
+    addressees: guards.addressees,
+    founderName: spec.continuity.founderFirstName ?? null,
+    greeted,
+    // A wrap-up ("got it, I'll send it Friday") is answered as briefly as a goodbye: no new homework. Never a
+    // turn with any risk flag (the classifier's or the safety screen's): it needs the escalation, not a sign-off.
+    replyBudget:
+      social !== null ? SOCIAL_BUDGETS[social] : wrapUp ? SOCIAL_BUDGETS.closing : preferenceBudget,
+    noQuestions,
+    knownFigures,
+    ...checks,
+    previousReply,
+    earlierReplies,
+    pastReplies: spec.pastReplies ?? [],
+    // A flagged turn never loses its referral as a repeat, and is never cut short for one.
+    keepReferrals: forcedEscalationFor(risk) !== null,
+    founderText: spec.founderText,
+    introduced,
+    otherVentureNames: guards.others.names,
+    otherVentureCanaries: guards.others.canaries,
+    otherVentureMemberNames: guards.others.memberNames,
+    evidenceKeys,
+  };
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
   await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
@@ -489,33 +525,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
           think: thinkFor(cfg.turns.think, { channel: spec.channel, guidance, coaches: owesContract }),
           speechKey: spec.speechKey,
           faceApproval: spec.faceApproval ?? null,
-          gate: {
-            personaName: spec.personaName,
-            eirNames: guards.eirNames,
-            personaEirName: spec.personaEirName,
-            mentor: spec.presence?.mentor === true,
-            addressees: guards.addressees,
-            founderName: spec.continuity.founderFirstName ?? null,
-            greeted,
-            // A wrap-up ("got it, I'll send it Friday") is answered as briefly as a goodbye: no new homework. Never a
-            // turn with any risk flag (the classifier's or the safety screen's): it needs the escalation, not a sign-off.
-            replyBudget:
-              social !== null ? SOCIAL_BUDGETS[social] : wrapUp ? SOCIAL_BUDGETS.closing : preferenceBudget,
-            noQuestions,
-            knownFigures,
-            ...checks,
-            previousReply,
-            earlierReplies,
-            pastReplies: spec.pastReplies ?? [],
-            // A flagged turn never loses its referral as a repeat, and is never cut short for one.
-            keepReferrals: forcedEscalationFor(risk) !== null,
-            founderText: spec.founderText,
-            introduced,
-            otherVentureNames: guards.others.names,
-            otherVentureCanaries: guards.others.canaries,
-            otherVentureMemberNames: guards.others.memberNames,
-            evidenceKeys,
-          },
+          gate: gateOptions,
         })
       : await generateWhole(base);
   } catch (err) {
@@ -525,9 +535,27 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
       attempts: err instanceof GenerationFailure ? err.attempts : [],
     };
   }
-
   // Step 6: deterministic validation of the whole response (authoritative over any streamed unit).
   await emit({ event: 'turn.status', phase: 'validating', detail: null, evidenceCount: shown.length });
+  // A whole reply of the writer's that no gate read (streaming off, a stream given up) is read by one now; the step it fitted
+  // is the turn's from here on.
+  let fitted: Fitted | null = generation.fitted ?? null;
+  // True as well when nothing was streamed.
+  const ungated = generation.stream?.fallback !== null;
+  if (guidance?.reading !== undefined && ungated && generation.gateBlocked === null) {
+    const gate = new SentenceGate({ ...gateOptions, callerContinues: true });
+    const raw = generation.raw as { readonly answer: string };
+    const units = [...gate.open().units, ...gate.push(raw.answer).units, ...gate.end().units];
+    const answer = units
+      .map((u) => u.text)
+      .join('')
+      .trim();
+    if (answer !== '' && gate.blocked === null && gate.fallback === null) {
+      generation = { ...generation, raw: { ...raw, answer, spoken: null } };
+      fitted = gate.step?.fitted ?? null;
+    }
+  }
+  const stands = guidance === null ? null : withFitted(guidance, fitted);
   const options: Parameters<typeof validateCoachResponse>[1] = {
     evidenceKeys,
     preRisk: risk,
@@ -547,11 +575,11 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     earlierReplies,
     pastReplies: spec.pastReplies ?? [],
     // What the gate released was shown or said as it stands: never edited for repeats again.
-    released: generation.stream !== null && generation.stream.fallback === null,
+    released: !ungated || guidance?.reading !== undefined,
     social,
     noQuestions,
     knownFigures,
-    ...checks,
+    ...(stands === guidance ? checks : checksFor(stands)),
     founderText: spec.founderText,
     introduced,
     channel: spec.channel,
@@ -565,9 +593,9 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
   // The reply contract: a reply that leaves the decided step out (or only asks) is completed from the decision, never by
   // a second model call. A reply the founder spoke over stands as they heard it.
   const { checked, spokenStep } =
-    guidance === null || !owesContract || gated.blocked || generation.stream?.interrupted === true
+    stands === null || !owesContract || gated.blocked || generation.stream?.interrupted === true
       ? { checked: gated, spokenStep: null }
-      : withReplyContract(gated, guidance, {
+      : withReplyContract(gated, stands, {
           channel: spec.channel,
           today,
           founderText: spec.founderText,
@@ -575,12 +603,12 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
   await streamAdded(spec, generation, gated, checked);
   const pending = generation.annotations ?? null;
   if (pending === null)
-    return { kind: 'answered', context, shown, generation, checked, annotations: null, spokenStep };
+    return { kind: 'answered', context, shown, generation, checked, annotations: null, spokenStep, fitted };
   if (checked.blocked) {
     // Nothing will read the fields of a reply that was held back: the call is stopped (what it cost is metered).
     pending.cancel();
     await pending.result;
-    return { kind: 'answered', context, shown, generation, checked, annotations: null, spokenStep };
+    return { kind: 'answered', context, shown, generation, checked, annotations: null, spokenStep, fitted };
   }
   const annotations = pending.result.then((result) => ({
     checked: withAnnotations(checked, generation.raw, result, options),
@@ -600,6 +628,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
       checked,
       annotations: { result: annotations, stop },
       spokenStep,
+      fitted,
     };
   }
   // Waited for here (the studio's test conversation): one generation, as a reply written whole would be.
@@ -617,6 +646,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     checked: annotated.checked,
     annotations: null,
     spokenStep,
+    fitted,
   };
 }
 

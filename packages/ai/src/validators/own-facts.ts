@@ -178,7 +178,8 @@ function inventsSpeech(unit: string, guidance: PromptGuidance): boolean {
     .slice(0, m === null ? 0 : m.index + m[0].length - (m[1] ?? '').length)
     .replace(/\b(?:the|your|these|those|\d+) \p{L}+ who\b/giu, ' ');
   if (m?.[1] === undefined || SAYING_OPEN.test(opens)) return false;
-  const claim = stemsOf(m[1]);
+  // What they add after it is no one's words.
+  const claim = stemsOf(guidance.reading === undefined ? m[1] : (m[1].split(/[—–,]/u)[0] ?? m[1]));
   if (claim.size < 2) return false;
   // One sentence of theirs holds most of it: words of the idea gathered from everywhere are nobody's answer.
   return !`${guidance.said}\n${guidance.lead?.text ?? ''}\n${(guidance.facts ?? []).join('\n')}`
@@ -421,18 +422,18 @@ export function ownFactsUnit(
       !/^["“]/u.test(given) &&
       (given.includes('[') || MARK.test(given) || ASKS_FOR[label] !== undefined);
     const asks = fills ? given : ASKS_FOR[label];
-    if (line !== null && asks !== undefined && line[3] !== undefined && !/^["“]/u.test(line[3].trim())) {
+    if (
+      guidance.reading === undefined &&
+      line !== null &&
+      asks !== undefined &&
+      line[3] !== undefined &&
+      !/^["“]/u.test(line[3].trim())
+    ) {
       // As the template gives it, or with nothing that is not theirs.
       const value = line[3].trim();
       const plain = (t: string): string => t.replace(/[*_]+/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
       if (
         plain(value) !== plain(asks) &&
-        // Asked for the words, a line of facts is no template's line.
-        !(
-          guidance.draft === true &&
-          guidance.reading !== undefined &&
-          inventedMoney(value, guidance, '').length === 0
-        ) &&
         (!isTheirs(value, label, guidance) || inventedMoney(value, guidance, '').length > 0)
       ) {
         findings.push('template_bracketed');

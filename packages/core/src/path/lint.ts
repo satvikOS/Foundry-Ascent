@@ -55,11 +55,3 @@ export function isWhole(text: string): boolean {
     return false;
   return FINITE.test(said) || SAYS.test(said);
 }
-
-/** A condition as it stands after "if": with who does it ("you ask the shop"), never a bare order. */
-export function afterIf(text: string): string {
-  const said = yourself(bare(text).replace(/^(?:if|when|once)\s+/iu, ''));
-  const order =
-    /^(?:ask|call|ring|email|message|write|send|offer|sell|charge|count|show|bring|take|visit|talk|meet|try|run|test|find|get|give|answer|reply|agree|sign|hand|stop|open|start|make|put|set|tell)\b/iu;
-  return order.test(said) ? `you ${said.charAt(0).toLowerCase()}${said.slice(1)}` : said;
-}
