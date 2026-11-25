@@ -75,11 +75,51 @@ def words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9']+", (text or "").lower())
 
 
+#: A paragraph that is a message for someone else: it opens as one, or is one's subject line.
+_OPENS_DRAFT = re.compile(
+    r"^\W*(?:hi|hello|hey|dear|subject)\b[^.!?\n]{0,40}[,:\[]|^\W*(?:subject|to|start|open(?:ing)?|close|closing|ask|if no|say)\s*:",
+    re.IGNORECASE,
+)
+#: A blank to fill in ("[day]", "[what goes wrong]"): what holds one is a template, whoever it is asked of.
+_BLANK = re.compile(r"\[[^\]\n]{2,80}\](?!\()")
+_SIGNED = re.compile(r"^\W*(?:thanks?(?: you)?|best|cheers|regards)?,?\s*\[?[A-Z][\w' -]{0,24}\]?\W*$")
+_ITEM = re.compile(r"^\s*(?:\d{1,2}[.)]|[-*+\u2022])\s+")
+
+
+def without_drafts(reply: str) -> str:
+    """The reply without what it drafts for them: a message to send, a template to fill in, a script or a list of questions
+    for someone else, a quotation over several sentences."""
+    text = re.sub(r"[\u201c\u201d]", '"', reply)
+    # A quotation, over as many sentences as it has (never an inch mark: both ends touch a word or a mark).
+    text = re.sub(r'(?<![\w"])"(?=[\w\[])[^"]{12,900}?[\w.!?\])]"', ' "..." ', text, flags=re.DOTALL)
+    kept = []
+    for paragraph in re.split(r"\n\s*\n", text):
+        lines = paragraph.split("\n")
+        asked = [ln for ln in lines if _ITEM.match(ln) and ln.rstrip(" *_").endswith("?")]
+        script = len(asked) >= 2
+        draft = bool(_OPENS_DRAFT.match(paragraph)) or (
+            bool(_BLANK.search(paragraph)) and not any(_ITEM.match(ln) for ln in lines)
+        )
+        if draft or (len(lines) == 1 and _SIGNED.match(paragraph) and kept and kept[-1] == ""):
+            kept.append("")
+            continue
+        kept.append(
+            "\n".join(
+                ln
+                for ln in lines
+                if not (_BLANK.search(ln) or _OPENS_DRAFT.match(ln) or (script and _ITEM.match(ln)))
+            )
+        )
+    return "\n\n".join(p for p in kept if p.strip())
+
+
 def questions_to_founder(reply: str) -> list[str]:
-    """The questions put to the founder: never one quoted for them to say, nor one in a list they are to ask others."""
+    """The questions put to the founder: never one quoted for them to say, in a message, template or script drafted for
+    them, or in a list they are to ask others."""
     out = []
-    for clause in _question_clauses(reply):
-        if in_quotation(reply, clause) or not put_to_student(reply, clause):
+    shown = without_drafts(reply)
+    for clause in _question_clauses(shown):
+        if in_quotation(shown, clause) or not put_to_student(shown, clause):
             continue
         out.append(clause)
     return out

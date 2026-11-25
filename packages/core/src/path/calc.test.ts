@@ -261,7 +261,11 @@ describe('the sums', () => {
     // Break-even.
     [
       'How many kits do I need to sell to break even on the press?',
-      ['$1,200 press / $3.50 left per kit = 343 kits to pay for it.', BOX_LEFT],
+      [
+        '$1,200 press / $3.50 left per kit = 343 kits to pay for it.',
+        BOX_LEFT,
+        'Each kit after that leaves $3.50.',
+      ],
       null,
       [BOX, 'The press costs $1,200 up front.'],
     ],
@@ -273,7 +277,11 @@ describe('the sums', () => {
     ],
     [
       'How many do I have to sell to pay for the oven?',
-      ['$300 oven / $2 left per pie = 150 pies to pay for it.', '$5 price - $3 cost = $2 left per pie.'],
+      [
+        '$300 oven / $2 left per pie = 150 pies to pay for it.',
+        '$5 price - $3 cost = $2 left per pie.',
+        'Each pie after that leaves $2.',
+      ],
       null,
       ['A pie sells for $5 and it costs me $3 to make. The oven is $300.'],
     ],

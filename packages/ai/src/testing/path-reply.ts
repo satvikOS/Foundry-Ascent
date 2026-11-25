@@ -81,12 +81,14 @@ export function pathBlockIn(system: string): PathBlock | null {
       .map((l) => unescapeData(l.trim()))
       .filter((l) => l !== ''),
     firstTime: block.includes('First-time founder:'),
-    answer: of(/^(?:If this is what they asked, s|S)ay this pick first, in your own words: (.+)$/m),
+    answer: of(
+      /^(?:If this is what they asked: t|T)he program's answer, to apply to them and never to recite: (.+)$/m,
+    ),
     why: of(/^Why: (.+)$/m),
     evidenceKeys: (of(/^Cite: \[([^\]]*)\]$/m) ?? '').split(/,\s*/).filter((k) => k !== ''),
     stepTitle: of(/^<step title="([^"]*)"/m),
     opens: of(/^<opens>(.*)<\/opens>$/m),
-    prior: of(/^<prior>(.*)<\/prior>$/m),
+    prior: of(/^<prior>(.*)<\/prior>$/m) ?? of(/^<facts>(.*?)(?: \| .*)?<\/facts>$/m),
     sums: of(/^<sums>(.*)<\/sums>$/m),
     asksSum: block.includes('They ask for a number:'),
     referral:

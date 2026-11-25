@@ -23,6 +23,10 @@ export type NewsKind =
   | 'refusal'
   | 'pull'
   | 'limit'
+  | 'funding'
+  | 'disclosure'
+  | 'meeting'
+  | 'free'
   | 'change';
 
 export interface News {
@@ -212,7 +216,89 @@ function concentrationNews(message: string): Pick<News, 'means' | 'spoken'> | nu
 const LEFT =
   /\b(?:a|one|our|my|the|another|first|biggest|\d+(?: of (?:our|my|the))?) ?(?:[a-z-]+ ){0,2}(?:customers?|clients?|users?|subscribers?|buyers?|members?|labs?|clinics?|schools?|shops?) (?:(?:just|has|have|already|suddenly) )*(?:left|cancel(?:l)?ed|quit|churned|dropped (?:out|us)|stopped (?:paying|buying|using|coming)|did not renew|asked for (?:a|their) refund)\b|\bwe lost (?:a|one|our|\d+) (?:[a-z-]+ ){0,2}(?:customers?|clients?|users?|subscribers?)\b/;
 const OFFER =
-  /\b(?:offered|wants?|would like|asked|proposed|agreed) (?:to|us|me)(?: to)? (?:partner|sponsor|collaborate|work (?:together|with)|host|promote|stock|carry|distribute|sell (?:it|our|my)|pilot|try|fund|invest|join|help)\b|\b(?:offered|proposed|wants?) (?:us |me )?(?:a|an) (?:partnership|pilot|collaboration|sponsorship|deal|space|table|booth)\b/;
+  /\b(?:offered|wants?|would like|asked|proposed|agreed) (?:to|us|me)(?: to)? (?:partner|sponsor|collaborate|work (?:together|with)|host|promote|stock|carry|distribute|sell (?:it|our|my)|pilot|try|fund|invest|join|help|test|put it)\b|\b(?:offered|proposed|wants?) (?:us |me )?(?:a|an) (?:partnership|pilot|collaboration|sponsorship|deal|space|table|booth|trial)\b/;
+/** Who offers, and what: "a county engineer who wants to try it on one bridge". */
+const WHO_OFFERS =
+  /((?:an?|one|two|three|four|five|the|my|our|another) (?:[a-z][\w'’-]* ){0,4}?[a-z][\w'’-]*),? (?:who |that )?(?:has |have )?(offered|wants?|would like|asked|proposed|agreed) (?:(?:us|me) )?(?:for )?(to )?([^.;!?]{3,110})/i;
+
+/** An offer, with who makes it and of what, in their words. */
+function offerNews(told: readonly string[]): Pick<News, 'means' | 'spoken'> {
+  const counts =
+    'It counts when they give something: a date, a place, their people’s time, or money. So answer with one small test and its day, and write down who does what.';
+  for (const sentence of told) {
+    const m = WHO_OFFERS.exec(bare(sentence));
+    const who = (m?.[1] ?? '').replace(/^and /i, '');
+    if (m === null || /^(?:the )?(?:people|someone|nobody|it|that|this)$/i.test(who)) continue;
+    const verb = /^offer/i.test(m[2] ?? '') ? 'offers' : /^(?:asked)/i.test(m[2] ?? '') ? 'asked' : 'wants';
+    const what = `${m[3] ?? ''}${m[4] ?? ''}`.replace(/,? (?:and|but|so) .*$/i, '');
+    const head = `${upperFirst(toYou(who))} ${verb} ${toYou(bare(what))}`;
+    if (head.split(' ').length > 22) continue;
+    return {
+      means: `${head}: that shows interest, not a result yet. ${counts}`,
+      spoken: `${head}. That shows interest, not a result yet: answer with one small test and its day.`,
+    };
+  }
+  return {
+    means: `An offer shows interest, not a result yet. ${counts}`,
+    spoken:
+      'It counts when they give something: a date, a table, or an email to their people. Answer with one small test.',
+  };
+}
+
+const GIVES_MONEY =
+  /\b((?:an?|my|our|one|the|another) (?:[a-z][\w'’-]* ){0,3}?(?:relative|uncle|aunt|cousin|friend|parent|dad|father|mom|mum|mother|grand\w+|brother|sister|family|neighbou?r|professor|advis[eo]r|alum\w*|angel|investor|someone|person|customer|boss|partner))\b[^.;!?]{0,60}?\b(?:put in|invest\w*|give (?:me|us)|lend (?:me|us)|fund|back (?:me|us))\b[^.;!?]{0,60}?(\$ ?\d[\d.,]*k?|\d[\d.,]* (?:dollars|thousand|k\b))/i;
+const FOR_A_SHARE =
+  /\b(?:percent\w*|share[sd]?|stake|equity|part of (?:it|the company)|piece of (?:it|the company))\b/i;
+
+/** Somebody offers money for a part of it. */
+function fundingNews(text: string): Pick<News, 'means' | 'spoken'> | null {
+  const m = GIVES_MONEY.exec(text);
+  if (m === null) return null;
+  const who = upperFirst(toYou(m[1] ?? ''));
+  const amount = (m[2] ?? '').replace(/(\d)[.,](\d{3})/g, '$1,$2');
+  const share = FOR_A_SHARE.test(text)
+    ? 'Do not name a percentage yet: that sets a value for the whole venture, and a promise of shares has legal rules.'
+    : 'Do not take it yet: money for a part of the venture, or a promise of profit, has legal rules.';
+  return {
+    means: `${who} offers ${amount}. ${share} Thank them, ask what they expect back, and take both to a person who decides this. Until then, an order paid ahead is the safe way for them to help.`,
+    spoken: `${who} offers ${amount}. ${share} Thank them and ask what they expect back.`,
+  };
+}
+
+const SHOWN_SOON =
+  /\b(?:present(?:ing|s)?|presentation|talk|poster|abstract|paper|publish\w*|preprint|thesis|defen[cs]e|demo)\b[^.;!?]{0,80}\b(?:conference|symposium|journal|public|online|published|goes out|next (?:week|month)|on (?:january|february|march|april|may|june|july|august|september|october|november|december|monday|tuesday|wednesday|thursday|friday|\d))\b|\babstract\b[^.;!?]{0,40}\b(?:public|published|online)\b/i;
+const OF_THE_LAB =
+  /\b(?:results?|research|invention|method|membrane|coating|compound|enzyme|sensor|device|material|lab|thesis|phd|grant|experiment|data|synthesis|protein|formula)\b/i;
+
+const MEETS_INVESTOR =
+  /\b(?:meeting|call|coffee|lunch|chat|talk) (?:\w+ )?with (?:an? |the |our |my |some |one )?(?:[a-z-]+ ){0,2}(?:angels?|investors?|vcs?|venture capital\w*|funds?)\b([^.;!?]{0,40})/i;
+
+/** They meet an investor soon. */
+function meetingNews(text: string): Pick<News, 'means' | 'spoken'> | null {
+  const m = MEETS_INVESTOR.exec(text);
+  if (m === null || /\b(?:should|if|how|want|would like|hope)\b/i.test(text.slice(0, m.index))) return null;
+  const on =
+    /\bon ((?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}|\w+day)\b/i.exec(
+      m[0],
+    )?.[1];
+  const when = on === undefined ? 'A first meeting with an investor' : `The meeting on ${upperFirst(on)}`;
+  return {
+    means: `${when} is about one thing: what you can show. So go in with four lines of proof, the one who pays first, and four questions of your own, and say no amount and no percentage in it.`,
+    spoken: `${when} is about what you can show: go in with four lines of proof, and say no amount and no percentage.`,
+  };
+}
+
+/** What works goes public soon. */
+function disclosureNews(text: string): Pick<News, 'means' | 'spoken'> | null {
+  if (!SHOWN_SOON.test(text) || !OF_THE_LAB.test(text)) return null;
+  return {
+    means:
+      'Showing how it works in public can end the right to protect it in most countries, and it starts a one-year clock in the United States. So the talk to have comes before that date, not after it. Until then, speak about the problem and the result, never the method.',
+    spoken:
+      'Showing how it works in public can cost you the right to protect it. So get advice before that date, and speak only about the result until then.',
+  };
+}
+
 const INTEREST =
   /\b(?:got|have) (\d+) (?:[a-z-]+ ){0,1}(?:sign-?ups?|likes|followers|downloads|waitlist|views|clicks)\b|(?<![\d.$])(\d+) (?:[a-z-]+ ){0,2}(?:liked|followed|clicked|downloaded|filled (?:in|out))\b/;
 
@@ -306,6 +392,20 @@ export function readAgain(ratio: Ratio): string {
 
 const COLD =
   /(?<![\d.$])(\d+)(?: of (?:them|those|these|the (\d+)))? (?:[a-z]+ ){0,2}?(?:did not|do not|could not|can not|cannot) (?:even |really )?(?:remember|recall|know (?:what|who|why))\b/;
+
+const FOR_FREE =
+  /\b(?:run|ran|did|done|given|gave|had|hosted|held|taught|made|handed out|offered|served|delivered|fixed|mended) (?:about |around )?(\d+) ([a-z][a-z -]{1,30}?) (?:for free|free of charge|at no cost|for nothing|without charging)\b|\b(\d+) free ([a-z]+s)\b/;
+
+/** Given away: that they take it, and not that they pay. */
+function freeNews(message: string): Pick<News, 'means' | 'spoken'> | null {
+  const m = FOR_FREE.exec(saidNumbers(message));
+  if (m === null) return null;
+  const what = `${upperFirst(word(Number(m[1] ?? m[3])))} ${(m[2] ?? m[4] ?? '').trim()} for free`;
+  return {
+    means: `${what} show that people take it when it costs nothing. They do not show that anyone pays, so put a price on the next ones, even a small one, and count who still comes back.`,
+    spoken: `${what} show that they take it, not that they pay. Put a price on the next ones and count who still comes.`,
+  };
+}
 
 /** Sign-ups that do not remember it. */
 function coldNews(message: string): Pick<News, 'means' | 'spoken'> | null {
@@ -434,6 +534,11 @@ export function newsOf(input: NewsInput): News | null {
   ): News | null => (found === null ? null : { kind, ratio, ...found });
   const change = news('change', changeNews(told));
   if (change !== null) return change;
+  const given =
+    news('funding', fundingNews(text)) ??
+    news('disclosure', disclosureNews(text)) ??
+    news('free', freeNews(text));
+  if (given !== null) return given;
   const flat = plain(text);
   // What others asked or said they would do is no plan of theirs.
   const planned = /\b(?:if|should|might|would like to|going to|will|plan to)\b/.test(
@@ -502,14 +607,8 @@ export function newsOf(input: NewsInput): News | null {
     news('refusal', refusalNews(told)) ??
     news('limit', limitNews(text)) ??
     news('pull', pullNews(told)) ??
-    (OFFER.test(flat)
-      ? news('offer', {
-          means:
-            'An offer shows interest, not a result yet. It counts when they give something: a date, a table, an email to their people, or money. So answer with one small test and its day, and write down who does what.',
-          spoken:
-            'It counts when they give something: a date, a table, or an email to their people. Answer with one small test.',
-        })
-      : null);
+    news('meeting', meetingNews(text)) ??
+    (OFFER.test(flat) ? news('offer', offerNews(told)) : null);
   if (rest !== null) return rest;
   const joined = tallyOf(tallies, ['joined']);
   const interest = INTEREST.exec(saidNumbers(text));

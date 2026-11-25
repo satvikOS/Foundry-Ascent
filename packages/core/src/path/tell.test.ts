@@ -2,6 +2,10 @@ import { type ArcEntry } from '@foundry/contracts';
 import { describe, expect, it } from 'vitest';
 
 import {
+  currentOnes,
+  factsFor,
+  ideaAs,
+  informative,
   listed,
   lowerFirst,
   priorFact,
@@ -229,7 +233,7 @@ describe('the one fact on record that bears on what they ask', () => {
 
   it('their idea is put beside an answer it can be applied to, when the record holds nothing nearer', () => {
     const idea = { reads: NO_READS, applies: true };
-    expect(priorFact(source(idea))?.sentence).toBe('In your case that is soap in refill pouches.');
+    expect(priorFact(source(idea))?.sentence).toBe('Put that beside your idea: soap in refill pouches.');
     // Not again a moment after, unless the idea is what they ask about.
     const said = 'You sell soap in refill pouches.';
     expect(priorFact(source({ ...idea, said }))?.sentence).toBe('');
@@ -251,5 +255,158 @@ describe('the one fact on record that bears on what they ask', () => {
       priorFact(source({ reads: NO_READS, earlier: ['I sold nine pouches at 4 dollars at the price test.'] }))
         ?.sentence,
     ).toBe('Remember that you sold nine pouches at 4 dollars at the price test.');
+  });
+});
+
+describe('the record’s own voice, turned to them', () => {
+  it.each([
+    [
+      'The founder has only six hours a week for the venture',
+      'you have only six hours a week for the venture',
+    ],
+    ['The founder charges $45 per sail', 'you charge $45 per sail'],
+    [
+      'The founder currently is on a visa and is asking about pay',
+      'you currently are on a visa and are asking about pay',
+    ],
+    ['The student founder was told no and does repairs by hand', 'you were told no and do repairs by hand'],
+    ["The founder's price is 12 dollars", 'your price is 12 dollars'],
+    [
+      'The founder shared that their initial idea of sail bags failed',
+      'you shared that your initial idea of sail bags failed',
+    ],
+    ['The founder talked to six people in his dorm', 'you talked to six people in your dorm'],
+    ['Six skippers said their sails tear', 'Six skippers said their sails tear'],
+  ])('%s', (text, said) => {
+    expect(toYou(text)).toBe(said);
+  });
+
+  it('by their own name', () => {
+    expect(toYou('Ines is mending sails and has two lofts', 'Ines')).toBe(
+      'you are mending sails and have two lofts',
+    );
+    expect(toYou('Ines talked to her professor about her idea', 'Ines')).toBe(
+      'you talked to her professor about your idea',
+    );
+  });
+
+  it.each([
+    ['helps small lofts mend sails', 'SailMend', 'SailMend, which helps small lofts mend sails'],
+    ['Rents sails by the week', '', 'something that rents sails by the week'],
+    ['Rents sails by the week', 'New venture', 'something that rents sails by the week'],
+    ['sell patches to skippers', 'SailMend', 'your plan to sell patches to skippers'],
+    ['SailMend, a loft on a bike', 'SailMend', 'SailMend, a loft on a bike'],
+    ['SailMend mends sails on the pier', 'SailMend', 'SailMend, which mends sails on the pier'],
+    ['SailMend is a loft that travels', 'SailMend', 'SailMend, a loft that travels'],
+    ['SailMend would let crews share sails', 'SailMend', 'SailMend, which would let crews share sails'],
+    ['Sail patches for skippers', 'SailMend', 'sail patches for skippers'],
+    ['Plant locks for shared kitchens', 'LockPot', 'plant locks for shared kitchens'],
+    ['Film gear for students', '', 'film gear for students'],
+    ['Walks for dogs between lectures', 'DogGo', 'walks for dogs between lectures'],
+    ['Prints sold at the fair', '', 'prints sold at the fair'],
+    ['Listens to elevators', 'Liftly', 'Liftly, which listens to elevators'],
+  ])('%s of %s', (idea, venture, said) => {
+    expect(ideaAs(idea, venture)).toBe(said);
+  });
+
+  it.each([
+    '6 hours',
+    'discovery',
+    'you are on stage 2 of 7 with SailMend, talking to customers',
+    'you are organising your idea by writing five key lines',
+    'you need legal confirmation about who owns the sail',
+    'you asked about the visa',
+    'you want to find out whether skippers pay',
+  ])('%s is not told', (fact) => {
+    expect(informative(fact)).toBe(false);
+  });
+
+  it.each([
+    'you asked the nine skippers; seven want it',
+    'one harbour asked for a trial on one boat',
+    'two lofts pay 80 dollars a month',
+  ])('%s is', (fact) => {
+    expect(informative(fact)).toBe(true);
+  });
+
+  it('an older figure of the same thing is not told beside the newer one', () => {
+    const fee = memory({
+      type: 'decision',
+      title: 'Fee',
+      content: 'Charge 300 dollars a sail repair.',
+      createdAt: '2026-11-01T09:00:00.000Z',
+    });
+    const now = memory({
+      type: 'fact',
+      title: 'Fee now',
+      content: 'The founder charges $450 per sail repair.',
+      createdAt: '2026-11-12T09:00:00.000Z',
+    });
+    const other = memory({ type: 'fact', title: 'Rent', content: 'The loft costs 90 dollars a month.' });
+    expect(currentOnes([fee, now, other])).toEqual([now, other]);
+    expect(currentOnes([fee, other])).toEqual([fee, other]);
+    // The same figure again replaces nothing.
+    expect(
+      currentOnes([fee, { ...now, content: 'A sail repair is still 300 dollars to charge.' }]),
+    ).toHaveLength(2);
+  });
+});
+
+describe('the facts an answer is to use', () => {
+  const s = (over: Partial<PriorSource> = {}): PriorSource => ({
+    oneLiner: 'helps crews mend sails',
+    venture: 'SailMend',
+    reads: {
+      ...NO_READS,
+      memory: [
+        memory({ type: 'evidence', title: 'Lofts', content: 'Two lofts pay 80 dollars a month.' }),
+        memory({
+          type: 'relationship',
+          title: 'Co-founder',
+          content: 'Bo sews every patch; he has 20 hours a week.',
+        }),
+        memory({ type: 'fact', title: 'Boat', content: 'The club keeps 40 boats in one shed.' }),
+      ],
+    },
+    intake: null,
+    earlier: [],
+    message: 'How do we split the equity between us?',
+    about: 'Fill in one contribution sheet each',
+    said: '',
+    applies: true,
+    ...over,
+  });
+
+  it('the nearest first, who someone is by name, the idea last', () => {
+    const facts = factsFor(s());
+    expect(facts[0]).toBe('Bo sews every patch; he has 20 hours a week');
+    expect(facts.at(-1)).toBe('SailMend, which helps crews mend sails');
+    expect(facts.length).toBeLessThanOrEqual(4);
+  });
+
+  it('with no play that answers, only what bears on the ask', () => {
+    expect(factsFor(s({ applies: false, message: 'What do lofts pay today?' }))).toEqual([
+      'two lofts pay 80 dollars a month',
+      'SailMend, which helps crews mend sails',
+    ]);
+  });
+
+  it('something is said even when it was said a moment ago, where the answer is general by its nature', () => {
+    const said =
+      'Two lofts pay 80 dollars a month. Bo sews every patch; he has 20 hours a week. SailMend helps crews mend sails.';
+    expect(priorFact(s({ said }))?.sentence ?? '').toBe('');
+    expect(priorFact(s({ said, always: true }))?.sentence).not.toBe('');
+  });
+
+  it('what they say of themselves is no fact of the venture', () => {
+    expect(
+      priorFact(
+        s({
+          reads: NO_READS,
+          earlier: ["I can sew, but I'm new to business and the money side."],
+          message: 'How do I set a price and get money?',
+        }),
+      )?.fact,
+    ).not.toContain('new to business');
   });
 });

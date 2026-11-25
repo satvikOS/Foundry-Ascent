@@ -404,7 +404,7 @@ describe('a call', () => {
       { ...voice, guidance: IP_REFERRAL, founderText: 'Who owns what I made in the lab?' },
     );
     expect(out.said.match(/A qualified person decides this/g)).toHaveLength(1);
-    expect(out.said).toContain('Bring the invention history page');
+    expect(out.said).toContain('bring them the invention history page');
     expect(out.said).toMatch(/Your next step: write a one-page invention history .* by Monday\.$/);
     expect(out.said.split(/\s+/).length).toBeLessThanOrEqual(SPOKEN_MAX_WORDS + 35);
   });
@@ -468,7 +468,9 @@ describe('the whole-reply validator holds the same contract', () => {
       guidance: IP_REFERRAL,
       founderText: 'Who owns what I made in the lab?',
     });
-    expect(out.response.spoken).toContain('Bring the invention history page');
+    expect(out.response.spoken).toContain(
+      'Bring the university technology transfer office the invention history page',
+    );
     expect(out.response.spoken).toMatch(/Your next step: write a one-page invention history .* by Monday\.$/);
     expect(out.results.notes).not.toContain('spoken_truncated');
   });

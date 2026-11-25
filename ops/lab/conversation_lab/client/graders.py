@@ -96,6 +96,9 @@ def direct_answer(t: ReplyTurn) -> Grade:
     if question_only(t.text) or not _substance(t):
         return fail("question_only")
     first = reading.sentences(t.text)[0]
+    # A question it gives them ("they will ask: "what could kill this?"") is the answer, not a question to them.
+    if re.search(r"[\"\u201c]", first):
+        return PASS
     if first.rstrip("\"”')*_ ").endswith("?"):
         return fail("opens_with_question")
     return PASS
@@ -321,10 +324,19 @@ def step_advanced(t: ReplyTurn) -> Grade:
 # Questions and tone ----------------------------------------------------------------------------------------------
 
 
+def _without_template(t: ReplyTurn) -> str:
+    """The reply without the lines of the step's own template (a script's questions are for someone else)."""
+    template = (t.step or {}).get("template")
+    body = str(template.get("body") or "") if isinstance(template, Mapping) else ""
+    own = {" ".join(reading.words(ln)) for ln in body.split("\n") if len(reading.words(ln)) >= 3}
+    lines = t.text.split("\n")
+    return "\n".join(ln for ln in lines if " ".join(reading.words(ln)) not in own)
+
+
 def one_question(t: ReplyTurn) -> Grade:
     if t.expect.kind == "rehearsal":
         return NA
-    asked = reading.questions_to_founder(t.text)
+    asked = reading.questions_to_founder(_without_template(t))
     return verdict(len(asked) <= 1, f"{len(asked)} questions")
 
 
@@ -542,6 +554,9 @@ def grounded_figures(t: ReplyTurn) -> Grade:
         v for v in reading.spelled_values(t.reply) if v in allowed
     }
     period = reading.says_period(t.text)
+    # "A quarter hour" of an hour's price is a quarter of it.
+    if re.search(r"\bquarter[- ](?:of an )?hour", t.sources, re.IGNORECASE):
+        operands = operands | {4.0}
     shares = {f.value for f in [*stated, *reading.figure_list(t.founder)] if "percent" in f.classes}
     # Derived figures may build on each other ("40 x $3 is $120, less $80 is $40"), so read until nothing changes.
     open_ = [(f.value, "percent" in f.classes) for f in stated if f.value not in allowed]

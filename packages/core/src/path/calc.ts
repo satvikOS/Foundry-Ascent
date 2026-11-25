@@ -118,12 +118,15 @@ const ASKS: readonly (readonly [CalcAsk, RegExp])[] = [
   ],
   [
     'income',
-    /\b(?:how much|what)(?: money)?(?: is| am i| are we)?\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:coming in|comes? in|taking in)\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:a|per|each|every|this|next) month\b|\b(?:monthly|recurring) (?:revenue|income)\b/,
+    /\b(?:how much|what)(?: money)?(?: is| am i| are we)?\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:coming in|comes? in|taking in)\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:a|per|each|every|this|next) month\b|\b(?:monthly|recurring) (?:revenue|income)\b|\b(?:how much|what)(?: money)? (?:comes?|is coming) in(?: now| each| every| a| per| this| after| these|\s*\?)/,
   ],
-  ['revenue', /\b(?:how much|what)\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:revenue|turnover|in sales)\b/],
+  [
+    'revenue',
+    /\b(?:how much|what)\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:revenue|turnover|in sales)\b|\bif (?:i|we) (?:sell|sold) \d+\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:covered|covers?|pays? for|paid for|right|correct)\b(?:[^?.!]|\.(?=\d)){0,40}\?/,
+  ],
   [
     'monthly',
-    /\b(?:how much|what)\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:make|earn|left|profit|keep|bring in|get|net|clear|stay)\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:a|per|each|every|in a|in one|in 1|for the) (?:month|week|year)\b|\b(?:monthly|weekly|yearly) (?:profit|earnings|income|total)\b|\b(?:month|week)\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:make|earn|profit)\b(?:[^?.!]|\.(?=\d)){0,160}\?/,
+    /\b(?:how much|what)\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:make|making|earn|earning|left|profit|keep|keeping|bring in|bringing in|get|getting|net|clear|stay)\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:a|per|each|every|in a|in one|in 1|for the) (?:month|week|year)\b|\b(?:monthly|weekly|yearly) (?:profit|earnings|income|total)\b|\b(?:month|week)\b(?:[^?.!]|\.(?=\d)){0,160}\b(?:make|earn|profit)\b(?:[^?.!]|\.(?=\d)){0,160}\?/,
   ],
   [
     'time',
@@ -698,12 +701,14 @@ function monthly(b: Book): Sum {
   return got(...lines);
 }
 
-function revenue(b: Book): Sum {
+function revenue(b: Book, message: string): Sum {
   if (b.nouns.length > 1) return need(whatIsMissing.which(b));
   if (b.price === null) return lacks(b, whatIsMissing.price(b));
   if (b.doubt) return UNSURE;
   if (b.volume === null) return lacks(b, whatIsMissing.volume(b));
-  const period = b.volume.period ?? 'month';
+  // "If I sell 100": so many, not so many a month.
+  const supposed = /\bif (?:i|we) (?:sell|sold) \d/.test(saidNumbers(message));
+  const period = b.volume.period ?? (supposed ? 'other' : 'month');
   const n = b.volume.low;
   return got(
     `${number(n)} ${many(b, n)} x ${range(b.price.low, b.price.high)} = ${range(n * b.price.low, n * b.price.high)} ${period === 'other' ? '' : `a ${period} `}in sales, before any cost.`,
@@ -757,7 +762,13 @@ function breakEven(b: Book, message: string): Sum {
       `${money(out)} a month ${label} / ${range(left.low, left.high)} left per ${one(b)} = ${count(out)} ${plural(one(b))} a month to cover it.`,
     );
   }
-  return lines.length === 0 ? lacks(b, whatIsMissing.oneTime(), [left.line]) : got(...lines, left.line);
+  const after =
+    once.length > 0 && fixed.length === 0 && left.low === left.high
+      ? [`Each ${one(b)} after that leaves ${money(left.low)}.`]
+      : [];
+  return lines.length === 0
+    ? lacks(b, whatIsMissing.oneTime(), [left.line])
+    : got(...lines, left.line, ...after);
 }
 
 function hourly(b: Book): Sum {
@@ -814,7 +825,7 @@ const stem = (w: string): string => singular(w).replace(/(?:ed|ing|s|d)$/, '');
 
 /** A whole and the part of it that left, told in one text; null when there is not exactly one of each. */
 function lostOf(
-  b: Book,
+  b: Pick<Book, 'reads'>,
   message: string,
 ): { readonly part: Count; readonly whole: Count; readonly read: Read } | null {
   const asked = nounOf(
@@ -893,8 +904,10 @@ function income(b: Book, message: string): Sum {
       read.loose.length > 0
     )
       return UNSURE;
-    const l = lostOf(b, message);
-    if (l !== null && l.read !== read) return UNSURE;
+    // Who left, told beside what they pay; the same told again elsewhere changes nothing.
+    const l = lostOf({ reads: [read] }, message);
+    const elsewhere = l === null ? lostOf(b, message) : null;
+    if (elsewhere !== null) return UNSURE;
     if (l !== null) {
       const stays = l.whole.value - l.part.value;
       const what = wholeNoun(l.whole, stays);
@@ -957,6 +970,10 @@ function conversion(b: Book, message: string): Sum {
   if (named !== null)
     return got(
       `${number(named.part)} of the ${number(named.whole)} ${plural(named.of)} = ${percent(named.part, named.whole)}.`,
+      // A small share is easier to hold as one in so many.
+      ...(named.part > 0 && named.whole / named.part >= 8
+        ? [`That is about 1 in ${number(Math.round(named.whole / named.part), 0)}.`]
+        : []),
     );
   const ratio = pointedRatio(b, message);
   // "My conversion is 5%. If I email 400…": the share is told already.
@@ -1198,7 +1215,7 @@ export function calcOf(input: CalcInput): CalcResult {
     margin: () => margin(b),
     total: () => total(b, input.message),
     monthly: () => monthly(b),
-    revenue: () => revenue(b),
+    revenue: () => revenue(b, input.message),
     income: () => income(b, input.message),
     break_even: () => breakEven(b, input.message),
     hourly: () => hourly(b),
@@ -1214,6 +1231,22 @@ export function calcOf(input: CalcInput): CalcResult {
     runway: () => runway(b),
     time: () => time(b, input.message),
   }[ask]();
+  // What comes in from those who pay by the month, when no price of one sale and no cost was told.
+  if (
+    sum.lines.length === 0 &&
+    (ask === 'revenue' || ask === 'monthly') &&
+    own === ask &&
+    b.price === null &&
+    b.costs.length + b.periodCosts.length + b.oneTime.length === 0
+  ) {
+    const coming = income(b, input.message);
+    if (coming.lines.length > 0)
+      return {
+        ask: 'income',
+        lines: coming.lines.map((l) => l.replace(/\.$/, ', before any cost.')),
+        missing: null,
+      };
+  }
   // "North or south?" of nothing they counted asks for no sum.
   if (sum === NO_SUM) return { ask: null, lines: facts(b, input.message), missing: null };
   return {
@@ -1222,6 +1255,22 @@ export function calcOf(input: CalcInput): CalcResult {
     missing: sum.unsure ? null : sum.missing,
     ...(sum.unsure ? { unsure: true } : {}),
   };
+}
+
+const PRICE_RIGHT =
+  /\b(?:is|are|was|were|does|do) (?:[a-z0-9$.' -]+ )?(?:fee|price|rate|pricing|charge)\b(?:[^?.!]|\.(?=\d)){0,60}?\b(?:right|fair|ok|okay|good|reasonable|too (?:low|high|little|much|cheap|expensive)|enough|fine|make sense|sensible|realistic)\b|\bam i (?:charging|asking|pricing)(?: for)? (?:[a-z]+ )?(?:too (?:little|much|low|high)|enough|right|fairly|the right)\b|\bis (?:that|this|it|\$?\d+(?: dollars)?) (?:a )?(?:fair|right|good|reasonable|too (?:low|high|cheap|expensive|much|little))(?: a)?(?: (?:price|fee|rate))\b|\b(?:right|fair) (?:price|fee|rate)\b(?:[^?.!]|\.(?=\d)){0,30}\?|\b(?:should|could) (?:i|we) (?:be )?charg(?:e|ing) (?:more|less)\b/;
+
+/** Whether they ask if what they charge is right: a verdict only buyers can give. */
+export function asksIfPriceRight(message: string): boolean {
+  return PRICE_RIGHT.test(saidNumbers(message));
+}
+
+/** What an hour brings at the price they told, when they said how long one takes; null: not both, or not one way only. */
+export function hourlyOf(input: CalcInput): string | null {
+  const b = bookOf(input, 'hourly');
+  if (b.price === null || b.unitTime === null || b.nouns.length > 1) return null;
+  const sum = hourly(b);
+  return sum.unsure || sum.missing !== null ? null : (sum.lines.at(-1) ?? null);
 }
 
 /** The sums of what one of them brings: a number of the message with no place in them may be the one that matters. */

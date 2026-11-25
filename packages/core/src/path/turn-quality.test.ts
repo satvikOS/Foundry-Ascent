@@ -481,7 +481,6 @@ describe('a reply that starts a step holds the thing itself', () => {
   it('the template, with what they told in it and plain blanks for the rest', () => {
     for (const message of [
       "I'm an engineer, I know nothing about business, where do I begin?",
-      'orders please',
       'Can you help me get organised?',
       'idk what to do',
       'What should I be doing this week?',
@@ -589,12 +588,20 @@ describe('nothing is said twice', () => {
 
   it('an answer given a moment ago is made concrete, not given again', () => {
     const answer = PLAYBOOK.plays.find((p) => p.id === 'equity-split')?.answer ?? '';
-    const again = gives('How do we split the shares between the two of us?', { started: true }, [answer]);
+    const ask = 'How do we split the shares between the two of us?';
+    const again = turnOf(ask, { started: true }, ['How should we split equity?'], [answer]).prompt.ask
+      ?.answer;
     expect(again).toMatch(
       /^What I said stands, so make it concrete now: each of you fills the contribution sheet alone\./,
     );
-    const third = gives('So how do we split the shares, the two of us?', { started: true }, [answer, again]);
-    expect(third).toMatch(/^What I said stands, and after the first part comes this: /);
+    const third =
+      turnOf(
+        'So how do we split the shares, the two of us?',
+        { started: true },
+        ['How should we split equity?', ask],
+        [answer, again ?? ''],
+      ).prompt.ask?.answer ?? '';
+    expect(third).toMatch(/^Go on with the next part: /);
     expect(third).not.toContain('fills the contribution sheet alone');
   });
 
@@ -742,7 +749,7 @@ describe('what is read where', () => {
 
   it('news beside "what next" comes first, and no stage is told with it', () => {
     const text = leadOf('Two schools said yes at the new fee. What do I do next?');
-    expect(text).toMatch(/^Two said yes\. .*Start with this: /s);
+    expect(text).toMatch(/^Two said yes\. .*So start with this: /s);
     expect(text).not.toContain('stage');
   });
 

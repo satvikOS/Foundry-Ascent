@@ -84,7 +84,7 @@ describe('a sum they ask for', () => {
 });
 
 describe('news', () => {
-  it('told with nothing asked: what it means first, and the path’s step stands', () => {
+  it('told with nothing asked: what it means first, its own step offered, and the path’s stands', () => {
     const { decision, prompt } = turnOf(
       'Nobody on campus paid, but three salons said they pay for this already.',
     );
@@ -92,7 +92,8 @@ describe('news', () => {
     expect(prompt.lead?.text).toMatch(
       /^Campus did not pay and three salons say they pay: salons are the customer/,
     );
-    expect(decision.step?.view.title).toBe('Put the idea on one page');
+    expect(decision.step?.view.title).toBe('Ask 20 people to pay and count who does');
+    expect([decision.offered, decision.pathStep?.title]).toEqual([true, 'Put the idea on one page']);
     expect(decision.applied).toBeNull();
   });
 

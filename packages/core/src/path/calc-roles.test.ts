@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { calcOf } from './calc.js';
+import { asksIfPriceRight, calcOf, hourlyOf } from './calc.js';
 
 interface Case {
   readonly q: string;
@@ -581,11 +581,6 @@ describe('facts of their numbers, with no sum asked', () => {
       '$200 / 8 hours = $25 an hour, before any cost.',
     ],
     [
-      "So the gym pays 60 a month, and the pies go for 4, so if I sell 50 pies that's my second gym covered, right? My pie shop's the other thing I run.",
-      ['One gym pays 60 dollars a month for two counters.'],
-      '50 pies x $4 = $200 in sales, before any cost.',
-    ],
-    [
       'How should I price it?',
       [
         'I sell tutoring by the quarter hour.',
@@ -596,5 +591,86 @@ describe('facts of their numbers, with no sum asked', () => {
   ])('%s', (message, record, line) => {
     const got = calcOf({ message, record });
     expect([got.ask, got.lines[0]]).toEqual([null, line]);
+  });
+});
+
+describe('what comes in now, and whether a fee is right', () => {
+  const paying = [
+    'Eighteen choirs paid 20 dollars a month in the autumn; six of them cancelled in the winter.',
+  ];
+  // The same thing kept twice (a note of a conversation) changes nothing.
+  const twice = [...paying, '6 of 18 choirs cancelled in the winter, a third of them.'];
+
+  it.each([
+    'So what is coming in a month now?',
+    'What comes in each month now?',
+    'How much revenue do I have a month now?',
+    'What do the choirs bring in a month now?',
+    'What is my monthly revenue now?',
+    'How much am I making a month after the cancellations?',
+    'How much money comes in now?',
+  ])('%s: those who stayed, at what they pay', (message) => {
+    for (const record of [paying, twice]) {
+      const got = calcOf({ message, record });
+      expect(got.ask).toBe('income');
+      expect(got.lines[0]).toContain('18 - 6 = 12 choirs, and 12 x $20 = $240 a month');
+    }
+  });
+
+  it('never when a cost or another price may change it', () => {
+    expect(
+      calcOf({
+        message: 'What do I earn a month now?',
+        record: [...paying, 'The hall costs 90 dollars a month.'],
+      }).lines,
+    ).toEqual([]);
+    expect(
+      calcOf({ message: 'How much revenue a month?', record: ['A lamp sells for 12 dollars.'] }).lines,
+    ).toEqual([]);
+  });
+
+  it('"if I sell 50 pies …, right?" is a sum, and no amount a month', () => {
+    const got = calcOf({
+      message:
+        "So the gym pays 60 a month, and the pies go for 4, so if I sell 50 pies that's my second gym covered, right? My pie shop's the other thing I run.",
+      record: ['One gym pays 60 dollars a month for two counters.'],
+    });
+    expect([got.ask, got.lines[0]]).toEqual(['revenue', '50 pies x $4 = $200 in sales, before any cost.']);
+  });
+
+  it('what it means is said with it: one in so many, and what each one after leaves', () => {
+    expect(
+      calcOf({
+        message: 'What share of the posters turned into an order?',
+        record: ['Sixty posters were put up and three ordered.'],
+      }).lines,
+    ).toEqual(['3 of the 60 posters = 5%.', 'That is about 1 in 20.']);
+    const lines = calcOf({
+      message: 'A table at the fair is 60 dollars. How many lamps before the table has paid for itself?',
+      record: ['A lamp sells for 20 dollars and costs 8 to make.'],
+    }).lines;
+    expect(lines[0]).toBe('$60 table / $12 left per lamp = 5 lamps to pay for it.');
+    expect(lines.at(-1)).toBe('Each lamp after that leaves $12.');
+  });
+
+  it.each([
+    ['One edit takes me about eight hours and I charge 200 dollars. Is the fee right?', true],
+    ['Am I charging too little? 80 dollars a logo, five hours each.', true],
+    ['Is 25 dollars a fair price for a walk?', true],
+    ['Is our price too low?', true],
+    ['How do I set my fee?', false],
+    ['Is the price on the page in dollars?', false],
+    ['What should the price test look like?', false],
+  ])('%s asks whether a price is right: %s', (message, asks) => {
+    expect(asksIfPriceRight(message)).toBe(asks);
+  });
+
+  it('an hour of it, when they said how long one takes', () => {
+    expect(
+      hourlyOf({
+        message: 'One edit takes me about eight hours and I charge 200 dollars. Is the fee right?',
+      }),
+    ).toBe('$200 / 8 hours = $25 an hour, before any cost.');
+    expect(hourlyOf({ message: 'I charge 200 dollars an edit. Is the fee right?' })).toBeNull();
   });
 });

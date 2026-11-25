@@ -23,6 +23,8 @@ export interface PathPromptGuidance {
     readonly why: string;
     readonly traps: readonly string[];
     readonly evidenceKeys: readonly string[];
+    /** A sentence that must be said whatever else is. */
+    readonly keeps?: string;
     /** Lines that go with the answer (a filled template), as they are. */
     readonly block?: string;
   } | null;
@@ -37,7 +39,26 @@ export interface PathPromptGuidance {
   /** The one question of the reply, when a number is missing. */
   readonly askBack?: string;
   /** The one prior fact the answer builds on. */
-  readonly prior?: { readonly fact: string; readonly sentence: string; readonly spoken?: string } | null;
+  readonly prior?: {
+    readonly fact: string;
+    readonly sentence: string;
+    readonly spoken?: string;
+    /** What nobody has shown yet, to be said beside it. */
+    readonly gap?: string;
+  } | null;
+  /** Two to four facts of theirs the answer is to use. */
+  readonly facts?: readonly string[];
+  /** The reply just given is to be said again: how, and what it said. */
+  readonly restate?: {
+    readonly how: 'plain' | 'short' | 'more' | 'convince' | 'translate' | 'explain';
+    readonly reply: string;
+  };
+  /** They reject the reply just given. */
+  readonly rejected?: boolean;
+  /** Who writes the step's template of labelled lines on this reply (`PromptGuidance.template`). */
+  readonly template?: 'opens' | 'shown' | 'offer';
+  /** What a call heard badly, and what it is. */
+  readonly heard?: readonly { readonly heard: string; readonly meant: string }[];
   /** Everything they said or that is on record of them. */
   readonly said?: string;
   /** They ask how to do the step. */

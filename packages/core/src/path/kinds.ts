@@ -256,6 +256,108 @@ export function asksWhenDone(text: string): boolean {
   return sentences(text).some((s) => WHEN_DONE.test(s));
 }
 
+/** What they want done with the reply just given: said plainly, shorter, longer, for a doubter, in other words. */
+export type Restating = 'plain' | 'short' | 'more' | 'convince' | 'translate' | 'explain';
+
+const IT =
+  '(?:that|this|it|them|those|these|(?:the |your )?(?:last |previous )?(?:reply|answer|message|part|bit|sentence|point|paragraph)|what you (?:just )?(?:said|wrote|told me))';
+const SAY =
+  '(?:say|put|write|word|explain|phrase|rephrase|reword|rewrite|redo|repeat|give me|tell me|try|make)';
+const LEAD_IN_WORDS =
+  '^(?:(?:ok(?:ay)?|so|and|but|now|hmm+|um+|uh+|sorry|wait|please|thanks?|cool|great|fine|right|no|yes|hey|lol)[,.! ]+)*(?:(?:can|could|would|will) you (?:please )?|please |just |now |i need you to |i want you to )*';
+const RESTATES: readonly (readonly [Restating, RegExp])[] = [
+  [
+    'translate',
+    new RegExp(
+      `${LEAD_IN_WORDS}translate\\b.{0,40}$|\\b${SAY} ${IT} (?:again )?in (?:spanish|french|german|chinese|mandarin|hindi|arabic|portuguese|japanese|korean|italian|russian|urdu|vietnamese|turkish|polish)\\b`,
+    ),
+  ],
+  [
+    'convince',
+    new RegExp(
+      `${LEAD_IN_WORDS}(?:convince|persuade|win over|sell (?:it|that|this) to) (?:me|(?:a|an|the|my|some) (?:skeptic\\w*|sceptic\\w*|doubter|cynic|critic|(?:hard|tough|grumpy) \\w+|doubting \\w+|judge|professor|co-?founder|partner|dad|mom|mum|parents?|boss|investor))\\b.{0,30}$|\\b(?:a|the|my) (?:skeptic|sceptic|doubter|cynic)\\b.{0,30}(?:say|believe|think|buy)\\b.{0,20}$`,
+    ),
+  ],
+  [
+    'short',
+    new RegExp(
+      `${LEAD_IN_WORDS}(?:(?:${SAY} ${IT} (?:much |a lot |a bit |even )?|(?:make )?(?:${IT} )?(?:much |a lot |a bit |even )?)(?:shorter|briefer|tighter|more concise|punchier)(?: please)?|(?:shorten|condense|summari[sz]e|tl;?dr|compress|trim) ?${IT}?(?: please)?|tl;?dr|${SAY} ${IT} in (?:one|a single|two|a|1|2) (?:lines?|sentences?|words?|breath)|(?:give me )?(?:in |the )?(?:one|a single|two|1|2)[- ](?:line|sentence|word)s?(?: version)?(?: please)?|too long(?:,? (?:again|shorter))?.{0,12})\\s*[?.!]*$`,
+    ),
+  ],
+  [
+    'plain',
+    new RegExp(
+      `\\b${SAY} ${IT} (?:again |to me )?(?:like (?:a |an )?(?:normal|regular|real|actual|human|ordinary|sane) ?(?:person|human|being|people)?|like i(?: am|['’]m)? ?(?:a )?(?:five|5|ten|12|new|kid|child|beginner|stupid|dumb).{0,16}|(?:in |more )?(?:plain(?:er|ly)?|simple(?:r)?|simply|normal|everyday|human|easy|easier|regular|common)(?: (?:english|words|language|terms|way))?|without (?:the |all the |any )?(?:jargon|buzzwords|business words|fancy words|big words))|${LEAD_IN_WORDS}(?:in |use )?(?:plain|simple|simpler|normal|human|everyday) (?:english|words|language|terms)(?: please)?\\s*[?.!]*$|\\b(?:simplify|dumb down|demystify) ${IT}|\\beli5\\b|\\bdumb (?:it|that|this) down\\b|\\b(?:less|no) jargon\\b|\\bspeak (?:plain )?english\\b|\\blike a (?:normal|real) (?:person|human)(?: please)?\\s*[?.!]*$|\\b(?:talk|speak) (?:to me )?like a (?:normal|real|regular) (?:person|human)\\b`,
+    ),
+  ],
+  [
+    'explain',
+    new RegExp(
+      `${LEAD_IN_WORDS}(?:what (?:do|did) you mean(?: by (?:that|this|it|the (?:last|first|second) (?:part|bit|point)))?|what does (?:that|this|it) (?:even )?mean|explain (?:that|this|it|the last (?:part|bit|point))(?: (?:again|better|differently))?|(?:i do not|did not|do not) (?:get|understand|follow) (?:that|it|this|what you (?:mean|said))|you lost me|come again|in other words|say (?:that|it|this) (?:again )?(?:differently|another way|in other words|but (?:differently|simpler|slower))|rephrase(?: ${IT})?|reword(?: ${IT})?)(?: please)?\\s*[?.!]*$`,
+    ),
+  ],
+  [
+    'more',
+    new RegExp(
+      `${LEAD_IN_WORDS}(?:(?:go|say|tell me) (?:a bit |a little )?(?:deeper|more)(?: (?:about|on|into) ${IT})?|(?:elaborate|expand)(?: on ${IT})?|more detail(?:s)?(?: on ${IT})?)(?: please)?\\s*[?.!]*$`,
+    ),
+  ],
+];
+
+/**
+ * What they ask done with the reply just given ("say that like a normal person", "shorter", "convince a sceptic", "what do
+ * you mean?"); null: it asks nothing of it. A message with an ask of its own beside it is that ask.
+ */
+export function asksAboutReply(text: string): Restating | null {
+  const own = sentences(text);
+  const found = own.map((s) => RESTATES.find(([, r]) => r.test(s))?.[0] ?? null);
+  const at = found.findIndex((f) => f !== null);
+  if (at < 0) return null;
+  // "Shorter. And how do I price it?" asks two things: the question is the ask.
+  if (own.some((s, i) => found[i] === null && s.endsWith('?'))) return null;
+  return plain(text).split(/\s+/).length > 22 ? null : (found[at] ?? null);
+}
+
+const MEANING =
+  /\b(?:so )?what (?:does|did|would) (?:that|this|it|all (?:of )?(?:that|this)|the (?:result|finding|answer)s?) (?:mean|tell|show|say|change|prove)\b|\bwhat (?:did|do|have) (?:i|we) (?:learn|learned|find out|take from|make of)\b|\bwhat (?:do|should|would|can) (?:i|we) do with (?:that|this|it|them|what (?:they|the \w+) (?:said|told)|the (?:result|answer|finding)s?)\b|\bwhat(?: now| then)?,? with (?:that|this)\b|^(?:ok(?:ay)?[, ]+)?so what\s*[?.!]*$|\bwhat (?:do|should) (?:i|we) make of (?:that|this|it)\b/;
+
+/** They ask what they just found means ("so what does that mean for what I'm building?", "what do I do with that?"). */
+export function asksMeaning(text: string): boolean {
+  return sentences(text).some((s) => MEANING.test(s));
+}
+
+const REJECTS =
+  /\b(?:that|this|it) is (?:just |all |pure |such |total |complete |so )*(?:textbook|nonsense|useless|generic|rubbish|garbage|bullshit|bs|wrong|obvious|no help|not helpful|not useful|a waste(?: of (?:my )?time)?|vague|boilerplate|what everyone says)\b|\byou (?:have no idea|do not (?:know|understand|get)|are not (?:listening|helping)|did not (?:listen|answer|read)|keep (?:saying|repeating)|said that already|already said (?:that|this))\b|\b(?:textbook|generic|useless|boilerplate) (?:nonsense|advice|answer|stuff|crap)\b|\bgive me something (?:that works|real|useful|specific|concrete|i can use)\b|\bi (?:already )?(?:know|knew) (?:all )?(?:that|this) already\b|\btell me something (?:new|i do not know|useful)\b/;
+
+/** They reject what they were just told ("that's textbook nonsense", "you have no idea what you're talking about"). */
+export function rejectsAdvice(text: string): boolean {
+  const said = plain(text);
+  return said.length <= 160 && REJECTS.test(said) && !sentences(text).some((s) => s.endsWith('?'));
+}
+
+const ONE_THING: readonly RegExp[] = [
+  /\b(?:just |only |give me |name |tell me |pick )?(?:one|a single|the one|1) (?:small |tiny |little |concrete |simple )?(?:thing|task|job|move|action)\b/,
+  /\b(?:small|smallest|tiny|tiniest|little|quick|quickest|easiest) (?:thing|task|move|action|first step)\b/,
+  /\b(?:my|your|the|any|give me|marching) orders\b|^(?:(?:ok(?:ay)?|yes|so|fine|right|alright|boss|chief|captain|coach)[,. ]+)*orders(?: please| boss)?\s*[?.!]*$/,
+  /\bwhat would (?:you|u) do\b.{0,60}\b(?:me|place|shoes|position|situation|yours?)\b/,
+  /\bleast (?:dumb|stupid|bad|risky)\b/,
+  /\bwhat (?:do|should|must|can|would) (?:i|we) do (?:tomorrow|tonight|today|right now|now|on monday)\b|\bwhat (?:i|we) (?:should |must |can )?do (?:tomorrow|tonight|today|right now)\b/,
+  /\b(?:most useful|smartest) (?:thing|move|step)\b/,
+];
+
+/** They want one thing to do, never a page to fill in. */
+export function asksOneThing(text: string): boolean {
+  return sentences(text).some((s) => ONE_THING.some((r) => r.test(s)));
+}
+
+const FILLS_IN =
+  /\b(?:write|fill(?: (?:in|out))?|draft|give|show|send|paste|make|do|type|complete|prepare)(?: (?:me|us|up|out))?(?: (?:just|all|of))*(?: (?:the|a|an|my|that|this|these|those|your))*(?: (?!landing\b|web\b|home\b)[a-z-]+){0,3}? (?:(?:five|5|six|four|two|three) lines|lines|template|table|canvas|sheet|script|page|card|worksheet|one[- ]pager)\b|\bwhat (?:does|would|should) (?:the|a|my|that|this) (?:[a-z-]+ )?(?:template|table|canvas|sheet|page|card|one[- ]pager) (?:look like|say|have)\b/;
+
+/** They ask to have the step's own template, written out for them. */
+export function asksForTemplate(text: string): boolean {
+  return sentences(text).some((s) => FILLS_IN.test(s));
+}
+
 const MESSAGE_ASKED =
   /\b(?:write|draft|give|send|show|make|compose|type)(?: me| us)?(?: out)? (?:the|a|an|that|my|this|some)(?: (?:short|first|cold|quick|exact|actual|whole|good|simple))* (?:message|e-?mail|text|note|dm|script|invitation|invite|post|lines?)\b|\bwhat (?:do|should|would) (?:i|we) (?:write|say|text|send)(?: to)? (?:them|him|her|to them|people|someone|that person)\b|\bwhat (?:should|would) the (?:message|e-?mail|text|note) (?:say|be)\b/;
 
@@ -406,10 +508,13 @@ export function statesItHappened(sentence: string): boolean {
 
 /** The message's own sentences beside their normalised form, so a quote is the founder's words as they wrote them. */
 export function ownSentences(text: string): string[] {
-  return text
-    .split(/(?<=[.?!;])\s+|\n+/u)
-    .map((s) => s.trim())
-    .filter((s) => /[\p{L}\p{N}]/u.test(s));
+  return (
+    text
+      // "Outside the 9 a.m. lectures" is one sentence.
+      .split(/(?<=[.?!;])(?<!\b[ap]\.m\.)(?<!\b(?:e\.g|i\.e|vs|approx|Dr|Mr|Ms|Mrs|Prof)\.)\s+|\n+/u)
+      .map((s) => s.trim())
+      .filter((s) => /[\p{L}\p{N}]/u.test(s))
+  );
 }
 
 /**
@@ -583,14 +688,18 @@ export function isCommitted(c: Commitment | null): c is Commitment {
  * no", "just a hint", "the lead said you can".
  */
 const PUSHES =
-  /\b(?:who (?:exactly |else )?(?:do|should|can|would) (?:i|we) (?:ask|see|talk|speak|go|contact|call|email|meet|write)|what (?:exactly )?(?:do|should) (?:i|we) (?:bring|take|tell|show|say|ask)|lawyers?|attorneys?|you decide|your call|just (?:decide|tell|say|answer|give)|a hint|come on|yes or no|guarantee|promise me|sign(?:ing|ed)?|take it away|off the record|between (?:us|you and me)|hypothetically|said (?:that )?(?:you|it is)|you can tell|you (?:also )?(?:coach|know) (?:them|him|her|that team)|your (?:opinion|guess|view)|what would you do|is (?:that|it) (?:right|legal|allowed|ok|okay|safe)|are you sure|but (?:you|i) (?:must|have to|need))\b/;
-export function pushesOn(text: string): boolean {
-  return PUSHES.test(plain(text));
+  /\b(?:who (?:exactly |else )?(?:do|should|can|would) (?:i|we) (?:ask|see|talk|speak|go|contact|call|email|meet|write)|what (?:exactly )?(?:do|should) (?:i|we) (?:bring|take|tell|show|say|ask)|lawyers?|attorneys?|you decide|your call|just (?:decide|tell|say|answer|give)|a hint|come on|yes or no|guarantee|promise me|sign(?:ing|ed)?|take it away|off the record|between (?:us|you and me)|hypothetically|said (?:that )?(?:you|it is)|you can tell|you (?:also )?(?:coach|know) (?:them|him|her|that team)|your (?:opinion|guess|view)|what would you do|is (?:that|it) (?:right|legal|allowed|ok|okay|safe)|are you sure|but (?:you|i) (?:must|have to|need)|on (?:the )?(?:\w+ ){0,3}(?:staff|team)|work (?:for|at) the (?:center|program|office)|i am (?:an? )?(?:admin|staff|the program lead|an eir))\b/;
+/** Another try at what another founder does. */
+const ASKS_OF_OTHERS =
+  /\bhints?\b|\bwho else\b|\bother (?:founders?|teams?|students?|ventures?|startups?|people|groups?)\b|\bwhat (?:they|he|she|others) (?:are|is|do|does|charge|charges)\b|\b(?:their|his|her) (?:plan|pitch|price|idea|deck|numbers|customers?)\b|\bsomeone else here\b/;
+export function pushesOn(text: string, ofOthers = false): boolean {
+  const said = plain(text);
+  return PUSHES.test(said) || (ofOthers && ASKS_OF_OTHERS.test(said));
 }
 
 /** Objects that are a task of the work, never the venture ("I'm building a prototype", "I want to make a survey"). */
 const TASK_OBJECT =
-  /^(?:(?:an?|the|my|our|some|this|that|it|them|one|another|first) )*(?:it|this|that|them|prototype|mock-?ups?|pitch|deck|slides?|landing page|survey|plan|list|website|site|mvp|canvas|model|interviews?|company|business plan|money|sense|progress|sure|decision|call|calls|list|test|demo|video|logo|name|friends?|start|something)\b/i;
+  /^(?:(?:an?|the|my|our|some|this|that|it|them|one|another|first) )*(?:it|this|that|them|prototype|mock-?ups?|pitch|deck|slides?|landing page|survey|plan|list|website|site|mvp|canvas|model|interviews?|company|business plan|money|sense|progress|sure|decision|call|calls|list|test|demo|video|logo|name|friends?|start|something|pilot|trial|meeting|term|semester|class|thesis|phd|job|internship|conversation|project with)\b/i;
 /** What they think of it, never what it is ("my idea is really good"). */
 const OPINION =
   /^(?:(?:really|so|very|pretty|quite|just|still|not|kind of|only|a bit|too) )*(?:great|good|bad|promising|stupid|dumb|amazing|simple|new|ok|okay|solid|unique|brilliant|crazy|early|rough|vague|big|small|ready|done|working|failing|better|different|the same|an? (?:idea|mess|start|joke))\b/i;

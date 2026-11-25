@@ -69,7 +69,9 @@ describe('the <path> block', () => {
       'Never write a next step, a deadline, "Next:", "Done when", "Do it by" or a list of sub-steps: they are added under your reply.',
     );
     expect(block).toContain('<stage>Discovery: find who has the problem (stage 2 of 7)</stage>');
-    expect(block).toContain('Say this pick first, in your own words: Both, in this order: do it by hand');
+    expect(block).toContain(
+      "The program's answer, to apply to them and never to recite: Both, in this order: do it by hand",
+    );
     expect(block).toContain('Why: Building software for a workflow you have not watched');
     expect(block).toContain('Warn of: Custom work for each company');
     expect(block).toContain('Cite: [E1]');
@@ -117,7 +119,7 @@ describe('the <path> block', () => {
     );
     // Social and in character: who they are, never the step's detail or the answer.
     for (const g of [SOCIAL, REHEARSAL]) {
-      expect(of(g)).not.toContain('Say this pick first');
+      expect(of(g)).not.toContain("The program's answer");
       expect(of(g)).not.toContain('added under your reply');
     }
     expect(of(SOCIAL)).toContain('<step title="List 20 office managers');
@@ -583,13 +585,15 @@ describe('how the ask was found', () => {
 
   it('a phrase keeps its wording, with or without the field', () => {
     expect(said({ matched: 'phrase' })).toBe(said({}));
-    expect(said({})).toContain('Say this pick first, in your own words: Both, in this order');
+    expect(said({})).toContain(
+      "The program's answer, to apply to them and never to recite: Both, in this order",
+    );
     expect(said({})).not.toContain('what they seem to mean');
   });
 
   it('a match by meaning gives the model a way out', () => {
     const text = said({ matched: 'semantic' });
-    expect(text).toContain('If this is what they asked, say this pick first');
+    expect(text).toContain("If this is what they asked: the program's answer, to apply to them");
     expect(text).toContain(
       'if it is not about what they asked, leave it and its citation out, and answer them from the evidence and your judgement.',
     );

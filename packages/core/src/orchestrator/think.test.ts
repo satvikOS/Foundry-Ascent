@@ -5,7 +5,7 @@ import { type PathPromptGuidance } from '../path/ai-adapter.js';
 import { decide } from '../path/engine.js';
 import { PLAYBOOK } from '../path/playbook/index.js';
 import { fresh, input } from '../path/testing/inputs.js';
-import { JUDGEMENT_PLAYS, asksJudgement, pathTurn } from '../path/turn.js';
+import { JUDGED_PLAYS, asksJudgement, pathTurn } from '../path/turn.js';
 import { thinkFor } from './think.js';
 
 const guidanceOf = (message: string, earlierMessages: string[] = []): PathPromptGuidance =>
@@ -33,16 +33,10 @@ describe('which turns reason before they answer (CORE_THINK)', () => {
       'My friends all love it.',
     ])
       expect(think('judgement', guidanceOf(message)), message).toBe('low');
-    const unanswered: PathPromptGuidance = {
-      ...guidanceOf('Is my idea any good?'),
-      ask: null,
-      judgement: false,
-    };
-    expect(think('judgement', { ...unanswered, kind: 'coaching' })).toBe('low');
-    const { lead: _lead, ...open } = unanswered;
-    expect(
-      think('judgement', { ...open, kind: 'coaching', lead: { text: 'A sum.', voice: 'A sum.' } }),
-    ).toBeNull();
+    const { lead: _lead, ...opened } = guidanceOf('Is my idea any good?');
+    const open: PathPromptGuidance = { ...opened, ask: null, judgement: false, kind: 'coaching' };
+    expect(think('judgement', open)).toBe('low');
+    expect(think('judgement', { ...open, lead: { text: 'A sum.', voice: 'A sum.' } })).toBeNull();
   });
 
   it('judgement: never an ask the program answers, a sum, a recall, small talk or what the server opens with', () => {
@@ -77,7 +71,7 @@ describe('a judgement asked for', () => {
     return asksJudgement({ message }, decision);
   };
   it('is known by its play or its words', () => {
-    for (const id of JUDGEMENT_PLAYS) expect(PLAYBOOK.plays.map((p) => p.id)).toContain(id);
+    for (const id of JUDGED_PLAYS) expect(PLAYBOOK.plays.map((p) => p.id)).toContain(id);
     for (const message of [
       'Be honest, is my idea any good?',
       'Poke holes in this plan',

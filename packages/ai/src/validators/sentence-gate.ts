@@ -53,7 +53,9 @@ import { supportUnit, supportWith, withoutSpan, type SupportIndex } from './cita
 import {
   SPOKEN_REPLY_WORDS,
   StepTalk,
+  announcesLead,
   announcesSteps,
+  bringWho,
   carriesContract,
   contractApplies,
   contractTail,
@@ -64,6 +66,9 @@ import {
   repeatsLead,
   repeatsReferral,
   restates,
+  rulesOnIt,
+  saidInLead,
+  withPick,
   withoutLabel,
   spokenReserve,
   withoutDeadline,
@@ -537,6 +542,8 @@ export class SentenceGate {
   #heldQuestion: string | null = null;
   #questionReleased = false;
   #contractDone = false;
+  /** A social reply's own step talk was left out. */
+  #stepTalkLeft = false;
   #contractEdits = 0;
   #contractAppended = false;
   #methodEdits = 0;
@@ -620,7 +627,13 @@ export class SentenceGate {
         typeof t === 'string' ? questionFramesOf(t) : [],
       ),
     );
-    if (said.length === 0 || asksToRepeat(options.founderText ?? '') || this.#question !== null) {
+    if (
+      said.length === 0 ||
+      asksToRepeat(options.founderText ?? '') ||
+      this.#question !== null ||
+      // They ask for the reply before again, in other words.
+      this.#contract?.restate !== undefined
+    ) {
       this.#previousGrams = null;
       this.#previousQuestions = [];
     } else {
@@ -708,6 +721,17 @@ export class SentenceGate {
     this.#leadShown = true;
     this.#rewritten = true;
     this.#sayWhole(this.#lead, '', units);
+  }
+
+  /** A unit that is only the coach's own name ("Thomas", "**Thomas:**"). */
+  #ownName(unit: string): boolean {
+    const name = this.#options.personaName.split(/['’]s\b/u)[0]?.trim() ?? '';
+    const said = unit
+      .replace(/[*_#\s]+/g, ' ')
+      .trim()
+      .replace(/[.,:;!—–-]+$/u, '')
+      .trim();
+    return this.#options.mentor === true && name !== '' && said.toLowerCase() === name.toLowerCase();
   }
 
   /** Adds a chunk and returns the units it completes. */
@@ -865,6 +889,13 @@ export class SentenceGate {
           }
           rawUnit = greeting.text;
         }
+      }
+      if (this.#nothingModel() && this.#question === null && this.#ownName(rawUnit)) {
+        // Its own name, alone, as a heading of the reply.
+        this.#cursor = end;
+        this.#rewritten = true;
+        this.#keepDropped('opener', rawUnit);
+        continue;
       }
       if (this.#nothingModel() && this.#question === null) {
         // The reply starts with its substance, never a stock opener (validators/openers.ts): the start of a unit goes,
@@ -1175,6 +1206,12 @@ export class SentenceGate {
     this.#leanedOn = false;
     // Whole blocks of the model's own step talk: the one step line is the server's.
     const talk = this.#talk?.drops(rawUnit) === true;
+    // On a social turn what follows the step it dropped is more of it ("Write down every answer…").
+    if (this.#contract === null && this.#stepTalkLeft && !isProtectedLine(unit, this.#keepReferrals)) {
+      this.#leaveOut('contract', rawUnit);
+      return 'out';
+    }
+    if (talk && this.#contract === null && !this.#nothingModel()) this.#stepTalkLeft = true;
     if (
       talk &&
       !isProtectedLine(unit, this.#keepReferrals) &&
@@ -1189,8 +1226,14 @@ export class SentenceGate {
       const guidance = this.#contract;
       if (
         this.#leadShown &&
-        (repeatsLead(unit, this.#leadStems) || this.#onlyRestates(unit) || onlyVerdict(unit))
+        (repeatsLead(unit, this.#leadStems) ||
+          this.#onlyRestates(unit) ||
+          onlyVerdict(unit) ||
+          saidInLead(unit, this.#lead) ||
+          announcesLead(unit, this.#lead))
       ) {
+        // "This is under what lofts charge" of a sentence that went leans on nothing.
+        this.#leanedOn = true;
         this.#leaveOut('contract', rawUnit);
         return 'out';
       }
@@ -1211,8 +1254,8 @@ export class SentenceGate {
           unit = read.text;
         }
       }
-      // Who decides, said a second time in one reply.
-      if (repeatsReferral(unit, this.#releasedText, guidance)) {
+      // Who decides, said a second time in one reply; or decided by the reply itself.
+      if (rulesOnIt(unit, guidance) || repeatsReferral(unit, this.#releasedText, guidance)) {
         this.#leaveOut('contract', rawUnit);
         return 'out';
       }
@@ -1248,7 +1291,8 @@ export class SentenceGate {
         this.#leaveOut('contract', rawUnit);
         return 'out';
       }
-      if (verdict.action === 'hold') {
+      // What they asked to hear again is said as it is, its question too.
+      if (verdict.action === 'hold' && guidance.restate === undefined) {
         const next = this.#nothingReleased() ? '' : this.#nextUnit(end, stable);
         if (next === null) return 'wait';
         const follows = next.trim();
@@ -1265,6 +1309,29 @@ export class SentenceGate {
           return 'out';
         }
         this.#questionReleased = true;
+      }
+      // On a call one question is asked, last: a list of them read out is nothing anyone can follow.
+      if (this.#options.spoken === true && /\?\s*$/u.test(unit) && !this.#questionReleased) {
+        const next = this.#nextUnit(end, stable);
+        if (next === null) return 'wait';
+        if (next === '' && this.#heldQuestion === null && /\byou(?:r|['’]\p{L}+)?\b/iu.test(unit)) {
+          this.#heldQuestion = unit;
+          this.#rewritten = true;
+          return 'out';
+        }
+        this.#leaveOut('contract', rawUnit);
+        return 'out';
+      }
+      const told = bringWho(unit, guidance, this.#releasedText.slice(-300));
+      if (told !== unit) {
+        this.#contractEdits += 1;
+        this.#rewritten = true;
+        unit = told;
+      }
+      if (this.#nothingModel() && !this.#leadShown) {
+        const picked = withPick(unit, guidance, this.#options.founderText ?? '');
+        if (picked !== unit) this.#rewritten = true;
+        unit = picked;
       }
       const undated = withoutDeadline(unit, guidance, this.#options.today);
       if (undated !== unit) {
@@ -1428,6 +1495,7 @@ export class SentenceGate {
       answerWords: this.#answerWords,
       guidance: this.#contract,
       channel: voice ? 'voice' : 'text',
+      wroteTemplate: this.#talk?.wroteTemplate === true,
       ...(this.#options.today === undefined ? {} : { today: this.#options.today }),
       ...(this.#options.founderText === undefined ? {} : { founderText: this.#options.founderText }),
     });

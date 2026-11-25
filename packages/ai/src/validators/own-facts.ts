@@ -11,7 +11,11 @@ import { sharedCount, stemOf, stemsOf } from './stems.js';
  * 1. a line of a template ("Why me: …") whose words are not theirs keeps its [bracket];
  * 2. a sentence that says they have customers, sales, interviews… that nothing of theirs mentions goes;
  * 3. a sum of money nobody gave as money ("maybe $30 to $60 a month", "offer 45") is not said;
- * 4. our own words for the method ("the playbook says") go.
+ * 4. our own words for the method ("the playbook says") go;
+ * 5. a verdict only buyers can give ("your fee is right", "they are willing to pay") goes while none has paid or answered, and
+ *    so does a number they are said to have set and never did;
+ * 6. "By now we ran it at two piers" in a line written for them, when they told of nothing of the kind, keeps its
+ *    [bracket].
  */
 
 /** Words that claim nothing of their own in a line written for them. */
@@ -112,6 +116,59 @@ function claimsTraction(unit: string, guidance: PromptGuidance): boolean {
   return sharedCount(new Set(any), known) === 0;
 }
 
+const PAID_SAID =
+  /\b(?:paid|pays|paying|bought|ordered|orders|sold|signed|pre-?ordered|renewed|subscribed)\b/iu;
+/** Their own spending, or what others charge, is no buyer's answer. */
+const buyersAnswered = (said: string): boolean =>
+  said
+    .split(/[.;\n!?]+/u)
+    .some(
+      (c) =>
+        PAID_SAID.test(c) &&
+        !/\b(?:nobody|no one|none|not|never|didn['’]t|i|we) (?:\w+ ){0,2}(?:paid|bought|ordered|signed)\b|\bnobody\b|\bno one\b/iu.test(
+          c,
+        ),
+    );
+const VERDICT_ON_PRICE =
+  /\b(?:your|the|that|this|it|its) ?(?:current |new )?(?:fee|price|rate|pricing|charge)?(?: of [^.!?]{1,20})? (?:is|are|looks|seems|sounds)(?: just| about| probably| definitely| already)? (?:right|fair|reasonable|correct|fine|good|about right|well priced|spot on|in the right range|too (?:low|high|cheap|expensive))\b/iu;
+const ABOUT_PRICE = /\b(?:fee|price|rate|pricing|charge)\b/iu;
+const WILL_PAY =
+  /\b(?:signal|sign|proof|evidence|shows?|proves?|means?|confirms?|tells? (?:you|us))\b[^.!?]{0,50}\b(?:willing(?:ness)? to pay|(?:they|people|students|customers|users|buyers)(?:['’]d| would| will|['’]ll| are ready to| want to) pay|real demand|there is demand)\b|\b(?:they|people|students|customers|users|buyers) are willing to pay\b/iu;
+const HEDGED =
+  /\b(?:not|n['’]t|never|no|whether|if|yet|until|before|unless|without|may|might|could|once|when|how|ask|test|see|find out|know)\b/iu;
+const LINE_SET =
+  /\b(?:line|target|goal|number|bar|mark|threshold) (?:that )?you(?:['’]d| had)? (?:set|wrote|chose|agreed|picked)\b/iu;
+const SET_BY_THEM = /\b(?:pass line|pass mark|target|goal|at least|bar|threshold|need(?:ed)? \d+)\b/iu;
+const SO_FAR = /^(\s*["“*_]*)so far,?\s+(?=.)/iu;
+const DID_SO_FAR =
+  /\b(?:we|i)(?:['’]ve| have)?\b[^.!?]{0,40}\b(?:tested|talked|spoke|sold|signed|piloted|interviewed|shown|showed|ran|run|helped|worked|reached|won|got|had|have)\b|\b(?:used|tried|bought|paid|signed|said|asked|joined|ordered|cut)\b/iu;
+
+/** What a verdict only buyers can give, or a number they never set, is worth: nothing of it is said. */
+function unearned(unit: string, guidance: PromptGuidance): boolean {
+  const said = guidance.said ?? '';
+  if (/[?]["'”’)\]*_]*\s*$/u.test(unit.trim())) return false;
+  if (LINE_SET.test(unit) && !SET_BY_THEM.test(said)) return true;
+  if (buyersAnswered(said)) return false;
+  if (VERDICT_ON_PRICE.test(unit) && ABOUT_PRICE.test(unit) && !HEDGED.test(unit)) return true;
+  const pays = WILL_PAY.exec(unit);
+  return pays !== null && !HEDGED.test(unit.slice(0, pays.index + pays[0].length));
+}
+
+/** "By now we ran it at two piers…" of a pitch written for them, when nothing they told says so. */
+function soFar(unit: string, guidance: PromptGuidance): string | null {
+  const opens = SO_FAR.exec(unit);
+  if (opens === null || unit.includes('[') || !DID_SO_FAR.test(unit)) return null;
+  const rest = unit.slice(opens[0].length);
+  const said = guidance.said ?? '';
+  const numbers = knownNumbersIn(said);
+  const invented = numbersIn(rest).some((n) => !numbers.some((k) => Math.abs(k - n) < 0.005));
+  const words = [...stemsOf(rest)].filter((w) => !/^\d/.test(w) && !GENERIC.has(w));
+  const known = stemsOf(said);
+  const theirs = words.filter((w) => known.has(w)).length;
+  if (!invented && words.length > 0 && theirs / words.length >= 0.5) return null;
+  return `${opens[1] ?? ''}So far [what you have shown: who, how many, what they did].`;
+}
+
 /** Our own words for the method, said to a founder. */
 const OUR_WORDS: readonly (readonly [RegExp, string])[] = [
   [
@@ -147,6 +204,7 @@ export interface OwnFacts {
     | 'sum_beside'
     | 'count_beside'
     | 'own_words'
+    | 'verdict_unsupported'
   )[];
 }
 
@@ -309,6 +367,15 @@ export function ownFactsUnit(
         return { text: `${line[1] ?? ''}${given.trim() === '' ? TO_FILL : given}`, findings };
       }
       return { text, findings };
+    }
+    if (unearned(text, guidance)) {
+      findings.push('verdict_unsupported');
+      return { text: '', findings };
+    }
+    const bracketed = soFar(text, guidance);
+    if (bracketed !== null) {
+      findings.push('template_bracketed');
+      return { text: bracketed, findings };
     }
     if (claimsTraction(text, guidance)) {
       findings.push('traction_unsupported');

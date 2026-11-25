@@ -1081,6 +1081,7 @@ export function createOrchestrator(
         continuity: coach.memory.continuity,
         earlierMessages: coach.history.map((t) => t.founderText),
         earlierReplies: coach.heardHistory.map((t) => t.answer ?? ''),
+        channel: pre.channel,
         near,
       });
     } catch (err) {

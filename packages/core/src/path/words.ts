@@ -91,7 +91,7 @@ export function tokens(text: string): string[] {
 /** The sentences of `text`, normalised ({@link plain}), each with its closing mark. */
 export function sentences(text: string): string[] {
   return plain(text)
-    .split(/(?<=[.?!;])\s+|\n/)
+    .split(/(?<=[.?!;])(?<!\b[ap]\.m\.)(?<!\b(?:e\.g|i\.e|vs|approx)\.)\s+|\n/)
     .map((s) => s.trim())
     .filter((s) => /[\p{L}\p{N}]/u.test(s));
 }

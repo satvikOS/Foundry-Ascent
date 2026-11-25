@@ -499,7 +499,7 @@ describe('a reply that does not help is repaired from the path (the client’s l
     expect(out.repaired).toContain(
       'A qualified person decides this: the university technology transfer office',
     );
-    expect(out.repaired).toContain('Bring the invention history page');
+    expect(out.repaired).toContain('bring them the invention history page');
   });
 
   it('never drops a new idea or the venture silently, in one sentence', () => {
@@ -629,7 +629,7 @@ describe('who decides', () => {
     expect(out.repaired?.match(/A qualified person decides this/g)).toHaveLength(1);
     expect(out.repaired).toContain('the university technology transfer office');
     expect(out.repaired).toContain(
-      'Bring the invention history page, the lab agreement and any grant terms.',
+      'bring them the invention history page, the lab agreement and any grant terms.',
     );
     expect(check(out.repaired ?? '', IP_REFERRAL, 'voice').findings).not.toContain('missing_referral');
   });
@@ -638,8 +638,9 @@ describe('who decides', () => {
     const out = check(`${ANSWER} The technology transfer office decides it.\n\n${IP_NEXT}`, IP_REFERRAL);
     expect(out.findings).toEqual(['missing_referral']);
     expect(out.repaired).not.toContain('A qualified person');
+    // To them, in the same sentence: never "Bring …" to nobody.
     expect(out.repaired).toContain(
-      'Bring the invention history page, the lab agreement and any grant terms.',
+      'Bring the university technology transfer office the invention history page, the lab agreement and any grant terms.',
     );
   });
 
@@ -652,9 +653,9 @@ describe('who decides', () => {
           'a one-page timeline, the lab and its funding, everyone involved, papers you signed, and any talk or post already made about it',
       },
     };
-    const line = /Bring [^.]*\./.exec(composeFromGuidance(long, 'voice', TODAY))?.[0] ?? '';
+    const line = /bring [^.]*\./i.exec(composeFromGuidance(long, 'voice', TODAY))?.[0] ?? '';
     expect(line).toBe(
-      'Bring a one-page timeline, the lab and its funding, everyone involved, papers you signed.',
+      'bring them a one-page timeline, the lab and its funding, everyone involved, papers you signed.',
     );
     expect(composeFromGuidance(long, 'text', TODAY)).toContain('any talk or post already made about it');
   });
@@ -674,7 +675,7 @@ describe('who decides', () => {
         today: TODAY,
       }).before,
     ).toBe(
-      'A qualified person decides this: the university technology transfer office, and a lawyer before you sign anything. Bring the invention history page, the lab agreement and any grant terms.',
+      'A qualified person decides this: the university technology transfer office, and a lawyer before you sign anything; bring them the invention history page, the lab agreement and any grant terms.',
     );
   });
 });
@@ -1052,8 +1053,12 @@ describe('what the server says in place of too little', () => {
     expect(out).not.toContain('Here is how the step goes');
   });
 
-  it('a step cut to parts is done when those are, without saying each again', () => {
+  it('a step cut to parts says which, when they fit a line', () => {
     const step = { ...STEP, doneWhen: 'These 3 parts are done: write it; mark it; choose one.' };
-    expect(stepLine(step, 'text', TODAY)).toMatch(/Done when these 3 parts are done\.$/);
+    expect(stepLine(step, 'text', TODAY)).toMatch(
+      /Done when these 3 parts are done: write it; mark it; choose one\.$/,
+    );
+    const long = { ...STEP, doneWhen: `These 3 parts are done: ${'write the page in words; '.repeat(9)}` };
+    expect(stepLine(long, 'text', TODAY)).toMatch(/Done when these 3 parts are done\.$/);
   });
 });

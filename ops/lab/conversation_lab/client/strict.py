@@ -372,8 +372,10 @@ def no_invented_founder_fact(t: ReplyTurn) -> Grade:
         stems -= _merged(_COMMON)
         if stems and reading.overlap(stems, known) < 0.8:
             return fail("template: " + claim.group(0))
+    targets = _targets(t)
     for sentence in reading.sentences(t.text):
-        if sentence.rstrip("\"”')*_ ").endswith("?"):
+        # The step's own words ("List what you have shown ...") claim nothing.
+        if sentence.rstrip("\"”')*_ ").endswith("?") or _is_step_line(sentence, targets):
             continue
         for m in _YOU_HAVE.finditer(sentence):
             if _HYPOTHETICAL.search(sentence[: m.start()]) or _HYPOTHETICAL.search(m.group(0)):
@@ -419,7 +421,7 @@ _INTERNAL = re.compile(
 )
 _CRITERIA_OK = re.compile(
     r"\b(?:judging|grading|scoring|selection|eligibility|inclusion|exclusion|evaluation|entry|pass|acceptance|their|"
-    r"judges'?|competition(?:'s)?) criteri(?:on|a)\b",
+    r"judges'?|competition(?:'s)?|success) criteri(?:on|a)\b",
     re.IGNORECASE,
 )
 

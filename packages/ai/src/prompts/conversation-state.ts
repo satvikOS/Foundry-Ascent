@@ -1621,7 +1621,7 @@ const PREFERENCES: readonly (readonly [string, RegExp])[] = [
   ['no frameworks', /\bno (?:more )?(?:frameworks?|theory|lectures?|jargon)\b/],
   [
     'no questions',
-    /\b(?:stop asking(?: me)?(?: so many| all these)? questions|no more questions|(?:don't|do not) ask me (?:any(?:thing| more| questions)|more questions|questions)|(?:fewer|less) questions|without (?:the |all the )?questions|enough (?:with the )?questions|just tell me,? (?:don't|do not|no) ask)\b/,
+    /\b(?:stop asking(?: me)?(?: so many| all these)? questions|no more questions|(?:don't|do not) ask me (?:any(?:thing| more| questions)|more questions|questions)|(?:fewer|less) questions|without (?:the |all the )?questions|(?:don't|do not|stop) wast(?:e|ing) (?:my|our) time (?:with|on|asking)(?: (?:more|all these|your|those))? questions|enough (?:with the )?questions|just tell me,? (?:don't|do not|no) ask)\b/,
   ],
 ];
 

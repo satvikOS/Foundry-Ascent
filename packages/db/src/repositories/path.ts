@@ -211,10 +211,10 @@ export function memoryPart(ventureId: string): ReadPart<PathMemory[]> {
      FROM memory_objects m
      WHERE m.venture_id = :ventureId AND m.tenant_id = app.current_tenant()
        AND m.status IN ('confirmed', 'proposed') AND m.visibility <> 'founder_private'
-       AND m.type IN ('fact', 'hypothesis', 'decision', 'experiment', 'evidence', 'milestone', 'risk', 'insight')
+       AND m.type IN ('fact', 'hypothesis', 'decision', 'experiment', 'evidence', 'milestone', 'risk', 'insight', 'relationship')
        AND (m.expires_at IS NULL OR m.expires_at > now())
      ORDER BY (m.status = 'confirmed') DESC,
-              array_position(ARRAY['decision', 'evidence', 'experiment', 'milestone', 'fact', 'insight', 'risk', 'hypothesis'], m.type),
+              array_position(ARRAY['decision', 'evidence', 'experiment', 'milestone', 'fact', 'relationship', 'insight', 'risk', 'hypothesis'], m.type),
               m.pinned DESC, m.created_at DESC, m.id
      LIMIT :most`,
     {

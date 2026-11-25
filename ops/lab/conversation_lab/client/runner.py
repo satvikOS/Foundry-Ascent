@@ -21,7 +21,14 @@ from conversation_lab.budget import BudgetExceededError
 from conversation_lab.client import reading
 from conversation_lab.client.app import Seeded, founder_intake, raw_turn, save_intake, save_profile
 from conversation_lab.client.graders import Grade, ReplyTurn, grade_turn, nags, opener_names, same_step
-from conversation_lab.client.judge import Scorecard, capped, card_text, reply_prompt
+from conversation_lab.client.judge import (
+    Scorecard,
+    answered_by,
+    calendar_note,
+    capped,
+    card_text,
+    reply_prompt,
+)
 from conversation_lab.client.rubric import CRITERIA, question, weighted
 from conversation_lab.client.scenarios import FounderTurn, Scenario, SessionPlan
 from conversation_lab.live.runner import RETRY_CODES, RETRY_PAUSE_SECONDS, STOP_CODES, heard
@@ -483,6 +490,8 @@ class ClientRunner:
             tests=tests,
             passing=s.passing,
             first_time=s.first_time,
+            calendar=calendar_note([self._days_back(s, n, turn.session) for n in range(1, turn.session)]),
+            answers=answered_by(turn.plan.expect),
         )
 
 

@@ -16,6 +16,8 @@ in `packages/core/src/path/playbook/`; everything here is the machinery that rea
 | `steps.ts`                       | One step: from its row or its play, cut to the time they have, taken up again, as it is shown                                 |
 | `engine.ts`                      | `decide(input) -> Decision`: pure (no I/O, model or clock); the turn's step, the path's own, what follows                     |
 | `calc.ts`, `calc-read.ts`        | The sums students ask for, from the numbers they gave and their roles; the one number that is missing                         |
+| `reading.ts`                     | What they have and what is missing for a judgement, and the program's answer to it made for them                              |
+| `heard.ts`                       | What a call heard badly, put right from the venture's own words                                                               |
 | `news.ts`, `tell.ts`             | What news means, by rule; the record said as a mentor says it, the one prior fact, the story                                  |
 | `brief.ts`, `turn.ts`            | The founder brief (at most 1,200 characters), the arc, and what the prompt and the record carry                               |
 | `report.ts`, `apply.ts`          | The model's `path_report` held to the founder's words; the writes                                                             |
@@ -35,6 +37,10 @@ A turn's step is the step of what the message is about, never the path's own ste
 2. **A follow-up** with no ask of its own stays on the step of the turn before (its stored guidance, in this conversation).
 3. **"Get me organised", what next, a report, a recall, the start of a conversation**: the path's own step.
 4. **Another idea** (not this venture's): the first step of the first stage, offered beside the path.
+5. **What they just told** that moves the customer, whatever the path's own step is (`engine.ts` `NEWS_PLAYS`): somebody
+   else pays, asks for it, refuses for a reason, has a spending rule, offers a trial or money, meets them as an investor, a
+   page brought sign-ups, someone left, what works goes public. The play that acts on it is offered, the path's step kept
+   beside it; what they said they would do is never displaced, and early proof moves nothing of a later stage.
 
 An offered step is stored when the founder takes it: `PATCH add` (waiting behind the step under way, or the step now when
 there is none), `tick`, `complete`, or "I'll do that" in the conversation (then it is the step now, on the day they said).
@@ -111,13 +117,28 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
   of direction, a choice the record decides, the message they asked for, when a step is done. Said once: what the model says
   of it again (its figures, the stage, a second plan, its dates) goes, and a lead said a moment ago is cut to the next blank
   or part. No stage is told to someone who did not ask where they stand.
-- **The thing itself.** A reply that starts a step (get me organized, where do I begin, orders, what now, a plan) holds its
+- **Read for them** (`reading.ts`). On a judgement (a real business? which money? what will the judges ask? which path?) the
+  program's answer is made from the record: their best proof with its number and who, and the nearest thing nobody has shown
+  that matters for this ask. A verdict on them ("tell me it is great", "is it a real business?", "would they pay?", "stop or
+  go on?") is the lead, word for word and once; the rest is what the model is given to apply, with two to four facts of
+  theirs (`PromptGuidance.facts`). A reply that says none of them gets what they have and lack from the server, always; one
+  that says what they have gets what is missing (`prior.gap`). With nothing on record it says so, and what to find out first.
+- **Whether a fee is right**: what an hour of it brings, and that buyers decide; no verdict before one has answered
+  (`validators/own-facts.ts`).
+- **The reply before, in other words** (`restate`: plain, shorter, deeper, for a doubter, another language, "what do you
+  mean?"): answered from that reply, as short as it is; a rejection ("textbook nonsense") gets what stands on their facts.
+- **The thing itself.** A conversation that opens with their idea holds its page, once and whole (`startLead`); so does one
+  that asks to have it written out. Its lines are the server's alone (`PromptGuidance.template`): the model's, and what only
+  announces them, go. One thing to do ("orders", "one thing", "what would you do?") is no page: the first part, or the ones
+  a weak result came from. A reply that starts a step (get me organized, where do I begin, orders, what now, a plan) holds its
   template, with what they told in it and plain [brackets] for the rest (`startOf`); a table reads as lines.
 - **A choice** (`choice.ts`, `PromptGuidance.choice`): the model is told exactly the options found and that the first sentence
   picks; `missing_pick` notes one that does not. Code picks only when the record plainly decides (6 of 20 against 11 of 60).
 - **What they found** (`PromptGuidance.finding`) goes to the model in their words, to say what it means.
 - **A push** on what a person decides, or on what is never shared, gets the answer once and then a short no and the next part
-  (`pushAsk`); who decides is said once in a reply (`repeatsReferral`), and a play's answer once in a conversation.
+  (`pushAsk`); who decides is said once in a reply (`repeatsReferral`), with what to bring in the same sentence, and a
+  ruling of the model's on it goes (`rulesOnIt`). A play's answer is given once: asked again, the parts of its step, one by
+  one; a question after a statement it answered gets what was not said yet, with the way to do it.
 - **The step line** ends it, once: `**Next:** <title> by <Weekday, Month D>. Done when <done when>.`, on a call "Your next
   step: … by Monday." (a step due today: "today"). Whatever step, deadline, "Next:", done-when or list of the step's parts
   the model writes is left out as a whole block; an answer of fewer than about twelve words left over is the program's own.
@@ -170,6 +191,10 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
   what stops them, a no and its reason, someone who asks for it, a spending limit, someone who left, an offer, sign-ups and
   the ones who forgot. A sign-up, a spoken yes, a friend's money and boxes sold are never called paying strangers. Something
   that happened and no rule reads is still news, with the finding for the model to read.
+- **After a whole answer of the model's own** (its pick in other words, about them, or the line to say) the program's is not
+  put (`saysAnswer`); what a person decides, and what is never shared, stays in the program's words.
+- **On a call** no list of questions is read out, what was heard badly is put right (`heard.ts`), and a short fact of theirs
+  is said.
 - **Counts** (`counts.ts`) are the number that did it ("two of the other four" is two) or nothing: an approximation, a rate, a
   plan, a denial is not counted. A number taken back ("seven, not ten") is the number from then on, and what it had reached
   is open again.
