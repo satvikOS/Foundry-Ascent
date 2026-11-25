@@ -4,6 +4,15 @@ import { loadConfig } from '../src/config.js';
 import { conversationLabAccess, LAB_MODELS, LAB_MODELS_FILE, parseLabModels } from '../src/lib/lab-models.js';
 import { effectiveModels, reasoningAccess } from '../src/lib/models.js';
 
+/** Lab candidates with no inference profile (their Bedrock model cards). */
+const OPEN_WEIGHT = [
+  'openai.gpt-oss-120b-1:0',
+  'openai.gpt-oss-20b-1:0',
+  'qwen.qwen3-next-80b-a3b',
+  'deepseek.v3.2',
+  'mistral.mistral-large-3-675b-instruct',
+];
+
 const raw = (): Record<string, unknown> =>
   JSON.parse(readFileSync(LAB_MODELS_FILE, 'utf8')) as Record<string, unknown>;
 
@@ -65,6 +74,8 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
         modelId: 'anthropic.claude-haiku-4-5-20251001-v1:0',
         regions: ['us-east-1', 'us-east-2', 'us-west-2'],
       },
+      // Candidates with no profile: served in the lab's region, granted there alone.
+      ...OPEN_WEIGHT.map((modelId) => ({ modelId, regions: ['us-east-1'] })),
       // Rerankers: only where the models suite calls them.
       { modelId: 'cohere.rerank-v3-5:0', regions: ['us-east-1'] },
       { modelId: 'amazon.rerank-v1:0', regions: ['us-west-2'] },
@@ -91,7 +102,7 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       ...reasoningAccess(app).inferenceProfiles,
       ...reasoningAccess(app).foundationModels,
     ].join(' ');
-    expect(granted).not.toMatch(/openai|cohere|rerank|multimodal|haiku-5/);
+    expect(granted).not.toMatch(/openai|cohere|rerank|multimodal|haiku-5|qwen|deepseek|mistral/);
     expect(LAB_MODELS.benchmark.reasoning).toEqual([
       'us.openai.gpt-6-luna',
       'global.openai.gpt-6-luna',
@@ -99,6 +110,7 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       'us.anthropic.claude-haiku-4-5-20251001-v1:0',
       'us.anthropic.claude-haiku-5-5',
       'global.anthropic.claude-haiku-5-5',
+      ...OPEN_WEIGHT,
     ]);
     expect(LAB_MODELS.benchmark.embeddings).toContain('us.cohere.embed-v4:0');
     const { benchmark: _benchmark, ...without } = raw();
@@ -153,6 +165,7 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
         'us.anthropic.claude-haiku-5-5',
         'global.anthropic.claude-haiku-5-5',
         'us.openai.gpt-6-luna',
+        ...OPEN_WEIGHT,
       ],
     });
     expect(LAB_MODELS.usdPerMillionTokens['anthropic.claude-haiku-5-5']).toEqual({
@@ -160,7 +173,7 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       output: 0.55,
     });
     const models = Object.values(effectiveModels(loadConfig().models));
-    expect(JSON.stringify(models)).not.toMatch(/haiku-5|openai/);
+    expect(JSON.stringify(models)).not.toMatch(/haiku-5|openai|qwen|deepseek|mistral/);
     const { client: _client, ...without } = raw();
     expect(parseLabModels(without).client).toEqual({ judge: [], coach: [] });
     const { client } = LAB_MODELS;
@@ -170,12 +183,11 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
     expect(() =>
       parseLabModels({
         ...raw(),
-        client: { ...client, coach: [...client.coach, 'us.amazon.nova-pro-v1:0'] },
+        client: { ...client, coach: [...client.coach, 'us.amazon.nova-pro-v1:0', 'us.amazon.nova-pro-v1:0'] },
       }),
-    ).toThrow(/1 to 4 model ids/);
-    expect(() => parseLabModels({ ...raw(), client: { ...client, coach: ['openai.gpt-6-luna'] } })).toThrow(
-      /Mantle/,
-    );
+    ).toThrow(/1 to 10 model ids/);
+    for (const id of ['openai.gpt-6-luna', 'openai.gpt-oss-120b'])
+      expect(() => parseLabModels({ ...raw(), client: { ...client, coach: [id] } })).toThrow(/Mantle/);
     expect(() => parseLabModels({ ...raw(), client: [] })).toThrow(/must be an object/);
   });
 

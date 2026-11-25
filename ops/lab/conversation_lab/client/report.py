@@ -289,7 +289,8 @@ def render(summary: Mapping[str, Any]) -> str:
     )
     if summary.get("coach"):
         out.append(
-            f"Coach: {summary['coach']} (coach_model {summary.get('coach_choice', 'default')}). Judge: "
+            f"Coach: {summary['coach']} (coach_model {summary.get('coach_choice', 'default')}, coach_think "
+            f"{summary.get('coach_think', 'default')}). Judge: "
             f"{summary.get('judge') or 'none'} ({summary.get('judge_prompt', '-')}, "
             f"{'of another family than the coach' if summary.get('judge_independent') else 'no independent judge'}). "
             f"Groups: {_groups(summary.get('groups'))}."

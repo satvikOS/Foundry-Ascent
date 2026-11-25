@@ -47,7 +47,8 @@ import { questionFramesOf, withVariedQuestions } from '../prompts/phrasing.js';
 import { nameBudgetSpent, withoutStockOpener, withoutVocativeName } from './openers.js';
 import { guidanceText, type PromptGuidance } from '../prompts/guidance.js';
 import { termsIn, withMeanings } from './glossary.js';
-import { ownFactsUnit } from './own-facts.js';
+import { leansAfter, methodUnit } from './method.js';
+import { besideTheSum, ownFactsUnit } from './own-facts.js';
 import { supportUnit, supportWith, withoutSpan, type SupportIndex } from './citation-support.js';
 import {
   SPOKEN_REPLY_WORDS,
@@ -62,6 +63,7 @@ import {
   onlyVerdict,
   repeatsLead,
   repeatsReferral,
+  restates,
   withoutLabel,
   spokenReserve,
   withoutDeadline,
@@ -69,7 +71,7 @@ import {
 import { stemsOf } from './stems.js';
 import { clampWords, toSpeakable } from './speech.js';
 import { SumFacts, mayHoldSum, sumsUnit } from './sums.js';
-import { findUnitEnd } from './units.js';
+import { findUnitEnd, leansBack } from './units.js';
 
 export { findUnitEnd } from './units.js';
 
@@ -126,6 +128,8 @@ export { findUnitEnd } from './units.js';
  *    most, after the step), another step than the path's is left out, the step's day is the path's, the step and the
  *    path's answer are never repeats, and the end of the stream adds what is missing. A statement never waits for any
  *    of it. On a call the step's words are kept free of the spoken budget until it was said.
+ *    A sentence of the model's that contradicts the method the programme teaches, or reads more into a fact than it shows
+ *    (validators/method.ts), is put right or left out, unit by unit.
  * 7. sums (validators/sums.ts): a sum the model wrote as a marker (`[[…]]`, never cut across units) is worked out and said
  *    with its working, a sum it worked out itself is checked and put right; what cannot be told goes with its clause.
  * 8. what may be stated (`support`; validators/citation-support.ts): a citation whose source does not support its
@@ -297,11 +301,6 @@ export interface GateResult {
   readonly cut: GateCutReason | null;
 }
 
-/** A sentence that says nothing without the one before it. */
-const LEANS =
-  /^(?:and |so )?(?:that|this|it|those|these)(?:['’](?:s|re|ll|d)| (?:is|are|was|were|means|will|would|gives|keeps|tells))\b/iu;
-const LEANS_MAX_WORDS = 16;
-
 /** A unit the gate left out, and why (kept only with `keepDropped`, for the conversation lab's stream trace). */
 export interface DroppedUnit {
   readonly reason:
@@ -331,6 +330,8 @@ export interface GateTrace {
   readonly questionsRephrased: number;
   /** Units left out or rewritten because they put the answer off, flattered, asked again or named another step. */
   readonly contractEdits: number;
+  /** Units put right or left out because they contradict the method or over-read a fact (validators/method.ts). */
+  readonly methodEdits: number;
   /** The end of the reply added what the contract was missing (the answer, who decides, the step). */
   readonly contractAppended: boolean;
   /** Units left out, or a claim or citation taken out of one, because nothing given this turn supports it. */
@@ -521,6 +522,7 @@ export class SentenceGate {
   /** What the server says first ('' on a turn that opens with the model's answer), and whether it was said. */
   readonly #lead: string;
   readonly #leadStems: ReadonlySet<string>;
+  readonly #founderStems: ReadonlySet<string>;
   #leadShown = false;
   /** Units of the model's own released, and the words of answer in them. */
   #modelUnits = 0;
@@ -537,6 +539,7 @@ export class SentenceGate {
   #contractDone = false;
   #contractEdits = 0;
   #contractAppended = false;
+  #methodEdits = 0;
   #supportEdits = 0;
   #rewritten = false;
   /** Everything released (typed), read by the contract at the end. */
@@ -575,6 +578,7 @@ export class SentenceGate {
     this.#leadStems = stemsOf(
       this.#contract === null ? '' : leadText(this.#contract, options.spoken === true ? 'voice' : 'text'),
     );
+    this.#founderStems = stemsOf(this.#lead === '' ? '' : (options.founderText ?? ''));
     this.#terms =
       this.#contract?.firstTime === true
         ? termsIn(
@@ -674,6 +678,7 @@ export class SentenceGate {
       questionsRephrased: this.#questionsRephrased,
       contractEdits: this.#contractEdits,
       contractAppended: this.#contractAppended,
+      methodEdits: this.#methodEdits,
       supportEdits: this.#supportEdits,
       rewritten: this.#rewritten,
       dropped: [...this.#dropped],
@@ -1160,8 +1165,7 @@ export class SentenceGate {
     // "That's the only way to know." of a sentence that went leans on nothing.
     if (
       this.#leanedOn &&
-      LEANS.test(unit.trim()) &&
-      words(unit) <= LEANS_MAX_WORDS &&
+      leansBack(unit) &&
       !isProtectedLine(unit, this.#keepReferrals) &&
       !(this.#contract !== null && isServerText(unit, this.#contract, channel))
     ) {
@@ -1177,13 +1181,35 @@ export class SentenceGate {
       !(this.#contract !== null && isServerText(rawUnit, this.#contract, channel))
     ) {
       this.#leaveOut('contract', rawUnit);
+      // "That will tell you …" of a plan that went.
+      this.#leanedOn = this.#contract !== null;
       return 'out';
     }
     if (this.#contract !== null && !isProtectedLine(unit, this.#keepReferrals)) {
       const guidance = this.#contract;
-      if (this.#leadShown && (repeatsLead(unit, this.#leadStems) || onlyVerdict(unit))) {
+      if (
+        this.#leadShown &&
+        (repeatsLead(unit, this.#leadStems) || this.#onlyRestates(unit) || onlyVerdict(unit))
+      ) {
         this.#leaveOut('contract', rawUnit);
         return 'out';
+      }
+      if (!isServerText(unit, guidance, channel)) {
+        const read = methodUnit(unit, {
+          before: this.#releasedText,
+          ...(this.#options.founderText === undefined ? {} : { founderText: this.#options.founderText }),
+        });
+        if (read.findings.length > 0) {
+          this.#methodEdits += 1;
+          if (read.text.trim() === '') {
+            this.#leaveOut('contract', rawUnit);
+            this.#leanedOn = read.findings.some((f) => leansAfter(f));
+            return 'out';
+          }
+          this.#contractEdits += 1;
+          this.#rewritten = true;
+          unit = read.text;
+        }
       }
       // Who decides, said a second time in one reply.
       if (repeatsReferral(unit, this.#releasedText, guidance)) {
@@ -1210,6 +1236,15 @@ export class SentenceGate {
         this.#rewritten = true;
       }
       if (verdict.action === 'hold' && (guidance.askBack ?? '') !== '') {
+        this.#leaveOut('contract', rawUnit);
+        return 'out';
+      }
+      // A question is held to their facts where it is read: it is said after the rest of the checks.
+      if (
+        verdict.action === 'hold' &&
+        ownFactsUnit(unit, guidance, { known: this.#figures ?? '' }).text === ''
+      ) {
+        this.#supportEdits += 1;
         this.#leaveOut('contract', rawUnit);
         return 'out';
       }
@@ -1295,6 +1330,17 @@ export class SentenceGate {
     return text;
   }
 
+  /** A sum of the model's own, in words, beside the one the server opened with: gone before it is read as one. */
+  #secondSum(rawUnit: string): boolean {
+    return (
+      this.#contract !== null &&
+      !rawUnit.includes('[[') &&
+      !isProtectedLine(rawUnit, this.#keepReferrals) &&
+      !isServerText(rawUnit, this.#contract, this.#options.spoken === true ? 'voice' : 'text') &&
+      besideTheSum(rawUnit, this.#contract, this.#figures ?? '')
+    );
+  }
+
   #workOut(rawUnit: string): string {
     const o = this.#options;
     this.#sums ??= new SumFacts(
@@ -1307,6 +1353,14 @@ export class SentenceGate {
       [...(o.pastReplies ?? []), ...(o.earlierReplies ?? []), o.previousReply],
     );
     const facts = this.#sums;
+    if (this.#secondSum(rawUnit)) {
+      this.#supportEdits += 1;
+      this.#rewritten = true;
+      if (/^[ \t]*\n\s*\n/.test(rawUnit)) this.#paragraphLeft = true;
+      this.#leanedOn = true;
+      this.#keepDropped('support', rawUnit);
+      return '';
+    }
     const out = sumsUnit(rawUnit, facts, {
       spoken: o.spoken === true,
       protect:
@@ -1332,6 +1386,11 @@ export class SentenceGate {
       return '';
     }
     return out.text;
+  }
+
+  /** Whether a unit only says their own message again, under what the server opened with. */
+  #onlyRestates(unit: string): boolean {
+    return restates(unit, this.#leadStems, this.#founderStems);
   }
 
   /** Whether the next unit is the model's own step talk (read on a copy of the block so far). */
@@ -1487,6 +1546,8 @@ export class SentenceGate {
         return `${whole.startsWith(' ') ? ' ' : ''}[${[...new Set(kept)].join(', ')}]`;
       });
     }
+    // "Will they pay? [E2]." without its key leaves a full stop alone.
+    if (text !== md.text && /^[\s.…]*$/u.test(text)) return null;
     const answers = this.#opening ? this.#question : null;
     // A unit that is only a preface answers nothing yet ("Ha, fair question! " then "No, I'm…"): the next one is read
     // as the answer too.

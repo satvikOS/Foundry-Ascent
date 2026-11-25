@@ -28,6 +28,7 @@ export {
   type RawModelAttempt,
   type StreamStopReason,
   type StreamTextRequest,
+  type ThinkEffort,
   type StreamTextResult,
   type TextChunkHandler,
 } from './gateway/types.js';
@@ -73,6 +74,7 @@ export {
 export { COACH_ANNOTATIONS_SCHEMA_NAME, CoachAnnotations } from './gateway/coach-annotations.js';
 export { PathAnnotations, annotationsOfPath } from './prompts/annotations.js';
 export { termsIn, withMeanings } from './validators/glossary.js';
+export { methodText, methodUnit, type MethodFinding, type MethodUnit } from './validators/method.js';
 export { ownFactsUnit, type OwnFacts } from './validators/own-facts.js';
 export {
   LunaProvider,
@@ -83,10 +85,14 @@ export {
 export {
   CONVERSE_REASONING_EFFORTS,
   NovaProvider,
+  OSS_REASONING_MAX_TOKENS,
   SUBMIT_TOOL_NAME,
+  THINK_LOW_MAX_TOKENS,
   inferenceProfilePrefix,
   isClaudeModelId,
+  isGptOssModelId,
   isOpenAiModelId,
+  thinksOnRequest,
   usesCachePoints,
   type ConverseReasoningEffort,
   type NovaProviderOptions,

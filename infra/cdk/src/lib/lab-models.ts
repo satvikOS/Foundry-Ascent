@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { REPO_ROOT } from '../paths.js';
 import {
   foundationModelId,
+  isInferenceProfile,
   isMantleModel,
   reasoningAccess,
   reasoningModelIds,
@@ -98,7 +99,7 @@ function parseBenchmark(raw: unknown): LabModels['benchmark'] {
   const b = raw as Record<string, unknown>;
   const id = (_item: Record<string, unknown>, modelId: string): string => modelId;
   return {
-    reasoning: candidates(b.reasoning, '$.benchmark.reasoning', 6, id),
+    reasoning: candidates(b.reasoning, '$.benchmark.reasoning', 12, id),
     embeddings: candidates(b.embeddings, '$.benchmark.embeddings', 6, id),
     rerankers: candidates(b.rerankers, '$.benchmark.rerankers', 4, (item, modelId, at) => {
       const { region } = item;
@@ -132,7 +133,7 @@ export function parseLabModels(raw: unknown): LabModels {
     const c = root.client as Record<string, unknown>;
     client = {
       judge: modelList(c.judge, '$.client.judge'),
-      coach: modelList(c.coach, '$.client.coach', 4),
+      coach: modelList(c.coach, '$.client.coach', 10),
     };
   }
   const prices = root.usdPerMillionTokens;
@@ -177,22 +178,23 @@ export const LAB_MODELS: LabModels = parseLabModels(
  * with the production model configuration) and the lab's simulator and judge models, the live evaluation's included,
  * the alternative coach models a lab run may run the app's coach on (`live.coach`, `client.coach`: an A/B, the lab
  * only), the client suite's judges and the models suite's candidates (`benchmark`). Each foundation model is granted where its profiles route (lib/models.ts
- * `runtimeAccess`), the widest of its ways in; a reranker only in the region it is called in.
+ * `runtimeAccess`), the widest of its ways in; a reranker, and a coach or reasoning candidate with no profile (served in
+ * region: gpt-oss, Qwen, DeepSeek, Mistral), only in the region it is called in.
  */
 export function conversationLabAccess(
   app: EffectiveModels,
   lab: LabModels,
   region = 'us-east-1',
 ): BedrockRuntimeAccess {
+  const candidates = [...lab.live.coach, ...lab.client.coach, ...lab.benchmark.reasoning];
+  const inRegion = [...new Set(candidates.filter((id) => !isInferenceProfile(id)))];
   const own = [
     ...lab.simulator,
     ...lab.judge,
     ...lab.live.simulator,
     ...lab.live.judge,
-    ...lab.live.coach,
     ...lab.client.judge,
-    ...lab.client.coach,
-    ...lab.benchmark.reasoning,
+    ...candidates.filter(isInferenceProfile),
     ...lab.benchmark.embeddings,
   ];
   const appAccess = reasoningAccess(app, region);
@@ -204,6 +206,9 @@ export function conversationLabAccess(
     ...all,
     regionalFoundationModels: [
       ...all.regionalFoundationModels,
+      ...inRegion
+        .filter((id) => !all.foundationModels.includes(id))
+        .map((modelId) => ({ modelId, regions: [region] })),
       ...lab.benchmark.rerankers.map(({ id, region: where }) => ({ modelId: id, regions: [where] })),
     ],
     // A bare reasoning id's `us.` retry profile (reasoningAccess) comes with it.

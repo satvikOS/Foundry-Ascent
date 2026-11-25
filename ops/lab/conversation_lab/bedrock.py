@@ -36,13 +36,16 @@ def error_code(exc: BaseException) -> str:
 _THINKING_CLAUDE = re.compile(r"anthropic\.claude-(?:haiku-5|sonnet-5|opus-(?:4-[78]|5)|fable|mythos)")
 #: Of those, the ones that take ``thinking: disabled`` (Claude Haiku 5.5, at its default effort; the others refuse it).
 _THINKING_CAN_STOP = re.compile(r"anthropic\.claude-haiku-5")
+#: OpenAI's open-weight models: they always reason, asked with the flat field, and take a temperature.
+_GPT_OSS = re.compile(r"openai\.gpt-oss-")
 #: The fewest tokens a probe of a model that may think before its first word is given.
 PROBE_TOKENS, PROBE_TOKENS_THINKING = 4, 64
 
 
 def request_fields(model_id: str, max_tokens: int, temperature: float) -> dict[str, Any]:
     """What a model family's Converse request carries besides its prompt (as the app's adapter does, packages/ai
-    nova.ts): the newest Claude models no temperature and no thinking, an OpenAI model no reasoning."""
+    nova.ts): the newest Claude models no temperature and no thinking, an OpenAI model no reasoning (its open-weight
+    models the least they take)."""
     base = foundation_model_id(model_id)
     if _THINKING_CLAUDE.match(base):
         fields: dict[str, Any] = {"inferenceConfig": {"maxTokens": max_tokens}}
@@ -50,6 +53,11 @@ def request_fields(model_id: str, max_tokens: int, temperature: float) -> dict[s
             fields["additionalModelRequestFields"] = {"thinking": {"type": "disabled"}}
         return fields
     config = {"maxTokens": max_tokens, "temperature": temperature}
+    if _GPT_OSS.match(base):
+        return {
+            "inferenceConfig": config,
+            "additionalModelRequestFields": {"reasoning_effort": "low"},
+        }
     if base.startswith("openai."):
         return {
             "inferenceConfig": config,

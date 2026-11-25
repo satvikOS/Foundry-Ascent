@@ -43,6 +43,8 @@ import {
   CoachAnnotations,
   EMBEDDING_BATCH,
   MockModelGateway,
+  OSS_REASONING_MAX_TOKENS,
+  THINK_LOW_MAX_TOKENS,
   awsErrorName,
   costFor,
   createBedrockRuntimeTransport,
@@ -50,11 +52,13 @@ import {
   embeddingBody,
   embeddingFamily,
   hashEmbedding,
+  isGptOssModelId,
   isModelGatewayError,
   parseEmbeddings,
   parseRerank,
   priceFor,
   rerankBody,
+  thinksOnRequest,
   type ConverseReasoningEffort,
   type InvokeModelFn,
   type ModelAttempt,
@@ -254,9 +258,17 @@ const tokenBound = (chars: number): number => Math.ceil(chars / 3) + 16;
 
 /**
  * The most a reasoning call can be billed: its input at the model's dearest input rate (a prompt-cache write), read
- * again with a first answer for a repair, with the gateway's fallback (the same model) doing the same.
+ * again with a first answer for a repair, with the gateway's fallback (the same model) doing the same. `reasons`: what it
+ * may reason beside the answer's bound (Nova 2 asked to, and gpt-oss always).
  */
-export function reasoningWorstUsd(modelId: string, chars: number, maxTokens: number): number {
+export function reasoningWorstUsd(
+  modelId: string,
+  chars: number,
+  answerTokens: number,
+  reasons = false,
+): number {
+  const maxTokens =
+    answerTokens + (reasons ? THINK_LOW_MAX_TOKENS : isGptOssModelId(modelId) ? OSS_REASONING_MAX_TOKENS : 0);
   const input = tokenBound(chars);
   const once = costFor(modelId, {
     inputTokens: input,
@@ -378,6 +390,8 @@ async function benchReasoning(
   options: { readonly system: string; readonly requests: number; readonly structured: number },
 ): Promise<{ result: ReasoningResult; replies: Reply[] }> {
   const { id, effort } = candidate;
+  // Nova 2 reasons when a request asks it to, not by a gateway's setting: `low` is what a turn asks for (CORE_THINK).
+  const thinks = effort === 'low' && thinksOnRequest(id);
   const gateway = clients.gateway(id, effort);
   const { system } = options;
   const promptCache = { systemChars: system.length, historyMessages: 0 };
@@ -398,7 +412,7 @@ async function benchReasoning(
     try {
       const result = await budget.run(
         'reasoning',
-        reasoningWorstUsd(id, chars(index), STREAM_MAX_TOKENS),
+        reasoningWorstUsd(id, chars(index), STREAM_MAX_TOKENS, thinks),
         () =>
           gateway.streamText(
             {
@@ -406,6 +420,7 @@ async function benchReasoning(
               system,
               messages: benchmarkMessages(index),
               maxOutputTokens: STREAM_MAX_TOKENS,
+              ...(thinks ? { think: 'low' as const } : {}),
               timeoutMs: CALL_TIMEOUT_MS,
               promptCache,
               requestId: randomUUID(),

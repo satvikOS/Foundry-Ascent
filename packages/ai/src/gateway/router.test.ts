@@ -571,7 +571,8 @@ describe('model router — adapter chosen by model id', () => {
 
   it.each([
     ['openai.gpt-6-luna', 'mantle'],
-    ['openai.gpt-oss-120b-1:0', 'mantle'],
+    ['openai.gpt-oss-120b', 'mantle'],
+    ['openai.gpt-oss-120b-1:0', 'converse'],
     ['us.amazon.nova-2-lite-v1:0', 'converse'],
     ['global.amazon.nova-2-lite-v1:0', 'converse'],
     ['amazon.nova-2-lite-v1:0', 'converse'],

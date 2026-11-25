@@ -168,6 +168,10 @@ def test_api_env_is_the_production_model_config_with_speech_only_when_asked() ->
     # The lab runs the app with the model-based safety screen on (production keeps it off until evaluated).
     assert env["CORE_SAFETY_SCREEN"] == "on"
     assert api_env({}, models=models, database_url="d", speech=False)["LOCAL_AWS_SPEECH"] == "false"
+    # Reasoning is the deployment's own choice unless the run asks for one.
+    assert "CORE_THINK" not in env
+    asked = api_env({}, models=models, database_url="d", speech=False, coach_think="judgement")
+    assert asked["CORE_THINK"] == "judgement"
     assert api_env({}, models=models, database_url="d", speech=False, mock=True)["CORE_SAFETY_SCREEN"] == "on"
 
 

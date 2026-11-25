@@ -79,6 +79,13 @@ const HAIKU_4_5_CACHE = { read: 0.1, write: 1.25 } as const;
  * | Cache write | 0.125              | 0.1375                                   |
  * | Cache read  | 0.01               | 0.011                                    |
  *
+ * Lab candidates served in region, so without a regional premium (the AWS Price List API, offer `AmazonBedrock`,
+ * us-east-1, published 2026-11-23, standard tier; https://aws.amazon.com/bedrock/pricing/ lists the same, checked
+ * 2026-11-25, but for Qwen3 Next 80B A3B's input: $0.15 there, $0.14 in the list, the higher taken), USD per million
+ * tokens in and out: gpt-oss-120b $0.15 / $0.60, gpt-oss-20b $0.07 / $0.30, Qwen3 Next 80B A3B $0.15 / $1.20, DeepSeek
+ * V3.2 $0.62 / $1.85, Mistral Large 3 $0.50 / $1.50. Reasoning is billed as output on every model that reasons (Nova 2's
+ * extended thinking included), and counts in the output tokens Bedrock reports.
+ *
  * Embedding candidates of the models benchmark (docs/runbooks/conversation-lab.md): Titan V2 $0.02, Cohere Embed 4
  * $0.12 and Nova Multimodal Embeddings $0.135 (text) per million input tokens.
  *
@@ -102,6 +109,11 @@ export const DEFAULT_MODEL_PRICES: PricingTable = {
     cacheWritePerMillionUsd: 0,
     regionalPremium: 0.1,
   },
+  'openai.gpt-oss-120b-1:0': { inputPerMillionUsd: 0.15, outputPerMillionUsd: 0.6 },
+  'openai.gpt-oss-20b-1:0': { inputPerMillionUsd: 0.07, outputPerMillionUsd: 0.3 },
+  'qwen.qwen3-next-80b-a3b': { inputPerMillionUsd: 0.15, outputPerMillionUsd: 1.2 },
+  'deepseek.v3.2': { inputPerMillionUsd: 0.62, outputPerMillionUsd: 1.85 },
+  'mistral.mistral-large-3-675b-instruct': { inputPerMillionUsd: 0.5, outputPerMillionUsd: 1.5 },
   'amazon.titan-embed-text-v2:0': { inputPerMillionUsd: 0.02, outputPerMillionUsd: 0 },
   'cohere.embed-v4:0': { inputPerMillionUsd: 0.12, outputPerMillionUsd: 0 },
   'amazon.nova-2-multimodal-embeddings-v1:0': { inputPerMillionUsd: 0.135, outputPerMillionUsd: 0 },

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { THINK_MODES, type ThinkMode } from './orchestrator/think.js';
+
 /**
  * Core configuration. The API builds it once per container (`loadConfig(process.env)`) and passes it to
  * `createCore`; nothing else in packages/core reads the environment. Values have production defaults;
@@ -96,6 +98,11 @@ export const CoreConfig = z.object({
      * off by default), within 600 ms (`RERANK_TIMEOUT_MS`); never a call's.
      */
     rerank: z.boolean(),
+    /**
+     * Which typed turns let the model reason before it answers (orchestrator/think.ts; `CORE_THINK=off|judgement|typed`,
+     * off by default): a model that cannot (any but Amazon Nova 2) answers as always.
+     */
+    think: z.enum(THINK_MODES),
   }),
   retrieval: z.object({
     memory: z.number().int().min(0).max(50),
@@ -191,6 +198,7 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
     semanticPlays: true,
     semanticNotes: true,
     rerank: false,
+    think: 'off',
   },
   // The persona's library gives two items, not four (live pilot 42099643194: its method notes were injected on almost
   // every turn, whatever the topic, and replies on grants, leases and tutoring cited the interview guide). The path's
@@ -240,6 +248,16 @@ function switchFrom(env: EnvLike, name: string, fallback: boolean): boolean {
   throw new Error(`environment variable ${name} must be on or off`);
 }
 
+/** `CORE_THINK` (unset or empty: off); any other value is a configuration error. */
+function thinkFrom(env: EnvLike): ThinkMode {
+  const raw = env.CORE_THINK?.trim().toLowerCase();
+  if (raw === undefined || raw === '') return DEFAULT_CORE_CONFIG.turns.think;
+  const mode = THINK_MODES.find((m) => m === raw);
+  if (mode === undefined)
+    throw new Error(`environment variable CORE_THINK must be ${THINK_MODES.join(', ')}`);
+  return mode;
+}
+
 function intFrom(env: EnvLike, name: string, fallback: number): number {
   const raw = env[name]?.trim();
   if (raw === undefined || raw === '') return fallback;
@@ -252,7 +270,8 @@ function intFrom(env: EnvLike, name: string, fallback: number): number {
  * The single place where packages/core reads environment variables (runtime contract): APP_ENV,
  * APP_VERSION, HOME_TENANT_SLUG, SITE_ORIGIN, plus optional tuning knobs
  * (CORE_TURN_RATE_LIMIT, CORE_REVIEW_SAMPLE_RATE_PCT, CORE_SESSION_CACHE_SECONDS, CORE_SAFETY_SCREEN=on|off,
- * CORE_FOUNDER_PATH=on|off, CORE_SEMANTIC_PLAYS=on|off, CORE_SEMANTIC_NOTES=on|off, CORE_RERANK=on|off, and
+ * CORE_FOUNDER_PATH=on|off, CORE_SEMANTIC_PLAYS=on|off, CORE_SEMANTIC_NOTES=on|off, CORE_RERANK=on|off,
+ * CORE_THINK=off|judgement|typed, and
  * for local demos CORE_DISTILL_DELAY_SECONDS / CORE_DISTILL_ACTIVE_SECONDS).
  */
 export function loadConfig(env: EnvLike): CoreConfig {
@@ -280,6 +299,7 @@ export function loadConfig(env: EnvLike): CoreConfig {
       semanticPlays: switchFrom(env, 'CORE_SEMANTIC_PLAYS', DEFAULT_CORE_CONFIG.turns.semanticPlays),
       semanticNotes: switchFrom(env, 'CORE_SEMANTIC_NOTES', DEFAULT_CORE_CONFIG.turns.semanticNotes),
       rerank: switchFrom(env, 'CORE_RERANK', DEFAULT_CORE_CONFIG.turns.rerank),
+      think: thinkFrom(env),
     },
     distillation: {
       turnDelaySeconds: intFrom(

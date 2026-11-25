@@ -398,7 +398,7 @@ Which models the account may call, and how fast, how good and how expensive each
 (`infra/cdk/src/lib/lab-models.ts`: deploy main once after changing the list), and the app's roles none of them.
 
 ```bash
-# numbers only (expected about USD 0.20 to 0.30 in all; refused above USD 2)
+# numbers only (expected about USD 0.40 in all; refused above USD 2)
 gh workflow run ops-conversation-lab.yml -f suite=models -f budget_usd=0.5
 # with the models' replies, each question's rankings and AWS's refusal messages, sealed to your key
 gh workflow run ops-conversation-lab.yml -f suite=models -f budget_usd=0.5 -f public_key="$(cat "$dir/public.b64")"
@@ -412,7 +412,9 @@ gh workflow run ops-conversation-lab.yml -f suite=models -f budget_usd=0.5 -f pu
    status, message; account ids, key ids and tokens masked, never in the summary). "is not authorized to perform:
    bedrock:InvokeModel" is a missing permission of the role; a message about `aws-marketplace:` actions or a
    subscription is Marketplace; "you don't have access to the model" or a use-case form is the account's. Mantle's bare
-   `openai.gpt-6-luna` is no candidate (the lab role has no `bedrock-mantle` permission).
+   `openai.gpt-6-luna` is no candidate (the lab role has no `bedrock-mantle` permission). Nova 2 Lite has two rows, `none`
+   and `low` (its extended thinking on the streamed replies, as `CORE_THINK` asks for it); gpt-oss 120B and 20B run at
+   `low`, the least they take.
 2. **Retrieval, the models**: for each embedding model that answered, at each of its listed sizes, query latency (40
    questions one after the other, p50 and p95), price per million tokens, and quality over the committed benchmark.
    "vector" is cosine similarity alone, "hybrid" that fused with the word search in equal parts; "word search alone" is
@@ -958,13 +960,31 @@ simulator's calls are refused before they could go over (a reply that could not 
 reply scored"). A scenario's last conversation is not ended: its recap would be read by nobody and costs about two turns.
 
 **Another coach (A/B).** `-f coach_model=us.anthropic.claude-haiku-5-5` (or `global.anthropic.claude-haiku-5-5`,
-`us.openai.gpt-6-luna`; `client.coach` in models.json) puts this run's API process on that model alone, as primary and
+`us.openai.gpt-6-luna`, `openai.gpt-oss-120b-1:0`, `openai.gpt-oss-20b-1:0`, `qwen.qwen3-next-80b-a3b`, `deepseek.v3.2`,
+`mistral.mistral-large-3-675b-instruct`; `client.coach` in models.json) puts this run's API process on that model alone, as primary and
 fallback; production is never changed and the app's roles may invoke none of them. Claude Haiku 5.5 thinks by default: the
 app's adapter sends `thinking: disabled`, no temperature and no forced tool. The coach is probed first; when the account
 is refused it, the run stops and what AWS said is in the sealed `model-refusals.json` (account ids masked). The summary
 names the coach and the judge. The judge is never of the coach's family, so a Claude coach is judged by Nova Pro: compare
 two arms by the deterministic graders, or name one judge for both (`-f judge_model=us.meta.llama4-maverick-17b-instruct-v1:0`)
 and read its calibration first.
+
+The open-weight models run under their bare runtime ids (no inference profile; the lab role may invoke them in us-east-1
+alone). gpt-oss always reasons: the adapter asks for `low` with the flat `reasoning_effort` and gives it 1,000 output tokens
+more. A model that takes tools and refuses a forced one is asked for it in words (`dropped:tool_choice`); one that takes no
+tools at all (Qwen3 Next's model card lists none on this endpoint) answers the reply and fails the fields, which the run
+reports by code: its recaps and reports are then empty, so read its replies, not its memory scores. DeepSeek and Mistral
+Large are estimated above the whole set's limit: choose groups.
+
+**Reasoning first.** `-f coach_think=judgement` (or `typed`, `off`; `default` leaves the deployment's own) sets `CORE_THINK`
+of this run's API process: Nova 2 reasons before the typed replies that judge something, or before every typed one (other
+coaches ignore it). The summary names it. The estimate counts 700 output tokens for each such turn (half of the typed turns
+for `judgement`), so the whole set does not fit: run it on the groups it is for, the same groups with `off` as the other arm:
+
+```bash
+gh workflow run ops-conversation-lab.yml -f suite=client -f groups=news,followups,hard -f coach_think=judgement -f budget_usd=2
+gh workflow run ops-conversation-lab.yml -f suite=client -f groups=news,followups,hard -f coach_think=off -f budget_usd=2
+```
 
 **Outputs.** Public (`client-summary.json`, `.md`): numbers, ids and codes. Sealed (`client/`): every transcript with its
 guidance, evidence and reasons (`CP-01.json`, ...), `calibration.json`, `failures.json`, `tool-test-log.csv` and, with a pack,

@@ -144,6 +144,16 @@ export function isListUnit(unit: string): boolean {
   return /^\s*(?:[-*+•]|\d{1,3}[.)])\s/.test(unit);
 }
 
+/** A sentence that says nothing without the one before it ("That will show us …"). */
+const LEANS =
+  /^(?:and |so )?(?:that|this|it|those|these)(?:['’](?:s|re|ll|d)| (?:is|are|was|were|means|will|would|gives|keeps|tells))\b/iu;
+const LEANS_MAX_WORDS = 16;
+
+/** Whether a unit only leans on the one before it, which went. */
+export function leansBack(unit: string): boolean {
+  return LEANS.test(unit.trim()) && unit.split(/\s+/).filter((w) => w !== '').length <= LEANS_MAX_WORDS;
+}
+
 /** The words of a text. */
 export function wordsIn(text: string): number {
   return text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;

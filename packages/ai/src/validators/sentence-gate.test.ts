@@ -427,6 +427,7 @@ describe('SentenceGate', () => {
         questionsRephrased: 0,
         contractEdits: 0,
         contractAppended: false,
+        methodEdits: 0,
         supportEdits: 0,
         rewritten: false,
         dropped: [],

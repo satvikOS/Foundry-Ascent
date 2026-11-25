@@ -44,10 +44,19 @@ describe('what news means', () => {
     expect(passLine(['we talked to 8 of 20'])).toBeNull();
   });
 
+  it('a few payments: worth more than sign-ups, what they do not show, and no market yet', () => {
+    expect(of('Two of the other four paid me 20 dollars each.')?.means).toBe(
+      'Two of four paid, and that is worth more than any number of sign-ups: somebody wanted it enough to pay. It does not show a market yet: two is few, and people who know you pay for other reasons. Ask both what made them do it, and make the next ten people the same offer at the same price.',
+    );
+    expect(of('Six paid me today.')?.means).not.toContain('It does not show a market yet');
+  });
+
   it('a sign-up is not money, and is never said to have paid', () => {
     for (const message of ['Only 2 of 30 shops signed up', 'Thirty people joined the waitlist.']) {
       expect(of(message)?.kind, message).toBe('interest');
-      expect(of(message)?.means, message).toContain('raised a hand, and none of that is money yet');
+      expect(of(message)?.means, message).toContain(
+        'raised a hand, and none of that is money yet: it is free, so it can be curiosity as well as need.',
+      );
     }
     expect(of('Only 2 of 30 shops signed up')?.means).toMatch(/^2 of 30 \(6\.7%\) raised/);
   });

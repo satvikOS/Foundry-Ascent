@@ -193,6 +193,11 @@ def lab_models(path: Path = MODELS_FILE) -> LabModels:
     )
 
 
+#: The client suite's ``coach_think``: ``default`` (the deployment's own, off unless it says otherwise) or the API
+#: process's CORE_THINK (packages/core orchestrator/think.ts): which typed turns let Nova 2 reason before it answers.
+DEFAULT_THINK = "default"
+THINK_CHOICES: tuple[str, ...] = (DEFAULT_THINK, "off", "judgement", "typed")
+
 #: The ``coach_model`` input that keeps the production model configuration.
 DEFAULT_COACH = "default"
 

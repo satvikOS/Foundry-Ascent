@@ -26,6 +26,7 @@ import {
   type QuestionTerms,
   type SentenceGateOptions,
   type StreamStopReason,
+  type ThinkEffort,
 } from '@foundry/ai';
 import { CoachResponse, type CoachMode, type TurnChannel, type TurnStreamEvent } from '@foundry/contracts';
 
@@ -310,6 +311,8 @@ export interface GenerateArgs {
 
 export interface StreamArgs extends GenerateArgs {
   readonly gate: SentenceGateOptions;
+  /** Let the model reason before this reply (orchestrator/think.ts); null or absent: no. */
+  readonly think?: ThinkEffort | null;
   readonly emit: (event: TurnStreamEvent) => Promise<void>;
   /** Voice turns: the key the speech units are signed with. */
   readonly speechKey: Promise<SessionSigningKey> | null;
@@ -806,6 +809,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
         }),
         messages: a.messages,
         ...(a.promptCache ? { promptCache: a.promptCache } : {}),
+        // What the server says first, and the step's card, are shown already: reasoning only delays the model's own part.
+        ...(a.think ? { think: a.think } : {}),
         maxOutputTokens: ANSWER_MAX_TOKENS[a.channel],
         timeoutMs: a.kit.config.turns.modelTimeoutMs,
         requestId: a.ctx.requestId,
@@ -937,6 +942,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     requestId: a.ctx.requestId,
     turnId: a.turnId,
     channel: a.channel,
+    think: a.think ?? null,
     stopReason: streamed.stopReason,
     replyShape: reply.shape ?? null,
     replyDone: reply.isDone(),
@@ -950,6 +956,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     reasksDropped: trace.reasksDropped,
     agendaDropped: trace.agendaDropped,
     greetingDropped: trace.greetingDropped,
+    methodEdits: trace.methodEdits,
     replyWords: wordCount(reply.text),
     shownWords: wordCount(said.shown),
     spokenWords: said.words,

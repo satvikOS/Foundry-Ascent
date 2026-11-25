@@ -46,6 +46,7 @@ VALID = {
         "PUBLIC_KEY": "",
         "SCENARIO_GROUPS": "",
         "COACH_MODEL": "default",
+        "COACH_THINK": "default",
         "JUDGE_MODEL": "auto",
     },
     LIVE: {
@@ -311,6 +312,10 @@ def test_the_runbook_documents_the_cap_and_the_approval() -> None:
         ({"SUITE": "client", "SCENARIO_GROUPS": "numbers,news"}, True),
         ({"SUITE": "client", "COACH_MODEL": "us.anthropic.claude-haiku-5-5"}, True),
         ({"SUITE": "client", "JUDGE_MODEL": "us.amazon.nova-pro-v1:0"}, True),
+        ({"SUITE": "client", "COACH_MODEL": "openai.gpt-oss-120b-1:0"}, True),
+        ({"SUITE": "client", "COACH_THINK": "judgement"}, True),
+        ({"SUITE": "client", "COACH_THINK": "high"}, False),
+        ({"SUITE": "recall", "COACH_THINK": "typed"}, False),
         # A name the suite does not have, text that is no list of names, a model that is no option.
         ({"SUITE": "client", "SCENARIO_GROUPS": "sums"}, False),
         ({"SUITE": "client", "SCENARIO_GROUPS": "numbers;id"}, False),

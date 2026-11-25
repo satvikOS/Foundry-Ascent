@@ -29,6 +29,7 @@ from typing import Any
 
 from conversation_lab.config import (
     DEFAULT_COACH,
+    DEFAULT_THINK,
     EXTRA_SUITES,
     FACE_MODES,
     JUDGE_AUTO,
@@ -37,6 +38,7 @@ from conversation_lab.config import (
     MODELS_MAX_BUDGET_USD,
     REPO,
     SUITES,
+    THINK_CHOICES,
     app_models,
     budget_parts,
     coach_app_models,
@@ -108,6 +110,8 @@ class Context:
     live_approve_memory: bool = False
     #: The app's coach model for this run: ``default`` (production's) or one of models.json ``live.coach`` (an A/B arm).
     coach_model: str = DEFAULT_COACH
+    #: The client suite's CORE_THINK for the lab's API process (config.THINK_CHOICES).
+    coach_think: str = DEFAULT_THINK
     #: The live judge policy (config.live_judges): ``auto``, ``ab`` (one judge for every A/B arm) or a live.judge id.
     judge_model: str = JUDGE_AUTO
     live_picks: list[Any] = field(default_factory=list)
@@ -253,6 +257,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         concurrency=int(args.concurrency),
         live_approve_memory=bool(args.live_approve_memory),
         coach_model=str(getattr(args, "coach_model", DEFAULT_COACH) or DEFAULT_COACH),
+        coach_think=str(getattr(args, "coach_think", DEFAULT_THINK) or DEFAULT_THINK),
         judge_model=str(getattr(args, "judge_model", JUDGE_AUTO) or JUDGE_AUTO),
         client_pack=str(getattr(args, "client_pack", "") or ""),
         client_groups=str(getattr(args, "groups", "") or ""),
@@ -295,6 +300,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     coach=models.primary,
                     judge=client_judges[0],
                     simulator=lab.live_simulator[0],
+                    think=ctx.coach_think,
                 )
                 app_share = plan.app_share
                 ctx.client["plan"] = plan.public()
@@ -317,6 +323,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         "models": {
             "app": {"primary": models.primary, "fallback": models.fallback, "embeddings": models.embeddings},
             "coach_choice": ctx.coach_model,
+            "coach_think": ctx.coach_think,
             "judge_policy": judge_policy,
         },
     }
@@ -390,6 +397,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         api_port=args.api_port,
         web_port=args.web_port,
         mock=args.mock,
+        coach_think=ctx.coach_think,
     )
     # The local API's own environment: the face suite adds the vendor key there and nowhere else (not in ctx.env,
     # which Playwright and the scripts get).
@@ -1332,6 +1340,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=DEFAULT_COACH,
         help="the app's coach model for this run: default (production's) or one of models.json live.coach (the live "
         "suite) or client.coach (the client suite); the lab's API process only. Never judged by its own family",
+    )
+    run.add_argument(
+        "--coach-think",
+        choices=THINK_CHOICES,
+        default=DEFAULT_THINK,
+        help="client: which typed turns let the coach reason before it answers (CORE_THINK of the lab's API process; "
+        "Amazon Nova 2 only)",
     )
     run.add_argument(
         "--judge-model",

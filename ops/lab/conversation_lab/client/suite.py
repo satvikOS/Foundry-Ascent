@@ -17,7 +17,7 @@ from typing import Any
 from conversation_lab.client import pack as client_pack
 from conversation_lab.client.plan import estimate, in_groups, parse_groups, refusal
 from conversation_lab.client.scenarios import ClientSet, Scenario, ScenarioError, choose, load
-from conversation_lab.config import lab_models, model_family
+from conversation_lab.config import DEFAULT_THINK, lab_models, model_family
 
 #: The owner's cap on a paid run; the expected spend of a whole run on Luna or Nova is under USD 1.
 CLIENT_HARD_CAP_USD = 2.0
@@ -52,6 +52,7 @@ def check_plan(
     coach: str,
     judge: str | None,
     simulator: str | None,
+    think: str = DEFAULT_THINK,
 ) -> Any:
     """The run's estimate; raises ``PlanRefusedError`` when it does not fit its budget."""
     from conversation_lab.client.calibration import load as load_calibration
@@ -65,8 +66,9 @@ def check_plan(
         judge=judge,
         simulator=simulator,
         calibration_cases=len(load_calibration()) if judge is not None else 0,
+        think=think,
     )
-    why = refusal(found, budget_usd, scenarios, prices=prices, coach=coach, judge=judge)
+    why = refusal(found, budget_usd, scenarios, prices=prices, coach=coach, judge=judge, think=think)
     if why is not None:
         raise PlanRefusedError(why)
     return found
@@ -159,6 +161,7 @@ def run_suite(
             "day": state["today"].isoformat(),
             "coach": ctx.coach_primary if live else "mock",
             "coach_choice": ctx.coach_model if live else "mock",
+            "coach_think": ctx.coach_think,
             "groups": list(parse_groups(ctx.client_groups)) or "all",
             "plan": state.get("plan"),
             "calibration": calibration,

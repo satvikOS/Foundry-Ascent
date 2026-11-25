@@ -70,6 +70,8 @@ export interface PathPromptGuidance {
     readonly kind: 'either' | 'which' | 'yes_no';
     readonly options: readonly string[];
   } | null;
+  /** They ask for a judgement of what they have (`PromptGuidance.judgement`). */
+  readonly judgement?: boolean;
   readonly criteria?: readonly { readonly id: string; readonly title: string; readonly evidence: string }[];
   /** How what they asked was found (`PromptGuidance.matched`). */
   readonly matched?: 'phrase' | 'semantic' | 'none';

@@ -1,5 +1,6 @@
 import type { PromptGuidance } from '../prompts/guidance.js';
 import { knownNumbersIn, numbersIn } from './figures.js';
+import { TO_FILL, withoutEmptyBrackets } from './method.js';
 import { sharedCount, stemOf, stemsOf } from './stems.js';
 
 /**
@@ -140,7 +141,12 @@ export interface OwnFacts {
   /** The unit as it may be said; '' when nothing of it may. */
   readonly text: string;
   readonly findings: readonly (
-    'template_bracketed' | 'traction_unsupported' | 'money_unsupported' | 'own_words'
+    | 'template_bracketed'
+    | 'traction_unsupported'
+    | 'money_unsupported'
+    | 'sum_beside'
+    | 'count_beside'
+    | 'own_words'
   )[];
 }
 
@@ -210,6 +216,60 @@ function derived(value: number, amounts: readonly number[], counts: readonly num
   );
 }
 
+/** A number in front of a list item is its place. */
+const MARKER = /^\s*(?:[-*+•]|\d{1,3}[.)])\s+/u;
+
+/**
+ * A number of the model's own beside a sum code worked out and opened the reply with (live: two
+ * answers to one question): what is neither theirs, the sum's nor given this turn is a second sum nobody checked.
+ */
+export function besideTheSum(unit: string, guidance: PromptGuidance, known: string): boolean {
+  const lead = guidance.lead?.text ?? '';
+  const calc = guidance.calc ?? [];
+  if (lead === '' || !calc.some((c) => lead.includes(c))) return false;
+  const numbers = numbersIn(unit.replace(MARKER, '').replace(/\[\s*E\d+[^\]]*\]/giu, ' ')).filter(
+    (n) => n > 1,
+  );
+  if (numbers.length === 0) return false;
+  const given = knownNumbersIn([guidance.said ?? '', lead, ...calc, known].join('\n'));
+  return numbers.some((n) => !given.some((g) => Math.abs(g - n) < 0.005));
+}
+
+const SPELLED: Readonly<Record<string, string>> = {
+  one: '1',
+  two: '2',
+  three: '3',
+  four: '4',
+  five: '5',
+  six: '6',
+  seven: '7',
+  eight: '8',
+  nine: '9',
+  ten: '10',
+  twelve: '12',
+};
+/** Each "n of (the) m" of a text. */
+function partsOf(text: string): [number, number][] {
+  const digits = text
+    .toLowerCase()
+    .replace(/\b(?:one|two|three|four|five|six|seven|eight|nine|ten|twelve)\b/g, (w) => SPELLED[w] ?? w);
+  return [
+    ...digits.matchAll(/(?<![\d.$])(\d+) (?:out )?of (?:the |your |those |these |them |all )*(\d+)\b/g),
+  ].map((m) => [Number(m[1]), Number(m[2])]);
+}
+
+/** Another count of the same whole than the server's lead gives ("2 of the 5"; "4 of the 5"), that nobody told. */
+function besideTheCount(unit: string, guidance: PromptGuidance): boolean {
+  const lead = partsOf(guidance.lead?.text ?? '');
+  if (lead.length === 0) return false;
+  const told = partsOf(guidance.said ?? '');
+  return partsOf(unit).some(
+    ([part, whole]) =>
+      lead.some(([, w]) => w === whole) &&
+      ![...lead, ...told].some(([p, w]) => w === whole && (p === part || w - p === part)),
+  );
+}
+
 /**
  * One unit of a reply as it may be said of the founder: see the module comment. `known`: what else may be stated (the
  * evidence and the program's text).
@@ -244,7 +304,9 @@ export function ownFactsUnit(
         (!isTheirs(value, label, guidance) || inventedMoney(value, guidance, '').length > 0)
       ) {
         findings.push('template_bracketed');
-        return { text: `${line[1] ?? ''}${asks}`, findings };
+        // A blank of the template alone ("[ ], [ ]") is nothing to show.
+        const given = withoutEmptyBrackets(asks);
+        return { text: `${line[1] ?? ''}${given.trim() === '' ? TO_FILL : given}`, findings };
       }
       return { text, findings };
     }
@@ -252,6 +314,14 @@ export function ownFactsUnit(
       findings.push('traction_unsupported');
       return { text: '', findings };
     }
+  }
+  if (besideTheSum(text, guidance, options.known ?? '')) {
+    findings.push('sum_beside');
+    return { text: '', findings };
+  }
+  if (besideTheCount(text, guidance)) {
+    findings.push('count_beside');
+    return { text: '', findings };
   }
   if (guidance.said !== undefined) {
     const invented = inventedMoney(text, guidance, options.known ?? '');

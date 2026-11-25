@@ -5,7 +5,7 @@ import { longDay, sayDay } from '../prompts/due-day.js';
 import type { PromptGuidance, ReplyContractFinding, ReplyContractResult } from '../prompts/guidance.js';
 import { handBackCandidate, putToFounder } from './social.js';
 import { coverage, sharedCount, stemOf, stemsOf } from './stems.js';
-import { isBlockUnit, isListUnit, unitsOf, wordsIn, type TextUnit } from './units.js';
+import { isBlockUnit, isListUnit, leansBack, unitsOf, wordsIn, type TextUnit } from './units.js';
 
 /**
  * The reply contract (founder path, 2026-11-24): every coaching reply is the answer, why, the step the path is on and at
@@ -94,7 +94,7 @@ const RULE = /:|;|\b(?:if|when|unless|whenever|once)\b/iu;
 
 /** A question put in place of help ("What's your plan to reach someone like that?"). */
 const PLAN_QUESTION =
-  /\bwhat(?:['’]s| is| are) your (?:plan|plans|thinking|strategy|approach|thoughts|take|goal|next step)s? (?:for|on|about|to|with|here)\b/iu;
+  /\bhow (?:are|do) you (?:thinking|think|planning|plan|approaching|feel(?:ing)?) (?:about|of|on|to)\b|\bdo you have (?:a|any) (?:plan|strategy|idea|thoughts?|sense)s?\b|\bwhat(?:['’]s| is| are) your (?:plan|plans|thinking|strategy|approach|thoughts|take|goal|next step)s? (?:for|on|about|to|with|here)\b/iu;
 
 /** A request that asks like a question. */
 const REQUEST = new RegExp(
@@ -428,6 +428,12 @@ export function restatesItem(unit: string, guidance: PromptGuidance): boolean {
   });
 }
 
+/** "Next, let's …", "Next, send them …": a second plan beside the server's step. */
+const NEXT_COMMA =
+  /^(?:so |and |now )?next,? (?:let(?:'s| us)|you(?:'ll| will| can| could| should| need to| might| want to|'d want to)|i(?:'d| would| suggest| recommend)|we(?:'ll| can| should| need to)|try|ask|get|go|write|send|build|make|run|test|talk|call|e-?mail|offer|sell|pick|choose|set|find|list|draft|create|take|turn|put|show|launch|start|do|use|work|think|focus|schedule|book|reach|contact|interview|check|review|decide|define|identify|validate|gather|collect|refine|update|share|look|move|figure|map|plan|price|prepare|speak|follow)\b/iu;
+/** The first of a sequence the answer itself is ("First, … Next, …"). */
+const SEQUENCE = /^(?:first(?:ly)?|to start|start (?:by|with)|begin (?:by|with)|step (?:one|1))\b/iu;
+
 const PARAGRAPH = /^[ \t]*\n\s*\n|^\s*\n[ \t]*\n/;
 
 /** What the stream of a reply's units says of steps, read unit by unit: the model's own step talk goes, block by block. */
@@ -436,6 +442,13 @@ export class StepTalk {
   #inBlock = false;
   /** The list right under a step line, or one that opened with the step's own first part. */
   #inList = false;
+  /** What the server's lead shows of a template, by label: the model never writes it a second time. */
+  readonly #shown: ReadonlySet<string>;
+  /** The server's lead is the message they asked for: a draft of the model's own beside it goes, to its end. */
+  readonly #sent: boolean;
+  #inDraft = false;
+  /** The answer is a sequence ("First, …"): its "Next, …" is part of it. */
+  #sequence = false;
   /** An item of a list that stays: what follows it on its line stays too. */
   #listStays = false;
   /** The server's lead is the plan they asked for, as a list: another one of the model's goes. */
@@ -446,6 +459,13 @@ export class StepTalk {
   constructor(private readonly guidance: PromptGuidance) {
     this.#planned = (guidance.lead?.text ?? '').includes('\n1. ');
     this.#dated = DATED_LINES.test(guidance.lead?.text ?? '');
+    this.#sent = (guidance.lead?.text ?? '').startsWith('Here is the message.');
+    this.#shown = new Set(
+      (guidance.lead?.text ?? '')
+        .split('\n')
+        .flatMap((l) => labelOf(l))
+        .slice(0, 24),
+    );
   }
 
   /** The step's own title, as a sentence of its own ("Email the five theatre groups."). */
@@ -457,6 +477,19 @@ export class StepTalk {
     return title.size >= 2 && coverage(title, said) >= 0.8 && coverage(said, title) >= 0.9;
   }
 
+  /** A plan of the model's own beside the server's step ("Next, let's …"), never a part of the answer's own sequence. */
+  #secondPlan(unit: string, text: string): boolean {
+    const { guidance } = this;
+    if (guidance.step === null || guidance.howTo === true || this.#sequence) return false;
+    if (!NEXT_COMMA.test(bare(text))) return false;
+    return (
+      PARAGRAPH.test(unit) ||
+      (guidance.lead ?? null) !== null ||
+      guidance.kind === 'news' ||
+      guidance.kind === 'report'
+    );
+  }
+
   /**
    * Whether the unit is the model's own step talk. A step line takes the rest of its paragraph with it, and the list right
    * under it; a deadline or a done-when goes by itself with what follows it in its paragraph; a list that opens with one of
@@ -466,13 +499,24 @@ export class StepTalk {
     const text = unit.trim();
     const newParagraph = PARAGRAPH.test(unit);
     const item = isListUnit(text);
+    if (this.#sent && (this.#inDraft || OWN_DRAFT.test(bare(text)))) {
+      this.#inDraft = true;
+      return true;
+    }
+    const [label] = labelOf(text);
+    if (label !== undefined && this.#shown.has(label)) return true;
     const template = isTemplateLine(text, this.guidance);
     if (item && template) {
       this.#inBlock = this.#inList = false;
       this.#listStays = true;
       return false;
     }
-    if (opensStep(text) || (this.#planned && (item || OWN_PLAN.test(bare(text))))) {
+    if (SEQUENCE.test(bare(text))) this.#sequence = true;
+    if (
+      opensStep(text) ||
+      this.#secondPlan(unit, text) ||
+      (this.#planned && (item || OWN_PLAN.test(bare(text))))
+    ) {
       this.#inBlock = this.#inList = true;
       this.#listStays = false;
       return true;
@@ -515,6 +559,18 @@ const OWN_DATED = new RegExp(
 /** A plan of the model's own ("Week 1: …", "Here's a two-week plan to get there."). */
 const OWN_PLAN =
   /^(?:(?:week|day|month) (?:\d|one|two|three|four)\b|here(?:['’]s| is) (?:a|the|your) [^.!?]{0,40}\b(?:plan|schedule|roadmap)\b)/iu;
+
+/** A message of the model's own beside the one the server gave ("Here's a short email you can send:", "Hi [Name],"). */
+const OWN_DRAFT =
+  /^(?:(?:sure|yes|of course|okay|ok|absolutely)[,!. ]+)?(?:here(?:['’]s| is| are) (?:a|an|the|your|one|another|my)\b[^.!?]{0,90}\b(?:e-?mails?|messages?|drafts?|notes?|templates?|texts?|versions?|scripts?)\b|(?:you (?:can|could) (?:say|send|write|use)|try (?:this|sending)|subject)\b[^.!?]{0,60}:|(?:hi|hello|hey|dear) (?:\[|there|everyone)|["“](?:hi|hello|hey|dear)\b)/iu;
+
+/** The label of a template's line ("1. Who: …"), in lower case; [] when it has none. */
+function labelOf(line: string): string[] {
+  const label = /^\s*(?:[-*+•]\s+|\d{1,3}[.)]\s+)[*_]{0,2}([\p{L}][\p{L}\d '’/-]{1,40}?)[*_]{0,2}\s*:/u.exec(
+    line,
+  )?.[1];
+  return label === undefined ? [] : [label.toLowerCase()];
+}
 
 const WHY_LABEL = /^(\s*)[*_]{0,2}why[*_]{0,2}:[*_]{0,2}\s+(?=\S)/iu;
 /** A list marker with nothing after it: where a reply broke off. */
@@ -961,13 +1017,20 @@ interface Cleaned {
 }
 
 /** The model's part of a reply as the contract lets it stand. */
-function clean(body: string, guidance: PromptGuidance, channel: TurnChannel, today?: string | null): Cleaned {
+function clean(
+  body: string,
+  guidance: PromptGuidance,
+  channel: TurnChannel,
+  today?: string | null,
+  founderText?: string,
+): Cleaned {
   const units = read(body);
   const findings = new Set<ReplyContractFinding>();
   const talk = new StepTalk(guidance);
   const kept: { raw: string; unit: ReadUnit; index: number }[] = [];
   const owned = guidance.step !== null;
   const lead = stemsOf(leadText(guidance, channel));
+  const founder = stemsOf(founderText ?? '');
   const questions = units.flatMap((u, i) => (u.kind === 'question' ? [i] : []));
   const asking = stacked(units, questions).at(-1) ?? [];
   if (stacked(units, questions).length > 1) findings.add('stacked_questions');
@@ -984,9 +1047,16 @@ function clean(body: string, guidance: PromptGuidance, channel: TurnChannel, tod
     findings.add(finding);
     if (PARAGRAPH.test(u.raw)) broke = true;
   };
+  let leaned = false;
   units.forEach((u, i) => {
+    if (leaned && leansBack(u.raw) && !isServerText(u.text, guidance, channel)) {
+      leave(u, 'step_talk');
+      return;
+    }
+    leaned = false;
     if (owned && talk.drops(u.raw) && !isServerText(u.text, guidance, channel)) {
       leave(u, 'step_talk');
+      leaned = true;
       return;
     }
     if (u.kind === 'deferral' || u.kind === 'flattery') {
@@ -1021,7 +1091,7 @@ function clean(body: string, guidance: PromptGuidance, channel: TurnChannel, tod
       return;
     }
     // What the server already said first, or a verdict on it.
-    if (lead.size > 0 && (repeatsLead(raw, lead) || onlyVerdict(raw))) {
+    if (lead.size > 0 && (repeatsLead(raw, lead) || restates(raw, lead, founder) || onlyVerdict(raw))) {
       leave(u, 'step_talk');
       return;
     }
@@ -1108,11 +1178,24 @@ export function repeatsLead(unit: string, lead: ReadonlySet<string>): boolean {
   // The same figures again, in other words ("so the contribution is $3.50").
   const figures = [...said].filter((w) => /^\d/.test(w));
   return (
-    figures.length >= 2 &&
+    figures.length >= 1 &&
     figures.every((f) => lead.has(f)) &&
-    coverage(said, lead) >= 0.4 &&
+    coverage(said, lead) >= (figures.length >= 2 ? 0.4 : 0.75) &&
     !isListUnit(unit)
   );
+}
+
+/** Whether a statement says nothing but what they just told, under the server's lead (a denial of it says something). */
+export function restates(unit: string, lead: ReadonlySet<string>, founder: ReadonlySet<string>): boolean {
+  if (lead.size === 0 || founder.size === 0 || isListUnit(unit) || /\?["'”’)\]*_]*\s*$/u.test(unit))
+    return false;
+  if (/\b(?:not|no|never|none|nobody|nothing|only|\w+n['’]t)\b/iu.test(unit)) return false;
+  const said = stemsOf(unit.replace(/,? which (?:makes sense|is fair|is understandable)\b/iu, ''));
+  said.delete('say');
+  if (said.size < 3) return false;
+  let held = 0;
+  for (const w of said) if (lead.has(w) || founder.has(w)) held += 1;
+  return held / said.size >= 0.95 && sharedCount(said, founder) / said.size >= 0.7;
 }
 
 /** A verdict on what they said that says nothing of it ("Got it.", "That's a strong signal.", "That's useful news."). */
@@ -1218,7 +1301,7 @@ export function checkReplyContract(input: ReplyContractInput): ReplyContractResu
   const voice = channel === 'voice';
   const gap = voice ? ' ' : '\n\n';
   const parts = partsOf(reply, guidance, channel, input.today);
-  const c = clean(parts.body, guidance, channel, input.today);
+  const c = clean(parts.body, guidance, channel, input.today, input.founderText);
   const findings = new Set<ReplyContractFinding>(c.findings);
   const lead = leadText(guidance, channel);
   if (!picks(parts.body, guidance)) findings.add('missing_pick');

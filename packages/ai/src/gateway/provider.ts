@@ -12,6 +12,7 @@ import type {
   RawModelAttempt,
   StreamStopReason,
   TextChunkHandler,
+  ThinkEffort,
 } from './types.js';
 
 /** What the router hands to a concrete structured-output provider. */
@@ -48,6 +49,8 @@ export interface ProviderStreamRequest {
   promptCache?: PromptCacheHint;
   /** Sampling temperature, for a model that takes one (default: the provider's own). */
   temperature?: number;
+  /** Reason before answering, for a model that can (`StreamTextRequest.think`). */
+  think?: ThinkEffort;
   /** Called with every text chunk, in order (awaited). */
   onText: TextChunkHandler;
 }

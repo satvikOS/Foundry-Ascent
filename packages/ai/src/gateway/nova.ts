@@ -31,7 +31,14 @@ import {
 import { ReasoningFilter } from './reasoning-filter.js';
 import { extractJsonValue } from './structured-repair.js';
 import type { AwsCredentialProvider, AwsCredentials } from './sigv4-fetch.js';
-import type { ChatMessage, ModelUsage, PromptCacheHint, RawModelAttempt, StreamStopReason } from './types.js';
+import type {
+  ChatMessage,
+  ModelUsage,
+  PromptCacheHint,
+  RawModelAttempt,
+  StreamStopReason,
+  ThinkEffort,
+} from './types.js';
 
 export const SUBMIT_TOOL_NAME = 'submit_response';
 /** Most output tokens a repair after a cut-off answer asks for (it doubles the request's bound up to this). */
@@ -94,6 +101,19 @@ export function isClaudeModelId(modelId: string): boolean {
 export function isOpenAiModelId(modelId: string): boolean {
   return /^(?:[a-z-]+\.)?openai\./.test(modelId);
 }
+
+/**
+ * OpenAI's open-weight models on Bedrock (`openai.gpt-oss-120b-1:0`, `openai.gpt-oss-20b-1:0`): served in region by
+ * `bedrock-runtime` under these ids, with no profile (their model cards, checked 2026-11-25; the ids without `-1:0` are
+ * Mantle's). They always reason (`low`, `medium` or `high`: no `none`), asked with the flat `reasoning_effort`, and take a
+ * temperature all the same. Their reasoning counts in `maxTokens`, so a request gets {@link OSS_REASONING_MAX_TOKENS} more.
+ */
+export function isGptOssModelId(modelId: string): boolean {
+  return /^openai\.gpt-oss-\d+b-\d+:\d+$/.test(modelId);
+}
+
+/** Output tokens a gpt-oss request may use for its reasoning, beside its answer's own bound. */
+export const OSS_REASONING_MAX_TOKENS = 1_000;
 
 /** The optional fields of an OpenAI model's requests, as far as Bedrock takes them. */
 export interface OpenAiRequestFields {
@@ -210,6 +230,24 @@ function claudeThinking(
 export function usesCachePoints(modelId: string): boolean {
   return /^(?:[a-z-]+\.)?(?:amazon\.nova-|anthropic\.claude-haiku-4-5-20251001-v1:0$)/.test(modelId);
 }
+
+/**
+ * Amazon Nova 2 models that reason when a request asks (Nova 2's extended-thinking guide, checked 2026-11-25: "currently
+ * available in Amazon Nova 2 Lite"; https://docs.aws.amazon.com/nova/latest/nova2-userguide/extended-thinking.html):
+ * `additionalModelRequestFields.reasoningConfig` `{ type: 'enabled', maxReasoningEffort: 'low' | 'medium' | 'high' }`, off by
+ * default. At `high`, temperature, topP and maxTokens must be unset; at `low` (the only effort asked for here) they are
+ * taken. Reasoning is billed as output and counts in `outputTokens`; it streams as `reasoningContent` whose text is
+ * "[REDACTED]", and never as text.
+ */
+export function thinksOnRequest(modelId: string): boolean {
+  return /^(?:[a-z-]+\.)?amazon\.nova-2-lite-/.test(modelId);
+}
+
+/**
+ * Output tokens a request that reasons at `low` may use beside its answer's own bound: `maxTokens` bounds reasoning and
+ * answer together, so an answer's bound alone would cut it off after the reasoning.
+ */
+export const THINK_LOW_MAX_TOKENS = 2_000;
 
 /** Bedrock's cache checkpoint (the default 5-minute TTL: Nova accepts no other, and a turn comes well within it). */
 const CACHE_POINT = { cachePoint: { type: 'default' } } as const;
@@ -346,6 +384,11 @@ function findToolUse(output: ConverseCommandOutput): ContentBlock.ToolUseMember 
   return null;
 }
 
+/** Bedrock refused the request itself (never throttling, access or the profile it must go through). */
+function isRefusedRequest(error: unknown): boolean {
+  return error instanceof Error && error.name === 'ValidationException' && !isProfileRequiredError(error);
+}
+
 function isProfileRequiredError(error: unknown): boolean {
   return (
     error instanceof Error && error.name === 'ValidationException' && PROFILE_REQUIRED.test(error.message)
@@ -368,11 +411,17 @@ export class NovaProvider implements StructuredProvider {
   readonly #profileId: string | null;
   readonly #temperature: number;
   readonly #maxRepairAttempts: number;
+  /** An open-weight OpenAI model ({@link isGptOssModelId}). */
+  readonly #oss: boolean;
+  /** Bedrock refused to force the tool of a structured call: this instance asks for it in words from then on. */
+  #forcedToolRefused = false;
   readonly #promptCache: boolean;
   /** The optional request fields of an OpenAI model, without those Bedrock refused; null for every other model. */
   #openAi: OpenAiRequestFields | null;
   /** How much a Claude model that thinks by default thinks; null for every other model. */
   readonly #claudeEffort: ConverseReasoningEffort | null;
+  /** Bedrock refused a request that reasons: this instance asks for no reasoning from then on. */
+  #thinkRefused = false;
   /** Bedrock refused a request with cache checkpoints: this instance sends none from then on. */
   #cacheRefused = false;
   #useProfile = false;
@@ -393,8 +442,10 @@ export class NovaProvider implements StructuredProvider {
     this.#temperature = options.temperature ?? 0.2;
     this.#maxRepairAttempts = Math.max(0, options.maxRepairAttempts ?? 1);
     this.#promptCache = options.promptCache === true && usesCachePoints(options.modelId);
+    this.#oss = isGptOssModelId(options.modelId);
+    const effort = options.reasoningEffort ?? 'none';
     this.#openAi = isOpenAiModelId(options.modelId)
-      ? { temperature: true, effort: options.reasoningEffort ?? 'none', forcedTool: true }
+      ? { temperature: true, effort: this.#oss && effort === 'none' ? 'low' : effort, forcedTool: true }
       : null;
     this.#claudeEffort = thinksByDefault(options.modelId) ? (options.reasoningEffort ?? 'none') : null;
   }
@@ -409,18 +460,46 @@ export class NovaProvider implements StructuredProvider {
     return this.#openAi;
   }
 
+  /** Output tokens a request may be billed for: its answer's bound, and what the model may reason beside it. */
+  #outputBound(maxTokens: number, think: ThinkEffort | null): number {
+    return maxTokens + (think !== null ? THINK_LOW_MAX_TOKENS : this.#oss ? OSS_REASONING_MAX_TOKENS : 0);
+  }
+
   /** What tells one model family's request from another's, besides its prompt. */
   #modelConfig(
     modelId: string,
     maxTokens: number,
     temperature: number | undefined,
     openAi: OpenAiRequestFields | null,
+    think: ThinkEffort | null = null,
   ): {
     inferenceConfig: InferenceConfiguration;
     additionalModelRequestFields?:
-      { reasoning: { effort: ConverseReasoningEffort } } | ReturnType<typeof claudeThinking>;
+      | { reasoning: { effort: ConverseReasoningEffort } }
+      | { reasoning_effort: 'low' | 'medium' | 'high' }
+      | { reasoningConfig: { type: 'enabled'; maxReasoningEffort: ThinkEffort } }
+      | ReturnType<typeof claudeThinking>;
   } {
+    if (think !== null) {
+      return {
+        inferenceConfig: {
+          maxTokens: this.#outputBound(maxTokens, think),
+          temperature: temperature ?? this.#temperature,
+        },
+        additionalModelRequestFields: {
+          reasoningConfig: { type: 'enabled', maxReasoningEffort: think },
+        },
+      };
+    }
     const sampling = { maxTokens, temperature: temperature ?? this.#temperature };
+    if (openAi !== null && this.#oss) {
+      const bound = this.#outputBound(maxTokens, null);
+      const effort = openAi.effort === 'medium' || openAi.effort === 'high' ? openAi.effort : 'low';
+      return {
+        inferenceConfig: openAi.temperature ? { ...sampling, maxTokens: bound } : { maxTokens: bound },
+        ...(openAi.effort === null ? {} : { additionalModelRequestFields: { reasoning_effort: effort } }),
+      };
+    }
     if (openAi !== null) {
       return {
         inferenceConfig: sendsTemperature(openAi) ? sampling : { maxTokens },
@@ -454,7 +533,7 @@ export class NovaProvider implements StructuredProvider {
   }
 
   #toolChoice(modelId: string, openAi: OpenAiRequestFields | null): ToolChoice {
-    const forced = forcesTool(modelId) && openAi?.forcedTool !== false;
+    const forced = forcesTool(modelId) && openAi?.forcedTool !== false && !this.#forcedToolRefused;
     return forced ? { tool: { name: SUBMIT_TOOL_NAME } } : { auto: {} };
   }
 
@@ -468,9 +547,7 @@ export class NovaProvider implements StructuredProvider {
     kind: RawModelAttempt['kind'],
   ): OpenAiRequestFields | null {
     if (openAi === null || kind === 'repair') return null;
-    if (!(error instanceof Error) || error.name !== 'ValidationException' || isProfileRequiredError(error)) {
-      return null;
-    }
+    if (!(error instanceof Error) || !isRefusedRequest(error)) return null;
     return withoutRefusedField(openAi, error.message);
   }
 
@@ -480,13 +557,7 @@ export class NovaProvider implements StructuredProvider {
    * were built from the first ones.
    */
   #cacheRetry(error: unknown, cachePoints: number, kind: RawModelAttempt['kind']): boolean {
-    return (
-      cachePoints > 0 &&
-      kind !== 'repair' &&
-      error instanceof Error &&
-      error.name === 'ValidationException' &&
-      !isProfileRequiredError(error)
-    );
+    return cachePoints > 0 && kind !== 'repair' && isRefusedRequest(error);
   }
 
   /** Whether a failed call should be retried once with the geographic inference profile. */
@@ -513,6 +584,7 @@ export class NovaProvider implements StructuredProvider {
     let prompt = this.#prompt(request.system, request.messages, request.promptCache);
     let kind: RawModelAttempt['kind'] = 'initial';
     let openAi = this.#openAi;
+    let think = thinksOnRequest(this.modelId) && !this.#thinkRefused ? (request.think ?? null) : null;
     let dropped: string[] = [];
 
     for (;;) {
@@ -536,16 +608,21 @@ export class NovaProvider implements StructuredProvider {
           latencyMs: Math.round(performance.now() - started),
           usage:
             usage ??
-            estimatedStreamUsage(request, generated, {
-              outcome,
-              opened,
-              cancelledBeforeSend,
-              // An OpenAI model's reasoning is billed as output and reaches the stream as a summary at most; a Claude
-              // model's thinking text is omitted from the stream by default.
-              reasoning:
-                (openAi !== null && openAi.effort !== 'none') ||
-                (this.#claudeEffort !== null && this.#claudeEffort !== 'none'),
-            }),
+            estimatedStreamUsage(
+              { ...request, maxOutputTokens: this.#outputBound(request.maxOutputTokens, think) },
+              generated,
+              {
+                outcome,
+                opened,
+                cancelledBeforeSend,
+                // An OpenAI model's reasoning is billed as output and reaches the stream as a summary at most; a Claude
+                // model's thinking text is omitted from the stream by default.
+                reasoning:
+                  think !== null ||
+                  (openAi !== null && openAi.effort !== 'none') ||
+                  (this.#claudeEffort !== null && this.#claudeEffort !== 'none'),
+              },
+            ),
           ...(prompt.cachePoints > 0 ? { cachePoints: prompt.cachePoints } : {}),
           errorName,
           ...(dropped.length > 0 ? { issues: dropped } : {}),
@@ -557,7 +634,7 @@ export class NovaProvider implements StructuredProvider {
             modelId,
             system: prompt.system,
             messages: prompt.messages,
-            ...this.#modelConfig(modelId, request.maxOutputTokens, request.temperature, openAi),
+            ...this.#modelConfig(modelId, request.maxOutputTokens, request.temperature, openAi, think),
           },
           deadline.signal,
         );
@@ -589,6 +666,13 @@ export class NovaProvider implements StructuredProvider {
         if (text === '' && this.#profileRetry(error, kind)) {
           this.#useProfile = true; // cached for every later call on this instance
           kind = 'profile_retry';
+          continue;
+        }
+        // The reasoning first: whatever of the request was refused, its cache checkpoints are the ones every call carries.
+        if (text === '' && think !== null && isRefusedRequest(error)) {
+          think = null;
+          dropped = [...dropped, 'dropped:reasoning_config'];
+          kind = 'field_retry';
           continue;
         }
         if (text === '' && this.#cacheRetry(error, prompt.cachePoints, kind)) {
@@ -624,7 +708,8 @@ export class NovaProvider implements StructuredProvider {
       }
       record('ok', null);
       // Bedrock took the request without them: for every later call on this instance.
-      if (dropped.length > 0) this.#openAi = openAi;
+      if (dropped.includes('dropped:reasoning_config')) this.#thinkRefused = true;
+      if (dropped.length > 0 && openAi !== null) this.#openAi = openAi;
       return { text, modelId, stopReason: streamStopReason(stopReason), rawAttempts };
     }
   }
@@ -706,10 +791,25 @@ export class NovaProvider implements StructuredProvider {
           kind = 'field_retry';
           continue;
         }
+        // Another family that takes tools and not a forced one (a lab candidate): asked for in the tool's description.
+        if (
+          openAi === null &&
+          !this.#forcedToolRefused &&
+          forcesTool(modelId) &&
+          kind !== 'repair' &&
+          isRefusedRequest(error) &&
+          error instanceof Error &&
+          /tool[_ ]?choice/i.test(error.message)
+        ) {
+          this.#forcedToolRefused = true; // for every later call on this instance
+          dropped = [...dropped, 'dropped:tool_choice'];
+          kind = 'field_retry';
+          continue;
+        }
         return fail(mapped);
       }
       // Bedrock took the request without them: for every later call on this instance.
-      if (dropped.length > 0) this.#openAi = openAi;
+      if (dropped.length > 0 && openAi !== null) this.#openAi = openAi;
 
       const latencyMs = Math.round(performance.now() - started);
       const usage = converseUsage(output.usage);

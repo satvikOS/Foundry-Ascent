@@ -662,6 +662,8 @@ export function supportUnit(
         );
         return kept.length === 0 ? '' : `${/^\s/.test(whole) ? ' ' : ''}[${kept.join(', ')}]`;
       });
+      // "Will they pay? [E2]." without its key.
+      text = text.replace(/([?!])\.(?=\s|$)/gu, '$1');
     }
   }
   return { text, findings, keysDropped };

@@ -148,6 +148,24 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
     be read never reaches the founder. What is stored is what was shown.
   - A sum the model works out itself all the same ("a minus b leaves c") is checked: a wrong result is put right when its
     numbers are theirs and it reads one way, else it goes; nothing after it builds on the wrong one.
+- **The method** (`validators/method.ts`): a sentence of the model's that contradicts what the programme teaches, or reads
+  more into a fact than it shows, is put right or left out, unit by unit as it streams and again in the whole reply. A
+  question about the future to ask someone ("How much would you pay?") becomes the programme's own about the past (a fixed
+  table by kind); a survey as the next thing, a pass line on what people say, sign-ups or a few payments as "proof" or
+  "demand", praise, sentences that say nothing, empty brackets, and a question they just answered go. A sentence that warns
+  of these says the same words and stays: the rules read who proves what, denied or not, only if or to. Ten or more payments
+  told may be read as demand. The whole playbook and the shared knowledge base pass it (`path/method.test.ts`). When nothing
+  is left, the program's answer, or a reading of the news (`newsFallback`), stands.
+- **Beside a lead**: under a sum code worked out, a number that is neither theirs, the sum's nor given this turn is a second
+  sum nobody checked, and goes (`besideTheSum`); so do another count of the same whole, the template or the message the lead
+  holds, their own words back, and a plan of the model's own ("Next, let's …") with what leans on it.
+- **How a fact is read** (`READING_LINES`): on news, a judgement asked for (`PromptGuidance.judgement`: the plays of
+  `JUDGEMENT_PLAYS`, "is that good?", "what am I missing?") and an ask nothing answers, the turn's part of the prompt says
+  what a reading holds: what the fact shows, what it does not, another explanation, what would change the mind, one verdict.
+  Every other turn pays nothing for it.
+- **Reasoning first** (`orchestrator/think.ts`, `CORE_THINK=off|judgement|typed`, off): Nova 2 may reason at low effort
+  before a typed reply that judges something, or before every typed coaching reply; never on a call, a recall, a social turn
+  or a crisis. The lead and the card are shown before it starts. docs/runbooks/latency.md, "Reasoning before a reply".
 - **News** (`news.ts`, kind `news`): who paid and who did not, a result against the pass line they set, what people said,
   what stops them, a no and its reason, someone who asks for it, a spending limit, someone who left, an offer, sign-ups and
   the ones who forgot. A sign-up, a spoken yes, a friend's money and boxes sold are never called paying strangers. Something

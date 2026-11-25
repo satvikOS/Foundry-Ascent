@@ -14,6 +14,8 @@ import {
   NovaProvider,
   SUBMIT_TOOL_NAME,
   forcesTool,
+  OSS_REASONING_MAX_TOKENS,
+  isGptOssModelId,
   isOpenAiModelId,
   usesCachePoints,
   withoutRefusedField,
@@ -436,5 +438,76 @@ describe('GPT-6 Luna through the gateway', () => {
       cacheWriteInputTokens: 1e6,
     };
     expect(costFor('us.openai.gpt-6-luna', cached)).toBeCloseTo(0.011 + 0.1375, 9);
+  });
+});
+
+describe('the open-weight lab candidates (gpt-oss, Qwen, DeepSeek, Mistral)', () => {
+  const OSS = 'openai.gpt-oss-120b-1:0';
+
+  it('gpt-oss runs on Converse under its runtime id; the id without a version is Mantle’s', () => {
+    expect([OSS, 'openai.gpt-oss-20b-1:0'].map(reasoningAdapterFor)).toEqual(['converse', 'converse']);
+    expect(['openai.gpt-oss-120b', 'openai.gpt-6-luna'].map(reasoningAdapterFor)).toEqual([
+      'mantle',
+      'mantle',
+    ]);
+    expect(
+      [OSS, LUNA, 'openai.gpt-oss-120b', 'openai.gpt-oss-safeguard-20b-1:0'].map(isGptOssModelId),
+    ).toEqual([true, false, false, false]);
+  });
+
+  it('gpt-oss always reasons: the flat field at low by default, a temperature, room for the reasoning, no checkpoints', async () => {
+    const fake = scripted(
+      [],
+      [() => events([textDelta('Hi.'), ...END]), () => events([textDelta('Hi.'), ...END])],
+    );
+    await provider(fake, { modelId: OSS }).streamText(streamRequest(() => undefined, { temperature: 0 }));
+    expect(fake.streamInputs[0]).toMatchObject({
+      modelId: OSS,
+      system: [{ text: 'SYSTEM' }],
+      inferenceConfig: { maxTokens: 400 + OSS_REASONING_MAX_TOKENS, temperature: 0 },
+      additionalModelRequestFields: { reasoning_effort: 'low' },
+    });
+    await provider(fake, { modelId: OSS, reasoningEffort: 'high' }).streamText(
+      streamRequest(() => undefined),
+    );
+    expect(fake.streamInputs[1]?.additionalModelRequestFields).toEqual({ reasoning_effort: 'high' });
+  });
+
+  it('a candidate that takes tools and no forced one is asked in words, once and for all', async () => {
+    for (const modelId of [
+      'qwen.qwen3-next-80b-a3b',
+      'deepseek.v3.2',
+      'mistral.mistral-large-3-675b-instruct',
+    ]) {
+      const fake = scripted([
+        refuse("This model doesn't support the toolConfig.toolChoice.tool field."),
+        () => toolOutput(VALID_ANSWER),
+        () => toolOutput(VALID_ANSWER),
+      ]);
+      const candidate = provider(fake, { modelId });
+      const result = await candidate.generate(providerRequest(Answer));
+      expect(result.rawAttempts.map((a) => [a.kind, a.outcome, a.issues ?? []])).toEqual([
+        ['initial', 'client_error', []],
+        ['field_retry', 'ok', ['dropped:tool_choice']],
+      ]);
+      await candidate.generate(providerRequest(Answer));
+      expect(fake.inputs.map((i) => i.toolConfig?.toolChoice)).toEqual([
+        { tool: { name: SUBMIT_TOOL_NAME } },
+        { auto: {} },
+        { auto: {} },
+      ]);
+      expect(fake.inputs[0]).not.toHaveProperty('additionalModelRequestFields');
+    }
+  });
+
+  it('are priced, and never at an unknown model’s rate', () => {
+    for (const [id, usd] of [
+      [OSS, 0.75],
+      ['openai.gpt-oss-20b-1:0', 0.37],
+      ['qwen.qwen3-next-80b-a3b', 1.35],
+      ['deepseek.v3.2', 2.47],
+      ['mistral.mistral-large-3-675b-instruct', 2],
+    ] as const)
+      expect(costFor(id, { inputTokens: 1_000_000, outputTokens: 1_000_000 })).toBeCloseTo(usd, 9);
   });
 });

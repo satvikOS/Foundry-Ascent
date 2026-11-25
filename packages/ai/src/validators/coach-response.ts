@@ -58,9 +58,11 @@ import {
 } from './social.js';
 import { guidanceText, type PromptGuidance } from '../prompts/guidance.js';
 import { checkCitationSupport, supportWith, withoutSpan, type SupportIndex } from './citation-support.js';
-import { ownFactsUnit } from './own-facts.js';
+import { methodText } from './method.js';
+import { besideTheSum, ownFactsUnit } from './own-facts.js';
 import {
   SPOKEN_REPLY_WORDS,
+  StepTalk,
   carriesContract,
   checkReplyContract,
   contractApplies,
@@ -627,8 +629,28 @@ export function validateCoachResponse(
     const body = after.trim() === '' ? '' : craftedBody(after.trim(), note, lead);
     return body === '' ? lead : `${lead}${channel === 'voice' ? ' ' : '\n\n'}${body}`;
   };
+  // A sum of the model's own, in words, beside the one the server opened with: gone before it is read as one.
+  const withoutSecondSums = (text: string): string => {
+    if (guidance === null || saidAloud) return text;
+    let out = '';
+    let broke = false;
+    for (const u of unitsOf(text)) {
+      if (
+        !u.raw.includes('[[') &&
+        !isProtectedLine(u.text, forcedEscalationFor(options.preRisk) !== null) &&
+        !isServerText(u.text, guidance, channel) &&
+        besideTheSum(u.raw, guidance, knownFigures ?? '')
+      ) {
+        broke = broke || /^[ \t]*\n\s*\n/.test(u.raw);
+        continue;
+      }
+      out += broke && out !== '' && !/^\s*\n/.test(u.raw) ? `\n\n${u.raw.trimStart()}` : u.raw;
+      broke = false;
+    }
+    return out;
+  };
   const craftedBody = (text: string, note: boolean, lead = ''): string => {
-    let out = summed(text, note);
+    let out = summed(withoutSecondSums(text), note);
     if (news) {
       const unparked = withoutAgendaPush(out);
       if (unparked.dropped > 0) {
@@ -715,6 +737,22 @@ export function validateCoachResponse(
     if (varied.rephrased > 0 && note) notes.push(`question_rephrased:${varied.rephrased}`);
     out = varied.text;
     if (saidAloud || identityAsked) return out;
+    if (guidance !== null) {
+      const talk = guidance.step === null ? null : new StepTalk(guidance);
+      // What contradicts the method, or reads more into a fact than it shows (validators/method.ts).
+      const read = methodText(out, {
+        ...(options.founderText === undefined ? {} : { founderText: options.founderText }),
+        // A step of the model's own goes whole, with its list, below: read as the gate reads it.
+        protect: (unit, raw) =>
+          talk?.drops(raw) === true ||
+          isProtectedLine(unit, forcedEscalationFor(options.preRisk) !== null) ||
+          isServerText(unit, guidance, channel),
+      });
+      if (note)
+        for (const f of new Set(read.findings))
+          notes.push(`method_${f}:${read.findings.filter((x) => x === f).length}`);
+      out = read.text;
+    }
     if (support !== null) {
       const held = checkCitationSupport(out, support, {
         protect: (unit) => carriesContract(unit, guidance),

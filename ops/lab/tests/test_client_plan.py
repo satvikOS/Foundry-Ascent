@@ -16,6 +16,8 @@ from conversation_lab import cli, config
 from conversation_lab.bedrock import LabModelClient, request_fields
 from conversation_lab.budget import Ledger, SpendGuard
 from conversation_lab.client import calibration, suite
+from conversation_lab.client import plan as plan_module
+from conversation_lab.client.judge import judge_candidates
 from conversation_lab.client.plan import (
     PLAN_LIMIT_USD,
     estimate,
@@ -37,7 +39,7 @@ LUNA = "us.openai.gpt-6-luna"
 EVERY = list(load(DAY).scenarios)
 
 
-def plan(scenarios=EVERY, coach: str = NOVA, judge: str = HAIKU):
+def plan(scenarios=EVERY, coach: str = NOVA, judge: str = HAIKU, think: str = "default"):
     return estimate(
         scenarios,
         prices=LAB.prices,
@@ -45,6 +47,7 @@ def plan(scenarios=EVERY, coach: str = NOVA, judge: str = HAIKU):
         judge=judge,
         simulator=LAB.live_simulator[0],
         calibration_cases=len(calibration.load()),
+        think=think,
     )
 
 
@@ -162,6 +165,33 @@ def test_the_coach_a_b_offers_haiku_5_5_and_luna_to_the_lab_alone() -> None:
     assert plan(coach=HAIKU_5_5, judge=judge).app_usd == plan().app_usd
 
 
+def test_the_open_weight_candidates_are_offered_to_the_lab_alone_and_judged_by_another_family() -> None:
+    for coach in (
+        "openai.gpt-oss-120b-1:0",
+        "openai.gpt-oss-20b-1:0",
+        "qwen.qwen3-next-80b-a3b",
+        "deepseek.v3.2",
+        "mistral.mistral-large-3-675b-instruct",
+    ):
+        app = config.coach_app_models(coach, LAB, offered=LAB.client_coach)
+        assert (app.primary, app.fallback) == (coach, coach)
+        assert judge_candidates(coach, LAB)[0] == HAIKU
+        # The whole set or some of its groups: what does not fit is refused before any call.
+        assert plan(in_groups(EVERY, ("numbers", "news")), coach=coach).total_usd <= PLAN_LIMIT_USD / 2
+        assert coach not in config.PRODUCTION_CONFIG.read_text(encoding="utf-8")
+
+
+def test_reasoning_is_planned_for() -> None:
+    off, judgement, typed = (plan(think=t).app_usd for t in ("off", "judgement", "typed"))
+    assert plan().app_usd == off < judgement < typed
+    assert typed - off < 0.5
+    # The groups it is for fit; the whole set does not, and is refused with each group's estimate.
+    assert (
+        plan(in_groups(EVERY, ("news", "followups", "hard")), think="judgement").total_usd <= PLAN_LIMIT_USD
+    )
+    assert set(plan_module.THINK_SHARE) | {"default", "off"} == set(config.THINK_CHOICES)
+
+
 def test_each_model_family_gets_the_request_it_takes() -> None:
     assert request_fields(NOVA, 4, 0.0) == {"inferenceConfig": {"maxTokens": 4, "temperature": 0.0}}
     assert request_fields(HAIKU, 9, 0.0) == {"inferenceConfig": {"maxTokens": 9, "temperature": 0.0}}
@@ -172,6 +202,14 @@ def test_each_model_family_gets_the_request_it_takes() -> None:
             "additionalModelRequestFields": {"thinking": {"type": "disabled"}},
         }
     assert request_fields("us.anthropic.claude-opus-5-5", 64, 0.0) == {"inferenceConfig": {"maxTokens": 64}}
+    # gpt-oss always reasons, the least it takes, asked with the flat field.
+    assert request_fields("openai.gpt-oss-20b-1:0", 64, 0.0) == {
+        "inferenceConfig": {"maxTokens": 64, "temperature": 0.0},
+        "additionalModelRequestFields": {"reasoning_effort": "low"},
+    }
+    assert request_fields("deepseek.v3.2", 4, 0.0) == {
+        "inferenceConfig": {"maxTokens": 4, "temperature": 0.0}
+    }
     luna = request_fields(LUNA, 64, 0.0)
     assert luna["additionalModelRequestFields"] == {"reasoning": {"effort": "none"}}
 

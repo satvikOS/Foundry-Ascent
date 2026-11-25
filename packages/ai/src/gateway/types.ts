@@ -83,7 +83,8 @@ export type AttemptOutcome =
 /**
  * `initial` = first call; `repair` = re-ask after invalid output; `profile_retry` = Nova inference-profile retry;
  * `cache_retry` = Nova retry without prompt-cache checkpoints after Bedrock refused a request that carried them;
- * `field_retry` = an OpenAI model's retry without the optional request field Bedrock refused (`issues` names it).
+ * `field_retry` = a retry without the optional request field Bedrock refused (`issues` names it): an OpenAI model's, or
+ * the reasoning a request asked of Nova 2.
  */
 export type AttemptKind = 'initial' | 'repair' | 'profile_retry' | 'cache_retry' | 'field_retry';
 
@@ -151,6 +152,9 @@ export interface GenerateStructuredResult<T> {
   attempts: ModelAttempt[];
 }
 
+/** How much a model may reason before a streamed answer ({@link StreamTextRequest.think}). */
+export type ThinkEffort = 'low';
+
 /**
  * A plain-text generation streamed as it is produced (the conversational answer of a turn). The text is
  * handed to the caller chunk by chunk; nothing is validated here, so the caller must gate every chunk
@@ -164,6 +168,12 @@ export interface StreamTextRequest {
   messages: readonly ChatMessage[];
   /** Upper bound on generated tokens. Default 1 500. */
   maxOutputTokens?: number;
+  /**
+   * Let the model reason before it answers (Amazon Nova 2 on Converse; every other model ignores it). Its reasoning never
+   * reaches the caller; it is billed as output, with its own allowance beside `maxOutputTokens` (`THINK_LOW_MAX_TOKENS`).
+   * Absent (the default): no reasoning.
+   */
+  think?: ThinkEffort;
   /** Where the prompt's unchanging prefix ends, for the provider's prompt cache (see {@link PromptCacheHint}). */
   promptCache?: PromptCacheHint;
   /** Budget for the primary model. Default 25 000 ms. */

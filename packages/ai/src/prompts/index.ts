@@ -8,7 +8,7 @@ export type {
 } from './system.js';
 export { buildEvidenceBlock, evidenceIdsInBlock, REFERENCE_RULES } from './evidence.js';
 export type { EvidenceBlockOptions } from './evidence.js';
-export { PATH_TAG, guidanceText, renderGuidance } from './guidance.js';
+export { PATH_TAG, asksForJudgement, guidanceText, renderGuidance } from './guidance.js';
 export type { PromptGuidance, ReplyContractFinding, ReplyContractResult } from './guidance.js';
 export { longDay, sayDay, weekdayOf } from './due-day.js';
 export { PATH_OPENER_REPLIES, pathOpener } from './path-opener.js';

@@ -12,7 +12,12 @@ import { ModelGatewayError, ModelUnavailableError, isModelGatewayError } from '.
 import { toStrictJsonSchema } from './json-schema.js';
 import { LunaProvider, type LunaReasoningEffort } from './luna.js';
 import { MockModelGateway, type MockModelGatewayOptions } from './mock.js';
-import { CONVERSE_REASONING_EFFORTS, NovaProvider, type ConverseReasoningEffort } from './nova.js';
+import {
+  CONVERSE_REASONING_EFFORTS,
+  NovaProvider,
+  isGptOssModelId,
+  type ConverseReasoningEffort,
+} from './nova.js';
 import type { ProviderStreamResult, StructuredProvider } from './provider.js';
 import type { AwsCredentialProvider, AwsCredentials, FetchFn } from './sigv4-fetch.js';
 import { createBedrockReranker, type RerankerConfig } from './rerank.js';
@@ -36,6 +41,7 @@ import {
   type StreamTextRequest,
   type StreamTextResult,
   type TextChunkHandler,
+  type ThinkEffort,
 } from './types.js';
 
 export const DEFAULT_PRIMARY_TIMEOUT_MS = 25_000;
@@ -142,10 +148,11 @@ export const MANTLE_MODEL_PREFIX = 'openai.';
  * Which adapter serves a reasoning model id: `openai.*` goes to Bedrock Mantle (Luna provider, SigV4
  * service `bedrock-mantle`); every other id — bare foundation models (`amazon.nova-2-lite-v1:0`) and
  * cross-region / global inference profiles (`us.…`, `global.…`) — goes to Bedrock Converse, with the id
- * passed through unchanged.
+ * passed through unchanged. OpenAI's open-weight models have a runtime id of their own (`openai.gpt-oss-120b-1:0`):
+ * Converse.
  */
 export function reasoningAdapterFor(modelId: string): 'mantle' | 'converse' {
-  return modelId.startsWith(MANTLE_MODEL_PREFIX) ? 'mantle' : 'converse';
+  return modelId.startsWith(MANTLE_MODEL_PREFIX) && !isGptOssModelId(modelId) ? 'mantle' : 'converse';
 }
 
 /**
@@ -431,7 +438,12 @@ class BedrockModelGateway implements ModelGateway {
       await onText(text);
     };
 
-    const run = async (provider: StructuredProvider, timeoutMs: number): Promise<ProviderStreamResult> => {
+    // The fallback never reasons: it answers for a primary that was late or failed.
+    const run = async (
+      provider: StructuredProvider,
+      timeoutMs: number,
+      think?: ThinkEffort,
+    ): Promise<ProviderStreamResult> => {
       if (!provider.streamText) throw new ModelUnavailableError('config', provider.modelId);
       const deadline = new Deadline(timeoutMs, request.signal);
       try {
@@ -442,6 +454,7 @@ class BedrockModelGateway implements ModelGateway {
           deadline,
           requestId: request.requestId,
           ...(request.promptCache ? { promptCache: request.promptCache } : {}),
+          ...(think ? { think } : {}),
           ...this.#sampling(request.purpose),
           onText: deliver,
         });
@@ -483,7 +496,10 @@ class BedrockModelGateway implements ModelGateway {
 
     let primaryError: unknown;
     try {
-      return finish(await run(route.primary, request.timeoutMs ?? this.#primaryTimeoutMs), false);
+      return finish(
+        await run(route.primary, request.timeoutMs ?? this.#primaryTimeoutMs, request.think),
+        false,
+      );
     } catch (error) {
       // Once text has been shown, another model's answer would contradict it: no fallback.
       if (timing.firstTokenAt !== null || !shouldFallback(error)) return failWith(error);

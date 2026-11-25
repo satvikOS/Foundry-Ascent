@@ -163,6 +163,9 @@ instance.
   `MODEL_REASONING_EFFORT`), a temperature only at effort `none`, the forced tool, no `cachePoint` (its caching is
   implicit). A field Bedrock refuses is dropped for one retry (`field_retry`, effort `none` → `low` → left out; tool
   choice → `auto`) and not sent again by that instance once the retry answered. Its reasoning never reaches `onText`.
+  Nova 2 reasons first when a streamed request asks (`think: 'low'`: `reasoningConfig`, off by default; refused, the
+  request goes again without it). OpenAI's open-weight models run here under their runtime ids
+  (`openai.gpt-oss-120b-1:0`), always reasoning at `low` or more (`reasoning_effort`).
   The conversation (`turn`, `test_bench`) samples at temperature 0 (`MODEL_COACH_TEMPERATURE`) on the models that take
   one; every other purpose at 0.2. If a _bare_
   foundation-model id is rejected with a `ValidationException` about on-demand throughput / inference

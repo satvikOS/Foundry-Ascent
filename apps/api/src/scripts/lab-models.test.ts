@@ -62,6 +62,53 @@ function clients(change: Partial<Clients> = {}): Clients {
 const awsError = (name: string): Error =>
   Object.assign(new Error('arn:aws:bedrock:us-east-1:123456789012:secret'), { name });
 
+describe('a candidate that reasons', () => {
+  it('Nova 2 at low reasons on its streamed replies, never at none, and is reserved for it', async () => {
+    const asked: [string | null, string | null][] = [];
+    const { report } = await runModelsBenchmark(
+      clients({
+        gateway: (_id, effort) => {
+          const gateway = new MockModelGateway({ streamDelayMs: 0 });
+          const streamText = gateway.streamText.bind(gateway);
+          gateway.streamText = (request, onText) => {
+            asked.push([effort, request.think ?? null]);
+            return streamText(request, onText);
+          };
+          return gateway;
+        },
+      }),
+      {
+        ...CANDIDATES,
+        reasoning: [{ id: 'us.amazon.nova-2-lite-v1:0', efforts: ['none', 'low'] }],
+        rerankers: [],
+      },
+      OPTIONS,
+    );
+    expect(new Set(asked.map((a) => a.join(':')))).toEqual(new Set([':', 'none:', 'low:low']));
+    expect(report.reasoning.map((r) => r.effort)).toEqual(['none', 'low']);
+    const nova = (reasons: boolean) => reasoningWorstUsd('us.amazon.nova-2-lite-v1:0', 300, 420, reasons);
+    expect(nova(true)).toBeGreaterThan(nova(false) * 3);
+    // gpt-oss always reasons.
+    expect(reasoningWorstUsd('openai.gpt-oss-20b-1:0', 300, 420)).toBeGreaterThan(
+      (1_420 * 2 * 0.3) / 1_000_000,
+    );
+  });
+
+  it('the committed candidates hold both arms of Nova 2 and the open-weight models', async () => {
+    const { reasoning } = await loadCandidates();
+    const efforts = Object.fromEntries(reasoning.map((c) => [c.id, c.efforts]));
+    expect(efforts['us.amazon.nova-2-lite-v1:0']).toEqual(['none', 'low']);
+    expect(efforts['openai.gpt-oss-120b-1:0']).toEqual(['low']);
+    expect(Object.keys(efforts)).toEqual(
+      expect.arrayContaining([
+        'qwen.qwen3-next-80b-a3b',
+        'deepseek.v3.2',
+        'mistral.mistral-large-3-675b-instruct',
+      ]),
+    );
+  });
+});
+
 describe('lab-models (offline, on the mock)', () => {
   it('measures every candidate, and prints ids, codes and numbers only', async () => {
     const { report, private: kept } = await runModelsBenchmark(clients(), CANDIDATES, OPTIONS);

@@ -506,6 +506,7 @@ def test_the_suite_stops_at_the_budget_and_fails_without_a_report(
 def test_the_candidates_are_the_committed_ones() -> None:
     ids = models_bench.candidate_ids()
     assert {LUNA, "global.openai.gpt-6-luna", TITAN, COHERE_RERANK} <= ids
+    assert {"openai.gpt-oss-120b-1:0", "qwen.qwen3-next-80b-a3b", "deepseek.v3.2"} <= ids
     # Mantle's bare id is not granted to the lab role, so it is no candidate.
     assert "openai.gpt-6-luna" not in ids
 
@@ -522,8 +523,9 @@ def test_the_dry_run_runs_the_real_script_on_the_mock(
     summary = json.loads((out / "public" / "summary.json").read_text())
     assert all(a["ok"] for a in summary["result"]["access"])
     assert {a["id"] for a in summary["result"]["access"]} == models_bench.candidate_ids()
-    # One row per candidate and effort: Luna (none, low), global Luna, Nova, Haiku 4.5, Haiku 5.5 (none, low), its global.
-    assert len(summary["result"]["reasoning"]) == 8
+    # One row per candidate and effort: Luna (none, low), global Luna, Nova (none, low), Haiku 4.5, Haiku 5.5 (none,
+    # low), its global, and the five open-weight models.
+    assert len(summary["result"]["reasoning"]) == 14
     assert summary["result"]["embeddings"][0]["vector"]["answerable"] >= 220
     # No database in this run: the models alone.
     assert summary["result"]["search"] == []

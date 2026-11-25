@@ -56,7 +56,9 @@ name: Ops - conversation lab
 #           (a judge that is lenient on it makes the client score no pass). Runs every scenario (max_scenarios does not
 #           apply; scenario_ids and groups do). A run estimated above USD 1.80 is refused before any call, with each
 #           group's estimate. `coach_model` puts this suite's API process on another coach for an A/B (GPT-6 Luna,
-#           Claude Haiku 5.5: benchmark only, production unchanged; the summary names the coach), `judge_model` names
+#           Claude Haiku 5.5, gpt-oss, Qwen3, DeepSeek, Mistral: benchmark only, production unchanged; the summary names
+#           the coach), `coach_think` lets a Nova 2 coach reason before the replies that judge something, or every typed
+#           one (CORE_THINK of the lab's API process), `judge_model` names
 #           the judge (never one of the coach's family). Capped at USD 2. The exact wording of the client's questions and the other tools'
 #           recorded scores come from the optional repository secret LAB_CLIENT_PACK (never committed, run step
 #           only); without it our equivalent wording is used and the summary says so.
@@ -128,6 +130,16 @@ on:
           - us.anthropic.claude-haiku-5-5
           - global.anthropic.claude-haiku-5-5
           - us.openai.gpt-6-luna
+          - openai.gpt-oss-120b-1:0
+          - openai.gpt-oss-20b-1:0
+          - qwen.qwen3-next-80b-a3b
+          - deepseek.v3.2
+          - mistral.mistral-large-3-675b-instruct
+        default: default
+      coach_think:
+        description: client only - which typed turns let the coach reason before it answers, Amazon Nova 2 only (lab only; default = the deployment's own, off)
+        type: choice
+        options: [default, 'off', judgement, typed]
         default: default
       judge_model:
         description: client only - the judge (auto = the first of another family than the coach); one named for both arms of an A/B must be of neither coach's family
@@ -187,6 +199,7 @@ jobs:
           PRODUCTION_ORIGIN: ${{ inputs.production_origin }}
           SCENARIO_GROUPS: ${{ inputs.groups }}
           COACH_MODEL: ${{ inputs.coach_model }}
+          COACH_THINK: ${{ inputs.coach_think }}
           JUDGE_MODEL: ${{ inputs.judge_model }}
         run: |
           # Values are checked, never echoed (except the suite and the numbers, which are public).
@@ -245,10 +258,11 @@ jobs:
               exit 1
             fi
           done
-          case "${COACH_MODEL}" in default|us.amazon.nova-2-lite-v1:0|us.anthropic.claude-haiku-5-5|global.anthropic.claude-haiku-5-5|us.openai.gpt-6-luna) ;; *) echo "::error::coach_model is not one of its options."; exit 1;; esac
+          case "${COACH_MODEL}" in default|us.amazon.nova-2-lite-v1:0|us.anthropic.claude-haiku-5-5|global.anthropic.claude-haiku-5-5|us.openai.gpt-6-luna|openai.gpt-oss-120b-1:0|openai.gpt-oss-20b-1:0|qwen.qwen3-next-80b-a3b|deepseek.v3.2|mistral.mistral-large-3-675b-instruct) ;; *) echo "::error::coach_model is not one of its options."; exit 1;; esac
+          case "${COACH_THINK}" in default|off|judgement|typed) ;; *) echo "::error::coach_think must be default, off, judgement or typed."; exit 1;; esac
           case "${JUDGE_MODEL}" in auto|us.anthropic.claude-haiku-4-5-20251001-v1:0|us.amazon.nova-pro-v1:0|us.meta.llama4-maverick-17b-instruct-v1:0) ;; *) echo "::error::judge_model is not one of its options."; exit 1;; esac
-          if [ "${SUITE}" != client ] && { [ -n "${SCENARIO_GROUPS}" ] || [ "${COACH_MODEL}" != default ] || [ "${JUDGE_MODEL}" != auto ]; }; then
-            echo "::error::groups, coach_model and judge_model are the client suite's."
+          if [ "${SUITE}" != client ] && { [ -n "${SCENARIO_GROUPS}" ] || [ "${COACH_MODEL}" != default ] || [ "${COACH_THINK}" != default ] || [ "${JUDGE_MODEL}" != auto ]; }; then
+            echo "::error::groups, coach_model, coach_think and judge_model are the client suite's."
             exit 1
           fi
           case "${FACE_MODE}" in both|full|lite|lite-probe) ;; *) echo "::error::face_mode must be both, full, lite or lite-probe."; exit 1;; esac
@@ -326,6 +340,7 @@ jobs:
       LAB_MATRIX_SOURCE: ${{ inputs.matrix_source }}
       LAB_FACE_MODE: ${{ inputs.face_mode }}
       LAB_GROUPS: ${{ matrix.suite == 'client' && inputs.groups || '' }}
+      LAB_COACH_THINK: ${{ matrix.suite == 'client' && inputs.coach_think || 'default' }}
       LAB_COACH_MODEL: ${{ matrix.suite == 'client' && inputs.coach_model || 'default' }}
       LAB_JUDGE_MODEL: ${{ matrix.suite == 'client' && inputs.judge_model || 'auto' }}
     steps:
@@ -477,7 +492,7 @@ jobs:
             --baseline-run-id "${LAB_BASELINE_RUN_ID}" --baseline-file "${RUNNER_TEMP}/baseline/summary.json" \
             --scenarios "${LAB_SCENARIO_IDS}" --repeat "${LAB_REPEAT}" --matrix-source "${LAB_MATRIX_SOURCE}" \
             --face-mode "${LAB_FACE_MODE}" --groups "${LAB_GROUPS}" --coach-model "${LAB_COACH_MODEL}" \
-            --judge-model "${LAB_JUDGE_MODEL}"
+            --judge-model "${LAB_JUDGE_MODEL}" --coach-think "${LAB_COACH_THINK}"
 
       - name: Seal the private outputs
         if: always() && env.LAB_PUBLIC_KEY != ''

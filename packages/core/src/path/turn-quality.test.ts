@@ -593,6 +593,9 @@ describe('nothing is said twice', () => {
     expect(again).toMatch(
       /^What I said stands, so make it concrete now: each of you fills the contribution sheet alone\./,
     );
+    const third = gives('So how do we split the shares, the two of us?', { started: true }, [answer, again]);
+    expect(third).toMatch(/^What I said stands, and after the first part comes this: /);
+    expect(third).not.toContain('fills the contribution sheet alone');
   });
 
   it('with no answer of the program’s, the step’s parts are listed once, then one at a time', () => {

@@ -730,6 +730,23 @@ account's own region:
   (the harness's earlier Nova arm, below, is the reference); the call's return to listening is not affected by phase B.
 - Not remeasured in a production call yet: the Haiku sections below are what the coach was until 2026-11-24.
 
+### Reasoning before a reply (2026-11-25; off, not measured yet)
+
+`CORE_THINK=judgement|typed` (default `off`; core `orchestrator/think.ts`) asks Nova 2 Lite to reason at low effort before a
+typed reply: `additionalModelRequestFields.reasoningConfig` `{type: enabled, maxReasoningEffort: low}`
+([extended thinking](https://docs.aws.amazon.com/nova/latest/nova2-userguide/extended-thinking.html), checked 2026-11-25).
+
+- What the founder sees first does not wait: the server's lead and the step's card are out before the model starts. Without
+  a lead the first word waits for the reasoning; nothing here has measured by how much (`first_token_ms` of a lab run does).
+- The reasoning streams as `reasoningContent` ("[REDACTED]") and never reaches the reply. It is billed as output and counted
+  in `outputTokens`; `maxTokens` bounds both, so such a request may use 2,000 tokens beside its answer's bound
+  (`THINK_LOW_MAX_TOKENS`), and a stream cut before it reported is metered at all of it. Temperature and cache checkpoints
+  stay as they are (only `high` forbids sampling and `maxTokens`; it is never asked for).
+- Bedrock refusing it (a `ValidationException`) is one retry without it, remembered by the process (`field_retry`,
+  `dropped:reasoning_config` in `ai.model.attempt`), before the cache checkpoints are ever blamed. The fallback model
+  answers at once, without reasoning. The budget is the turn's own (25 s, then the fallback's).
+- `turn.phase_a` says whether the turn reasoned (`think`) and how many units the method lint changed (`methodEdits`).
+
 ### The coach on Claude Haiku 4.5 (2026-11-06 to 2026-11-24)
 
 What changed: the coach (every turn's streamed reply and its fields) runs on Claude Haiku 4.5 instead of Nova 2 Lite

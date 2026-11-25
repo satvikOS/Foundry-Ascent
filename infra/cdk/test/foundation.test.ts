@@ -329,6 +329,12 @@ describe('FoundryAscent-Foundation', () => {
             'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
             // A reranker only in the region it is called in.
             'arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0',
+            // Candidates with no inference profile: only in the lab's region.
+            'arn:aws:bedrock:us-east-1::foundation-model/deepseek.v3.2',
+            'arn:aws:bedrock:us-east-1::foundation-model/mistral.mistral-large-3-675b-instruct',
+            'arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-120b-1:0',
+            'arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-20b-1:0',
+            'arn:aws:bedrock:us-east-1::foundation-model/qwen.qwen3-next-80b-a3b',
             'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
             'arn:aws:bedrock:us-west-2::foundation-model/amazon.rerank-v1:0',
             'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',

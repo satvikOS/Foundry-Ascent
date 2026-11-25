@@ -64,6 +64,7 @@ import {
   type Generation,
   type GenerationMeter,
 } from './generate.js';
+import { thinkFor } from './think.js';
 import { withoutTrailingFields } from './reply-extract.js';
 import { pathAnnotationMessages, pathReportRequest } from './turn-prompts.js';
 
@@ -467,6 +468,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
       ? await generateStreamed({
           ...base,
           emit,
+          think: thinkFor(cfg.turns.think, { channel: spec.channel, guidance, coaches: owesContract }),
           speechKey: spec.speechKey,
           faceApproval: spec.faceApproval ?? null,
           gate: {

@@ -25,7 +25,7 @@ import {
 import { asksFor, isVenting, timeSaid } from './kinds.js';
 import { doneWhenOf, playOf } from './steps.js';
 import { meaningWords, pointsBack, refersBack } from './match.js';
-import { readAgain, readResult } from './news.js';
+import { asksIfGood, readAgain, readResult } from './news.js';
 import { CRITERION_COUNTED, CRITERION_NAMES, STAGE_DOING } from './playbook/phrases.js';
 import {
   bare,
@@ -248,8 +248,9 @@ function promptOf(input: PathTurnInput, decision: Decision): PathPromptGuidance 
     ask: asked,
     ...(lead === null ? {} : { lead }),
     ...(talks && asked === null && lead === null && step !== null
-      ? { fallback: fallbackOf(input, step.view) }
+      ? { fallback: kind === 'news' ? newsFallback(decision) : fallbackOf(input, step.view) }
       : {}),
+    ...(kind === 'coaching' && asksJudgement(input, decision) ? { judgement: true } : {}),
     ...(talks && choice !== null && decision.calc.ask === null
       ? { choice: { kind: choice.kind, options: choice.options } }
       : {}),
@@ -298,6 +299,32 @@ function promptOf(input: PathTurnInput, decision: Decision): PathPromptGuidance 
     newIdea: decision.newIdea,
     criteria: decision.missing.map((c) => ({ id: c.id, title: c.title, evidence: c.evidence })),
   };
+}
+
+/** The plays a founder comes to for a judgement of what they have. */
+export const JUDGEMENT_PLAYS: ReadonlySet<string> = new Set([
+  'honest-read',
+  'real-business',
+  'biggest-reason-to-fail',
+  'friends-love-it',
+  'fake-compliments',
+  'someone-has-my-idea',
+  'will-anyone-pay',
+]);
+/** A judgement asked for in so many words. */
+const JUDGES =
+  /\b(?:is (?:it|that|this) (?:really )?(?:worth|enough|too (?:early|late|small|much|soon))|(?:poke|find) (?:some )?holes|what (?:is|are) (?:wrong|weak)|what am i (?:missing|not seeing)|(?:be|your) (?:brutally |really )?honest|would you (?:invest|bet|do it|buy)|am i (?:wrong|right|crazy|fooling|on the right)|what (?:do you|would you) (?:make of|think of)|what does (?:that|this|it) (?:mean|show|prove|tell)|does (?:that|this|it) (?:mean|show|prove|count)|should i (?:worry|be worried|give up|quit|stop|pivot))\b/;
+
+/** Whether the message asks what to make of something: the venture, a result, whether it is worth it. */
+export function asksJudgement(
+  input: Pick<PathTurnInput, 'message'>,
+  decision: Pick<Decision, 'play' | 'intent'>,
+): boolean {
+  return (
+    (decision.play !== null && JUDGEMENT_PLAYS.has(decision.play.id)) ||
+    asksIfGood(input.message) ||
+    JUDGES.test(plain(input.message))
+  );
 }
 
 /** Whether they ask to choose between options the program's answer says nothing of. */
@@ -1020,15 +1047,28 @@ const GAVE_IT = 0.7;
 const gaveBefore = (input: PathTurnInput, text: string): number =>
   (input.earlierReplies ?? []).filter((r) => stemsShared(text, r) >= GAVE_IT).length;
 
+/** How an answer already given is taken further. */
+const STANDS = 'What I said stands';
+
 /** The play's answer: its steps are the turn's own. Given a moment ago, it is not given again: the first part is. */
 function playAsk(input: PathTurnInput, decision: Decision, play: Play): Ask {
   if (gaveBefore(input, play.answer) === 0) return ask(play.title, play.answer, play.why, play.traps);
-  const first = decision.step?.view.items.find((i) => !i.done);
-  if (first === undefined) return ask(play.title, firstSentence(play.answer), play.why, play.traps);
-  const time = first.minutes === null ? '' : ` It takes about ${String(first.minutes)} minutes.`;
+  const open = decision.step?.view.items.filter((i) => !i.done) ?? [];
+  // Asked again and again: the next part each time, never the same one over.
+  const part =
+    open.find(
+      (i) =>
+        !(input.earlierReplies ?? []).some(
+          (r) => r.includes(STANDS) && r.toLowerCase().includes(bare(i.do).toLowerCase()),
+        ),
+    ) ?? open.at(-1);
+  const given = part === undefined ? 0 : open.indexOf(part);
+  if (part === undefined) return ask(play.title, firstSentence(play.answer), play.why, play.traps);
+  const time = part.minutes === null ? '' : ` It takes about ${String(part.minutes)} minutes.`;
+  const now = given === 0 ? 'so make it concrete now' : 'and after the first part comes this';
   return ask(
-    `${play.title}: the first part`,
-    `What I said stands, so make it concrete now: ${lowerFirst(bare(first.do))}. ${first.how}${time}`,
+    `${play.title}: ${given === 0 ? 'the first part' : 'the next part'}`,
+    `${STANDS}, ${now}: ${lowerFirst(bare(part.do))}. ${part.how}${time}`,
     play.why,
     play.traps,
   );
@@ -1063,6 +1103,22 @@ function fallbackOf(
   return {
     text: `Here is how the step goes:\n\n${list.join('\n')}`,
     voice: `First ${lowerFirst(bare(part.do))}${second === undefined ? '' : `, then ${lowerFirst(bare(second.do))}`}.`,
+  };
+}
+
+/** What the server says of news no rule reads, when the model said too little of it: never the step's parts instead. */
+function newsFallback(decision: Decision): NonNullable<PathPromptGuidance['fallback']> {
+  const told1 = decision.finding === '' ? '' : `You told me this: ${bare(decision.finding)}.`;
+  return {
+    text: joined(
+      told1,
+      'One thing that happened is a fact to check, and no pattern yet: it may be the timing, the person or the offer. Write down which of your guesses it touches, and ask whoever it came from what happened before it, and what they did or paid.',
+      'If it changes who pays or why, change the plan; if it does not, what you were doing stands.',
+    ),
+    voice: joined(
+      told1,
+      'It is one fact, and no pattern yet. Ask whoever it came from what happened before it, and change the plan only if it changes who pays or why.',
+    ),
   };
 }
 

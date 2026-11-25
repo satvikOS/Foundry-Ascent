@@ -216,6 +216,9 @@ const OFFER =
 const INTEREST =
   /\b(?:got|have) (\d+) (?:[a-z-]+ ){0,1}(?:sign-?ups?|likes|followers|downloads|waitlist|views|clicks)\b|(?<![\d.$])(\d+) (?:[a-z-]+ ){0,2}(?:liked|followed|clicked|downloaded|filled (?:in|out))\b/;
 
+/** Payments that are no market yet. */
+const FEW = 5;
+
 const word = (n: number): string => said(n);
 const theN = (n: number): string => (n === 1 ? 'that one' : `those ${word(n)}`);
 
@@ -236,7 +239,7 @@ function paidNews(t: Tally): Pick<News, 'means' | 'spoken'> | null {
   const ask = t.count === 1 ? 'Ask that one' : t.count === 2 ? 'Ask both' : `Ask all ${word(t.count)}`;
   return {
     means:
-      `${who}, and that is worth more than any number of sign-ups: somebody wanted it enough to pay for it or to sign. ${ask} what made them do it, and make the next ten people the same offer at the same price.`.replace(
+      `${who}, and that is worth more than any number of sign-ups: somebody wanted it enough to pay for it or to sign.${t.count < FEW ? ` It does not show a market yet: ${word(t.count)} is few, and people who know you pay for other reasons.` : ''} ${ask} what made them do it, and make the next ten people the same offer at the same price.`.replace(
         'to pay for it or to sign',
         did === 'paid' ? 'to pay' : 'to sign',
       ),
@@ -517,7 +520,7 @@ export function newsOf(input: NewsInput): News | null {
   return {
     kind: 'interest',
     ratio: joined?.whole == null ? null : { part: joined.count, whole: joined.whole },
-    means: `${n}${share} raised a hand, and none of that is money yet. The test is to ask some of them to pay now, at a real price, and count the yeses.`,
+    means: `${n}${share} raised a hand, and none of that is money yet: it is free, so it can be curiosity as well as need. The test is to ask some of them to pay now, at a real price, and count the yeses.`,
     spoken: `${n}${share} raised a hand, and that is not money yet. Ask some of them to pay now and count the yeses.`,
   };
 }

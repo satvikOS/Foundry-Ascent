@@ -16,7 +16,13 @@ import {
 import { mockPathReply, pathBlockIn } from '../testing/path-reply.js';
 import { checkReplyContract } from '../validators/reply-contract.js';
 import { parseControlBlock } from './control.js';
-import { guidanceText, renderGuidance, type PromptGuidance } from './guidance.js';
+import {
+  READING_EXAMPLE,
+  asksForJudgement,
+  guidanceText,
+  renderGuidance,
+  type PromptGuidance,
+} from './guidance.js';
 import { GUIDED_CONTINUITY_CHARS, GUIDED_HISTORY, buildMessages, withoutStepLine } from './messages.js';
 import { buildSystemPromptParts, type SystemPromptInput } from './system.js';
 
@@ -116,6 +122,50 @@ describe('the <path> block', () => {
     }
     expect(of(SOCIAL)).toContain('<step title="List 20 office managers');
     expect(of(REHEARSAL)).not.toContain('<step');
+  });
+
+  it('says how to read a fact only on turns that judge one, in few tokens, with no number in its example', () => {
+    const of = (g: PromptGuidance, channel: 'text' | 'voice' = 'text') =>
+      renderGuidance(g, channel, { today: TODAY });
+    const rule = 'Read it as a strict examiner, with their numbers: what it shows; what it does not show';
+    const news: PromptGuidance = { ...STEP_ONLY, kind: 'news' };
+    for (const g of [
+      news,
+      { ...news, lead: { text: 'L', voice: 'L' } },
+      { ...SERVICE_OR_PRODUCT, judgement: true },
+    ])
+      expect(of(g)).toContain(rule);
+    expect(of({ ...STEP_ONLY, matched: 'none' })).toContain(
+      `If they ask what something means, or whether to do it: ${rule}`,
+    );
+    for (const g of [SERVICE_OR_PRODUCT, STEP_ONLY, REPORT, RECALL, SOCIAL, REHEARSAL, NEW_IDEA])
+      expect(of(g)).not.toContain(rule);
+    // The example only where nothing opens the reply, and never on a call.
+    expect(of(news)).toContain(READING_EXAMPLE);
+    expect(of({ ...news, lead: { text: 'L', voice: 'L' } })).not.toContain(READING_EXAMPLE);
+    expect(of(news, 'voice')).not.toContain(READING_EXAMPLE);
+    expect(READING_EXAMPLE).not.toMatch(/\d/);
+    const tokens = (text: string) => Math.ceil(text.length / 4);
+    expect(tokens(of(news)) - tokens(of(STEP_ONLY))).toBeLessThanOrEqual(170);
+    expect(tokens(of(news, 'voice')) - tokens(of(STEP_ONLY, 'voice'))).toBeLessThanOrEqual(40);
+  });
+
+  it('knows which turns ask for a judgement', () => {
+    for (const g of [
+      { ...STEP_ONLY, kind: 'news' as const },
+      STEP_ONLY,
+      { ...SERVICE_OR_PRODUCT, judgement: true },
+    ])
+      expect(asksForJudgement(g)).toBe(true);
+    for (const g of [
+      SERVICE_OR_PRODUCT,
+      REPORT,
+      RECALL,
+      SOCIAL,
+      NEW_IDEA,
+      { ...STEP_ONLY, lead: { text: 'L', voice: 'L' } },
+    ])
+      expect(asksForJudgement(g)).toBe(false);
   });
 
   it('names the path’s own step only when it is overdue, to say so in half a line', () => {

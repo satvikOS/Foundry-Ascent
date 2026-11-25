@@ -46,9 +46,13 @@ export function reasoningModelIds(models: EffectiveModels): string[] {
   ]);
 }
 
-/** Models served by Bedrock Mantle (OpenAI-compatible endpoint, `bedrock-mantle:CreateInference`). */
+/**
+ * Models served by Bedrock Mantle (OpenAI-compatible endpoint, `bedrock-mantle:CreateInference`). OpenAI's open-weight
+ * models have a runtime id of their own (`openai.gpt-oss-120b-1:0`, their model cards, checked 2026-11-25): Converse, as
+ * packages/ai router.ts `reasoningAdapterFor`.
+ */
 export function isMantleModel(modelId: string): boolean {
-  return modelId.startsWith('openai.');
+  return modelId.startsWith('openai.') && !/^openai\.gpt-oss-\d+b-\d+:\d+$/.test(modelId);
 }
 
 export function isInferenceProfile(modelId: string): boolean {
