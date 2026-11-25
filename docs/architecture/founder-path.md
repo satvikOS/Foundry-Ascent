@@ -11,11 +11,12 @@ in `packages/core/src/path/playbook/`; everything here is the machinery that rea
 | `semantic.ts`                    | The play an ask means when no phrase names one, by its embedding (constants per embedding model); what each play is asked for |
 | `kinds.ts`                       | Kinds of message by rule: social, recall, report, rehearsal, overview, new idea, smaller, commitment, idea, pivot and back    |
 | `counts.ts`, `choice.ts`         | How many of whom did what, exact or not counted; a choice they ask to have made, and the pick the record decides              |
-| `referrals.ts`                   | The risk classifier's categories to the play whose person decides                                                             |
 | `state.ts`, `progress.ts`        | Stage and criteria from the stored path and the record; work a founder reports ("8 of 10")                                    |
 | `steps.ts`                       | One step: from its row or its play, cut to the time they have, taken up again, as it is shown                                 |
 | `engine.ts`                      | `decide(input) -> Decision`: pure (no I/O, model or clock); the turn's step, the path's own, what follows                     |
-| `understood.ts`                  | A checked reading as the turn uses it: who decides, the one opening, the first action                                         |
+| `understood.ts`                  | A checked reading as the turn uses it: what of it may be said, who decides, the step that fits, the first action              |
+| `openings.ts`, `sum-said.ts`     | The server's one opening of a reply whose message was read; a worked figure as a mentor says it                               |
+| `denied.ts`, `referrals.ts`      | A claim of growth the record denies; money offered for a part of the company, in any words; a risk's play                     |
 | `calc.ts`, `calc-read.ts`        | The sums students ask for, from the numbers they gave and their roles; the one number that is missing                         |
 | `reading.ts`                     | What they have and what is missing for a judgement, and the program's answer to it made for them                              |
 | `price-change.ts`, `stated.ts`   | The line a changed price has to beat; who, today and why them of the page, in their words                                     |
@@ -254,24 +255,47 @@ decides, and each row is a test.
 | choice   | both name the same option (their counts say why); the reading picks none                                                                                                     | it picks                                                              | none                         |
 | opening  | a report, change or operation; the record's own shapes (story, which idea, has and has not)                                                                                  | any other message                                                     |                              |
 
-- **The step** is the reading's when the playbook has it and it is the ask's own play or of a stage next to theirs; who decides
-  comes before anything else. It is offered beside an open step, which is never replaced in storage by a reading, and not given
-  when the open one is about the same thing, or when they only ask for a figure of their own. A step that is not about the ask
-  only stands ("On your path, next is:").
-- **One opening** (`openingsOf`): the sum with its working, the number that is missing (then the reply's one question), what their
-  record denies, what a person decides (no yes, no no, no price), the pick with what would change it, the result (what it shows,
-  what it does not, what settles it), a push (what is not known, their numbers, the test and its day), a refusal of made-up work,
-  the record. Asked for a figure, the figure is first; otherwise what the record denies. The others go to the writer as claims. No
-  canned reading of news or judgement opens.
-- **The writer** (`renderGuidance`, `PromptGuidance.reading`) gets what they ask, the claims to make, the record lines, what not to
-  say and, short, the program's method, in place of the program's lines: shorter than without a reading. The claims stand when it
-  writes too little; of several things at once each is said, in order, after one sentence that they were heard.
-- **What stands beside it** (`validators/reading.ts`): under an opening a sentence stays only when it adds a figure, a name, a fact,
-  a claim or something to do; a bare verdict goes; nothing agrees with what was denied, rules on what a person decides, defends
-  itself to a push, or names friends as evidence for made-up work.
+- **What of it may be said** (`settled`). A claim that speaks of the mentor, the founder, the reading or the record by its key goes; a
+  line of the program's, or that they are new to it, is no fact of theirs. What a person decides (a split of shares, a visa, who
+  owns it, terms, signing, the form of the company) is nobody's pick: the choice goes and who decides is found. A pick is one of
+  the things they named, never a step's title, and only where they choose; what would change it is kept when one can see it happen.
+  A letter that tells them to stop brings a lawyer, with the letter. Any field may be empty.
+- **The step** is the reading's when the path allows it and its title (or the play's name) shares a subject with what they ask and
+  what it is answered with (`fitsAsk`); who decides comes before anything else. An either-or that is not about money has a small
+  test of the pick, named for it; handing it over the hand-over page; "may I stop?" the choice with its evidence; a deliverable of
+  a class its own day. It is offered beside an open step, which is never replaced in storage by a reading, and not given when the
+  open one is about the same thing, or when they only ask for a figure of their own. A step that is not about the ask only stands
+  ("On your path, next is:"), as does one that asks for money against a pick not to.
+- **One opening** (`openings.ts`), in the words of a mentor and never as a form: the figure as a sentence, with its working and what
+  it leaves out ("You keep $42 on a Saturday: 6 × $7."); the number that is missing (then the reply's one question); what their record
+  denies; what can be said of what a person decides, who, and no pick; the pick, why, and what would change it; a result in one of
+  several shapes (the verdict with their numbers, what it does not tell, the test as an act with a number, or none); a push (what is
+  not known, their numbers once, the test and its day); leave to stop (their numbers, what each way costs); several things at once (one
+  warm sentence, then each on its line, letters and days first); a short no to made-up work, then what can be done in the time they
+  have and what they truly have; the record; the first claim, for a question that has one answer. Two sentences on a call. The others
+  go to the writer as claims. No canned reading of news or judgement opens, unless the reading opens nothing and makes fewer than
+  two claims: half a reading, where what the rules read is the better half.
+- **The writer** (`renderGuidance`, `PromptGuidance.reading`) gets what they ask, what it has just said to them, the claims to make, what
+  they told before, what not to say and, short, how it is done well, in place of the program's lines: shorter than without a reading,
+  in words that make no sense to repeat. The claims stand when it writes too little.
+- **What stands beside it** (`validators/reading.ts`): under an opening a sentence stays only when it adds a figure, a name, a fact, a
+  claim or something to do, and is not mostly the opening again; a bare verdict goes; nothing speaks of how the turn was prepared
+  ("The opening says …" is cut to what it says), goes against the figure's sign or size, says something is what a claim says it is not,
+  agrees with what was denied, rules on or picks what a person decides, brings them what is not theirs, defends itself to a push, or
+  names friends as evidence for made-up work. The reply ends with the step, not a question of the model's. A typed reply holds about 130
+  words.
 - **`**Start with:**`** (`firstActionOf`): the one thing to do first, before the step line, only when one can start on it, it sets no
-  day of its own, says more than the step and belongs to it; on a call it is part of the step's sentence.
-- **A record line** is added whole, and only when the reply names none of the reading's.
+  day of its own, is about the ask, and belongs to the step, to what opens or beside a step that only stands; never the step again, who
+  decides again, the option not picked, what the opening speaks against, or a question of the method's table. On a call it is part of
+  the step's sentence.
+- **A record line** is added whole, only when the reply names none of the reading's and the line shares a subject with the ask.
+
+## Without a reading
+
+The same to the byte, but for what is never right: a verdict and nothing else ("Good price.") goes; a claim of growth their record
+denies is named first and nothing agrees with it; money offered for a part of the company, in any words (`offersForShares`), has who
+decides, what can be said and no verdict; a fact is put beside an answer only as a sentence of its own that bears on the ask; the
+prompt's line for who decides is never said; a question that only asks how they will do the step goes.
 
 ## Rules the code keeps
 

@@ -55,7 +55,7 @@ function verbOfYou(verb: string): string {
 
 const ADVERBS = '(?:currently|also|now|already|still|just|often|usually|really|only|never|recently|first)';
 const FOUNDER_DOES = new RegExp(
-  `\\b(?:(?:the|this|a) )?(?:student )?founder((?: ${ADVERBS})*)(?: (?!and\\b|or\\b)([a-z]+))?`,
+  `(?<!\\bco-?)\\b(?:(?:the|this|a) )?(?:student )?(?<!\\bco-?)founder(?!s\\b)((?: ${ADVERBS})*)(?: (?!and\\b|or\\b)([a-z]+))?`,
   'giu',
 );
 /** What else the same subject does ("… and is asking", "… and plans to"). */
@@ -408,7 +408,8 @@ function candidatesOf(s: PriorSource): Candidate[] {
         asksFor(sentence) ||
         contentStems(sentence).length < 4 ||
         (idea !== '' && sameThing(sentence, idea)) ||
-        OF_THEMSELVES.test(sentence)
+        OF_THEMSELVES.test(sentence) ||
+        SUPPOSED.test(sentence.trim())
       )
         continue;
       // A fact of theirs, never an order ("ignore your rules…") or a sentence about someone else.
@@ -433,6 +434,10 @@ export function knownFacts(s: PriorSource): readonly { readonly fact: string; re
     (c) => c.fact,
   ).map((c) => ({ fact: c.fact, on: c.on }));
 }
+
+/** What they only suppose ("ok just say everybody pays 5"): nothing that happened. */
+const SUPPOSED =
+  /^(?:(?:ok(?:ay)?|so|and|but|well|then|now|fine)[, ]+)*(?:(?:just|let['’]?s|let us|lets) (?:say|suppose|assume|pretend|imagine)|suppose|assume|imagine|pretend|say (?:we|i|it|that|everyone|everybody|\d)|what if|if (?:we|i)\b)/i;
 
 /** What they say of themselves and not of the venture ("I can run the process, but I'm new to business"). */
 const OF_THEMSELVES =
@@ -511,9 +516,10 @@ const SUBJECTS: readonly RegExp[] = [
   /\b(?:pay|pays|paid|paying|price|prices|priced|pricing|charge[sd]?|fee|cost|costs|sell|sells|sold|sale|sales|buy|buys|buyer|buyers|bought|money|dollars?|revenue|profit|margin|economics|budget|order|orders|ordered|free)\b|\$/i,
   /\b(?:learn(?:ed|t)?|mean|means|meant|found|findings?|results?|interview\w*|talk|talks|talked|talking|said|customers?|users?|people|asked|told|who|group)\b/i,
   /\b(?:lab|labs|grant|advisor|adviser|patent\w*|invent\w*|licen[cs]e\w*|thesis|university|professor|ownership|owns?)\b/i,
-  /\b(?:co-?founders?|team|partner|roommate|hire|hiring|equity|shares?|split)\b/i,
+  /\b(?:co-?founders?|team|partner|roommate|joined|hire|hiring|equity|shares?|split)\b/i,
   /\b(?:pitch\w*|judges?|investors?|angel|deck|slides?|competition|raise|raising|demo)\b/i,
   /\b(?:channel|flyers?|posts?|ads?|captains?|referr\w*|marketing|reach|find them|found (?:us|you))\b/i,
+  /\b(?:medical|clinical|patients?|doctors?|nurses?|hospital|fda|diagnos\w*|health|detects?)\b/i,
 ];
 
 const aboutThe = (text: string): boolean[] => SUBJECTS.map((r) => r.test(text));
@@ -529,20 +535,33 @@ function pick<T>(forms: readonly T[], seed: string): T | undefined {
 const THINGS_HAD =
   /^(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|several|a few) (?:paid|signed|used|booked) (?!(?:me|us|you|for|in|it|a|an|the|their|his|her|by|to|up|and|but)\b)[a-z]+/i;
 
+/** They turn from what was settled. */
+const CHANGES_IT =
+  /\b(?:chang(?:e|ing) of plans?|forget (?:about |the )|scrap(?:ping)? (?:the|that)|no longer|not (?:\p{L}+ ){0,3}any ?more|switch(?:ing|ed)? to|instead of)\b/iu;
+
 /** A fact as a mentor brings it up. */
 export function broughtUp(fact: string, seed: string, decision = false): string {
   const up = upperFirst(fact);
+  if (/^you (?:have )?(?:decided|agreed|chose)\b/i.test(fact) && !fact.includes(':') && CHANGES_IT.test(seed))
+    return `${up}, and this changes that.`;
   if (/^you (?:have )?(?:decided|agreed|chose)\b/i.test(fact) && !fact.includes(':'))
     return pick([`${up}, so keep to that.`, `${up}, and that stands.`], seed) ?? up;
-  if (/^you decided: [^:]+$/i.test(fact)) return `${up}.`;
+  if (/^you decided: [^:]+$/i.test(fact))
+    return `${up.replace(/^(you decided): (?=\p{L}+ing\b)/iu, '$1 on ')}.`;
   if (decision && !fact.includes(':') && !CLAIMED.test(fact)) return `${up}, so keep to that.`;
   if (/^you\b(?!r)/i.test(fact) && !fact.includes(':'))
     return pick([`${up}, so start from there.`, `${up}, and that counts here.`], seed) ?? up;
   // Something they have, and no sentence of its own: "two paid pilots at 40 dollars".
   if (THINGS_HAD.test(fact) && !fact.includes(':')) return `You have ${fact} to build on.`;
-  if (!isClause(fact)) return `Keep this in mind: ${fact}.`;
+  // Told with what it is of ("one mill, two weeks: the drying fell from 50 to 36"): as it stands.
+  if (TOLD_WITH_ITS_LABEL.test(fact)) return `${up}.`;
+  if (!isClause(fact)) return '';
   return `Keep in mind that ${fact}.`;
 }
+
+/** A label of a few words, and then a sentence with a number in it. */
+const TOLD_WITH_ITS_LABEL =
+  /^(?!you\b)(?:[^:.]{3,40}): (?=[^:]*\d)[^:]*\b(?:is|are|was|were|has|had|fell|rose|grew|dropped|went|came|paid|sold|bought|left|took|made|said|asked|signed|ordered|returned|stayed)\b[^:]*$/iu;
 
 /** Whether a fact is a sentence of its own, and not a thing named ("4 of 9 skippers named the wait"). */
 const isClause = (fact: string): boolean =>
@@ -607,7 +626,10 @@ function isNear(s: PriorSource, c: Ranked): boolean {
   return c.kind === 'idea'
     ? s.applies === true || c.shared > 0
     : c.kind === 'record'
-      ? c.shared + c.near + c.bears > 0 || (s.always === true && c.weight >= 4)
+      ? c.decision === true
+        ? // A decision of another thing is nothing to keep to here.
+          c.shared > 0 || (c.bears > 0 && c.figure > 0) || (s.always === true && c.near + c.bears > 0)
+        : c.shared + c.near + c.bears > 0
       : (c.shared + c.bears > 0 && /^you(?:r|['’]|\b)/i.test(c.fact)) ||
         (c.shared + c.bears > 0 && MONEY_SAID.test(c.fact));
 }

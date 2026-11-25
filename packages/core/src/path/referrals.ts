@@ -74,3 +74,38 @@ export function referralForRisk(
   }
   return null;
 }
+
+const AMOUNT = String.raw`\$? ?\d[\d,.]* ?(?:k|thousand|grand|m|mil|million)?(?: ?(?:dollars|bucks|usd))?`;
+/** A part as a fraction is one of a company only when it stands alone, or is of it. */
+const SHARE = String.raw`(?:an? )?(?:\d{1,2}(?:\.\d+)? ?(?:%|percent\b|pct\b)|(?:half|third|quarter|fifth|tenth)\b(?= of (?:it|us|the |my |our )|[.,;!?]|$))`;
+/** An amount nobody pays for a thing. */
+const LARGE = String.raw`(?:\$? ?\d[\d,.]* ?(?:k|thousand|grand|m|mil|million)\b|\$? ?\d{1,3},\d{3}|\$? ?\d{4,})(?: ?(?:dollars|bucks|usd))?`;
+/** What a percentage is of when it is no part of a company. */
+const NOT_A_PART = String.raw`(?! ?(?:off|discount|discounts|more|less|cheaper|cut|cuts|commission|fee|fees|tip|tips|interest|margin|markup|tax|of (?:the |each |every |all )?(?:sales?|orders?|revenue|profits?|proceeds|price|bill|fee|tickets?|customers?|users?|people|buyers?|students?|bookings?)|on (?:each|every|top)|faster|bigger|smaller|back))`;
+const FOR_A_SHARE: readonly RegExp[] = [
+  new RegExp(
+    String.raw`(?:^|[^\w$.])${LARGE} (?:on the table )?(?:in exchange )?(?:for|to (?:get|own|have)|against|buys?) ${SHARE}${NOT_A_PART}`,
+  ),
+  new RegExp(
+    String.raw`\b(?:invest|put(?:ting)?(?: in)?|offer(?:s|ed|ing)?|give[sn]?|giving|gave)\b.{0,40}${AMOUNT}.{0,24}\b(?:for|at)\b.{0,14}(?:${SHARE}${NOT_A_PART}|(?:shares|equity|a stake|a piece|part of (?:the company|it|us))\b)`,
+  ),
+  new RegExp(
+    String.raw`\b(?:investors?|angels?|fund|vcs?|accelerator|incubator)\b.{0,40}\b(?:wants?|wanted|wanting|asks? for|asked for|asking for|gets?|takes?)\b.{0,16}${SHARE} (?:of (?:the |my |our )?(?:company|business|startup|venture|equity|it|us)|equity|stake|ownership)\b`,
+  ),
+  // As it is heard on a call: "a hundred thousand for ten percent".
+  new RegExp(
+    String.raw`\b(?:hundred|thousand|grand|million)(?: dollars| bucks)? (?:in exchange )?for (?:an? )?(?:[a-z]+[ -]){0,2}(?:percent\b|(?:half|third|quarter|fifth|tenth)\b(?= of |[.,;!?]|$))${NOT_A_PART}`,
+  ),
+  /\bangel(?: investor)?\b(?!s).{0,40}\b(?:offers|offered|is offering|invests|invested|is investing|will invest|would invest|wants? (?:in\b|to (?:invest|put|buy))|puts? in|gave|gives|wrote (?:us|me) a che(?:ck|que))\b/,
+  /\b(?:invest(?:or|ment)?|put(?:ting)? money|buy(?:ing)?) (?:in(?:to)? )?.{0,24}\b(?:for|at|in exchange for) (?:an? |some )?(?:stake|equity|shares|piece of (?:the company|it|us)|valuation cap|cap)\b/,
+  /\b(?:valuation )?cap (?:of|at) \$? ?\d|\b\$? ?\d[\d,.]* ?(?:k|m|mil|million) (?:valuation )?cap\b/,
+];
+/** They only ask what a word means, or where to find someone: nobody has offered anything. */
+const GENERAL =
+  /\b(?:what (?:is|are|does)|how (?:do|can|would|should) (?:i|we) (?:find|get|meet|reach|pitch)|where (?:do|can) (?:i|we) find|look(?:ing)? for|find an?|how does|should (?:i|we) (?:look|go|get|try|pitch|apply))\b/;
+
+/** Money is put to them for a part of the company: what it is worth, and whether to take it, a person decides. */
+export function offersForShares(message: string): boolean {
+  const text = message.toLowerCase().replace(/[‘’ʼ]/g, "'").replace(/\s+/g, ' ');
+  return text.split(/(?<=[.!?])\s+|\n+/).some((s) => !GENERAL.test(s) && FOR_A_SHARE.some((r) => r.test(s)));
+}

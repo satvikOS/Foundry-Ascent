@@ -294,6 +294,13 @@ export function pickedChannel(view: PathStepView, option: string): PathStepView 
   };
 }
 
+/** The small test of what was picked: the same test, named for it. */
+export function pickTested(view: PathStepView, pick: string): PathStepView {
+  const what = lowerFirst(pick.replace(/[\s.!?;:,]+$/u, '').trim());
+  const title = `Run one small test of your pick (${what})`;
+  return what === '' || title.length > TITLE_CHARS ? view : { ...view, title };
+}
+
 /** A weak result: the ones it came from are asked why, both sides. Null: there is nobody to ask. */
 export function askWhyStep(
   context: Pick<StepContext, 'today'>,

@@ -538,7 +538,9 @@ describe('useTurnStream idempotency', () => {
    * real, so the test waits for them with `until` instead of assuming they finish within a timer tick.
    */
   async function until(predicate: () => boolean): Promise<void> {
-    for (let i = 0; i < 500 && !predicate(); i++) {
+    // By the clock, not by turns of the loop: hashing is on the thread pool, and a busy runner has thousands of turns first.
+    const deadline = performance.now() + 4_000;
+    while (!predicate() && performance.now() < deadline) {
       await act(async () => {
         await new Promise<void>((resolve) => {
           setImmediate(resolve);

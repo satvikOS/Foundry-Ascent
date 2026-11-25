@@ -521,8 +521,20 @@ function praiseNews(told: readonly string[]): Pick<News, 'means' | 'spoken'> | n
       spoken: `${said}, and that does not show that it sells. The next ones to ask are people you do not know, at a price.`,
     };
   }
+  // "They all love it. All of my dorm.": who they are is in another sentence.
+  const all = plain(told.join('. '));
+  const group = CLOSE_GROUP.exec(all)?.[1];
+  if (group !== undefined && PRAISES.test(all) && !/\b(?:paid|pays|ordered|bought|deposit)\b/.test(all)) {
+    const said = `Your ${group} likes it`;
+    return {
+      means: `${said}, and that does not show that it sells: praise costs nothing, and they know you. What counts is a stranger who gives something up for it: money, a signature or an hour. So the next ones to ask are people you do not know, at a price.`,
+      spoken: `${said}, and that does not show that it sells. The next ones to ask are people you do not know, at a price.`,
+    };
+  }
   return null;
 }
+const CLOSE_GROUP =
+  /\b(?:my|our) (?:whole |entire |own )?(floor|dorm|hall|frat|fraternity|sorority|house|dorm room|rowing team|section)\b/;
 
 /** Sign-ups that do not remember it. */
 function coldNews(message: string): Pick<News, 'means' | 'spoken'> | null {

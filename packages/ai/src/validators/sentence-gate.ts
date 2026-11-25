@@ -75,11 +75,14 @@ import {
   saidInLead,
   saysNothing,
   withPick,
-  withoutLabel,
+  closingQuestion,
+  contractUnit,
+  emptyOrRuled,
+  needlessQuestion,
   spokenReserve,
   withoutDeadline,
 } from './reply-contract.js';
-import { againstReading } from './reading.js';
+import { againstReading, bareVerdict, FROM_THE_TABLE } from './reading.js';
 import { saidSentences, saysAgain, type SaidSentence } from './said-before.js';
 import { danglingAsk, danglingLine, echoesThem, readsAgain, refusesUnderLead } from './second-reading.js';
 import { coverage, stemsOf } from './stems.js';
@@ -1270,7 +1273,7 @@ export class SentenceGate {
    * question), 'wait' while what follows a question has not arrived. A statement is never waited for.
    */
   #holdToContract(rawUnit: string, end: number, stable: string): { readonly unit: string } | 'out' | 'wait' {
-    let unit = this.#contract === null ? rawUnit : withoutLabel(rawUnit);
+    let unit = this.#contract === null ? rawUnit : contractUnit(rawUnit, this.#contract);
     const channel = this.#options.spoken === true ? 'voice' : 'text';
     if (unit === '') {
       this.#leaveOut('contract', rawUnit);
@@ -1326,6 +1329,14 @@ export class SentenceGate {
         return 'out';
       }
       if (
+        !isServerText(unit, guidance, channel) &&
+        emptyOrRuled(unit, guidance, this.#raw.slice(0, this.#cursor))
+      ) {
+        this.#leaveOut('contract', rawUnit);
+        this.#leanedOn = !bareVerdict(unit);
+        return 'out';
+      }
+      if (
         this.#leadShown &&
         (repeatsLead(unit, this.#leadStems) ||
           this.#onlyRestates(unit) ||
@@ -1371,6 +1382,11 @@ export class SentenceGate {
           this.#contractEdits += 1;
           this.#rewritten = true;
           unit = read.text;
+          // A question of the program's put in for one about the future: of what was read it says nothing.
+          if (guidance.reading !== undefined && FROM_THE_TABLE.test(unit)) {
+            this.#leaveOut('contract', rawUnit);
+            return 'out';
+          }
         }
       }
       // Who decides, said a second time in one reply; or decided by the reply itself.
@@ -1396,6 +1412,14 @@ export class SentenceGate {
         unit = verdict.text;
         this.#contractEdits += 1;
         this.#rewritten = true;
+      }
+      if (verdict.action === 'release' && closingQuestion(unit, this.#raw.slice(0, this.#cursor), guidance)) {
+        const next = this.#nextUnit(end, stable);
+        if (next === null) return 'wait';
+        if (next === '') {
+          this.#leaveOut('contract', rawUnit);
+          return 'out';
+        }
       }
       if (verdict.action === 'hold' && (guidance.askBack ?? '') !== '') {
         this.#leaveOut('contract', rawUnit);
@@ -1687,6 +1711,7 @@ export class SentenceGate {
           fits &&
           this.#options.noQuestions !== true &&
           !danglingAsk(question, this.#contract) &&
+          !needlessQuestion(question, this.#contract) &&
           !pointsNowhere(
             question,
             [this.#releasedText, this.#contract.said ?? '', this.#options.founderText ?? ''].join(' '),

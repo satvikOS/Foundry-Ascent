@@ -3,7 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { renderGuidance, type PromptGuidance } from '../prompts/guidance.js';
 import { withoutStepLine } from '../prompts/messages.js';
 import { STEP_ONLY, TODAY } from '../testing/path-fixtures.js';
-import { addsToLead, againstReading, emptyVerdict, makesPoint } from './reading.js';
+import {
+  addsToLead,
+  againstFigure,
+  againstReading,
+  bareVerdict,
+  deniesClaim,
+  emptyVerdict,
+  makesPoint,
+  ofTheWorks,
+  withoutWorks,
+} from './reading.js';
 import {
   checkReplyContract,
   contractApplies,
@@ -150,8 +160,15 @@ describe('what to do first', () => {
     );
   });
 
-  it('never beside a step that only stands', () => {
-    expect(firstActionLine({ ...g, stepRole: 'standing' })).toBe('');
+  it('stands beside a step that only stands, and not without one', () => {
+    expect(
+      checkReplyContract({
+        reply: 'Two of your 14 students waited for the kiln last month, so one kiln is enough for now.',
+        guidance: { ...g, stepRole: 'standing' },
+        channel: 'text',
+        today: TODAY,
+      }).repaired,
+    ).toMatch(/\*\*Start with:\*\* Ask the two[^\n]*\n\n\*\*On your path, next is:\*\* List 20/);
     expect(firstActionLine({ ...g, step: null })).toBe('');
   });
 
@@ -215,5 +232,172 @@ describe('the brief', () => {
     expect(renderGuidance(guidance({ kind: 'sum' }, { asksSum: true }), 'text')).toContain(
       '[[8017 - 46 dollars]]',
     );
+  });
+});
+
+describe('how the turn was prepared is never told', () => {
+  it.each([
+    [
+      'What the opening did not say is that you have not asked the two who waited.',
+      'You have not asked the two who waited.',
+    ],
+    ['The opening says you must wait for the kiln.', 'You must wait for the kiln.'],
+    ['As the notes say, two of them waited.', 'Two of them waited.'],
+    [
+      "A canvas has nine boxes, and the program's method is to fill the two on the right first.",
+      'A canvas has nine boxes; fill the two on the right first.',
+    ],
+    ["The program's method is to ask for money first.", 'Ask for money first.'],
+    ['The opening of the studio is on Monday.', 'The opening of the studio is on Monday.'],
+    ['Two of your 14 students waited.', 'Two of your 14 students waited.'],
+  ])('%s', (unit, said) => {
+    expect(withoutWorks(unit)).toBe(said);
+  });
+  it.each([
+    ["The mentor cites the founder's own data.", true],
+    ['The founder has two kilns.', true],
+    ['The record shows 14 students.', true],
+    ['You are doing this for the first time, so start small.', true],
+    ['Ask your mentor for one hour.', false],
+    ['The founder of the other studio charges $30.', false],
+    ['Keep a record of who waited.', false],
+  ])('%s is of it: %s', (unit, is) => {
+    expect(ofTheWorks(unit)).toBe(is);
+    expect(againstReading(unit, guidance(), '') === 'scaffolding').toBe(is);
+  });
+  it('the prompt of a read message names nothing that could be told', () => {
+    const out = renderGuidance(
+      guidance({ opened: 'choice' }, { lead: { text: 'My pick: one kiln.', voice: 'My pick: one kiln.' } }),
+      'text',
+      { today: TODAY },
+    );
+    expect(out).not.toMatch(/Your reply already opens|the opening did not|The program's method|<opens>/);
+    expect(out).toContain('<you_said>My pick: one kiln.</you_said>');
+  });
+});
+
+describe('beside a figure, a claim, a verdict', () => {
+  const LEAD1 = 'You keep it all the same.';
+  const gain = [{ value: 33, unit: '$' as const }];
+  const loss = [{ value: -15, unit: '$' as const }];
+  it.each([
+    ['You still lose money overall.', gain, true],
+    ['That leaves you $0 a month.', gain, true],
+    ['So you are at a loss.', gain, true],
+    ['That is less than $20.', gain, true],
+    ['That is more than $50 a month.', gain, true],
+    ['That is less than $40.', gain, false],
+    ['You would lose money if two of them stopped.', gain, false],
+    ['You make money on it.', loss, true],
+    ['You lose money on each firing.', loss, false],
+    ['The wire costs $20.', gain, false],
+    ['You still lose money overall.', [], false],
+  ])('%s', (unit, figures, against) => {
+    expect(againstFigure(unit, figures)).toBe(against);
+    if (against) expect(againstReading(unit, guidance({ figures }), LEAD1)).toBe('against_figure');
+  });
+
+  it.each([
+    ['That is a customer.', true],
+    ["Yes, that's a customer.", true],
+    ['She is not a customer yet.', false],
+    ['Is she a customer?', false],
+    ['The kiln is a good buy.', false],
+  ])('under a claim that she is no customer: %s', (unit, denies) => {
+    expect(deniesClaim(unit, reading({ points: ['Free is a user, not a customer: nothing is paid.'] }))).toBe(
+      denies,
+    );
+  });
+
+  it.each([
+    'Good price.',
+    'Good.',
+    "Yes, that's fair.",
+    "Yes, that's a yes.",
+    'That is a great deal!',
+    "It's a solid start.",
+  ])('%s is a verdict and nothing else', (unit) => {
+    expect(bareVerdict(unit)).toBe(true);
+    // Said with no reading either.
+    const out = checkReplyContract({
+      reply: `${unit} Two of your 14 students waited for the kiln last month, so ask both what it cost them before you rent another one.`,
+      guidance: STEP_ONLY,
+      channel: 'text',
+      today: TODAY,
+    });
+    expect(out.repaired).toMatch(/^Two of your 14 students/);
+  });
+  it.each([
+    'No, that is not enough for a second kiln.',
+    'A good price is one they pay twice.',
+    'Fair firing times are posted.',
+    'Yes.',
+    'Not yet.',
+  ])('%s says more', (unit) => {
+    expect(bareVerdict(unit)).toBe(false);
+  });
+
+  it('what a person decides is not picked, and only their things are brought to them', () => {
+    const held = guidance(
+      { opened: 'held', referral: 'equity', heldOptions: ['60/40', '50/50'] },
+      {
+        referral: {
+          who: 'A business lawyer; ask the program lead',
+          bring: 'Both sheets and anything promised',
+        },
+      },
+    );
+    expect(againstReading('My pick: 60/40.', held, LEAD1)).toBe('rules');
+    expect(againstReading('60/40 fits, since you built the kiln.', held, LEAD1)).toBe('rules');
+    expect(againstReading('Your work is the main value here.', held, LEAD1)).toBe('rules');
+    expect(againstReading('Write down the hours each of you put in since May.', held, LEAD1)).toBeNull();
+    expect(againstReading('Bring the new kiln price to the business lawyer.', held, '')).toBe('wrong_errand');
+    expect(againstReading('Bring both sheets to the business lawyer.', held, '')).toBeNull();
+  });
+
+  it('under an opening, most of it again is nothing new, whatever name is in it', () => {
+    const lead = 'Mixed: three studios agreed to a second talk, and one has money for a kiln.';
+    expect(
+      addsToLead(
+        'So three studios agreed to a second chat, and only Orla has money for a kiln.',
+        reading(),
+        lead,
+      ),
+    ).toBe(false);
+    expect(addsToLead('Orla rents hers at $40 a week and hates the noise.', reading(), lead)).toBe(true);
+    expect(addsToLead('Hi Orla and Sam, great to see you both.', reading(), lead)).toBe(false);
+    expect(addsToLead('Make sure you have all of it sorted.', reading(), lead)).toBe(false);
+  });
+});
+
+describe('what ends a reply', () => {
+  const reply = 'Two of your 14 students waited for the kiln last month, so one kiln is enough for now.';
+  const ends = (question: string, g: PromptGuidance): string =>
+    checkReplyContract({ reply: `${reply} ${question}`, guidance: g, channel: 'text', today: TODAY })
+      .repaired ?? '';
+
+  it('is the step when the message was read, never a question of the model’s', () => {
+    expect(ends('What would you like to look at next?', guidance())).not.toContain('?');
+    expect(ends('Which one is it?', guidance({}, { askBack: 'What does one firing cost you?' }))).toMatch(
+      /What does one firing cost you\?$/,
+    );
+  });
+  it('without a reading only a question of how they will do the step goes', () => {
+    expect(ends('How will you list 20 office managers this week?', STEP_ONLY)).not.toContain('?');
+    expect(ends('What did the two who waited say?', STEP_ONLY)).toMatch(/say\?$/);
+  });
+  it('the prompt’s own line for who decides is never said', () => {
+    const g: PromptGuidance = {
+      ...STEP_ONLY,
+      referral: { who: 'A business lawyer; ask the program lead', bring: 'Both sheets' },
+    };
+    const out = checkReplyContract({
+      reply: `${reply} A qualified person decides this: a business lawyer; ask the program lead.`,
+      guidance: g,
+      channel: 'text',
+      today: TODAY,
+    }).repaired;
+    expect(out).not.toContain('qualified person');
+    expect(out?.match(/lawyer/g)).toHaveLength(1);
   });
 });

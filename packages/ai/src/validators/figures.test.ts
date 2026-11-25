@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { conversationCraftRules } from '../prompts/craft.js';
 import {
   inventedFigures,
+  numbersIn,
   spelledNumbersIn,
   withoutExampleFigures,
   withoutInventedFigures,
@@ -25,6 +26,18 @@ const CASES = (
     readFileSync(new URL('../../../../evals/tests/fixtures/figure_cases.json', import.meta.url), 'utf8'),
   ) as { cases: FigureCase[] }
 ).cases;
+
+describe('the numbers a text holds', () => {
+  it.each([
+    ['6.2 months of cash', [6.2]],
+    ['a 5 km ride with 3 kg', [5, 3]],
+    ['$1.5k a month, $2m a year', [1500, 2_000_000]],
+    ['2 million students', [2_000_000]],
+    ['40k/month', [40_000]],
+  ])('%s', (text, values) => {
+    expect(numbersIn(text)).toEqual(values);
+  });
+});
 
 describe('figures nobody gave, read as the lab reads them (lab run 42238272157: "say, 50–100 cedis an hour")', () => {
   it.each(CASES.map((c) => [c.reply, c] as const))('%s', (_reply, c) => {

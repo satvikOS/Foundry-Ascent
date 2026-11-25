@@ -54,11 +54,11 @@ const FIGURE_SOURCE = [
 const FIGURE = new RegExp(FIGURE_SOURCE, 'giu');
 const PERCENT = /%|percent|per cent/i;
 
-/** Any number in known text ("40 firm orders", "$3.50", "70%"). */
-const NUMBER = /\d[\d,]*(?:\.\d+)?(?:\s?(?:k|m|bn|million|billion|thousand))?/giu;
+/** Any number in known text ("40 firm orders", "$3.50", "70%"); "6.2 months" is no 6.2 million. */
+const NUMBER = /\d[\d,]*(?:\.\d+)?(?:\s?(?:k|m|bn|millions?|billions?|thousands?)(?!\p{L}))?/giu;
 
 function valueOf(token: string): number | null {
-  const m = /(\d[\d,]*(?:\.\d+)?)\s?(k|m|bn|million|billion|thousand)?/iu.exec(token);
+  const m = /(\d[\d,]*(?:\.\d+)?)(?:\s?(k|m|bn|million|billion|thousand)s?(?!\p{L}))?/iu.exec(token);
   if (m?.[1] === undefined) return null;
   const base = Number(m[1].replace(/,/g, ''));
   if (!Number.isFinite(base)) return null;

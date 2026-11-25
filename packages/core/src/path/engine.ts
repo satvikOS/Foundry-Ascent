@@ -13,7 +13,7 @@ import { type pathRepo, type retrievalRepo } from '@foundry/db';
 import { isReference } from './brief.js';
 import { calcAsked, calcOf, type CalcAsk, type CalcResult, type Ratio } from './calc.js';
 import { choiceIn, settledWay, type Choice } from './choice.js';
-import { addDays, dueOnFor } from './dates.js';
+import { addDays, daySaid, dueOnFor } from './dates.js';
 import {
   asksAboutReply,
   asksFor,
@@ -67,7 +67,7 @@ import {
 } from './match.js';
 import { asksIfGood, findingIn, lastResult, newsOf, tellsNews, type News, type NewsKind } from './news.js';
 import { reportedWork, withWork, type AppliedWork, type ReportedWork } from './progress.js';
-import { referralForRisk } from './referrals.js';
+import { offersForShares, referralForRisk } from './referrals.js';
 import { isCompany } from './reading.js';
 import { pickPlay, playMatchProfile, type Openness, type SemanticMatch } from './semantic.js';
 import {
@@ -85,6 +85,7 @@ import {
   type PathSource,
   type PathState,
 } from './state.js';
+import { asksToStop } from './openings.js';
 import {
   askWhyStep,
   citationsOf,
@@ -94,6 +95,7 @@ import {
   openCriterionOf,
   ownStep,
   pickedChannel,
+  pickTested,
   playOf,
   restOf,
   shownStep,
@@ -106,17 +108,25 @@ import {
 import { concrete, currentOnes, stillTrue, toYou, toldAs } from './tell.js';
 import { type PathIntent, type Playbook } from './types.js';
 import {
+  askedOf,
   asksOfWork,
   asksWholePath,
   decides,
+  fitsAsk,
+  handsOn,
   NOTHING,
+  picksAgainst,
   referralPlayOf,
+  sameSubject,
+  settled,
   speaks,
+  tellsLegalLetter,
+  testsAPick,
   type Decides,
   type Weighed,
   type WeighedField,
 } from './understood.js';
-import { contentStems, countsIn, numberOf, plain, sentences, subjectStems } from './words.js';
+import { contentStems, countsIn, plain, sentences, subjectStems } from './words.js';
 
 export { stepView, type ChosenStep, type StepContext } from './steps.js';
 
@@ -1033,16 +1043,25 @@ export function decide(input: DecideInput): Decision {
   const { message } = input;
   const previous = input.previous ?? null;
   // What the message asks, as it was read; never of a turn a wellbeing or conflict risk is found on.
-  const read = input.understanding ?? null;
+  const read =
+    input.understanding == null
+      ? null
+      : settled(input.understanding, {
+          message,
+          earlier: input.earlierMessages ?? [],
+          titles: playbook.plays.map((p) => p.title),
+        });
   const u = read !== null && speaks(read) && !input.riskCategories.some((c) => SUPPORT.has(c)) ? read : null;
   // The work is asked of, however they feel.
-  const works = u !== null && asksOfWork(u);
+  const works = u !== null && asksOfWork(u, message);
   const on = currentStep(input, before);
   const onRow = input.reads.steps.find((s) => s.id === on?.view.id && s.status === 'now') ?? null;
   const reacts = isReaction(message);
   // A text pasted to have it read is no report, news or change of theirs.
   const theirs = ownWords(message);
-  const referralMatch = reacts ? null : phraseIntent(playbook, message, (i) => i.referral === true);
+  const referralMatch = reacts
+    ? null
+    : (phraseIntent(playbook, message, (i) => i.referral === true) ?? offerMatch(playbook, theirs));
   const report = reportOf(theirs);
   const committed = commitmentOf(theirs, input.today);
   const commitment = isCommitted(committed) ? committed : null;
@@ -1156,7 +1175,11 @@ export function decide(input: DecideInput): Decision {
     !ownAsk &&
     part === null &&
     pushesOn(message, heldIntent.holds === true) &&
-    (u === null || (['pushback', 'privacy', 'feelings'].includes(u.kind) && !readsMoreThanPush(u)));
+    (u === null ||
+      ((['pushback', 'privacy', 'feelings'].includes(u.kind) ||
+        // Nothing else was read in it.
+        (u.kind === 'question' && (u.playId === null || u.playId === heldIntent.playId))) &&
+        !readsMoreThanPush(u)));
   const risky =
     referralMatch === null && !pushes ? referralForRisk(playbook, input.riskCategories, message) : null;
   const recall =
@@ -1290,9 +1313,23 @@ export function decide(input: DecideInput): Decision {
                   : null;
   const passing =
     playOf(playbook, (risky ?? note?.intent)?.playId ?? null)?.referral ?? semantic?.referral ?? null;
-  // The rules' own stands whatever was read; the reading's is only added.
+  // The rules' own stands whatever was read; the reading's is only added. A word in passing of an option they do not go
+  // with ("hire someone, or …?") brings nobody.
+  const passedOver =
+    u !== null &&
+    u.choice !== null &&
+    u.referral === null &&
+    referralMatch === null &&
+    risky === null &&
+    play !== null &&
+    !fitsAsk(play, u.choice.pick);
+  const ofPlay = passedOver ? null : (play?.referral ?? null);
+  const found1 = (byReading ? (passing ?? ofPlay) : (ofPlay ?? passing)) ?? referralPlay?.referral ?? null;
+  // What to bring is what came.
   const referral =
-    (byReading ? (passing ?? play?.referral) : (play?.referral ?? passing)) ?? referralPlay?.referral ?? null;
+    found1 !== null && u !== null && found1.category === 'legal' && tellsLegalLetter(message)
+      ? { ...found1, bring: 'The letter, when it came, and a copy of everything it is about' }
+      : found1;
 
   // What they report: the step finished, work of the path's criteria, or a step not done.
   const told1 =
@@ -1509,6 +1546,12 @@ export function decide(input: DecideInput): Decision {
       : null;
   if (way !== null && turn.step !== null)
     turn = { ...turn, step: { ...turn.step, view: pickedChannel(turn.step.view, way) } };
+  if (u !== null && testsAPick(u) && turn.step?.view.playId === 'smallest-test' && turn.offered)
+    turn = { ...turn, step: { ...turn.step, view: pickTested(turn.step.view, u.choice?.pick ?? '') } };
+  // Due sooner than the step would be: the class's day is the step's.
+  const classDay = u === null || turn.step === null ? null : dueInClass(message, input.today);
+  if (classDay !== null && turn.step !== null && turn.offered && (turn.step.view.dueOn ?? '9') > classDay)
+    turn = { ...turn, step: { ...turn.step, view: { ...turn.step.view, dueOn: classDay } } };
   const weak = overview && news === null && asksOneThing(message) ? weakResult(told) : null;
   if (weak !== null && turn.step !== null) {
     const read = playOf(playbook, 'read-results');
@@ -1632,6 +1675,27 @@ export function decide(input: DecideInput): Decision {
   };
 }
 
+/** The day something of a class is due, as they say it ("the canvas is due Friday"); null: none said. */
+function dueInClass(message: string, today: string): string | null {
+  const said = /\b(?:due|hand(?:ed)? (?:it )?in|submit(?:ted)?|turn(?:ed)? (?:it )?in)\b[^.?!]{0,24}/i.exec(
+    message,
+  )?.[0];
+  if (
+    said === undefined ||
+    !/\b(?:class|module|assignment|prof(?:essor)?|course|homework|canvas|section)\b/i.test(message)
+  )
+    return null;
+  const day = daySaid(said, today);
+  return day !== null && day >= today ? day : null;
+}
+
+/** Money put to them for a part of the company, in any words: the referral of what it is worth. */
+function offerMatch(playbook: Playbook, message: string): IntentMatch | null {
+  if (!offersForShares(message)) return null;
+  const intent = referralForRisk(playbook, ['securities_investment'], message);
+  return intent === null ? null : { intent, how: 'phrase', score: 1 };
+}
+
 /** As it is sent with one tap (turn.ts `followUpsOf`). */
 export const HOW_FOLLOW_UP = 'How do I do the first part?';
 
@@ -1718,24 +1782,69 @@ function readStep(
 ): TurnStep | null {
   const { u, play, phrased, referral } = args;
   const stay: TurnStep = { step: own, offered: false };
-  const named = allowedStep(context, state, playOf(context.playbook, u.stepPlayId), play, phrased);
+  const asked = askedOf(u, args.message);
+  // A step whose title is about something else is no step of this ask.
+  const fits = (p: Play | null): Play | null =>
+    p === null ||
+    p.id === phrased?.id ||
+    p.referral !== null ||
+    // Work they would make up has the step that makes it real.
+    u.kind === 'integrity' ||
+    fitsAsk(p, asked)
+      ? p
+      : null;
+  const wantedHere = allowedStep(context, state, playOf(context.playbook, u.stepPlayId), play, phrased);
+  const named = fits(wantedHere);
+  const picked = pickStep(context, own, u, wantedHere, asksToStop(args.message));
+  if (picked !== undefined)
+    return picked === null || picked.id === own?.view.playId ? stay : newsStep(context, state, picked, own);
   // Who decides comes before anything else is done about it.
   const deciding =
     referral !== null && (named === null || (named.referral === null && !u.sure)) && u.kind !== 'sum';
-  const wanted = deciding ? referral : (named ?? allowedStep(context, state, play, play, phrased));
+  const wanted = deciding ? referral : (named ?? fits(allowedStep(context, state, play, play, phrased)));
   if (wanted === null) return null;
   if (wanted.id === own?.view.playId) return stay;
   // A figure is no reason for another step, unless the sum is the play itself.
   const sumOnly = u.kind === 'sum' && !u.also.some((k) => k !== 'sum' && k !== 'question');
-  if (sumOnly && wanted.id !== phrased?.id && !(u.sure && wanted.id === u.playId)) return stay;
+  if (sumOnly && wanted.referral === null && wanted.id !== phrased?.id && !(u.sure && wanted.id === u.playId))
+    return stay;
   if (u.kind === 'sum' && u.also.includes('feelings')) return stay;
   const open = own !== null && own.write === null && own.view.status === 'now';
   if (wanted.id === phrased?.id || !open)
     return askStep(context, state, untested(context, args.told, wanted) ?? wanted, own);
-  const about = wanted.referral !== null || !sameSubject(own.view, `${args.message} ${u.ask}`);
+  const about = wanted.referral !== null || !sameSubject(own.view, asked);
   return about || (u.sure && wanted.id === u.playId)
     ? newsStep(context, state, untested(context, args.told, wanted) ?? wanted, own)
     : stay;
+}
+
+/**
+ * The step of a choice made: handing it over has the hand-over page, "may I stop?" the choice with its evidence; an
+ * either-or that is not about money a small test of the pick, unless the step named, or theirs, is about the pick. Null: the
+ * step they are on stands; undefined: no such choice.
+ */
+function pickStep(
+  context: StepContext,
+  own: ChosenStep | null,
+  u: Understanding,
+  named: Play | null,
+  stops: boolean,
+): Play | null | undefined {
+  const { playbook } = context;
+  if (handsOn(u)) return playOf(playbook, 'after-graduation') ?? undefined;
+  if (stops) return playOf(playbook, 'quit-or-continue') ?? undefined;
+  if (!testsAPick(u)) {
+    // "Not for money yet" is no ask to pay.
+    const money = named === null || u.choice === null ? false : picksAgainst(u, named);
+    return money ? null : undefined;
+  }
+  const pick = u.choice?.pick ?? '';
+  const about = (p: Pick<Play, 'title' | 'doneWhen'>): boolean => fitsAsk(p, pick);
+  if (named !== null && (about(named) || /^(?:Choose|Pick|Score|Compare|List your last)\b/.test(named.title)))
+    return named;
+  if (named !== null && named.referral !== null) return undefined;
+  if (own !== null && about(own.view)) return null;
+  return playOf(playbook, 'smallest-test') ?? undefined;
 }
 
 /** A step the path allows now: of the ask's own play, or of a stage next to the one they are on. */
@@ -1750,14 +1859,6 @@ function allowedStep(
   if (wanted.id === play?.id || wanted.id === phrased?.id) return wanted;
   const order = stageOrder(context.playbook);
   return Math.abs(order.indexOf(wanted.stage) - state.stageIndex) <= 1 ? wanted : null;
-}
-
-/** Whether what they ask is about the step they are on: they share a word that says something. */
-export function sameSubject(view: PathStepView, asked: string): boolean {
-  const stems = (text: string): string[] =>
-    contentStems(text).filter((w) => numberOf(w) === null && !/^\d+$/.test(w));
-  const about = new Set(stems(`${view.title}. ${view.doneWhen}. ${view.items.map((i) => i.do).join('. ')}`));
-  return stems(asked).some((w) => about.has(w));
 }
 
 /** "Go on or stop?" of what nobody has tried: there are no tests to list, so the step is the first one. */

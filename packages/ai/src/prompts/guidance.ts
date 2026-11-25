@@ -1,6 +1,6 @@
 import type { TurnChannel } from '@foundry/contracts';
 
-import type { UnderstoodKind, UnderstoodReferral } from '../understand/types.js';
+import type { SumUnit, UnderstoodKind, UnderstoodReferral } from '../understand/types.js';
 import { sayDay } from './due-day.js';
 import { escapeData, escapeInline, truncate } from './escape.js';
 
@@ -179,13 +179,22 @@ export interface PromptGuidance {
       | 'pushback'
       | 'integrity'
       | 'recall'
+      | 'quit'
+      | 'order'
+      | 'answer'
       | 'rule'
       | null;
     /** A qualified person decides what they ask: the answer never rules on it. */
     readonly referral: UnderstoodReferral | null;
     /** Several things happened, or they do not know where to start: every claim is said, in this order. */
     readonly inOrder: boolean;
+    /** What they ask to choose between, when a person decides it: none of it is taken up as a pick. Additive. */
+    readonly heldOptions?: readonly string[];
+    /** The figures code worked out of what they ask: nothing said beside them contradicts one. Additive. */
+    readonly figures?: readonly { readonly value: number; readonly unit: SumUnit }[];
   };
+  /** What opens the reply denies what they claim, by their own record: nothing beside it agrees. Additive. */
+  readonly denies?: boolean;
   /** The one thing to do first, said by the server before the step (typed: a line of its own; a call: with the step). Additive. */
   readonly firstAction?: string;
   /**
@@ -335,7 +344,7 @@ const READ_LINES: Readonly<Partial<Record<UnderstoodKind, string>>> = {
   feelings: 'They say how they feel: one sentence for that, then what they ask.',
   draft: 'They want it written: write it, ready to send, from their facts only.',
   integrity:
-    'They ask to fake or hide something. Stay with the no; then what they can do for real in the time they have, with people they do not know.',
+    'They ask to fake or hide something. A short no; then what they can do for real in the time they have, with people they do not know, and what they truly have to show.',
 };
 const IN_ORDER_LINE =
   'Several things at once: one sentence that you heard it, then each in this order, most urgent first, with why.';
@@ -352,7 +361,13 @@ const AFTER_LINES: Readonly<
   pushback: 'why that test decides it',
   integrity: 'what they can do for real instead',
   recall: 'what else they ask',
+  quit: 'what they can do about it this week, small',
+  order: 'why the first of them comes first, with a fact of theirs',
+  answer: 'why, from their own facts, and what that changes for them',
 };
+/** Nothing of how the turn was prepared is ever said to them. */
+const TO_THEM_LINE =
+  'Speak to them as "you". Nothing here is known to them: never mention notes, an opening, a brief, points, a record, a method, the program, a mentor or a founder.';
 /** The record lines that bear on it are given: the brief says who they are, no more. */
 const READ_BRIEF_CHARS = { record: 360, none: 620 } as const;
 const READ_ANSWER_CHARS = 260;
@@ -364,35 +379,35 @@ function readingLines(
   voice: boolean,
   lead: boolean,
 ): string[] {
-  const lines = [
-    `<asked>${line(r.ask, 240)}${r.secondAsk === null ? '' : ` And also: ${line(r.secondAsk, 200)}`}</asked>`,
-  ];
+  const asked = [r.ask, r.secondAsk ?? ''].map((x) => x.trim()).filter((x) => x !== '');
+  const lines =
+    asked.length === 0 ? [] : [`<asked>${asked.map((x) => line(x, 240)).join(' And also: ')}</asked>`];
   if (r.points.length > 0)
     lines.push(
       `<points>${r.points.map((p, i) => `${String(i + 1)}) ${line(p, 220)}`).join(' ')}</points>`,
       r.inOrder
         ? IN_ORDER_LINE
         : lead
-          ? 'Say what of them the opening did not, in your own words.'
-          : 'Answer with those, in order, in your own plain words; nothing that would fit any founder.',
+          ? 'Of these, only what is not said yet, in your own words.'
+          : 'Answer with those, the first one first, in your own plain words; nothing that would fit anyone.',
     );
   if (r.record.length > 0)
     lines.push(
-      `<record>${r.record.map((x) => line(x, 220)).join(' | ')}</record>`,
-      'Their record: use it inside your own sentences, with its numbers.',
+      `<told_before>${r.record.map((x) => line(x, 220)).join(' | ')}</told_before>`,
+      'What they told before: say the part that bears on it inside your own sentences, with its numbers.',
     );
   if (r.avoid !== null) lines.push(`Avoid: ${line(r.avoid, 160)}`);
   if (r.referral !== null && r.referral !== 'grants' && g.referral !== null)
     lines.push('Never say whether it is good, fair, allowed or theirs: a person decides that.');
   const key = g.ask?.evidenceKeys.find((k) => /^E\d+$/.test(k));
-  const cite = voice || key === undefined ? '' : ` Cite it [${key}] where you use it.`;
+  const cite = voice || key === undefined ? '' : ` Cite [${key}] where you use it.`;
   // Under an opening the claims are the answer: the method is only theirs to cite.
   if (g.ask !== null && r.opened === null)
     lines.push(
-      `<method>${line(g.ask.answer, READ_ANSWER_CHARS)}</method>`,
-      `The program's method, where it fits.${cite}`,
+      `<how>${line(g.ask.answer, READ_ANSWER_CHARS)}</how>`,
+      `How it is done well, only where it answers them.${cite}`,
     );
-  else if (cite !== '') lines.push(`[${key ?? ''}] is the program's method: cite it where you use it.`);
+  else if (cite !== '') lines.push(`Cite [${key ?? ''}] where you say how it is done.`);
   return lines;
 }
 
@@ -640,6 +655,7 @@ function renderRead(
     // Under an opening the kind's own line is done already.
     ...(kind === undefined || lead != null ? [] : [kind]),
     ...(g.step === null ? [] : [NO_STEP_LINE]),
+    TO_THEM_LINE,
   ];
   for (const h of g.heard ?? [])
     lines.push(`Heard badly on the call: "${line(h.heard, 60)}" is ${line(h.meant, 60)}.`);
@@ -658,11 +674,12 @@ function renderRead(
     );
   if (lead != null)
     lines.push(
-      `<opens>${line(voice ? lead.voice : lead.text, 900)}</opens>`,
+      `<you_said>${line(voice ? lead.voice : lead.text, 900)}</you_said>`,
       g.orders === true
-        ? 'Your reply already opens with that, word for word, and it is the one thing they do. Write only why that one, in one sentence.'
-        : `Your reply already opens with that, word for word. Add only ${after ?? 'what it means for them and why'}, in one to three sentences that each bring a fact, a number or something to do. Never repeat, soften or contradict it.`,
+        ? 'You have just said that to them, and it is the one thing they do. Go on with why that one, in one sentence.'
+        : `You have just said that to them. Go on from there with only ${after ?? 'what it means for them and why'}, in one or two sentences that each bring a fact, a number or something to do. Never say it again in other words, soften it, talk about it or go against it.`,
     );
+  else lines.push('Say it in two to four sentences.');
   lines.push(...readingLines(g, r, voice, lead != null));
   const limits = g.limits ?? [];
   if (limits.length > 0)
@@ -677,7 +694,7 @@ function renderRead(
   if (g.asksSum === true) lines.push(SUM_LINE);
   if (g.step !== null) {
     lines.push(`<step title="${attr(g.step.title, 160)}"/>`);
-    if (g.firstAction !== undefined && g.stepRole === undefined)
+    if (g.firstAction !== undefined)
       lines.push(
         `<starts_with>${line(g.firstAction, 220)}</starts_with>`,
         'Never write either: both are added.',
@@ -695,7 +712,8 @@ function renderRead(
   }
   if (g.referral !== null)
     lines.push(
-      `<referral>A qualified person decides this: ${line(g.referral.who, 160)}. Bring: ${line(g.referral.bring, 200)}. Say who once, and help them prepare.</referral>`,
+      `<decides who="${attr(g.referral.who, 160)}" bring="${attr(g.referral.bring, 200)}"/>`,
+      'Who decides, and what to bring, is added under your reply: help them prepare, and never decide it.',
     );
   lines.push(`</${PATH_TAG}>`);
   return lines.join('\n');
