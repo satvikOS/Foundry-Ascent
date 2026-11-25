@@ -22,9 +22,11 @@ import {
   firstUnitVerdict,
   isServerText,
   isTemplateLine,
+  meansNothing,
   namesStep,
   opensStep,
   playKey,
+  rulesOnIt,
   saysDue,
   shortAnswer,
   spokenReserve,
@@ -1061,4 +1063,43 @@ describe('what the server says in place of too little', () => {
     const long = { ...STEP, doneWhen: `These 3 parts are done: ${'write the page in words; '.repeat(9)}` };
     expect(stepLine(long, 'text', TODAY)).toMatch(/Done when these 3 parts are done\.$/);
   });
+});
+
+describe('a sentence that says nothing where it stands', () => {
+  it.each([
+    ['That comes from 90 dollars over six hours.', 'Charge 90 dollars a batch.', true],
+    ['That comes from 90 dollars over six hours.', 'You earn 15 dollars an hour.', false],
+    ['Four things change, and the rest stays.', 'You sell to shops now.', true],
+    ['Four things change: the buyer, the price, the day and the box.', '', false],
+    ["So, you're focusing on the shops instead.", 'From today you sell to shops.', true],
+    ["You're asking the shops first, because they buy weekly.", '', false],
+  ])('%s after "%s": %s', (unit, before, nothing) => {
+    expect(meansNothing(unit, before)).toBe(nothing);
+  });
+});
+
+describe('what telling of an invention does to a patent', () => {
+  const ip = {
+    ...STEP_ONLY,
+    referral: {
+      who: 'UR Ventures, the technology transfer office',
+      bring: 'the list',
+      before: 'you show it',
+    },
+  } satisfies PromptGuidance;
+  it.each([
+    'Yes, you can talk about the result.',
+    "If you do that, it won't hurt the patent.",
+    'That keeps the invention safe.',
+    "It's fine to show them the result.",
+  ])('is never ruled: %s', (unit) => {
+    expect(rulesOnIt(unit, ip)).toBe(true);
+    expect(rulesOnIt(unit, { ...ip, referral: null })).toBe(false);
+  });
+  it.each(['Describe the problem and not how it works.', 'Ask them what they use now.'])(
+    'stays: %s',
+    (unit) => {
+      expect(rulesOnIt(unit, ip)).toBe(false);
+    },
+  );
 });

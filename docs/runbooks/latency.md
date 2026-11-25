@@ -750,7 +750,7 @@ typed reply: `additionalModelRequestFields.reasoningConfig` `{type: enabled, max
 ### Reading the message first (2026-11-25; off)
 
 `CORE_UNDERSTAND=on` (docs/architecture/understand.md) makes three small structured calls from the admission on, beside the query's
-embedding. The turn waits for them before its search (which play it is decides what is looked for), at most 3.0 s typed and 1.4 s on a
+embedding. The turn waits for them before its search (which play it is decides what is looked for), at most 3.0 s typed and 1.7 s on a
 call, so the step's card and the first word come that much later than with the rules alone: by what they take beyond the embedding.
 The one call they replace took 2.3 s at the median and 4.7 s at the 95th percentile on Nova 2 Lite for about 380 tokens (lab run
 45643929864: about 1.2 s and 4 ms a token), and 39 of 67 typed turns went on without it. The three calls on Nova 2 Lite (lab-bench2, 161 cases):

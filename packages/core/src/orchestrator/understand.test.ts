@@ -1,6 +1,8 @@
 import {
   JUDGE_SYSTEM_PROMPT,
+  JUDGE_VOICE_SYSTEM_PROMPT,
   SUMS_SYSTEM_PROMPT,
+  UNDERSTAND_FORMS,
   UNDERSTAND_PARTS,
   UNDERSTAND_SCHEMAS,
   UNDERSTAND_SCHEMA_NAMES,
@@ -94,6 +96,14 @@ describe('what the calls read', () => {
     expect(p.context.record.map((r) => r.key)).toEqual(p.context.record.map((_r, i) => `R${String(i + 1)}`));
   });
 
+  it('on a call JUDGE is asked for what the reply opens on, and no more', () => {
+    const call = prepared({ channel: 'voice' }).parts;
+    expect([call.route.form, call.sums?.form, call.judge.form]).toEqual(['route', 'sums', 'judgeVoice']);
+    expect(prepared().parts.judge.form).toBe('judge');
+    expect(call.judge.system).toBe(JUDGE_VOICE_SYSTEM_PROMPT);
+    expect(call.judge.messages[0]?.content).toContain('A phone call, as it was transcribed.');
+  });
+
   it('show the last exchanges, and the opener only at the start', () => {
     const history = Array.from({ length: 6 }, (_, i) => ({
       founderText: `said ${String(i)}`,
@@ -129,7 +139,7 @@ describe('what the calls read', () => {
     const { plays, system } = understandCatalogue(PLAYBOOK);
     expect(plays).toHaveLength(PLAYBOOK.plays.length);
     for (const play of PLAYBOOK.plays) expect(system).toContain(`\n${play.id}: `);
-    expect(system.length).toBeLessThan(13_700);
+    expect(system.length).toBeLessThan(13_800);
     // The one call's system prompt was 22,400 characters, its schema 2,900.
     expect(system.length + SUMS_SYSTEM_PROMPT.length + JUDGE_SYSTEM_PROMPT.length).toBeLessThan(22_000);
     const schemas = UNDERSTAND_PARTS.map((part) => JSON.stringify(z.toJSONSchema(UNDERSTAND_SCHEMAS[part])));
@@ -181,6 +191,6 @@ describe('a turn without a reading', () => {
     }
   });
   it('each schema has a name of its own', () => {
-    expect(new Set(Object.values(UNDERSTAND_SCHEMA_NAMES)).size).toBe(UNDERSTAND_PARTS.length);
+    expect(new Set(Object.values(UNDERSTAND_SCHEMA_NAMES)).size).toBe(UNDERSTAND_FORMS.length);
   });
 });

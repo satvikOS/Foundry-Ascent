@@ -122,9 +122,42 @@ function timeAfter(after: string): Figure['time'] | undefined {
   return lasts === undefined ? undefined : { period: periodOf(lasts), by: 1 };
 }
 
+/** A figure with the words around it. */
+interface Placed {
+  readonly figure: Figure;
+  readonly before: string;
+  readonly after: string;
+}
+
 /** Every figure of a text, in order, spelled or in digits. */
-export function figuresIn(text: string): Figure[] {
-  const out: Figure[] = [];
+export const figuresIn = (text: string): Figure[] => placedIn(text).map((p) => p.figure);
+
+/** They charge it, were paid it or asked for it. */
+const PRICED =
+  /\b(?:charg\w+|pric\w+|pay(?:s|ing)?|paid|sell\w*|sold|fees?|rents?|renting|rented|deposit|prepa\w+|asked|asking|offer(?:s|ed|ing)?|worth of)\b/giu;
+/** They have it, spend it or owe it. */
+const HELD =
+  /\b(?:have|has|had|having|got|budget|left|saved?|savings|spend\w*|spent|burn\w*|raised?|stipend|grants?|awards?|loans?|owe[sd]?|costs?|costing|tool\w*|gets?|takes?|keeps?|rent is|bank|cash|total)\b|['’]ve\b/giu;
+const A_TIME = /^\s?(?:each\b|apiece\b|per\b|an?\b|\/)/iu;
+const AROUND = 60;
+const lastAt = (pattern: RegExp, text: string): number => [...text.matchAll(pattern)].at(-1)?.index ?? -1;
+
+/** The amounts of a text that are a price or a fee of theirs: what somebody pays, never what they have or spend. */
+export function pricesIn(text: string): number[] {
+  return placedIn(text).flatMap(({ figure, before, after }) => {
+    const said = before.split(/[.!?;]\s/u).at(-1) ?? '';
+    const priced = lastAt(PRICED, said);
+    const held = lastAt(HELD, said);
+    if (figure.mark === '%' || figure.mark === 'foreign' || figure.counts === true) return [];
+    if (held > priced) return [];
+    return priced >= 0 || (figure.mark === '$' && (A_TIME.test(after) || /\b(?:is|are|at) $/iu.test(said)))
+      ? [figure.value]
+      : [];
+  });
+}
+
+function placedIn(text: string): Placed[] {
+  const out: Placed[] = [];
   const joined = withoutDates(text).replace(SCALED, (_whole, digits: string, word: string) =>
     String(Number(digits.replace(/,/g, '')) * (WORD_SCALE[word.toLowerCase()] ?? 1)),
   );
@@ -151,8 +184,10 @@ export function figuresIn(text: string): Figure[] {
       ...(mark === '%' && ON_TOP.test(after) ? { onTop: true as const } : {}),
       ...(mark === null && m[7] === undefined && countsSomething(after) ? { counts: true as const } : {}),
     };
-    if (m[7] !== undefined && mark === null) out.push({ value: value / 100, mark: '$', ...more });
-    out.push({ value, mark, ...more });
+    const before = said.slice(Math.max(0, m.index - AROUND), m.index);
+    if (m[7] !== undefined && mark === null)
+      out.push({ figure: { value: value / 100, mark: '$', ...more }, before, after });
+    out.push({ figure: { value, mark, ...more }, before, after });
   }
   return out;
 }

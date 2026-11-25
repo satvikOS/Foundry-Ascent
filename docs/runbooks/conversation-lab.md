@@ -533,7 +533,7 @@ gh workflow run ops-conversation-lab.yml -f suite=understand -f understand_model
   budget stopped has still compared the candidates on the same cases.
 - **The code measured** is a turn's own: `apps/api/src/scripts/lab-understand.ts` calls `prepareUnderstand` and
   `readParts` (the prompts, the schemas, the checks, the sums) through the gateway, a case's calls at once. A call is given 20 s, so
-  a late one is counted against its channel's cap instead of cut off (3.0 s typed, 1.4 s on a call; `understand_ms=typed,voice`
+  a late one is counted against its channel's cap instead of cut off (3.0 s typed, 1.7 s on a call; `understand_ms=typed,voice`
   sets others), and each case is graded twice: with every part that came, and with those a turn would have had in time.
 - **Grades**, without a judge (`conversation_lab/understand_bench.py`): the expected number among the sums code worked out (`number`)
   or said at all (`said`); the referral, and no ruling referral where none is expected; the pick; a result read that names the

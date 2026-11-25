@@ -18,6 +18,7 @@ import {
   bareVerdict,
   echoesReferral,
   makesPoint,
+  namesWho,
   rulesTerms,
   withoutWorks,
 } from './reading.js';
@@ -675,6 +676,8 @@ export class StepTalk {
    */
   drops(unit: string): boolean {
     const text = unit.trim();
+    // The words themselves were asked for: its lines are theirs, whatever labels they have.
+    if (this.guidance.draft === true && this.guidance.reading !== undefined && !opensStep(text)) return false;
     const newParagraph = PARAGRAPH.test(unit);
     const item = isListUnit(text);
     // A draft in quotes ends with them: what is said after it is the answer's own.
@@ -836,7 +839,11 @@ export function contractUnit(unit: string, guidance: PromptGuidance): string {
  */
 export function emptyOrRuled(unit: string, guidance: PromptGuidance, before: string): boolean {
   if (guidance.restate !== undefined) return false;
-  if (guidance.referral !== null && echoesReferral(unit)) return true;
+  if (
+    guidance.referral !== null &&
+    (echoesReferral(unit) || (guidance.reading !== undefined && namesWho(unit, guidance.referral.who)))
+  )
+    return true;
   if (guidance.kind === 'rehearsal' || guidance.kind === 'social' || quoteOpen(before)) return false;
   if (bareVerdict(unit)) return true;
   // Money for a part of it (turn.ts `seenBefore`).
@@ -1581,6 +1588,14 @@ function clean(
       leave(u, 'missing_referral');
       return;
     }
+    if (
+      !isProtectedLine(u.text) &&
+      meansNothing(raw, kept.length === 0 ? leadSaid : kept.map((k) => k.raw).join(''))
+    ) {
+      leave(u, 'step_talk');
+      leaned = true;
+      return;
+    }
     // What was read of the message decides what stands beside it (validators/reading.ts).
     if (
       guidance.reading !== undefined &&
@@ -1749,13 +1764,43 @@ export function rulesForAPerson(text: string): boolean {
   return ruled !== null && !OWNERSHIP_OPEN.test(said.slice(0, ruled.index + ruled[0].length));
 }
 
+/** What talking of it does to a patent: for the office that decides, and nobody else. */
+const OF_PATENTS = /\b(?:ur ventures|patent|technology transfer)\b/iu;
+const RULES_DISCLOSURE =
+  /^yes\b[^.!?]{0,80}\b(?:talk|tell|show|share|speak|demo|present|pitch|result|method)\b|\b(?:won['’]?t|will not|does(?:n['’]?t| not)|should(?:n['’]?t| not)|can(?:no|['’])t|without) (?:hurt|harm|affect|risk|endanger|damage|ruin|jeopardi[sz]|threaten|weaken|put)\w*\b[^.!?]{0,40}\b(?:patent|rights?|invention|protection|filing|claim)\b|\b(?:keeps?|stays?|leaves?|remains?|is|are) (?:(?:the|your|it) )?(?:invention |patent |rights |idea )?(?:safe|protected|intact)\b|\bit(?:['’]s| is) (?:safe|fine|okay|ok) to (?:talk|tell|show|share|speak|present)\b/iu;
+
 /** Whether a unit decides what the turn's referral decides: never the coach's to say. */
 export function rulesOnIt(unit: string, guidance: PromptGuidance): boolean {
   if (guidance.referral === null) return false;
   const text = bare(unit);
+  if (OF_PATENTS.test(guidance.referral.who) && RULES_DISCLOSURE.test(text)) return true;
   if (guidance.ask !== null && RULES_ON_IT.test(text)) return true;
   const ruled = RULES_OWNERSHIP.exec(text);
   return ruled !== null && !OWNERSHIP_OPEN.test(text.slice(0, ruled.index + ruled[0].length));
+}
+
+const numbersOf = (text: string): string[] => text.match(/\d[\d,.]*\d|\d/gu) ?? [];
+/** A sentence that says nothing where it stands: what a figure comes from under no figure, a change told back, so many things with none named. */
+export function meansNothing(unit: string, before: string): boolean {
+  const text = bare(unit);
+  if (
+    /^(?:two|three|four|five|\d) (?:\w+ )?things (?:change|matter|stay|count|decide)\b[^:]*\.$/iu.test(text)
+  )
+    return true;
+  if (
+    /^(?:so,? |and,? |then,? )?you(?:['’]re| are) (?:now )?(?:focusing|shifting|moving|solving|going|working|pivoting|switching)\b[^.!?]*\binstead\.$/iu.test(
+      text,
+    )
+  )
+    return true;
+  if (!/^(?:that|this|it) comes from\b/iu.test(text)) return false;
+  const last =
+    before
+      .trim()
+      .split(/(?<=[.!?])\s+/u)
+      .at(-1) ?? '';
+  const own = numbersOf(text);
+  return numbersOf(last).every((n) => own.includes(n));
 }
 
 /** "Is a pilot the same as a sale?" */
@@ -1928,6 +1973,8 @@ function tailOf(
   const again = guidance.restate !== undefined && lead === '';
   const little =
     lead === '' &&
+    // The words they asked for are as short as they are.
+    !(guidance.draft === true && guidance.reading !== undefined && answerWords > 0) &&
     !saysTheSum(said, guidance) &&
     answerWords < (again ? LEAST_RESTATED : voice ? MIN_SPOKEN_ANSWER_WORDS : MIN_ANSWER_WORDS);
   const recall = guidance.kind === 'recall';
@@ -2329,6 +2376,7 @@ export function mayRepeat(unit: string, guidance: PromptGuidance | null | undefi
 /** Most words of the model's own in a typed answer, and beside what the server says first (fewest of it, whatever opens). */
 const TYPED_WORDS = { alone: 110, whole: 125, least: 20 } as const;
 /** The same where the message was read: the claims, and no more. */
+const SAYS_MOST: ReadonlySet<string> = new Set(['order', 'held', 'solo', 'quit']);
 const READ_WORDS = { alone: 78, whole: 88, least: 20 } as const;
 /** What a list, once begun, may run over by: an item left out would be a hole in it. */
 const LIST_OVER = 60;
@@ -2347,7 +2395,7 @@ export function overTyped(unit: string, words: number, before: string, guidance:
   const most =
     lead === ''
       ? limit.alone
-      : guidance.reading?.opened === 'order'
+      : SAYS_MOST.has(guidance.reading?.opened ?? '')
         ? limit.least
         : Math.max(limit.least, limit.whole - wordsIn(lead));
   const inList =

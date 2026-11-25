@@ -294,6 +294,36 @@ export function pickedChannel(view: PathStepView, option: string): PathStepView 
   };
 }
 
+/** A letter that tells them to stop, or threatens: a lawyer reads it, and nothing it names goes on meanwhile. */
+export function letterStep(view: PathStepView): PathStepView {
+  return {
+    ...view,
+    title: 'Have a lawyer read the letter before you answer it',
+    items: [
+      {
+        do: 'Stop using what the letter names, today',
+        how: 'Take it off what you hand out and put up. It costs little, and it keeps the question small.',
+        minutes: 30,
+        done: false,
+      },
+      {
+        do: 'Put the letter, its date and a copy of everything it is about in one folder',
+        how: 'Photos of each thing it names, and where and since when you used it.',
+        minutes: 30,
+        done: false,
+      },
+      {
+        do: 'Ask the Ain Center program lead for a legal referral',
+        how: 'Send the folder ahead. Ask what to answer, and what you may go on using.',
+        minutes: 20,
+        done: false,
+      },
+    ],
+    doneWhen: 'A lawyer has read the letter and told you what to answer.',
+    template: null,
+  };
+}
+
 /** The small test of what was picked: the same test, named for it. */
 export function pickTested(view: PathStepView, pick: string): PathStepView {
   const what = lowerFirst(pick.replace(/[\s.!?;:,]+$/u, '').trim());

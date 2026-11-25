@@ -17,24 +17,30 @@ import {
 export const UNDERSTAND_PARTS = ['route', 'sums', 'judge'] as const;
 export type UnderstandPart = (typeof UNDERSTAND_PARTS)[number];
 
+/** How a part is asked: JUDGE is shorter on a call, where the reply waits for nothing it does not open on. */
+export const UNDERSTAND_FORMS = ['route', 'sums', 'judge', 'judgeVoice'] as const;
+export type UnderstandForm = (typeof UNDERSTAND_FORMS)[number];
+
 /** Names of the structured output schemas sent to the model. */
-export const UNDERSTAND_SCHEMA_NAMES: Readonly<Record<UnderstandPart, string>> = {
+export const UNDERSTAND_SCHEMA_NAMES: Readonly<Record<UnderstandForm, string>> = {
   route: 'UnderstandRoute',
   sums: 'UnderstandSums',
   judge: 'UnderstandJudge',
+  judgeVoice: 'UnderstandJudgeVoice',
 };
 
 /** The whole budget of a reading, by channel (`CORE_UNDERSTAND_TYPED_MS`, `CORE_UNDERSTAND_VOICE_MS`): what is late then is left. */
-export const UNDERSTAND_TIMEOUT_MS = { text: 3_000, voice: 1_400 } as const;
+export const UNDERSTAND_TIMEOUT_MS = { text: 3_000, voice: 1_700 } as const;
 
 /** How long JUDGE is waited for once ROUTE and SUMS are in, where the reply does not open on what it says. */
 export const UNDERSTAND_JUDGE_WAIT_MS = { text: 700, voice: 250 } as const;
 
 /** Output bounds: 60 to 150 tokens are asked for; more is room for a long sum, never for prose. */
-export const UNDERSTAND_MAX_OUTPUT_TOKENS: Readonly<Record<UnderstandPart, number>> = {
+export const UNDERSTAND_MAX_OUTPUT_TOKENS: Readonly<Record<UnderstandForm, number>> = {
   route: 220,
   sums: 320,
-  judge: 420,
+  judge: 360,
+  judgeVoice: 200,
 };
 
 /**
@@ -94,14 +100,31 @@ export const JudgeReading = z.object({
     .catch(null),
   /** What the answer must say. */
   g: z.array(z.string()).catch([]),
-  /** First action; what not to say. */
+  /** First action, where nothing that happened has its own test. */
   d: z.string().nullable().catch(null),
-  z: z.string().nullable().catch(null),
 });
 export type JudgeReading = z.infer<typeof JudgeReading>;
 
+/** JUDGE on a call: the choice and what happened, which open the reply, and no more. Read back as a `JudgeReading`. */
+export const JudgeVoiceReading = z.object({
+  o: z
+    .object({ o: z.array(z.string()), p: z.string(), b: z.string() })
+    .nullable()
+    .catch(null),
+  t: z
+    .object({ v: z.enum(RESULT_VERDICTS), s: z.string(), e: z.string().nullable().catch(null) })
+    .nullable()
+    .catch(null),
+});
+export type JudgeVoiceReading = z.infer<typeof JudgeVoiceReading>;
+
 /** The answer each part is asked for. */
-export const UNDERSTAND_SCHEMAS = { route: RouteReading, sums: SumsReading, judge: JudgeReading } as const;
+export const UNDERSTAND_SCHEMAS = {
+  route: RouteReading,
+  sums: SumsReading,
+  judge: JudgeReading,
+  judgeVoice: JudgeVoiceReading,
+} as const;
 
 /** What came back in time, by part; an absent part was late, failed or not asked. */
 export interface UnderstandReadings {

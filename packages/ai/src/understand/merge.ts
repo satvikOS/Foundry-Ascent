@@ -26,7 +26,7 @@ const kindOf = (value: string): UnderstoodKind | null =>
 
 /** The message asks for a figure by a word of its own. */
 const FIGURE_ASKED =
-  /\b(?:how (?:much|many|long|often|far|soon)|per (?:hour|day|week|month|year|cent|person|unit)|an hour|worth|left|keep|earn|profit|margin|break ?even|(?:making|make|losing|lose) (?:any )?money|percent|percentage|number|figure|adds? up|comes? (?:in|to)|runs? out|paid|costs?|total|average|payback)\b/iu;
+  /\b(?:how (?:much|many|long|often|far|soon)|per (?:hour|day|week|month|year|cent|person|unit)|an hour|worth|left|keep|earn|profit|margin|break ?even|(?:making|make|losing|lose) (?:any )?money|percent|percentage|number|figure|adds? up|comes? (?:in|to)|runs? out|paid|costs?|total|average|payback|hit rate|accura(?:te|cy)|success rate)\b/iu;
 /** Something is asked, marked or not. */
 const QUESTION_PUT =
   /\?|\b(?:how|what|whats|when|which|am i|are we|do i|do we|did i|did we|is it|is that|does it|will i|can i|tell me|work out|calculate)\b/iu;
@@ -114,7 +114,8 @@ export function mergeReadings(
     sure: route?.h === true ? 'high' : 'low',
     points: judge?.g ?? [],
     first_action: text(judge?.d),
-    avoid: text(judge?.z),
+    // Nothing asks for it: kept for what reads it (types.ts).
+    avoid: null,
   };
 }
 

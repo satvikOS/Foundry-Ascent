@@ -71,6 +71,7 @@ import {
   repeatsLead,
   repeatsReferral,
   restates,
+  meansNothing,
   rulesOnIt,
   saidInLead,
   saysNothing,
@@ -1390,7 +1391,11 @@ export class SentenceGate {
         }
       }
       // Who decides, said a second time in one reply; or decided by the reply itself.
-      if (rulesOnIt(unit, guidance) || repeatsReferral(unit, this.#releasedText, guidance)) {
+      if (
+        rulesOnIt(unit, guidance) ||
+        meansNothing(unit, this.#releasedText) ||
+        repeatsReferral(unit, this.#releasedText, guidance)
+      ) {
         this.#leaveOut('contract', rawUnit);
         return 'out';
       }

@@ -4,11 +4,12 @@ import { toStrictJsonSchema } from '../gateway/json-schema.js';
 import { expectLinearTime } from '../testing/linear-time.js';
 import { validateStructured } from '../gateway/provider.js';
 import { observable, readParts, type UnderstandContext } from './check.js';
-import { claimNumbers, daysIn, figuresIn } from './figures.js';
+import { claimNumbers, daysIn, figuresIn, pricesIn } from './figures.js';
 import { phraseOf, withPeriod } from './labels.js';
 import { inputOf, mergeReadings, unitOf } from './merge.js';
 import {
   JUDGE_SYSTEM_PROMPT,
+  JUDGE_VOICE_SYSTEM_PROMPT,
   SUMS_SYSTEM_PROMPT,
   UNDERSTAND_EXAMPLES,
   exchangesInView,
@@ -21,9 +22,10 @@ import {
 import { readRoute, readSums, salvaged } from './salvage.js';
 import {
   UNDERSTAND_MAX_OUTPUT_TOKENS,
+  UNDERSTAND_FORMS,
   UNDERSTAND_PARTS,
   UNDERSTAND_SCHEMAS,
-  type UnderstandPart,
+  type UnderstandForm,
 } from './schema.js';
 
 const PLAYS = [
@@ -46,13 +48,14 @@ const context = (over: Partial<UnderstandContext> = {}): UnderstandContext => ({
   stepCandidates: new Set(),
   ...over,
 });
-const userText = (part: UnderstandPart, c: UnderstandContext, step: string | null = null): string =>
+const userText = (part: UnderstandForm, c: UnderstandContext, step: string | null = null): string =>
   understandMessages(part, { context: c, venture: 'Harbour Lanterns: night walks', step, channel: 'text' })[0]
     ?.content ?? '';
-const SYSTEMS: Readonly<Record<UnderstandPart, string>> = {
+const SYSTEMS: Readonly<Record<UnderstandForm, string>> = {
   route: routeSystemPrompt(PLAYS),
   sums: SUMS_SYSTEM_PROMPT,
   judge: JUDGE_SYSTEM_PROMPT,
+  judgeVoice: JUDGE_VOICE_SYSTEM_PROMPT,
 };
 
 describe('the system prompts', () => {
@@ -66,6 +69,7 @@ describe('the system prompts', () => {
     expect(SYSTEMS.route.length).toBeLessThan(4_400);
     expect(SYSTEMS.sums.length).toBeLessThan(4_000);
     expect(SYSTEMS.judge.length).toBeLessThan(4_400);
+    expect(SYSTEMS.judgeVoice.length).toBeLessThan(2_900);
   });
 
   it('name every play on one line under its stage, its text escaped, its ask where the step does not say it', () => {
@@ -75,7 +79,7 @@ describe('the system prompts', () => {
   });
 
   it('hold each example as the object its part asks for', () => {
-    for (const part of UNDERSTAND_PARTS) {
+    for (const part of UNDERSTAND_FORMS) {
       const strict = toStrictJsonSchema(UNDERSTAND_SCHEMAS[part]);
       for (const e of UNDERSTAND_EXAMPLES[part]) {
         expect(SYSTEMS[part]).toContain(JSON.stringify(e.answer));
@@ -87,7 +91,7 @@ describe('the system prompts', () => {
   });
 
   it('say what their fields are', () => {
-    for (const part of UNDERSTAND_PARTS)
+    for (const part of UNDERSTAND_FORMS)
       for (const key of Object.keys(UNDERSTAND_SCHEMAS[part].shape))
         expect(SYSTEMS[part], `${part} ${key}`).toMatch(new RegExp(`(?:^|[.] )${key}: `, 'mu'));
   });
@@ -102,7 +106,7 @@ describe('the system prompts', () => {
 });
 
 describe('the message', () => {
-  it.each(UNDERSTAND_PARTS)('is data inside its tags, whatever it says: %s', (part) => {
+  it.each(UNDERSTAND_FORMS)('is data inside its tags, whatever it says: %s', (part) => {
     const text = userText(
       part,
       context({
@@ -467,6 +471,23 @@ describe('the parts as one', () => {
   });
 });
 
+describe('prices', () => {
+  it.each([
+    ['You charge $24 a walk and a guide gets $9.', [24]],
+    ['A lamp rents for 12 dollars a night; none paid when asked for $15.', [12, 15]],
+    ['$8 each', [8]],
+    ['A lamp is 9 dollars.', [9]],
+    ['you have $450 saved and $900 left', []],
+    ['the dredging costs $900', []],
+    ['we burn $3,400 a month', []],
+    ['The grant is $9,000.', []],
+    ['thirteen people paid', []],
+    ['it keeps 15 percent', []],
+  ])('%s', (text, found) => {
+    expect(pricesIn(text)).toEqual(found);
+  });
+});
+
 describe('figures', () => {
   it.each([
     [
@@ -556,6 +577,7 @@ describe('figures', () => {
           figuresIn(text);
           claimNumbers(text);
           daysIn(text);
+          pricesIn(text);
         };
       }, size);
     },
@@ -598,7 +620,6 @@ describe('what reads a whole message or a long answer is linear', () => {
                 t: { v: 'mixed', s: text, n: text, e: text },
                 g: [text],
                 d: text,
-                z: text,
               },
             },
             c,

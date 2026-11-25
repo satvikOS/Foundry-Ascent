@@ -2,7 +2,7 @@ import { methodUnit } from '../validators/method.js';
 import { rulesForAPerson } from '../validators/reply-contract.js';
 import { stemsOf } from '../validators/stems.js';
 import { conflictDrop, type ConflictDrop } from './conflicts.js';
-import { claimNumbers, daysIn, figuresIn, sameNumber } from './figures.js';
+import { claimNumbers, daysIn, figuresIn, pricesIn, sameNumber } from './figures.js';
 import { toThem } from './labels.js';
 import { mergeReadings } from './merge.js';
 import type { RawUnderstanding, UnderstandReadings } from './schema.js';
@@ -72,6 +72,10 @@ type TextDrop =
   | 'voice'
   /** Nothing they could count or see. */
   | 'vague'
+  /** A price of an amount nobody charges. */
+  | 'price'
+  /** Nobody does it. */
+  | 'subject'
   /** Nothing of theirs in it. */
   | 'generic'
   /** It tells another message's news. */
@@ -80,6 +84,7 @@ type TextDrop =
 const MAX_ASK_WORDS = 34;
 const MAX_CLAIM_WORDS = 40;
 const MAX_POINTS = 4;
+const MAX_OPTIONS = 8;
 const MAX_RECORD = 4;
 
 const words = (text: string): number => text.split(/\s+/u).filter((w) => w !== '').length;
@@ -176,6 +181,41 @@ const WOULD =
   /^(?:if |when |whether |once )?(?:at least |more than |fewer than |less than |most of |about )?(?:\d{1,3}|[a-z]+) (?:of|out of|in) (?:the (?:next )?|every )?(?:\d{1,3}|[a-z]+)\b/iu;
 const DID =
   /\b(?:paid|said|came|bought|asked|sold|told|were|was|had|did|signed|used|kept|stayed|left|opened|booked|agreed|returned)\b/iu;
+/** An amount somebody is to pay, marked or not ("pay the 600"). */
+const TO_PAY =
+  /\b(?:pay|pays|paying|charge|charges|prepay|deposit|buy\w* [^.]{0,20}for|sell\w* [^.]{0,20}(?:for|at)|price of|fee of) (?:a |an |the |you |them )?\$?(\d[\d,]*(?:\.\d+)?)(?![\d.]|,\d| ?%| percent| (?:days?|weeks?|months?|of|people|strangers|customers))/giu;
+
+/** A test without the clauses that make a price of an amount nobody charges; '' when nothing of it is left. */
+function withRealPrices(text: string, prices: readonly number[]): string {
+  const bad = (clause: string): boolean => {
+    const amounts = [
+      ...figuresIn(clause).flatMap((f) => (f.mark === '$' ? [f.value] : [])),
+      ...[...clause.matchAll(TO_PAY)].map((m) => Number((m[1] ?? '').replace(/,/gu, ''))),
+    ];
+    return amounts.some((n) => !prices.some((p) => sameNumber(p, n)));
+  };
+  if (!bad(text)) return text;
+  const parts = text.split(/(,? (?:and|or|then|but) )/u);
+  const clauses = parts.flatMap((part, i) => (i % 2 === 0 ? [{ part, joins: parts[i - 1] ?? '' }] : []));
+  // "Use it for a week and pay the 600": what is left of the sentence stands.
+  const kept = clauses.filter((c) => !bad(c.part));
+  if (kept.length === 0 || kept[0] !== clauses[0]) return '';
+  const said = kept
+    .map((c, i) => `${i === 0 ? '' : c.joins}${c.part}`)
+    .join('')
+    .replace(/[\s,;]+$/u, '');
+  return words(said) < 5 ? '' : /[.!?]$/u.test(said) ? said : `${said}.`;
+}
+
+/** What somebody else would have to do, as it is told of them ("agrees", "answers"): with nobody named it is nobody's. */
+const OTHERS_DO =
+  /^(?:answers?|agrees?|accepts?|repl(?:y|ies)|confirms?|signs?|buys?|pays?|comes?|returns?|refuses?|declines?|says?|wants?|renews?|orders?|books?|keeps?|stays?|uses?|likes?|joins?|leaves?)\b/iu;
+/** "Ask five and two pay" is "you ask five and two pay"; a clause with nobody in it is null. */
+function withSubject(text: string): string | null {
+  const said = text.replace(/^(?:if|when|once|unless) /iu, '');
+  if (OTHERS_DO.test(said)) return null;
+  return TO_DO.test(said) ? `You ${said.charAt(0).toLowerCase()}${said.slice(1)}` : text;
+}
 const setsSizes = (text: string): boolean => TO_DO.test(text) || (WOULD.test(text) && !DID.test(text));
 
 /** What a claim may repeat: the numbers, days and names of everything the call was shown, and of what code worked out. */
@@ -355,9 +395,25 @@ export function readUnderstanding(raw: RawUnderstanding, context: UnderstandCont
   const latest = [context.message, ...context.history.slice(-2).map((h) => h.founder)].join('\n');
   const news = stemsOf(latest);
   const pushed = raw.kind === 'pushback' || raw.also.includes('pushback');
+  const prices = [
+    context.message,
+    ...context.history.map((h) => h.founder),
+    ...context.record.map((r) => r.text),
+  ].flatMap(pricesIn);
   const counts = (field: string, text: string | null): string | null => {
-    const line = claim(field, text, after);
-    if (line === null || observable(line)) return line;
+    const told = claim(field, text, after);
+    if (told === null) return null;
+    const priced = withRealPrices(told, prices);
+    if (priced === '') {
+      textDrops.push(`${field}:price`);
+      return null;
+    }
+    const line = field === 'choice.flips_if' ? withSubject(priced) : priced;
+    if (line === null) {
+      textDrops.push(`${field}:subject`);
+      return null;
+    }
+    if (observable(line)) return line;
     textDrops.push(`${field}:vague`);
     return null;
   };
@@ -402,7 +458,7 @@ export function readUnderstanding(raw: RawUnderstanding, context: UnderstandCont
       stepPlayId,
       sure: raw.sure === 'high' && playId !== null,
       points,
-      firstAction: claim('first_action', raw.first_action, after),
+      firstAction: withRealPrices(claim('first_action', raw.first_action, after) ?? '', prices) || null,
       avoid: claim('avoid', raw.avoid, after, 'plain'),
     },
     report: report(),
@@ -465,7 +521,9 @@ function choiceOf(
   if ((referral === 'legal' || referral === 'irb') && said.some((o) => BINDS.test(o))) return null;
   // Asking for money shows more than giving it away.
   if (FREE.test(raw.pick) && raw.options.some((o) => CHARGES.test(o) && !FREE.test(o))) return null;
-  const options = raw.options.slice(0, 4).flatMap((o) => c.claim('choice.option', o, 'plain') ?? []);
+  const options = raw.options
+    .slice(0, MAX_OPTIONS)
+    .flatMap((o) => c.claim('choice.option', o, 'plain') ?? []);
   const named = (o: string): boolean => [...stemsOf(o)].some((w) => c.theirs.has(w));
   if (options.length < 2 || !options.some(named) || !options.every((o) => named(o) || HOLDS.test(o)))
     return null;

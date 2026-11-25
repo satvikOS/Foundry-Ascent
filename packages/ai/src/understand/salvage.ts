@@ -1,10 +1,4 @@
-import {
-  UNDERSTAND_SCHEMAS,
-  type JudgeReading,
-  type RouteReading,
-  type SumsReading,
-  type UnderstandPart,
-} from './schema.js';
+import { UNDERSTAND_SCHEMAS, type JudgeReading, type RouteReading, type SumsReading } from './schema.js';
 
 /** `…","w":…` inside a string: the rest of the object was written into it. */
 const SWALLOWED = /"\s*,\s*"[a-z]"\s*:/u;
@@ -39,7 +33,3 @@ export function salvaged(raw: unknown): unknown {
 export const readRoute = (raw: unknown): RouteReading => UNDERSTAND_SCHEMAS.route.parse(salvaged(raw));
 export const readSums = (raw: unknown): SumsReading => UNDERSTAND_SCHEMAS.sums.parse(salvaged(raw));
 export const readJudge = (raw: unknown): JudgeReading => UNDERSTAND_SCHEMAS.judge.parse(salvaged(raw));
-export const PART_READERS = { route: readRoute, sums: readSums, judge: readJudge } as const satisfies Record<
-  UnderstandPart,
-  (raw: unknown) => unknown
->;

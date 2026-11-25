@@ -507,6 +507,10 @@ const CLOSE_ONES =
 const PRAISES =
   /\b(?:love[sd]?|like[sd]?|adore[sd]?|(?:said|says?|told me|swore|promised) (?:that )?(?:they|she|he|it)(?:'d| would|'s| is| was)|would (?:all )?(?:buy|get|use|pay|order|want|take) |want(?:ed)? (?:one|it)|think (?:it|this|that))\b/;
 
+/** What friends' praise shows, whatever is asked beside it; null: they bring none. */
+export const friendsPraise = (message: string): Pick<News, 'means' | 'spoken'> | null =>
+  praiseNews(ownSentences(message));
+
 /** Friends like it: praise, which costs them nothing. */
 function praiseNews(told: readonly string[]): Pick<News, 'means' | 'spoken'> | null {
   for (const sentence of told) {
@@ -515,10 +519,12 @@ function praiseNews(told: readonly string[]): Pick<News, 'means' | 'spoken'> | n
     if (who === undefined || !PRAISES.test(t)) continue;
     if (/\b(?:paid|pays|ordered|bought|deposit|never|problem|hate[sd]?|complain\w*|nobody|no one)\b/.test(t))
       continue;
+    const kin = /^(?:family|mom|mum|dad|parents)$/.test(who);
     const said = `Your ${who} ${/^(?:family|mom|mum|dad)$/.test(who) ? 'likes' : 'like'} it`;
+    const close = kin ? 'the people closest to you are' : 'friends are';
     return {
-      means: `${said}, and that does not show that it sells: praise costs nothing, and they want you to do well. What counts is a stranger who gives something up for it: money, a signature or an hour. So the next ones to ask are people you do not know, at a price.`,
-      spoken: `${said}, and that does not show that it sells. The next ones to ask are people you do not know, at a price.`,
+      means: `${said}, and ${close} not proof: praise costs nothing, and they want you to do well. What counts is a stranger who gives something up for it: money, a signature or an hour. So the next ones to ask are people you do not know, at a price.`,
+      spoken: `${said}, and ${close} not proof. The next ones to ask are people you do not know, at a price.`,
     };
   }
   // "They all love it. All of my dorm.": who they are is in another sentence.
@@ -527,8 +533,8 @@ function praiseNews(told: readonly string[]): Pick<News, 'means' | 'spoken'> | n
   if (group !== undefined && PRAISES.test(all) && !/\b(?:paid|pays|ordered|bought|deposit)\b/.test(all)) {
     const said = `Your ${group} likes it`;
     return {
-      means: `${said}, and that does not show that it sells: praise costs nothing, and they know you. What counts is a stranger who gives something up for it: money, a signature or an hour. So the next ones to ask are people you do not know, at a price.`,
-      spoken: `${said}, and that does not show that it sells. The next ones to ask are people you do not know, at a price.`,
+      means: `${said}, and friends are not proof: praise costs nothing, and they know you. What counts is a stranger who gives something up for it: money, a signature or an hour. So the next ones to ask are people you do not know, at a price.`,
+      spoken: `${said}, and friends are not proof. The next ones to ask are people you do not know, at a price.`,
     };
   }
   return null;

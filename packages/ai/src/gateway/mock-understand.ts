@@ -1,5 +1,5 @@
 import { figuresIn } from '../understand/figures.js';
-import type { JudgeReading, RouteReading, SumsReading } from '../understand/schema.js';
+import type { JudgeReading, JudgeVoiceReading, RouteReading, SumsReading } from '../understand/schema.js';
 import type { UnderstoodKind, UnderstoodReferral } from '../understand/types.js';
 import { stemsOf } from '../validators/stems.js';
 
@@ -129,6 +129,14 @@ export function mockJudge(prompt: string): JudgeReading {
       .slice(0, 2)
       .map((l) => l.text),
     d: null,
-    z: null,
+  };
+}
+
+/** The mock's JUDGE on a call. */
+export function mockJudgeVoice(prompt: string): JudgeVoiceReading {
+  const { o, t } = mockJudge(prompt);
+  return {
+    o: o === null ? null : { o: o.o, p: o.p, b: o.b },
+    t: t === null ? null : { v: t.v, s: t.s, e: t.e },
   };
 }

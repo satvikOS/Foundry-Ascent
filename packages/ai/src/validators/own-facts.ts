@@ -153,6 +153,9 @@ function unearned(unit: string, guidance: PromptGuidance): boolean {
   if (buyersAnswered(said)) return false;
   if (VERDICT_ON_PRICE.test(unit) && ABOUT_PRICE.test(unit) && !HEDGED.test(unit)) return true;
   const pays = WILL_PAY.exec(unit);
+  // "Tells you little about what they'll pay" is no verdict.
+  if (pays !== null && guidance.reading !== undefined && /\b(?:little|nothing|hardly)\b/iu.test(pays[0]))
+    return false;
   return pays !== null && !HEDGED.test(unit.slice(0, pays.index + pays[0].length));
 }
 
@@ -424,6 +427,12 @@ export function ownFactsUnit(
       const plain = (t: string): string => t.replace(/[*_]+/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
       if (
         plain(value) !== plain(asks) &&
+        // Asked for the words, a line of facts is no template's line.
+        !(
+          guidance.draft === true &&
+          guidance.reading !== undefined &&
+          inventedMoney(value, guidance, '').length === 0
+        ) &&
         (!isTheirs(value, label, guidance) || inventedMoney(value, guidance, '').length > 0)
       ) {
         findings.push('template_bracketed');

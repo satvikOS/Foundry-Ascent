@@ -406,7 +406,7 @@ describe('a finding is read, never told back', () => {
       newsOf({ message: 'I showed it to my friends and all of them said they would get one.', before: [] }),
     ).toMatchObject({
       kind: 'praise',
-      means: expect.stringMatching(/^Your friends like it, and that does not show that it sells/) as string,
+      means: expect.stringMatching(/^Your friends like it, and friends are not proof/) as string,
     });
     expect(newsOf({ message: 'My family loves the idea.', before: [] })?.kind).toBe('praise');
     for (const message of [

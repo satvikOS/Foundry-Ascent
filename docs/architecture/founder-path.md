@@ -15,6 +15,8 @@ in `packages/core/src/path/playbook/`; everything here is the machinery that rea
 | `steps.ts`                       | One step: from its row or its play, cut to the time they have, taken up again, as it is shown                                 |
 | `engine.ts`                      | `decide(input) -> Decision`: pure (no I/O, model or clock); the turn's step, the path's own, what follows                     |
 | `understood.ts`                  | A checked reading as the turn uses it: what of it may be said, who decides, the step that fits, the first action              |
+| `outcome.ts`, `told-counts.ts`   | Whether a message reports an outcome; what its counts show when nobody read the result                                        |
+| `asked-sums.ts`, `lint.ts`       | A figure they ask for that nobody worked out; a line of the record as a whole sentence to them                                |
 | `openings.ts`, `sum-said.ts`     | The server's one opening of a reply whose message was read; a worked figure as a mentor says it                               |
 | `denied.ts`, `referrals.ts`      | A claim of growth the record denies; money offered for a part of the company, in any words; a risk's play                     |
 | `calc.ts`, `calc-read.ts`        | The sums students ask for, from the numbers they gave and their roles; the one number that is missing                         |
@@ -241,6 +243,16 @@ a crisis, a rehearsal, a social turn, and a wellbeing or conflict risk. What a r
 the reading's. A message that is only about how they feel has no step; one that also asks something of the work is answered
 although it is in distress (`contractApplies`).
 
+**The reading fills gaps; it overrides no rule that read the message precisely** (`turn.ts` `firedRule`, the `answer` rows of
+`PRECEDENCE`). The turn is decided without the reading first. Where a specific rule fired (counts or a refusal read as news, a result,
+their report or a step not done, a commitment, a smaller step, a change of direction or back, the record, the calculator, the reply
+said again, a message to send, a lead that answers one ask: if no, worth, needed, told, meaning, compares, convince, the pick, holds),
+the whole turn is that one: opening, step, prompt and model, to the byte. A general answer (a play's paragraph by a phrase, the whole
+path, a page to fill in, a step withheld) stands unless the reading holds what it lacks: an asked figure, a pick, a result, a denial,
+who decides, another ask. A rule that counted friends, no customers or a denied growth as proof gives way. Added to a rule's turn: who
+decides, where the ask is that decision, and a figure asked beside a recall or a report. With no rule, or one that is only near by
+words or meaning, the reading decides, by the table below. The rule's name is logged (`turn.path` `rule`).
+
 **Who decides** where the rules and the reading disagree is one table, `understood.ts` `PRECEDENCE`; the first row that holds
 decides, and each row is a test.
 
@@ -260,11 +272,27 @@ decides, and each row is a test.
   owns it, terms, signing, the form of the company) is nobody's pick: the choice goes and who decides is found. A pick is one of
   the things they named, never a step's title, and only where they choose; what would change it is kept when one can see it happen.
   A letter that tells them to stop brings a lawyer, with the letter. Any field may be empty.
+- **A figure they ask for** is worked out whatever else holds (`asked-sums.ts`): what an offer makes the whole come to, how many cover
+  a cost, where their own words hold every number one way only; arithmetic is no ruling, so it opens and who decides follows. Where
+  nobody worked it out no verdict opens, the model writes it as a marker, and a conclusion of its own goes. The figure said of the
+  same thing before stands beside the new one, "earn or lose?" is answered with the word, and what a number was before they took it
+  back is not said.
+- **A verdict** is read of an outcome alone (`outcome.ts`): what somebody did, said or paid, a count, a test, a refusal, told now or
+  before and asked about. An idea, a plan, a step not done or the time they have opens none. Its test and the step are one plan: of
+  one kind with another number the opening names the step, of another kind it goes, and may stand as what to start with. Praise asked
+  for is no push: why not yet, what is real, what would show it.
+- **The words themselves** (a recap, a wording, so many lines): nothing opens, nothing is added but the step, and a line of the record
+  they took back since is not given.
+- **A part that came late** (no verdict, no claims): what the rules read of it opens, else its counts (`told-counts.ts`: the same
+  people again, a funnel that ends in money, talks and what came of each), never an empty reassurance and never a page to fill in.
+- **A line of the record** is said as a whole sentence to them or not at all (`lint.ts`).
 - **The step** is the reading's when the path allows it and its title (or the play's name) shares a subject with what they ask and
   what it is answered with (`fitsAsk`); who decides comes before anything else. An either-or that is not about money has a small
   test of the pick, named for it; handing it over the hand-over page; "may I stop?" the choice with its evidence; a deliverable of
   a class its own day. It is offered beside an open step, which is never replaced in storage by a reading, and not given when the
-  open one is about the same thing, or when they only ask for a figure of their own. A step that is not about the ask only stands
+  open one is about the same thing, or when they only ask for a figure of their own. A result has the play that reads it or tests what
+  it leaves open; a letter that tells them to stop has a lawyer's read of it; after talks come more of them, never a page of the stage
+  before; who wants to go on alone has the talk first. A step that is not about the ask only stands
   ("On your path, next is:"), as does one that asks for money against a pick not to.
 - **One opening** (`openings.ts`), in the words of a mentor and never as a form: the figure as a sentence, with its working and what
   it leaves out ("You keep $42 on a Saturday: 6 × $7."); the number that is missing (then the reply's one question); what their record
@@ -288,13 +316,15 @@ decides, and each row is a test.
   day of its own, is about the ask, and belongs to the step, to what opens or beside a step that only stands; never the step again, who
   decides again, the option not picked, what the opening speaks against, or a question of the method's table. On a call it is part of
   the step's sentence.
+- **Who decides** is said once in a conversation, and again only where the new ask is that decision (`toldEnough`).
 - **A record line** is added whole, only when the reply names none of the reading's and the line shares a subject with the ask.
 
 ## Without a reading
 
 The same to the byte, but for what is never right: a verdict and nothing else ("Good price.") goes; a claim of growth their record
 denies is named first and nothing agrees with it; money offered for a part of the company, in any words (`offersForShares`), has who
-decides, what can be said and no verdict; a fact is put beside an answer only as a sentence of its own that bears on the ask; the
+decides, what can be said and no verdict (and the figure it implies where that is asked); telling or showing an invention is never called safe;
+a sentence that says nothing where it stands goes; a line as a call heard it is no fact; a fact is put beside an answer only as a sentence of its own that bears on the ask; the
 prompt's line for who decides is never said; a question that only asks how they will do the step goes.
 
 ## Rules the code keeps

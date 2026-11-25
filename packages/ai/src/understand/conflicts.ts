@@ -42,6 +42,12 @@ const CLAIMS_NOTHING: ReadonlySet<UnderstoodKind> = new Set([
 /** Rated, or said of all or none. */
 const RATES =
   /\b(?:every(?:one|body)?|all of (?:them|us|my|our|the)|nobody|no one|none|always|never|stead(?:y|ily)|grow(?:s|ing|n|th)?|grew|prove[sdn]?|proving|proof|sure|certain(?:ly)?|definitely|guaranteed|only (?:problem|reason|thing|issue)|love[sd]?|obsessed|most(?:ly)?|clearly|obviously|doubl(?:ed|es|ing)|consistent(?:ly)?)\b/iu;
+/** Said of how it goes: a line denies it by counts that go another way. */
+const GROWS =
+  /\b(?:grow(?:s|ing|n|th)?|grew|doubl(?:ed|es|ing)|(?:going|went|gone) up|up (?:every|all)|increas\w+|climb\w+)\b/iu;
+const STEADY =
+  /\b(?:stead(?:y|ily)|stable|constant(?:ly)?|consistent(?:ly)?|no change|flat|same as ever)\b/iu;
+const TREND = { test: (text: string): boolean => GROWS.test(text) || STEADY.test(text) };
 /** What a line has of a shortfall, beside two counts. */
 const FALLS_SHORT =
   /\b(?:none|nobody|no one|zero|not|never|only|cancel+ed|stopped|left|quit|fell|dropped|lost|fewer|refused|no)\b/iu;
@@ -66,16 +72,23 @@ export function conflictDrop(c: Conflict): ConflictDrop | null {
   if (CLAIMS_NOTHING.has(c.kind)) return 'kind';
   // A report that asks nothing is told, not argued.
   if (c.kind === 'update' && !c.message.includes('?') && !c.also.includes('pushback')) return 'kind';
-  if (!HOLDS.has(c.line.kind)) return 'line';
+  // Nor what is told as no longer so.
+  if (!HOLDS.has(c.line.kind) || c.line.text.includes('(was true until ')) return 'line';
   const claim = flat(c.claim);
   if (words(claim) < 2 || words(claim) > 24 || !flat(c.message).includes(claim)) return 'quote';
-  const told = figuresIn(c.line.text).map((f) => f.value);
+  const inLine = figuresIn(c.line.text);
+  const told = inLine.map((f) => f.value);
+  /** Its counts as they are told, the first and the last: "80 in March and 62 in April". */
+  const counts = inLine.filter((f) => f.mark === null && f.time === undefined).map((f) => f.value);
+  const [first = 0, last = 0] = [counts[0], counts.at(-1)];
   if (c.line.kind === 'decision' && MOVED.test(c.message)) return 'moved';
   const stated = figuresIn(claim).map((f) => f.value);
   const ofLine = stemsOf(c.line.text);
   const ofClaim = stemsOf(claim);
-  const rated =
-    RATES.test(claim) && (new Set(told).size >= 2 || (told.length > 0 && FALLS_SHORT.test(c.line.text)));
+  const trend = TREND.test(claim);
+  const rated = trend
+    ? counts.length >= 2 && (GROWS.test(claim) ? last < first : last !== first)
+    : RATES.test(claim) && (new Set(told).size >= 2 || (told.length > 0 && FALLS_SHORT.test(c.line.text)));
   const counted =
     stated.length > 0 &&
     told.length > 0 &&
@@ -88,6 +101,7 @@ export function conflictDrop(c: Conflict): ConflictDrop | null {
   const theirs =
     [...ofClaim].some((w) => why.has(w)) ||
     RATES.test(c.why) ||
+    TREND.test(c.why) ||
     stated.some((n) => claimNumbers(c.why).includes(n));
   const lines =
     claimNumbers(c.why).some((n) => told.some((t) => sameNumber(t, n))) ||

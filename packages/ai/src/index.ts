@@ -179,6 +179,7 @@ export { mergeReadings } from './understand/merge.js';
 export { readJudge, readRoute, readSums, salvaged } from './understand/salvage.js';
 export {
   JUDGE_SYSTEM_PROMPT,
+  JUDGE_VOICE_SYSTEM_PROMPT,
   SUMS_SYSTEM_PROMPT,
   UNDERSTAND_EXAMPLES,
   exchangesInView,
@@ -192,8 +193,10 @@ export {
 } from './understand/prompt.js';
 export {
   JudgeReading,
+  JudgeVoiceReading,
   RouteReading,
   SumsReading,
+  UNDERSTAND_FORMS,
   UNDERSTAND_JUDGE_WAIT_MS,
   UNDERSTAND_MAX_OUTPUT_TOKENS,
   UNDERSTAND_PARTS,
@@ -201,9 +204,11 @@ export {
   UNDERSTAND_SCHEMA_NAMES,
   UNDERSTAND_TIMEOUT_MS,
   type RawUnderstanding,
+  type UnderstandForm,
   type UnderstandPart,
   type UnderstandReadings,
 } from './understand/schema.js';
+export { pricesIn } from './understand/figures.js';
 export { type SumDrop } from './understand/sums.js';
 export {
   RESULT_VERDICTS,

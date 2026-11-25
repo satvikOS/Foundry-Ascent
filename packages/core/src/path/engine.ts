@@ -1,4 +1,4 @@
-import { type Understanding } from '@foundry/ai';
+import { type Understanding, type UnderstoodSum } from '@foundry/ai';
 import {
   type PathCheckIn,
   type PathCriterion,
@@ -13,6 +13,7 @@ import { type pathRepo, type retrievalRepo } from '@foundry/db';
 import { isReference } from './brief.js';
 import { calcAsked, calcOf, type CalcAsk, type CalcResult, type Ratio } from './calc.js';
 import { choiceIn, settledWay, type Choice } from './choice.js';
+import { askedSum } from './asked-sums.js';
 import { addDays, daySaid, dueOnFor } from './dates.js';
 import {
   asksAboutReply,
@@ -85,7 +86,8 @@ import {
   type PathSource,
   type PathState,
 } from './state.js';
-import { asksToStop } from './openings.js';
+import { asksToStop, goesAlone } from './openings.js';
+import { tellsTalks } from './told-counts.js';
 import {
   askWhyStep,
   citationsOf,
@@ -96,6 +98,7 @@ import {
   ownStep,
   pickedChannel,
   pickTested,
+  letterStep,
   playOf,
   restOf,
   shownStep,
@@ -294,6 +297,10 @@ export interface Decision {
   readonly reading: Understanding | null;
   /** Who decided what, where a reading was weighed (understood.ts `PRECEDENCE`): ids for the log, never words. */
   readonly decidedBy: Readonly<Record<WeighedField, Decides>> | null;
+  /** The rule that has the whole answer where a reading was weighed (turn.ts `firedRule`); null: none. */
+  readonly fired: string | null;
+  /** The figure they ask for beside it, which that rule does not work out. */
+  readonly beside: UnderstoodSum | null;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -966,6 +973,19 @@ function recordTexts(input: DecideInput): string[] {
   ].filter((t) => t.trim() !== '');
 }
 
+/** The reading as the turn may rest on it; null: none, or of a turn a wellbeing or conflict risk is found on. */
+export function readingFor(input: DecideInput): Understanding | null {
+  const earlier = input.earlierMessages ?? [];
+  if (input.understanding == null || input.riskCategories.some((c) => SUPPORT.has(c))) return null;
+  const read = settled(input.understanding, {
+    message: input.message,
+    earlier,
+    titles: input.playbook.plays.map((p) => p.title),
+    sum: askedSum(input.understanding, { message: input.message, earlier, record: recordTexts(input) }),
+  });
+  return speaks(read) ? read : null;
+}
+
 /** What this turn is and what it must say next. */
 export function decide(input: DecideInput): Decision {
   const { playbook } = input;
@@ -1026,6 +1046,8 @@ export function decide(input: DecideInput): Decision {
     wasDue: null,
     reading: null,
     decidedBy: null,
+    fired: null,
+    beside: null,
   } as const;
 
   if (input.crisis) return { ...base, kind: 'crisis' };
@@ -1043,15 +1065,7 @@ export function decide(input: DecideInput): Decision {
   const { message } = input;
   const previous = input.previous ?? null;
   // What the message asks, as it was read; never of a turn a wellbeing or conflict risk is found on.
-  const read =
-    input.understanding == null
-      ? null
-      : settled(input.understanding, {
-          message,
-          earlier: input.earlierMessages ?? [],
-          titles: playbook.plays.map((p) => p.title),
-        });
-  const u = read !== null && speaks(read) && !input.riskCategories.some((c) => SUPPORT.has(c)) ? read : null;
+  const u = readingFor(input);
   // The work is asked of, however they feel.
   const works = u !== null && asksOfWork(u, message);
   const on = currentStep(input, before);
@@ -1254,6 +1268,7 @@ export function decide(input: DecideInput): Decision {
     u === null
       ? null
       : {
+          ...NOTHING,
           ownReport,
           turned: pivot !== null || newIdea,
           operation:
@@ -1317,12 +1332,13 @@ export function decide(input: DecideInput): Decision {
   // with ("hire someone, or …?") brings nobody.
   const passedOver =
     u !== null &&
-    u.choice !== null &&
     u.referral === null &&
     referralMatch === null &&
     risky === null &&
     play !== null &&
-    !fitsAsk(play, u.choice.pick);
+    (u.choice === null
+      ? u.kind === 'choice' && u.stepPlayId !== null && u.stepPlayId !== play.id && u.playId !== play.id
+      : !fitsAsk(play, u.choice.pick));
   const ofPlay = passedOver ? null : (play?.referral ?? null);
   const found1 = (byReading ? (passing ?? ofPlay) : (ofPlay ?? passing)) ?? referralPlay?.referral ?? null;
   // What to bring is what came.
@@ -1548,6 +1564,8 @@ export function decide(input: DecideInput): Decision {
     turn = { ...turn, step: { ...turn.step, view: pickedChannel(turn.step.view, way) } };
   if (u !== null && testsAPick(u) && turn.step?.view.playId === 'smallest-test' && turn.offered)
     turn = { ...turn, step: { ...turn.step, view: pickTested(turn.step.view, u.choice?.pick ?? '') } };
+  if (u !== null && tellsLegalLetter(message) && turn.step?.view.playId === 'contracts-and-insurance')
+    turn = { ...turn, step: { ...turn.step, view: letterStep(turn.step.view) } };
   // Due sooner than the step would be: the class's day is the step's.
   const classDay = u === null || turn.step === null ? null : dueInClass(message, input.today);
   if (classDay !== null && turn.step !== null && turn.offered && (turn.step.view.dueOn ?? '9') > classDay)
@@ -1672,6 +1690,8 @@ export function decide(input: DecideInput): Decision {
         ? u
         : null,
     decidedBy,
+    fired: null,
+    beside: null,
   };
 }
 
@@ -1700,6 +1720,7 @@ function offerMatch(playbook: Playbook, message: string): IntentMatch | null {
 export const HOW_FOLLOW_UP = 'How do I do the first part?';
 
 const decidedFields = (w: Weighed): NonNullable<Decision['decidedBy']> => ({
+  answer: 'reading',
   kind: decides('kind', w),
   recall: decides('recall', w),
   play: decides('play', w),
@@ -1790,12 +1811,14 @@ function readStep(
     p.referral !== null ||
     // Work they would make up has the step that makes it real.
     u.kind === 'integrity' ||
+    // What follows a result reads it, or tests what it left open.
+    (FOLLOWS_RESULT.has(p.id) && (u.kind === 'result' || u.kind === 'update')) ||
     fitsAsk(p, asked)
       ? p
       : null;
   const wantedHere = allowedStep(context, state, playOf(context.playbook, u.stepPlayId), play, phrased);
   const named = fits(wantedHere);
-  const picked = pickStep(context, own, u, wantedHere, asksToStop(args.message));
+  const picked = pickStep(context, own, u, wantedHere, args.message);
   if (picked !== undefined)
     return picked === null || picked.id === own?.view.playId ? stay : newsStep(context, state, picked, own);
   // Who decides comes before anything else is done about it.
@@ -1804,6 +1827,10 @@ function readStep(
   const wanted = deciding ? referral : (named ?? fits(allowedStep(context, state, play, play, phrased)));
   if (wanted === null) return null;
   if (wanted.id === own?.view.playId) return stay;
+  // What the step would work out is worked out.
+  if (u.sums.some((s) => s.asked) && WORKS_OUT.has(wanted.id)) return stay;
+  if (FOLLOWS_RESULT.has(wanted.id) && (u.kind === 'result' || u.kind === 'update'))
+    return newsStep(context, state, wanted, own);
   // A figure is no reason for another step, unless the sum is the play itself.
   const sumOnly = u.kind === 'sum' && !u.also.some((k) => k !== 'sum' && k !== 'question');
   if (sumOnly && wanted.referral === null && wanted.id !== phrased?.id && !(u.sure && wanted.id === u.playId))
@@ -1818,6 +1845,18 @@ function readStep(
     : stay;
 }
 
+/** The plays whose step is a sum that was just done. */
+const WORKS_OUT: ReadonlySet<string> = new Set(['runway', 'break-even']);
+
+/** The plays that read a result, or try what it left open, whatever the result is of. */
+const FOLLOWS_RESULT: ReadonlySet<string> = new Set([
+  'smallest-test',
+  'read-results',
+  'experiment-design',
+  'synthesize-interviews',
+  'interview-debrief',
+]);
+
 /**
  * The step of a choice made: handing it over has the hand-over page, "may I stop?" the choice with its evidence; an
  * either-or that is not about money a small test of the pick, unless the step named, or theirs, is about the pick. Null: the
@@ -1828,11 +1867,19 @@ function pickStep(
   own: ChosenStep | null,
   u: Understanding,
   named: Play | null,
-  stops: boolean,
+  message: string,
 ): Play | null | undefined {
   const { playbook } = context;
+  // A letter that tells them to stop has a lawyer's read before anything else.
+  if (tellsLegalLetter(message)) return playOf(playbook, 'contracts-and-insurance') ?? undefined;
+  // Who wants to go on alone has the talk first.
+  if (goesAlone(u, message)) return playOf(playbook, 'team-conflict') ?? undefined;
+  // After talks come more of them, or what they say together; never a page of the stage before.
+  const ownPlay = playOf(playbook, own?.view.playId ?? null);
+  if (tellsTalks(message) && (ownPlay === null || ownPlay.stage === 'idea'))
+    return playOf(playbook, 'find-ten-people') ?? undefined;
   if (handsOn(u)) return playOf(playbook, 'after-graduation') ?? undefined;
-  if (stops) return playOf(playbook, 'quit-or-continue') ?? undefined;
+  if (asksToStop(message)) return playOf(playbook, 'quit-or-continue') ?? undefined;
   if (!testsAPick(u)) {
     // "Not for money yet" is no ask to pay.
     const money = named === null || u.choice === null ? false : picksAgainst(u, named);

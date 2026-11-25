@@ -1,11 +1,11 @@
-import { type PromptContinuity, type RecordLine } from '@foundry/ai';
+import { pricesIn, type PromptContinuity, type RecordLine } from '@foundry/ai';
 import { type pathRepo } from '@foundry/db';
 
 import { dayOf, isReference, standingDecisions } from './brief.js';
 import { monthDay } from './dates.js';
 import { earlierDay, milestoneReached, wordsOfEvidence } from './state.js';
 import { ADVICE, bare, currentOnes, distinct, DOES, lowerFirst, SAYS, toYou, upperFirst } from './tell.js';
-import { plain } from './words.js';
+import { contentStems, numberOf, plain } from './words.js';
 
 /**
  * The venture's record as a reading of a message is given it: whole sentences in the second person, each with its day, what
@@ -16,6 +16,8 @@ export interface RecordSource {
   readonly today: string;
   readonly reads: pathRepo.PathReads;
   readonly continuity: PromptContinuity;
+  /** What they say now: what it changes is no longer how it stands. */
+  readonly message?: string;
 }
 
 /** Lines, and their characters together, at most (about 1,600 tokens). */
@@ -66,11 +68,37 @@ function joined(parts: readonly string[]): string {
 /** What the column of a memory's content holds (`pathRepo.memoryPart`). */
 const CONTENT_CHARS = 280;
 const hasDigit = (text: string): boolean => /\d/u.test(text);
+/** A number, in digits or in a word (one alone counts nothing: "one of them"). */
+const hasNumber = (text: string): boolean =>
+  hasDigit(text) ||
+  (text.toLowerCase().match(/[a-z]+(?:-[a-z]+)?/gu) ?? []).some((w) => (numberOf(w) ?? 0) > 1);
+
+/** A sentence that opens with what somebody does, and names nobody ("Has a van", "Uses a notebook"). */
+const OPENS_BARE =
+  /^(?:(?:also|currently|now|already|still|only|never) )?(has|had|have|is|are|was|does|did|wants?|plans?|needs?|hopes?|believes?|thinks?|knows?|works?|studies|lives?|owns?|earns?|spends?|uses?|pays?|asks?|says?|said|loves?|likes?|hates?|keeps?|runs?|sells?|charges?|gets?|got|goes|came|comes)\b/iu;
+/** What a record says of the founder without naming them. */
+const OF_FOUNDER =
+  /^(?:(?:also|currently|now|already|still|only|never) )?(?:has|had|wants|plans|needs|hopes|believes|thinks|knows|works|studies|lives|owns|earns|spends|runs|sells|charges)\b/iu;
+/** Memories that tell of the founder where nobody is named. */
+const FOUNDERS: ReadonlySet<string> = new Set(['fact', 'preference', 'goal', 'profile']);
+
+/** The sentence with who it is of: "Has $60 and a van" is "You have $60 and a van". Null: it tells of somebody it does not name. */
+function withSubject(sentence: string, type: string): string | null {
+  const said = sentence.trim();
+  if (!OPENS_BARE.test(said)) return sentence;
+  if (!FOUNDERS.has(type) || !OF_FOUNDER.test(said))
+    return DOES.test(said) && type !== 'evidence' ? sentence : null;
+  return toYou(`The founder ${lowerFirst(said)}`);
+}
 
 /** A memory's own sentences, said to them; its label where the words alone are no sentence. */
 function toldSentences(m: pathRepo.PathMemory, name: string): string[] {
   const title = bare(m.title.replace(/\s+/gu, ' '));
-  const content = sentencesOf(m.content, CONTENT_CHARS).map((s) => yours(s, name));
+  const content = sentencesOf(m.content, CONTENT_CHARS).flatMap(
+    (s) => withSubject(yours(s, name), m.type) ?? [],
+  );
+  // What tells of somebody nobody names is nobody's line.
+  if (content.length === 0 && m.content.trim() !== '' && OPENS_BARE.test(m.content.trim())) return [];
   const titled = sentence(yours(title, name));
   if (content.length === 0) return [titled];
   const [first = '', ...rest] = content;
@@ -121,6 +149,70 @@ function decisionText(m: pathRepo.PathMemory, name: string): string {
     : joined([`You decided: ${lowerFirst(said)}.`, ...rest]);
 }
 
+/** A risk as a sentence to them: what is so is said, what may come is a risk they see. */
+function riskText(own: string): string {
+  if (/^you\b/iu.test(own)) return sentence(own);
+  return SAYS.test(own) || /\b(?:may|might|could|get|gets)\b/iu.test(own)
+    ? `You see a risk that ${own}.`
+    : `You see a risk in ${own}.`;
+}
+
+/** A commitment as a sentence to them. */
+function commitmentText(text: string, due: string): string {
+  const said = bare(lowerFirst(text)).replace(/^you(?: will|['’]ll| are going to| plan to) /iu, '');
+  const [first = ''] = said.split(' ');
+  return /^(?:you|your|the|an?|this|that|it|my|our)\b|^\d/iu.test(said) ||
+    numberOf(first) !== null ||
+    said.split(' ').length < 2
+    ? `You committed to this: ${said}${due}.`
+    : `You said you would ${said}${due}.`;
+}
+
+/** Somebody went, or is there again. */
+const WENT =
+  /\b(?:left|leaving|leaves|quit|quits|resigned|dropped out|stepped (?:down|away|back)|no longer|is out|is gone|moved on)\b/iu;
+const RETURNED =
+  /\b(?:(?:is|are|['’]s|came|coming|comes) back|returned|returning|rejoin\w*|joins? again)\b/iu;
+/** How somebody is part of it. */
+const TAKES_PART =
+  /\b(?:co-?founders?|is|are|does|do|writes?|codes?|builds?|runs?|works?|helps?|handles?|designs?|sells?|keeps?|left|quit|no longer|back)\b/iu;
+const NAMES = /(?<![\p{L}\p{N}])\p{Lu}\p{Ll}{2,}(?![\p{L}\p{N}])/gu;
+const namesIn = (text: string): string[] => [...text.matchAll(NAMES)].map((m) => m[0].toLowerCase());
+/** A price as it stands. */
+const CHARGES =
+  /\b(?:charge|charges|price is|costs|sells for|sell (?:it|them) (?:for|at)|rents? (?:for|at)|is \$?\d)\b/iu;
+const NEW_PRICE = /\b(?:now|from now|chang\w+|rais\w+|lower\w*|instead|no longer|not \$?\d)\b/iu;
+
+/** The same in their own quick words, where "she left" may be only the room. */
+const WENT_SAID =
+  /\b(?:quit|quits|resigned|dropped out|stepped (?:down|away|back)|no longer|is gone|moved on)\b|\b(?:left|leaving|leaves)\b.{0,40}\b(?:team|company|startup|venture|business|project|job|school|city|state|country|for good|us)\b/iu;
+
+/** Somebody named is gone, or back, by a later telling. */
+const turnsOn = (later: string, names: readonly string[], went: RegExp): 'went' | 'returned' | null => {
+  const told = plain(later);
+  if (!names.some((n) => new RegExp(`\\b${n}\\b`, 'u').test(told))) return null;
+  return RETURNED.test(later) ? 'returned' : went.test(later) ? 'went' : null;
+};
+
+/**
+ * Whether a later telling says the opposite of a line: somebody in it has left, or is back; the price in it is another one
+ * now. What the line says is then how it was. `said`: in their own quick words.
+ */
+export function overtaken(text: string, later: string, said = false): boolean {
+  const names = [...new Set(namesIn(text))];
+  const turn = names.length === 0 ? null : turnsOn(later, names, said ? WENT_SAID : WENT);
+  if (turn === 'went' && !WENT.test(text) && TAKES_PART.test(text)) return true;
+  if (turn === 'returned' && WENT.test(text)) return true;
+  const now = pricesIn(later);
+  const was = pricesIn(text);
+  if (was.length !== 1 || now.length !== 1 || !CHARGES.test(text) || !NEW_PRICE.test(later)) return false;
+  const shared = contentStems(text).filter((w) => !/^\d/u.test(w) && contentStems(later).includes(w));
+  return was[0] !== now[0] && shared.length > 0;
+}
+
+/** The line as it is shown once it is no longer so. */
+const asItWas = (text: string, until: string): string => `${bare(text)} (was true until ${monthDay(until)}).`;
+
 function memoryDraft(m: pathRepo.PathMemory, name: string): Draft | null {
   const weight = WEIGHT[m.type];
   if (weight === undefined || m.status !== 'confirmed' || isReference(m)) return null;
@@ -145,7 +237,7 @@ function memoryDraft(m: pathRepo.PathMemory, name: string): Draft | null {
           on,
         };
       // A test of the past with its numbers in its words is one with a result; else it has none yet.
-      return hasDigit(m.content) && !/\b(?:will|plan|going to|want)\b/iu.test(m.content)
+      return hasNumber(m.content) && !/\b(?:will|plan|going to|want)\b/iu.test(m.content)
         ? { ...base, kind: 'experiment', text: joined(told), on }
         : {
             ...base,
@@ -185,12 +277,7 @@ function memoryDraft(m: pathRepo.PathMemory, name: string): Draft | null {
       };
     }
     case 'risk':
-      return {
-        ...base,
-        kind: 'risk',
-        text: joined([`A risk you named: ${own}.`]),
-        on: dayOf(m),
-      };
+      return { ...base, kind: 'risk', text: joined([riskText(own)]), on: dayOf(m) };
     default:
       return { ...base, kind: m.type, text: joined(told), on: dayOf(m, 'collected_on') };
   }
@@ -223,10 +310,25 @@ export function recordLines(source: RecordSource): RecordLine[] {
     if (bare(text) !== '') drafts.push({ kind, text: joined([text]), on, memoryId: null, weight });
   };
   const decisions = new Set(standingDecisions(reads.memory).map((m) => m.id));
-  for (const m of latestOfLabel(currentOnes(reads.memory))) {
+  const standing = latestOfLabel(currentOnes(reads.memory));
+  const told = [
+    ...standing.flatMap((m) =>
+      m.status === 'confirmed' ? [{ at: m.createdAt, text: `${m.title}. ${m.content}`, said: false }] : [],
+    ),
+    ...(source.message === undefined ? [] : [{ at: `${today}T99`, text: source.message, said: true }]),
+  ];
+  for (const m of standing) {
     if (m.type === 'decision' && !decisions.has(m.id)) continue;
     const draft = memoryDraft(m, name);
-    if (draft !== null && bare(draft.text) !== '') drafts.push(draft);
+    if (draft === null || bare(draft.text) === '') continue;
+    const ended = told
+      .filter((t) => t.at > m.createdAt && overtaken(m.content, t.text, t.said))
+      .sort((a, b) => a.at.localeCompare(b.at))[0];
+    drafts.push(
+      ended === undefined
+        ? draft
+        : { ...draft, text: asItWas(draft.text, ended.at.slice(0, 10)), weight: Math.min(draft.weight, 2) },
+    );
   }
   for (const pivot of reads.path?.pivots ?? [])
     add(
@@ -268,7 +370,7 @@ export function recordLines(source: RecordSource): RecordLine[] {
   for (const c of (continuity.notebook?.commitments ?? []).filter((x) => x.status === 'open').slice(0, 2))
     add(
       'commitment',
-      `You said you would: ${bare(lowerFirst(yours(c.text, name)))}${c.due === null ? '' : ` (by ${monthDay(c.due)})`}.`,
+      commitmentText(yours(c.text, name), c.due === null ? '' : ` (by ${monthDay(c.due)})`),
       null,
       3,
     );
@@ -302,14 +404,14 @@ export function recordLines(source: RecordSource): RecordLine[] {
   if (limits !== '') of('founder', `You said of your limits: ${bare(lowerFirst(yours(limits, name)))}.`);
 
   // What tells the most stays when not everything fits; then the newest first.
-  const told = distinct(
+  const kinds = distinct(
     [...drafts].sort((a, b) => b.weight - a.weight || (b.on ?? '').localeCompare(a.on ?? '')),
     (d) => d.text,
     0.8,
   );
   const kept: Draft[] = [];
   let chars = own.reduce((n, d) => n + d.text.length, 0);
-  for (const draft of told) {
+  for (const draft of kinds) {
     if (kept.length + own.length >= MAX_RECORD_LINES || chars + draft.text.length > MAX_CHARS) continue;
     kept.push(draft);
     chars += draft.text.length;

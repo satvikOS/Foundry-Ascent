@@ -181,6 +181,9 @@ export interface PromptGuidance {
       | 'recall'
       | 'quit'
       | 'order'
+      | 'solo'
+      | 'praise'
+      | 'counts'
       | 'answer'
       | 'rule'
       | null;
@@ -190,6 +193,8 @@ export interface PromptGuidance {
     readonly inOrder: boolean;
     /** What they ask to choose between, when a person decides it: none of it is taken up as a pick. Additive. */
     readonly heldOptions?: readonly string[];
+    /** Numbers they took back in this message: nothing said of them stands. Additive. */
+    readonly gone?: readonly number[];
     /** The figures code worked out of what they ask: nothing said beside them contradicts one. Additive. */
     readonly figures?: readonly { readonly value: number; readonly unit: SumUnit }[];
   };
@@ -342,7 +347,8 @@ const READ_LINES: Readonly<Partial<Record<UnderstoodKind, string>>> = {
   pushback:
     'They argue. Never defend yourself or claim evidence: say what is not known, then their own numbers and what would decide it.',
   feelings: 'They say how they feel: one sentence for that, then what they ask.',
-  draft: 'They want it written: write it, ready to send, from their facts only.',
+  draft:
+    'They want the words: write them, complete, from their facts as they stand now; as many lines as they ask for, each on its own line, and nothing else.',
   integrity:
     'They ask to fake or hide something. A short no; then what they can do for real in the time they have, with people they do not know, and what they truly have to show.',
 };
@@ -364,6 +370,9 @@ const AFTER_LINES: Readonly<
   quit: 'what they can do about it this week, small',
   order: 'why the first of them comes first, with a fact of theirs',
   answer: 'why, from their own facts, and what that changes for them',
+  solo: 'what to write down before that talk',
+  praise: 'whom to ask instead, and where',
+  counts: 'what that means for them',
 };
 /** Nothing of how the turn was prepared is ever said to them. */
 const TO_THEM_LINE =

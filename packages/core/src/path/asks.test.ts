@@ -16,6 +16,27 @@ import {
   timeSaid,
 } from './kinds.js';
 
+describe('a step that was not done', () => {
+  it.each([
+    "I didn't write to the bakeries.",
+    'i didnt email the 5 bakeries, exams',
+    'I never called them',
+    'we did not run the tasting',
+    'I was going to visit them but got sick',
+  ])('%s', (message) => {
+    expect(reportOf(message)?.state).toBe('not_yet');
+  });
+  it.each<[string, string | undefined]>([
+    ['I did write to the bakeries', 'done'],
+    ['I did 8 interviews', 'done'],
+    ["I didn't ask for money, but I talked to 8 people", undefined],
+    ['They did not write back', undefined],
+    ['I did not ask about price', undefined],
+  ])('%s', (message, state) => {
+    expect(reportOf(message)?.state).toBe(state);
+  });
+});
+
 describe('a change of direction', () => {
   it.each<[string, string]>([
     [

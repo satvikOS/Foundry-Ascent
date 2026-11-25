@@ -227,7 +227,7 @@ describe('the record as lines', () => {
       'On team, your record says: you and Iva, both juniors.',
       'A goal of yours, not reached yet by December 12: win the table at the harbour fair.',
       'You believe, and have not tested: guides would pay double.',
-      'A risk you named: paper charts get wet in the rain.',
+      'You see a risk that paper charts get wet in the rain.',
     ]);
   });
 
@@ -277,8 +277,106 @@ describe('the record as lines', () => {
       'You finished "Ring 6 clubs": you rang them all.',
       'You rang six clubs. Two asked for a sample.',
       'You are blocked on "Print it": your printer broke.',
-      'You said you would: ring the harbour master (by November 30).',
+      'You said you would ring the harbour master (by November 30).',
     ]);
+  });
+
+  it('is whole sentences to them, or is left out', () => {
+    expect(
+      texts(
+        {
+          memory: [
+            memory({
+              type: 'risk',
+              title: 'Time',
+              content: 'Runa does all the printing herself, 9 hours a week.',
+            }),
+            memory({ type: 'risk', title: 'Ink', content: 'the price of ink' }),
+            memory({ type: 'fact', title: 'Means', content: 'Has $80 and a van. Wants to open in May.' }),
+            memory({ type: 'fact', title: 'Shop', content: 'Is closed on Mondays.' }),
+            memory({ type: 'evidence', title: 'A secretary', content: 'Uses a notebook, says it is fine.' }),
+            memory({
+              type: 'experiment',
+              title: 'First table',
+              content: 'Twelve charts were laid out; five people asked and two bought one.',
+            }),
+          ],
+        },
+        { founderFirstName: 'Runa' },
+      ).sort(),
+    ).toEqual([
+      'Twelve charts were laid out; five people asked and two bought one.',
+      'You do all the printing yourself, 9 hours a week.',
+      'You have $80 and a van. You want to open in May.',
+      'You see a risk in the price of ink.',
+    ]);
+  });
+
+  it('a commitment is a sentence of theirs', () => {
+    const of = (text: string) =>
+      texts({}, { notebook: { commitments: [{ text, due: null, status: 'open' }] } as never })[0];
+    expect(of("I'll ring six clubs")).toBe('You said you would ring six clubs.');
+    expect(of('Six clubs')).toBe('You committed to this: six clubs.');
+  });
+
+  it('what a later telling says otherwise is told as how it was, never as it stands', () => {
+    const old = '2026-11-02T09:00:00.000Z';
+    const team = memory({
+      type: 'relationship',
+      title: 'Team',
+      content: 'Iva does the printing with you.',
+      createdAt: old,
+    });
+    const gone = memory({
+      type: 'evidence',
+      title: 'Iva',
+      content: 'Iva left for a job in another city.',
+      createdAt: '2026-11-15T09:00:00.000Z',
+    });
+    expect(texts({ memory: [team, gone] })).toEqual([
+      'Iva left for a job in another city.',
+      'Iva does the printing with you (was true until November 15).',
+    ]);
+    const said = (message: string, ms = [team, gone]) =>
+      recordLines({ today: TODAY, reads: { ...NO_READS, memory: ms }, continuity: {}, message }).map(
+        (l) => l.text,
+      );
+    // Told now.
+    expect(said('Iva is coming back in spring')).toContain(
+      'Iva left for a job in another city (was true until November 24).',
+    );
+    expect(said('Iva quit yesterday', [team])).toEqual([
+      'Iva does the printing with you (was true until November 24).',
+    ]);
+    // Only the room.
+    expect(said('its me again, Iva left', [team])).toEqual(['Iva does the printing with you.']);
+    expect(said('Iva left for a job up north', [team])[0]).toContain('was true until');
+    // Somebody else, or nothing of the kind.
+    expect(said('Odo quit yesterday', [team])).toEqual(['Iva does the printing with you.']);
+    expect(said('Iva printed nine charts', [team])).toEqual(['Iva does the printing with you.']);
+  });
+
+  it('a price told anew in the message is no longer the one on record', () => {
+    const price = memory({ type: 'fact', title: 'Price', content: 'You charge 14 dollars a chart.' });
+    const said = (message: string, m = price) =>
+      recordLines({ today: TODAY, reads: { ...NO_READS, memory: [m] }, continuity: {}, message })[0]?.text;
+    expect(said('we charge 16 dollars a chart now')).toBe(
+      'You charge 14 dollars a chart (was true until November 24).',
+    );
+    expect(said('would 16 dollars a chart be too much?')).toBe('You charge 14 dollars a chart.');
+    expect(said('we charge 14 dollars a chart now')).toBe('You charge 14 dollars a chart.');
+    expect(said('we charge 16 dollars a lesson now')).toBe(
+      'You charge 14 dollars a chart (was true until November 24).',
+    );
+    // What happened at a price stays what happened.
+    const sold = memory({
+      type: 'evidence',
+      title: 'Spring',
+      content: 'Forty charts were sold at 14 dollars in May.',
+    });
+    expect(said('we charge 16 dollars a chart now', sold)).toBe(
+      'Forty charts were sold at 14 dollars in May.',
+    );
   });
 
   it('cuts at a sentence: never a half one from the column’s end', () => {

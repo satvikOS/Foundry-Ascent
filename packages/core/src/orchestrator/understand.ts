@@ -1,5 +1,6 @@
 import {
   JUDGE_SYSTEM_PROMPT,
+  JUDGE_VOICE_SYSTEM_PROMPT,
   SUMS_SYSTEM_PROMPT,
   UNDERSTAND_JUDGE_WAIT_MS,
   UNDERSTAND_MAX_OUTPUT_TOKENS,
@@ -25,6 +26,7 @@ import {
   type RouteReading,
   type Understanding,
   type UnderstandContext,
+  type UnderstandForm,
   type UnderstandPart,
   type UnderstandPlay,
   type UnderstandReadings,
@@ -62,6 +64,8 @@ export interface UnderstandInput {
 }
 
 export interface PreparedPart {
+  /** How it is asked (its schema and bound). */
+  readonly form: UnderstandForm;
   readonly system: string;
   readonly promptCache: PromptCacheHint;
   readonly messages: ChatMessage[];
@@ -136,24 +140,29 @@ export function prepareUnderstand(input: UnderstandInput): PreparedUnderstand {
     today,
     message: input.message,
     history,
-    record: recordLines({ today, reads, continuity }),
+    record: recordLines({ today, reads, continuity, message: input.message }),
     shown: [about, step ?? ''].join('. '),
     plays,
     stepCandidates: new Set(
       plays.filter((p) => stages.some((s) => s === p.stage && near.has(s))).map((p) => p.id),
     ),
   };
-  const part = (name: UnderstandPart, prompt: string): PreparedPart => ({
+  const part = (form: UnderstandForm, prompt: string): PreparedPart => ({
+    form,
     system: prompt,
     promptCache: understandCacheHint(prompt),
-    messages: understandMessages(name, { context, venture: about, step, channel: input.channel }),
+    messages: understandMessages(form, { context, venture: about, step, channel: input.channel }),
   });
   return {
     context,
     parts: {
       route: part('route', system),
       sums: sumsDue(context) ? part('sums', SUMS_SYSTEM_PROMPT) : null,
-      judge: part('judge', JUDGE_SYSTEM_PROMPT),
+      // On a call JUDGE says what the reply opens on and no more.
+      judge:
+        input.channel === 'voice'
+          ? part('judgeVoice', JUDGE_VOICE_SYSTEM_PROMPT)
+          : part('judge', JUDGE_SYSTEM_PROMPT),
     },
   };
 }
@@ -255,9 +264,9 @@ export async function understandTurn(
           system: prepared.system,
           messages,
           promptCache: prepared.promptCache,
-          schemaName: UNDERSTAND_SCHEMA_NAMES[name],
-          zodSchema: UNDERSTAND_SCHEMAS[name],
-          maxOutputTokens: UNDERSTAND_MAX_OUTPUT_TOKENS[name],
+          schemaName: UNDERSTAND_SCHEMA_NAMES[prepared.form],
+          zodSchema: UNDERSTAND_SCHEMAS[prepared.form],
+          maxOutputTokens: UNDERSTAND_MAX_OUTPUT_TOKENS[prepared.form],
           timeoutMs: left,
           // Its budget is short: what a cut-off attempt read is spent all the same.
           estimateCut: true,

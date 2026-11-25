@@ -30,7 +30,7 @@ import { clampWords } from '../validators/speech.js';
 import { mockPathReply, pathBlockIn } from '../testing/path-reply.js';
 import { COACH_ANNOTATIONS_SCHEMA_NAME } from './coach-annotations.js';
 import { mockSafetyScreenVerdict } from './mock-safety-screen.js';
-import { mockJudge, mockRoute, mockSums } from './mock-understand.js';
+import { mockJudge, mockJudgeVoice, mockRoute, mockSums } from './mock-understand.js';
 import {
   ModelOutputInvalidError,
   ModelRefusalError,
@@ -1667,6 +1667,10 @@ const BUILT_IN: Readonly<Record<string, BuiltIn>> = {
   },
   [UNDERSTAND_SCHEMA_NAMES.judge]: {
     build: (context) => mockJudge(context.messages.at(-1)?.content ?? ''),
+    sampleOnMismatch: false,
+  },
+  [UNDERSTAND_SCHEMA_NAMES.judgeVoice]: {
+    build: (context) => mockJudgeVoice(context.messages.at(-1)?.content ?? ''),
     sampleOnMismatch: false,
   },
 };

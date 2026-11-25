@@ -484,7 +484,7 @@ describe('a step that fits', () => {
 describe('the one thing to do first', () => {
   const step = {
     ...(readTurnOf(
-      'how do I sell to shops',
+      'the shops round here, how would you get in there',
       understood({ playId: 'b2b-selling', stepPlayId: 'b2b-selling', sure: true, points: ['Shops decide.'] }),
       {
         reads: { ...NO_READS, steps: [onStep('pricing')] },
@@ -558,5 +558,264 @@ describe('a record line beside the answer', () => {
     ['You cook on Mondays in a church kitchen.', 'what do i write to the gift shop', false],
   ])('%s for "%s": %s', (text, asked, bears) => {
     expect(bearsOn(text, asked)).toBe(bears);
+  });
+});
+
+describe('what is asked for comes first', () => {
+  const PRICING = { reads: { ...NO_READS, steps: [onStep('pricing')] } };
+  it('the figure, whatever a person decides', () => {
+    const message = 'my aunt offered 20k for 5%, on paper what is the stall worth then';
+    const t = readTurnOf(
+      message,
+      understood({ ask: 'what the offer makes the stall worth', referral: 'valuation' }),
+      PRICING,
+    );
+    const reply = replyOf(
+      t,
+      message,
+      'A startup lawyer who handles securities, and you start with your Ain Center EIR.',
+    );
+    expect(reply).toMatch(/^On paper that makes the whole venture worth \$400,000: \$20,000 ÷ 0\.05\./);
+    expect(reply.match(/Talk to/g)).toHaveLength(1);
+    expect(reply).not.toMatch(/Do not say yes yet/);
+  });
+
+  it('asked earn or lose, the word answers, and the figure before stands beside it', () => {
+    const message = 'with two helpers and not one, am i still earning or losing';
+    const t = readTurnOf(
+      message,
+      understood({
+        kind: 'sum',
+        also: ['result'],
+        sums: [
+          sumOf({ label: 'monthly profit or loss', value: 30, said: '$30', working: '10 × $9 − 2 × $30' }),
+        ],
+        record: [line('You pay one helper 30 dollars a month.')],
+      }),
+      {
+        ...PRICING,
+        earlierMessages: ['what is left each month'],
+        earlierReplies: ['$60 is left each month: 10 × $9 − $30.'],
+      },
+    );
+    const reply = replyOf(
+      t,
+      message,
+      'You pay one helper each month. Ask the second one what a Saturday is worth to her.',
+    );
+    expect(reply).toMatch(/^You still earn: \$30 is left a month, down from \$60: 10 × \$9/);
+    expect(reply).not.toMatch(/one helper/);
+  });
+
+  it('a supposed figure is said as one', () => {
+    expect(
+      opens(
+        {
+          kind: 'sum',
+          sums: [sumOf({ label: 'what comes in', value: 900, said: '$900', working: '100 × $9' })],
+        },
+        { message: 'just say everybody on campus buys a jar' },
+      )?.text,
+    ).toMatch(/^If all of that came true, \$900 comes in: /);
+  });
+
+  it('what it would cover is worked out when the reading could not, and nothing is concluded beside it', () => {
+    const message = 'what is the fewest jars so im not paying to stand there';
+    const t = readTurnOf(
+      message,
+      understood({ kind: 'sum', also: ['result'], ask: 'fewest jars to not lose' }),
+      {
+        reads: {
+          ...NO_READS,
+          steps: [onStep('pricing')],
+          memory: [
+            {
+              id: 'aaaaaaaa-0000-4000-8000-000000000001',
+              type: 'fact',
+              title: 'A jar',
+              content:
+                'A jar sells for 8 dollars; plums are 1 dollar, the glass 1 dollar; the market takes 45 dollars a day.',
+              attributes: {},
+              status: 'confirmed',
+              origin: 'founder',
+              pinned: false,
+              createdAt: '2026-11-10T09:00:00.000Z',
+            },
+          ],
+        },
+      },
+    );
+    const reply = replyOf(
+      t,
+      message,
+      'The fewest you can sell is 30, because 30 × 6 − 45 = 135, which is positive.',
+    );
+    expect(reply).toMatch(/^You need 8 jars to cover the \$45: \$45 ÷ \(\$8 − \$1 − \$1\)\./);
+    expect(reply).not.toContain('135');
+  });
+
+  it('a recap is the words alone, with what they took back left out', () => {
+    const message = 'my professor wants a recap: who, price, table. 3 lines';
+    const t = readTurnOf(
+      message,
+      understood({
+        kind: 'update',
+        also: ['result', 'recall'],
+        record: [line('Runa left for a job in another city.'), line('A jar is 9 dollars.')],
+        result: {
+          verdict: 'weak',
+          shows: 'Six of 50 bought.',
+          doesNotShow: 'Whether they come back.',
+          settles: null,
+        },
+        points: ['Six bought.'],
+        firstAction: 'Ask six of them to come back on Saturday.',
+      }),
+      {
+        ...PRICING,
+        earlierMessages: [
+          'runa is coming back in spring, so that she left is not true any more. a jar is 9 dollars now. 50 stopped, 6 bought',
+        ],
+      },
+    );
+    const reply = replyOf(
+      t,
+      message,
+      'Team: you and Runa.\nPrice: $9.\nTable: 50 stopped, 6 bought.',
+      'text',
+      '9 dollars 50 stopped 6 bought',
+    );
+    expect(reply).toMatch(/^Team: you and Runa\.\s+Price: \$9\.\s+Table: 50 stopped, 6 bought\.\n\n\*\*/);
+    expect(reply).not.toMatch(/Weak|thin|Runa left|Start with/);
+  });
+
+  it.each([
+    'what should the label say, just give me the words',
+    'how do i say that to the shop',
+    'what did we decide about the shop',
+  ])('no verdict opens over "%s"', (message) => {
+    const kind = message.startsWith('what did') ? ('recall' as const) : ('result' as const);
+    const t = readTurnOf(
+      message,
+      understood({
+        kind,
+        also: ['recall'],
+        result: { verdict: 'weak', shows: 'Six of 50 bought.', doesNotShow: null, settles: null },
+      }),
+      PRICING,
+    );
+    expect(t.prompt.lead?.text ?? '').not.toMatch(/six of 50/i);
+  });
+
+  it('asked if it is a customer, the answer opens and no page does', () => {
+    const message = 'a hotel takes it every week, not paying. is it a customer then, and now what';
+    const t = readTurnOf(
+      message,
+      understood({ ask: 'whether the hotel is a customer', playId: 'will-anyone-pay', sure: true }),
+      PRICING,
+    );
+    const reply = replyOf(t, message, 'Yes, that is a customer.');
+    expect(reply).toMatch(/^Not yet: somebody who takes it for free is a user/);
+    expect(reply).not.toMatch(/\[[a-z ]+\]|Here it is to fill in/);
+  });
+
+  it('counts are read when the reading of the result is late', () => {
+    const message = 'um i did six. three said they would buy, one gets hers for free, is that bad';
+    const t = readTurnOf(
+      message,
+      understood({ kind: 'result', also: ['pushback'], playId: 'honest-read', sure: true }),
+      {
+        reads: { ...NO_READS, steps: [onStep('idea-on-a-page')] },
+        channel: 'voice',
+      },
+    );
+    const reply = replyOf(t, message, "It's not bad; every reaction teaches you something.", 'voice');
+    expect(reply).toMatch(/^Three of six said they would buy, and a word is not money yet\./);
+    expect(reply).not.toMatch(/every reaction/);
+    expect(t.decision.step?.view.playId).toBe('find-ten-people');
+  });
+
+  it('friends are said to be no proof, and who would be', () => {
+    const message = 'everybody i told loves it, my whole dorm, why test more';
+    const t = readTurnOf(
+      message,
+      understood({
+        kind: 'pushback',
+        also: ['result'],
+        result: { verdict: 'weak', shows: 'Your dorm loves it.', doesNotShow: null, settles: null },
+      }),
+      PRICING,
+    );
+    expect(t.prompt.lead?.text).toMatch(
+      /^Your dorm likes it, and friends are not proof[^]*people you do not know, at a price\.$/,
+    );
+  });
+
+  it('one of so many is one of theirs', () => {
+    const message = 'if i had to keep only one of the four';
+    const t = readTurnOf(message, understood({ kind: 'choice', ask: 'which one to keep' }), {
+      ...PRICING,
+      earlierMessages: ['it does everything: plums, quince, figs, honey. we start in may'],
+    });
+    expect(t.prompt.lead?.text).toMatch(/^My pick: plums\. None of the four has proof yet/);
+    expect(replyOf(t, message, 'Pick the one that solves the biggest problem.')).not.toMatch(/Pick the one/);
+  });
+
+  it('going on alone is answered, in confidence as far as that is true, and held only where a split is asked', () => {
+    const message = 'off the record, i think i go on alone in may, would that be wrong';
+    const t = readTurnOf(
+      message,
+      understood({
+        kind: 'choice',
+        also: ['result'],
+        referral: 'equity',
+        record: [line('You and Runa are co-founders; no split is written down.')],
+        stepPlayId: 'cofounder-left',
+      }),
+      PRICING,
+    );
+    expect(t.prompt.lead?.text).toMatch(
+      /^Wanting to do it on your own is not bad in itself\.[^]*your team can see what I keep[^]*temporary chat/,
+    );
+    expect(t.decision.step?.view.playId).toBe('team-conflict');
+  });
+});
+
+describe('who decides, once', () => {
+  const told = [
+    'Talk to a business lawyer before you sign anything. Ask the Ain Center program lead for a legal referral. Bring them the one-page deal.',
+  ];
+  it('is not said again for another ask, and is for the same decision', () => {
+    const other = readTurnOf(
+      'ok and how do i get the gift shop to call me back',
+      understood({
+        ask: 'how to get a call back',
+        playId: 'contracts-and-insurance',
+        points: ['Ring at nine.'],
+      }),
+      { reads: { ...NO_READS, steps: [onStep('pricing')] }, earlierReplies: told },
+    );
+    expect(other.prompt.referral).toBeNull();
+    const same = readTurnOf(
+      'so should i sign their paper now',
+      understood({ ask: 'whether to sign the paper', referral: 'legal', points: ['They want it today.'] }),
+      { reads: { ...NO_READS, steps: [onStep('pricing')] }, earlierReplies: told },
+    );
+    expect(same.prompt.referral?.who).toMatch(/lawyer/i);
+  });
+
+  it('a letter has its own step', () => {
+    const { decision } = readTurnOf(
+      'the orchard sent a letter that we must stop using the crest, what is first',
+      understood({
+        kind: 'result',
+        also: ['update'],
+        points: ['Take the crest off.'],
+        stepPlayId: 'contracts-and-insurance',
+      }),
+      { reads: { ...NO_READS, steps: [onStep('pricing')] } },
+    );
+    expect(decision.step?.view.title).toBe('Have a lawyer read the letter before you answer it');
+    expect(decision.step?.view.doneWhen).toMatch(/^A lawyer has read the letter/);
   });
 });

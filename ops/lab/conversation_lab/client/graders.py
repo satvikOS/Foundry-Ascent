@@ -18,9 +18,10 @@ They are the reply contract and the client's questions as code, independent of t
   founder made up, no internal words, the news read, the newcomer met, whole lists, no reply over again.
 
 A figure counts as grounded when the founder said it, the venture's record, the turn's guidance or its evidence holds
-it, or it is arithmetic on such numbers shown in the reply or in the founder's message. A count of twelve or fewer with
-no unit of money or percent is the size of a task, not a claim, and passes unless it contradicts the same noun's count
-in the guidance or the record.
+it, or it is arithmetic on such numbers shown in the reply or in the founder's message: two or three of them, or a sum of
+any length that the reply writes out (``client/workings.py``), on the founder's and the record's numbers only. A count of
+twelve or fewer with no unit of money or percent is the size of a task, not a claim, and passes unless it contradicts the
+same noun's count in the guidance or the record.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping, Sequence
 
-from conversation_lab.client import reading, strict
+from conversation_lab.client import reading, strict, workings
 from conversation_lab.client.terms import undefined_terms
 from conversation_lab.client.turns import NA, PASS, Grade, ReplyTurn, asks_next, fact_named, fail, verdict
 from conversation_lab.live.checks import (
@@ -139,11 +140,15 @@ _OPTION_VERB = re.compile(
 _PICK_LEAD = r"^\W*(?:(?:so|then|yes|no|now|for now|i'd|i would|you should|my (?:pick|call|answer)(?: is)?)\W+)*(?:to )?"
 
 
-def _picked(option: str, sentence: str) -> bool:
+def _option_word(option: str) -> str:
     # A short option is a whole word ("no" is not "now"); a longer one, or one with a star as in the facts, may be inflected
     # ("consult", "consulting").
     stem = option.rstrip("*")
-    word = rf"\b{re.escape(stem)}" + (r"\b" if len(stem) < 4 and stem == option else r"\w*")
+    return rf"\b{re.escape(stem)}" + (r"\b" if len(stem) < 4 and stem == option else r"\w*")
+
+
+def _picked(option: str, sentence: str) -> bool:
+    word = _option_word(option)
     if _OPTION_VERB.match(option) and re.search(_PICK_LEAD + word, sentence, re.IGNORECASE):
         return True
     return bool(
@@ -156,14 +161,53 @@ def _picked(option: str, sentence: str) -> bool:
     )
 
 
+#: Time given to one of them ("Spend the week on the stall") picks it.
+_SPEND = r"^\W*(?:(?:i'd|i would|you should|so|then|yes|no|my pick)\W+)*spend (?:\w+ ){1,3}on (?:the |your )?"
+#: An option by whose it is ("my uncle says open a stall", "ida: rent it out").
+_WHOSE = re.compile(
+    r"\b(?:my |the |our )?([a-z][a-z'-]+)(?: (?:says?|thinks?|wants?)\b|:)([^,;.?!:]*)", re.IGNORECASE
+)
+
+
+def _whose_option(t: ReplyTurn) -> list[str]:
+    """Who the founder named as wanting each option, one option to one person."""
+    out = []
+    for m in _WHOSE.finditer(reading.plain(t.founder)):
+        wants = any(re.search(_option_word(o), m.group(2), re.IGNORECASE) for o in t.expect.pick)
+        if wants and len(m.group(1)) >= 3 and m.group(1).lower() not in ("and", "but", "she", "they", "who"):
+            out.append(m.group(1).lower())
+    return out
+
+
+def _picked_otherwise(t: ReplyTurn, sentence: str, first: bool) -> bool:
+    """A pick in other words: by whose it is, as the time given to it, or as the founder's own words for it alone."""
+    unsure = re.search(r"\b(?:not|never|or|if|unless|could|might|only)\b|n't\b", sentence, re.IGNORECASE)
+    for who in _whose_option(t):
+        theirs = rf"{re.escape(who)}'s (?:idea|plan|option|suggestion|advice)\b"
+        chosen = rf"{_PICK_LEAD}{_PICK_VERB}\W+(?:with )?(?:the |your )?{theirs}"
+        if not unsure and re.search(chosen, sentence, re.IGNORECASE):
+            return True
+    for option in t.expect.pick:
+        if re.search(rf"{_SPEND}{_option_word(option)}\b(?!\W+(?:and|or)\b)", sentence, re.IGNORECASE):
+            return True
+    # "More pupils who bake.": one side of their question said back alone is the answer to it.
+    mine = reading.words(sentence)
+    asked = f" {' '.join(reading.words(reading.plain(t.founder)))} "
+    if first and 3 <= len(mine) <= 8 and f" {' '.join(mine)} " in asked and "or" not in mine:
+        named = [o for o in t.expect.pick if re.search(_option_word(o), sentence, re.IGNORECASE)]
+        side = " ".join(mine)
+        return len(named) == 1 and (f" or {side} " in asked or f" {side} or " in asked)
+    return False
+
+
 def pick(t: ReplyTurn) -> Grade:
     """An "A or B" question gets a pick or an order, in a statement."""
     if not t.expect.pick:
         return NA
-    for sentence in reading.sentences(t.text):
+    for i, sentence in enumerate(reading.sentences(t.text)):
         if sentence.rstrip("\"”')*_ ").endswith("?") or re.match(r"\W*whether\b", sentence, re.IGNORECASE):
             continue
-        if any(_picked(o, sentence) for o in t.expect.pick):
+        if any(_picked(o, sentence) for o in t.expect.pick) or _picked_otherwise(t, sentence, i == 0):
             return PASS
     return fail("no_pick")
 
@@ -549,7 +593,10 @@ def grounded_figures(t: ReplyTurn) -> Grade:
     if not t.reply.strip():
         return NA
     stated = reading.figure_list(t.reply)
-    spoken = {v for v in reading.spelled_values(t.reply) if v > SMALL_COUNT}
+    sums = workings.of_turn(t)
+    # A sum that comes out right, on numbers of theirs, is grounded whole: what is left must stand by itself.
+    rest = reading.figure_list(sums.rest)
+    spoken = {v for v in reading.spelled_values(sums.rest) if v > SMALL_COUNT}
     allowed = reading.values(t.sources) | t.established | reading.step_minutes(t.step)
     given = reading.values(t.founder)
     operands = {f.value for f in stated if f.value in allowed} | {
@@ -561,12 +608,16 @@ def grounded_figures(t: ReplyTurn) -> Grade:
         operands = operands | {4.0}
     shares = {f.value for f in [*stated, *reading.figure_list(t.founder)] if "percent" in f.classes}
     # Derived figures may build on each other ("40 x $3 is $120, less $80 is $40"), so read until nothing changes.
-    open_ = [(f.value, "percent" in f.classes) for f in stated if f.value not in allowed]
+    operands = operands | sums.proven
+    open_ = [(f.value, "percent" in f.classes) for f in rest if f.value not in allowed]
     open_ += [(v, False) for v in spoken if v not in allowed]
+    open_ = [(v, p) for v, p in open_ if not sums.supports(v, p)]
     changed = True
     while changed:
         changed = False
         for value, percent in list(open_):
+            if value in sums.wrong:
+                continue
             if reading.derivable(value, operands, given=given, percent=percent, period=period, shares=shares):
                 open_.remove((value, percent))
                 operands = operands | {value}
@@ -574,7 +625,7 @@ def grounded_figures(t: ReplyTurn) -> Grade:
     unsupported = {value for value, _ in open_}
     hard = []
     source_figures = reading.figure_list(t.sources)
-    for f in stated:
+    for f in rest:
         if f.value not in unsupported:
             continue
         small = f.value <= SMALL_COUNT and f.value == int(f.value) and not f.classes
@@ -657,6 +708,12 @@ def _cited_sentences(reply: str) -> list[str]:
     return out
 
 
+def _shared_figures(sentence: str, passage: str, shared: set[str]) -> set[float]:
+    """The figures of a sentence its source gives in other characters ("72" for "seventy-two"): content like its words."""
+    both = reading.values(reading.plain(sentence)) & reading.values(passage)
+    return {v for v in both if v > SMALL_COUNT and f"{v:g}" not in shared}
+
+
 def supported_citations(t: ReplyTurn) -> Grade:
     """Each cited sentence is in what it cites, or shares its content with every source it names; its figures are there
     or the founder's own. A sentence of only a few words is read with the one before it."""
@@ -681,7 +738,9 @@ def supported_citations(t: ReplyTurn) -> Grade:
             said |= reading.content_stems(reading.plain(before))
         for passage in texts:
             shared = said & reading.content_stems(passage)
-            if len(shared) < 2 or (len(texts) == 1 and reading.overlap(said, shared) < 0.2):
+            if len(shared) + len(_shared_figures(sentence, passage, shared)) < 2 or (
+                len(texts) == 1 and reading.overlap(said, shared) < 0.2
+            ):
                 return fail("no_overlap: " + sentence)
         passage = "\n".join(texts)
         if reading.overlap(said, said & reading.content_stems(passage)) < 0.2:

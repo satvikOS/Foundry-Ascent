@@ -210,8 +210,12 @@ def figure_list(text: str) -> list[Figure]:
     return figures(without_dates(text))
 
 
+#: "1.6 million" is one figure in digits, no spelled million.
+_SCALED = re.compile(r"\d(?:\.\d+)?\s?(?:thousand|million|billion)\b", re.IGNORECASE)
+
+
 def spelled_values(text: str) -> set[float]:
-    return {float(v) for v in _spelled_numbers(without_dates(text))}
+    return {float(v) for v in _spelled_numbers(_SCALED.sub(" . ", without_dates(text)))}
 
 
 def values(text: str) -> set[float]:

@@ -588,12 +588,15 @@ export function statesNeed(text: string): boolean {
 }
 
 const BARE_DONE =
-  /^(?:(?:yes|yep|yeah|ok|hi|hey|update|quick update|good news)[,:.! ]+)*(?:done|finished|completed|all done|did it|(?:i|we) did(?: it| that| them)?|it went out|sent(?: it| them)?|it is done|that is done|it worked)\b/;
+  /^(?:(?:yes|yep|yeah|ok|hi|hey|update|quick update|good news)[,:.! ]+)*(?:done|finished|completed|all done|did it|(?:i|we) did(?! not\b| nothing\b| no\b)(?: it| that| them)?|it went out|sent(?: it| them)?|it is done|that is done|it worked)\b/;
 const ACTED_BY_THEM = new RegExp(
   `\\b(?:i|we|my cofounder|my co-founder|my team|our team) (?:(?:have|had|just|already|finally|also|actually|only|even|then|now) )*${ACTED}\\b`,
 );
 const NOT_YET =
   /^(?:(?:hi|hey|sorry|honestly|no|nope)[,:.! ]+)*not yet\b|^(?:no|nope)(?=[,.!]|$| (?:i|we|sorry|unfortunately|not|time|did|have) ?\b)(?![,.! ]+(?:i mean|wait|what i|that is|it is|the|not that|actually|more)\b)|\b(?:have|had|did|could|was|were) not (?:yet |really |quite |even )*(?:do|done|get|got|gotten|manage|managed|finish|finished|start|started|send|sent|reach|reached|call|called|talk|talked|able|had (?:time|a chance)|have (?:time|a chance)|it|that|them)\b|\b(?:ran out of|no|not enough) time\b|\b(?:i|we) (?:forgot|missed (?:it|that|the))\b/;
+/** "I did not write to the hotels", "we never ran it": what they were to do, and have not (a thing done beside it stands). */
+const UNDONE =
+  /\b(?:i|we) (?:just |really |honestly |still |also )*(?:(?:did|have|had) not (?:yet |really |quite |even |actually |get (?:around )?to )*(?:write|written|email|e-mail|message|text|contact|ask(?:ed)?(?! (?:about|for|what|if|whether|how|why)\b)|run|test(?:ed)?|post(?:ed)?|make|made|build|built|visit(?:ed)?|pitch(?:ed)?|submit(?:ted)?|show(?:ed|n)?|count(?:ed)?|interview(?:ed)?|speak|spoken|meet|met|talk(?:ed)?|call(?:ed)?|send|sent|launch(?:ed)?|publish(?:ed)?|print(?:ed)?|record(?:ed)?)\b|never (?:got (?:around )?to|wrote|emailed|messaged|asked|ran|tested|posted|made|visited|pitched|called|sent|talked|spoke)\b|(?:was|were) (?:going|supposed|meant|planning) to [^.]{2,60}\bbut\b)/;
 const BLOCKED =
   /\b(?:(?:i|we) (?:am|are|was|were|got|get) (?:stuck|blocked)|(?:no ?one|nobody|none of them) (?:has |have |had )?(?:replied|answered|responded|showed|wants?|wanted)|(?:still )?waiting (?:on|for) (?:a |an |the |their |his |her )?(?:reply|answer|response|approval|permission)|(?:could|can) not (?:find|reach|get) (?:anyone|any|them|a single))\b/;
 const DROPPED =
@@ -607,6 +610,11 @@ const NEGATED = /\b(?:not|never|no one|nobody|without|nothing)\b/;
 /** What others said or asked ("four asked when they could start"): no plan of the founder's. */
 const SAID_BY_OTHERS =
   /\b(?:asked|said|told (?:me|us)|wanted to know|wondered)(?: (?:me|us))? (?:(?:when|if|whether|how|where|that) )?(?:they|he|she|it|we|i|people)\b.*$/;
+
+/** "… but I talked to eight people": what they did do. */
+const DONE_BESIDE = new RegExp(
+  `\\b(?:but|though|instead) (?:(?:i|we) )?(?:(?:have|did|just|still|already) )*${ACTED}\\b`,
+);
 
 /** A sentence of the founder's that states something happened: not a question, a plan, a wish or a denial. */
 export function statesItHappened(sentence: string): boolean {
@@ -645,7 +653,9 @@ export function reportOf(text: string): MessageReport | null {
   );
   if (done !== null) return { state: 'done', quote: done };
   if (blocked !== null) return { state: 'blocked', quote: blocked };
-  const notYet = find((s) => !asked(s) && NOT_YET.test(s));
+  const notYet = find(
+    (s) => !asked(s) && (NOT_YET.test(s) || (UNDONE.test(s) && !DONE_BESIDE.test(s.replace(UNDONE, ' ')))),
+  );
   if (notYet !== null) return { state: 'not_yet', quote: notYet };
   const started = find((s) => !asked(s) && STARTED.test(s) && !NEGATED.test(s));
   return started === null ? null : { state: 'started', quote: started };

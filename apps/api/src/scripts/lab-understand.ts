@@ -6,7 +6,7 @@
  *
  *   MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1 \
  *   pnpm --filter @foundry/api exec tsx src/scripts/lab-understand.ts --cases FILE --budget-usd 2 --out DIR \
- *     [--candidates id@effort,id] [--concurrency 3] [--typed-ms 3000] [--voice-ms 1400]
+ *     [--candidates id@effort,id] [--concurrency 3] [--typed-ms 3000] [--voice-ms 1700]
  *
  * Candidates are `understand` in ops/lab/models.json. Without MODEL_PROVIDER=bedrock it runs on the mock model's rules (a
  * plumbing check, free). A call is given longer than a turn's budget, so what is late is measured rather than cut off: each
@@ -221,7 +221,7 @@ export function worstUsd(arm: Arm, prepared: PreparedUnderstand): number {
             reasoningWorstUsd(
               arm.modelId,
               charsOf(part),
-              UNDERSTAND_MAX_OUTPUT_TOKENS[name],
+              UNDERSTAND_MAX_OUTPUT_TOKENS[part.form],
               arm.effort === 'low' && thinksOnRequest(arm.modelId),
             );
   }, 0);
@@ -258,9 +258,9 @@ async function readPart(
       system: prepared.system,
       messages,
       promptCache: prepared.promptCache,
-      schemaName: UNDERSTAND_SCHEMA_NAMES[name],
-      zodSchema: UNDERSTAND_SCHEMAS[name],
-      maxOutputTokens: UNDERSTAND_MAX_OUTPUT_TOKENS[name],
+      schemaName: UNDERSTAND_SCHEMA_NAMES[prepared.form],
+      zodSchema: UNDERSTAND_SCHEMAS[prepared.form],
+      maxOutputTokens: UNDERSTAND_MAX_OUTPUT_TOKENS[prepared.form],
       timeoutMs: BENCH_TIMEOUT_MS,
       estimateCut: true,
       signal: AbortSignal.timeout(BENCH_TIMEOUT_MS),

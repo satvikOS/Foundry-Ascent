@@ -1297,6 +1297,7 @@ export function createOrchestrator(
           ? {}
           : {
               read: decision.reading?.kind ?? 'none',
+              ...(decision.fired === null ? {} : { rule: decision.fired }),
               byRule: Object.entries(decision.decidedBy)
                 .filter(([, by]) => by === 'rule')
                 .map(([field]) => field)

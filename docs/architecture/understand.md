@@ -23,11 +23,11 @@ path decides and the reply is written. Code checks every field, works out every 
 One call wrote about 380 tokens: 2.3 s at the median and 4.7 s at the 95th percentile on Nova 2 Lite, so most typed turns went on
 without it. What each part writes is what its decision needs, so a reading takes as long as its longest part.
 
-| Part  | What it answers                                                                                                                                                       | Asked to write | Shown                                                                                       |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------- |
-| ROUTE | what they ask, a second ask, the kinds (main first), the record lines, the line the message denies, who must decide, the play, the step's play, whether it is sure    | about 60       | the plays (the only part that needs them), the open step, short record lines, two exchanges |
-| SUMS  | the figure this message asks for, how it is worked out in words, the numbers (`price=$70@R1`), the sums as expressions, the number that is missing                    | 60 to 100      | the lines and replies that hold a figure, the founder's own words, three exchanges          |
-| JUDGE | what the record says instead, the pick with its reason and what would turn it, what a result shows and what settles it, the points, the first action, what not to say | about 150      | the record, three exchanges                                                                 |
+| Part  | What it answers                                                                                                                                                    | Asked to write | Shown                                                                                       |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- | ------------------------------------------------------------------------------------------- |
+| ROUTE | what they ask, a second ask, the kinds (main first), the record lines, the line the message denies, who must decide, the play, the step's play, whether it is sure | about 60       | the plays (the only part that needs them), the open step, short record lines, two exchanges |
+| SUMS  | the figure this message asks for, how it is worked out in words, the numbers (`price=$70@R1`), the sums as expressions, the number that is missing                 | 60 to 100      | the lines and replies that hold a figure, the founder's own words, three exchanges          |
+| JUDGE | what the record says instead, the pick with its reason and what would turn it, what a result shows and what settles it, the points, the first action               | about 150      | the record, three exchanges                                                                 |
 
 - **When.** Once the turn is admitted, beside the query's embedding (a refused request buys no call). Never for a crisis, a
   rehearsal or a message that is only social (`understandDue`); a message the safety screen reads first waits for its verdict.
@@ -38,7 +38,9 @@ without it. What each part writes is what its decision needs, so a reading takes
   call pays the provider's own tool instructions. An instruction inside the data is a message to describe.
 - **The model.** `MODEL_UNDERSTAND_ID`, else the coach's primary; `MODEL_UNDERSTAND_THINK=low` lets Nova 2 reason first. The
   coach's primary stands behind a model of its own. The gateway routes it (`route: 'understand'`), so no other call changes.
-- **Their budget.** 3.0 s on a typed turn, 1.4 s on a call, the fallback included (`CORE_UNDERSTAND_TYPED_MS` 500 to 10,000,
+- **On a call** JUDGE has a form of its own (`judgeVoice`): the pick and what happened, which open the reply, and nothing else (about 70
+  tokens); a contradiction, points and a first action are the typed turn's.
+- **Their budget.** 3.0 s on a typed turn, 1.7 s on a call, the fallback included (`CORE_UNDERSTAND_TYPED_MS` 500 to 10,000,
   `CORE_UNDERSTAND_VOICE_MS` 500 to 5,000). The decision needs ROUTE and SUMS; JUDGE is waited for to the end only where the reply
   opens on what it says (a choice, a result, an update, a pushback), else 0.7 s (a call: 0.25 s) beyond the other two. What is late is
   cancelled, and the turn never waits longer, even for a provider that does not hear it.
@@ -75,7 +77,7 @@ Everything a reading says is of the message, the conversation in view, the recor
 - **A contradiction** is rare, because the reply opens on it (`conflicts.ts`). ROUTE and JUDGE name the same line, each for itself; the
   line is evidence, a test, a fact, a decision or a milestone (never who they are, what they hope or what is to be done, nor a
   decision the message moves on from); JUDGE quotes the claim word for word, and the claim rates or generalises (everyone, always,
-  growing, proven) against counts that fall short, or gives another number for the same thing; what is said of it holds both sides.
+  growing, proven) against counts that fall short (steady and growing: against two counts of the line that go another way), or gives another number for the same thing; what is said of it holds both sides.
   None in a recall, a draft, small talk or a report that asks nothing, and a new figure in place of an old one denies nothing.
 - **A figure they asked for** is one SUMS says they ask for and ROUTE or the message says so too.
 - **A choice** stands where options are put; its options are theirs (or one's plain no), and it picks one of them, or both or neither,
@@ -86,7 +88,8 @@ Everything a reading says is of the message, the conversation in view, the recor
   what they say now or just said.
 - **What turns a pick or settles a result** holds a number, a person or an act they could see, else it is left out. There, and in the
   first action, a small or round size of something to do ("ask 10 of them", "for 2 weeks") is a test and no invented fact; an amount,
-  a share, and whatever is told as having happened, never.
+  a share, and whatever is told as having happened, never. An amount somebody is to pay in it is a price they charge or were told
+  (`pricesIn`): the clause with their budget, savings or a cost goes. What would turn a pick has somebody who does it.
 - **A referral** is the reading's to add. The rules' own (`referrals.ts`, the risk classifier) stay whatever it says.
 
 ### Sums
@@ -124,6 +127,10 @@ deadline, limits). Each is a whole sentence in the second person with its day, a
 what a newer item replaced (a price told again, a decision corrected, a fact told again under the same label), what is only
 proposed, seeded markers, advice of a course, templates. It is built from the same reads as the rest of the turn
 (`pathRepo.memoryPart`: never a founder-private item) and the person's own profile and notebook.
+
+Every line is a sentence to them: what a record says of nobody it names ("Uses a notebook") is left out, "Has $80" is "You have $80", a
+risk is one they see. What a later telling or the message itself says otherwise (somebody in it has left or is back, the price is
+another one now) is told as how it was, "(was true until November 15)", and denies nothing.
 
 ## Turning it on
 

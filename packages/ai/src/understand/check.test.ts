@@ -8,6 +8,7 @@ import {
   type UnderstandContext,
 } from './check.js';
 import { UNDERSTAND_EXAMPLES } from './prompt.js';
+import { readJudge } from './salvage.js';
 import type { RawUnderstanding } from './schema.js';
 import type { RecordLine } from './types.js';
 
@@ -1141,6 +1142,113 @@ describe('when the record denies what they say', () => {
   });
 });
 
+describe('a claim of how it goes, against two counts told of it', () => {
+  const of = (claim: string, text: string, why: string) =>
+    readUnderstanding(
+      raw({ contradicts: { record: 'R1', claim, why } }),
+      context(`I told the warden it is ${claim}. that is okay, right?`, {
+        record: [line('R1', text, 'evidence')],
+      }),
+    ).understanding?.contradicts?.line.key ?? null;
+  const fell = 'Ninety-three berths were let in the spring at $30; eighty-one are let in the summer.';
+  const rose = 'Forty berths were let in the spring at $30; sixty are let in the summer.';
+  it.each([
+    ['steady the whole year', fell, 'You say steady, and it went from 93 to 81.', 'R1'],
+    ['stable since spring', fell, 'You say stable, and it went from 93 to 81.', 'R1'],
+    ['growing every season', fell, 'You say growing, and it went from 93 to 81.', 'R1'],
+    ['going up nicely', fell, 'You say going up, and it went from 93 to 81.', 'R1'],
+    ['growing every season', rose, 'You say growing, and it went from 40 to 60.', null],
+    [
+      'steady the whole year',
+      'Sixty berths were let in the spring, sixty in the summer.',
+      'You say steady, and 60 were let.',
+      null,
+    ],
+    [
+      'growing every season',
+      'Sixty berths were let in the spring.',
+      'You say growing, and 60 were let.',
+      null,
+    ],
+  ])('%s: %s', (claim, text, why, key) => {
+    expect(of(claim, text, why)).toBe(key);
+  });
+});
+
+describe('the price of a test', () => {
+  const record = [
+    line('R1', 'A berth rents for $30 a night, and the dredging costs you $900.'),
+    line('R2', 'You have $450 saved.'),
+  ];
+  const of = (settles: string, flips: string | null = null) =>
+    readUnderstanding(
+      raw({
+        kind: 'result',
+        result: { verdict: 'mixed', shows: 'Nine boats asked for a berth.', does_not_show: null, settles },
+        choice:
+          flips === null
+            ? null
+            : {
+                options: ['the berths', 'the pier'],
+                pick: 'the berths',
+                because: 'Nine boats asked.',
+                flips_if: flips,
+              },
+      }),
+      context('nine boats asked for a berth, so the berths or the pier? one would pay 25 a night', {
+        record,
+      }),
+    );
+  it('is one they charge or were told', () => {
+    for (const text of [
+      'Ask the nine to pay $30 for a night.',
+      'Ask the nine to pay $25 for a night and count who does.',
+    ])
+      expect(of(text).understanding?.result?.settles, text).toBe(text);
+  });
+  it('never their budget, savings or costs: the clause goes', () => {
+    expect(
+      of('Ask the nine to stay for a week and pay the $450 for it.').understanding?.result?.settles,
+    ).toBe('Ask the nine to stay for a week.');
+    for (const text of [
+      'Ask the nine to pay $450.',
+      'Ask the nine to pay $900 and stay.',
+      'Charge 450 for a berth.',
+    ])
+      expect(of(text).report.textDrops, text).toContain('result.settles:price');
+  });
+  it('a time or a count is no price', () => {
+    for (const text of [
+      'Ask the nine to come for 2 weeks.',
+      'Ask 10 of them at the pier and count who pays $30.',
+    ])
+      expect(of(text).understanding?.result?.settles, text).toBe(text);
+  });
+  it('what would turn a pick has somebody who does it', () => {
+    const flips = (text: string) => of('Ask the nine to pay $30.', text).understanding?.choice?.flipsIf;
+    expect(flips('If five of the nine pay $30 a night.')).toBe('If five of the nine pay $30 a night.');
+    expect(flips('Ask the nine, and five pay $30.')).toBe('You ask the nine, and five pay $30.');
+    expect(flips('answer the pier office and agree')).toBeNull();
+    expect(flips('if agrees to pay $30')).toBeNull();
+  });
+});
+
+describe('options named before', () => {
+  it('are options of theirs, all of them', () => {
+    const named = ['berths', 'moorings', 'sails', 'ropes', 'charts', 'lamps'];
+    const { understanding: u } = readUnderstanding(
+      raw({
+        kind: 'choice',
+        choice: { options: named, pick: 'berths', because: 'Nine boats asked for one.', flips_if: null },
+      }),
+      context('ok, which of those', {
+        history: [{ founder: `we do ${named.join(', ')}, and nine boats asked for berths`, reply: 'ok' }],
+      }),
+    );
+    expect(u?.choice).toMatchObject({ options: named, pick: 'berths' });
+  });
+});
+
 describe('the size of something to do', () => {
   const of = (field: 'settles' | 'first_action' | 'points', text: string) => {
     const { understanding: u } = readUnderstanding(
@@ -1263,6 +1371,13 @@ describe('every worked example', () => {
       expect(report.inputs.found, e.message).toBe(report.inputs.named);
       expect(u?.sums.length ?? 0).toBe(e.answer.s.length);
     }
+    for (const e of UNDERSTAND_EXAMPLES.judgeVoice) {
+      const { understanding: u, report } = readParts({ judge: readJudge(e.answer) }, shown(e));
+      expect(report.textDrops, e.message).toEqual([]);
+      expect(u?.choice?.pick ?? null).toBe(e.answer.o?.p ?? null);
+      expect(u?.result?.settles ?? null).toBe(e.answer.t?.e ?? null);
+      expect(JSON.stringify(e.answer).length / 4).toBeLessThan(80);
+    }
     for (const e of UNDERSTAND_EXAMPLES.judge) {
       const { understanding: u, report } = readParts(
         { judge: e.answer, route: routeOf(e.message) },
@@ -1275,7 +1390,7 @@ describe('every worked example', () => {
       expect(u?.result?.settles ?? null).toBe(e.answer.t?.e ?? null);
       expect(u?.contradicts?.why ?? null).toBe(e.answer.x?.w ?? null);
       expect(u?.firstAction).toBe(e.answer.d);
-      expect(u?.avoid).toBe(e.answer.z);
+      expect(u?.avoid).toBeNull();
     }
     expect(
       readParts(

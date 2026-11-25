@@ -19,6 +19,12 @@ export interface SumContext {
   readonly texts?: readonly string[];
   /** The figure is what an offer would make the venture worth: no one's to state. */
   readonly worth?: boolean;
+  /** They ask whether they still earn or lose: the figure answers with the word. */
+  readonly earns?: boolean;
+  /** They only suppose it ("say everybody pays"). */
+  readonly supposed?: boolean;
+  /** Earlier replies, oldest first: the figure said of the same thing before. */
+  readonly replies?: readonly string[];
 }
 
 const flat = (text: string): string => text.replace(/\s+/gu, ' ').trim();
@@ -109,6 +115,18 @@ function named(label: string, said: string): string {
   const what = lowerFirst(label).replace(/^the (?=(?:runway|break.?even))/u, '');
   if (/^(?:your |the )?runway\b/u.test(what)) return `Your money lasts ${said}`;
   if (/^(?:your |the )?break.?even\b/u.test(what)) return `You break even at ${said}`;
+  if (
+    /^(?:the )?(?:(?:number of )?(?:months?|weeks?|days?|years?)|time) (?:until|till|before|left)\b.*\b(?:cash|money|runs? out|zero)\b/u.test(
+      what,
+    )
+  )
+    return `Your cash lasts ${said}`;
+  const period =
+    /^(?:your |the )?(monthly|weekly|daily|yearly) (?:profit or loss|profit|gain or loss|net)\b/u.exec(
+      what,
+    )?.[1];
+  if (period !== undefined)
+    return `${said} is left ${({ monthly: 'a month', weekly: 'a week', daily: 'a day', yearly: 'a year' } as Record<string, string>)[period] ?? ''}`;
   const head = /^(.*?)(?= (?:in|of|per|for|at|on|after|before|with|each|an?|from|by|that|when|if)\b|$)/u
     .exec(what)?.[1]
     ?.split(' ')
@@ -250,11 +268,40 @@ function lossOf(label: string, said: string): string | null {
   return upperFirst(spaced(m[1], past ? 'lost' : 'lose', said, m[3]));
 }
 
+const TIMES: ReadonlySet<string> = new Set(['minutes', 'hours', 'days', 'weeks', 'months', 'years']);
+
+/** The figure an earlier reply said of the same thing: "$88 is left each month: …"; null: none, or the same one. */
+function figureBefore(
+  now: string,
+  figure: string,
+  unit: string,
+  replies: readonly string[],
+): { readonly said: string; readonly value: number } | null {
+  if (unit !== '$') return null;
+  const words = (text: string): Set<string> =>
+    new Set((text.toLowerCase().match(/[a-z]{4,}/gu) ?? []).map((w) => w.replace(/(?:ly|s)$/u, '')));
+  const own = words(now);
+  for (const reply of [...replies].reverse()) {
+    // A server's sum: the sentence, a colon, its working.
+    const m = /(?:^|\n|[.!?]\s)([^.:\n]*?(\$[\d,]+(?:\.\d\d)?)[^.:\n]*):\s(?=[(\d$])/u.exec(reply);
+    if (m === null) continue;
+    const said = m[2] ?? '';
+    const shared = [...words(m[1] ?? '')].filter((w) => own.has(w)).length;
+    if (shared === 0) continue;
+    const value = Number(said.replace(/[$,]/gu, ''));
+    return said === figure || !(value > 0) ? null : { said, value };
+  }
+  return null;
+}
+
 /** One sum as it is said. */
 export function sumSaid(s: UnderstoodSum, c: SumContext = {}): SumSaid {
   const working = tidyWorking(s.working);
   const unit = unitOf(s, c.texts ?? []);
-  const figure = unit === '' ? s.said : `${/^(?:about )?[\d,.]+/u.exec(s.said)?.[0] ?? s.said} ${unit}`;
+  const told = unit === '' ? s.said : `${/^(?:about )?[\d,.]+/u.exec(s.said)?.[0] ?? s.said} ${unit}`;
+  // A time that did not come out whole is about that long.
+  const figure =
+    TIMES.has(s.unit) && /\.\d/u.test(told) && !told.startsWith('about ') ? `about ${told}` : told;
   const loss = s.unit === '$' && s.value < 0;
   const positive = figure.replace(/^[-−]/u, '');
   const label = flat(bare(s.label));
@@ -269,9 +316,21 @@ export function sumSaid(s: UnderstoodSum, c: SumContext = {}): SumSaid {
   });
   const heard = heardWorking(working);
   const aside = asideOf(s, working, c);
+  const before = c.replies === undefined ? null : figureBefore(main, positive, s.unit, c.replies);
+  const compared =
+    before === null
+      ? main
+      : `${main}, ${before.value > Math.abs(s.value) ? 'down' : 'up'} from ${before.said}`;
+  const earned = c.earns === true && s.unit === '$' ? (loss ? 'You lose: ' : 'You still earn: ') : '';
+  const said =
+    earned !== ''
+      ? `${earned}${lowerFirst(compared)}`
+      : c.supposed === true
+        ? `If all of that came true, ${/^[$\d]/u.test(compared) ? compared : lowerFirst(compared)}`
+        : compared;
   return {
-    text: working === '' || working === s.said ? `${main}.` : `${main}: ${working}.`,
-    voice: heard === '' ? `${main}.` : `${main}, ${heard}.`,
+    text: working === '' || working === s.said ? `${said}.` : `${said}: ${working}.`,
+    voice: heard === '' ? `${said}.` : `${said}, ${heard}.`,
     aside,
   };
 }

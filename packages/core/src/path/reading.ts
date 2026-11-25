@@ -3,6 +3,7 @@ import { asksFor, ownSentences } from './kinds.js';
 import {
   bare,
   ideaAs,
+  isGarbled,
   knownFacts,
   lowerFirst,
   sameThing,
@@ -105,7 +106,13 @@ const ASKED_OF_US =
 export function problemIn(texts: readonly string[], not: readonly string[] = []): string {
   for (const text of texts)
     for (const sentence of ownSentences(text)) {
-      if (sentence.trim().endsWith('?') || asksFor(sentence) || ASKED_OF_US.test(sentence)) continue;
+      if (
+        sentence.trim().endsWith('?') ||
+        asksFor(sentence) ||
+        isGarbled(sentence) ||
+        ASKED_OF_US.test(sentence)
+      )
+        continue;
       // Their plan, or what they think of it, is cut off it.
       const told = bare(
         sentence.replace(/,?\s+(?:and|so|but)\s+(?:i|we|my|our)(?:['’]\w+)?\s.*$/iu, '').replace(/\s+/g, ' '),

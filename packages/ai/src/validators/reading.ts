@@ -80,8 +80,21 @@ export function addsToLead(unit: string, reading: Reading, lead: string): boolea
   const given = [...figures(lead), ...(reading.figures ?? []).map((f) => f.value)];
   if ((TO_ANYONE.test(text) || GREETS.test(text)) && !/\d/.test(text)) return false;
   // "About six months" under 6.2 months is that figure again.
-  if (figures(text).some((n) => n > 1 && !given.some((g) => Math.abs(g - n) <= Math.abs(g) * 0.05)))
+  if (
+    figures(text).some(
+      (n) =>
+        n > 1 &&
+        !given.some(
+          (g) =>
+            Math.abs(g * 100 - n) < 0.005 ||
+            // "150k" and "1.2 million" under the same in full.
+            [1, 1_000, 1_000_000].some((x) => Math.abs(g - n * x) <= Math.abs(g) * 0.05),
+        ),
+    )
+  )
     return true;
+  // The opening's own sum once more.
+  if (figures(text).length >= 3 && !DOES.test(text)) return false;
   const names = namesIn(lead);
   const said = stemsOf(text);
   const telling = [...said].filter((w) => !EMPTY.has(w));
@@ -117,6 +130,7 @@ const TO_ANYONE =
   /^(?:(?:also|and|just|then),? )?(?:make sure|be sure|ensure|keep (?:this|that|it|the \w+(?: \w+)?|in) (?:in )?mind|remember (?:to|that)|don['’]t forget|stay focused|take (?:your|the) time)\b/iu;
 
 /** "Hi Ana and Bo, great to see you both." under what already opened. */
+const INTRODUCES = /^I(?:['’]m| am) \p{Lu}\p{L}+[.!]$/u;
 const GREETS = /^(?:hi|hello|hey|good (?:morning|afternoon|evening))\b[^.!?]{0,60}[.!]+$/iu;
 
 /** A line of what to do first: the server's alone. */
@@ -129,7 +143,7 @@ const NO_FRIENDS =
 
 /** Comfort in place of help. */
 const COMFORTS =
-  /\b(?:focus on what you can control|one (?:step|thing|day) at a time|take a (?:deep )?breath|it(?:'s| is) going to be (?:ok|okay|fine|all right)|you(?:'ve| have) got this|don't panic|things will work out)\b/iu;
+  /\b(?:focus on what you can control|one (?:step|thing|day) at a time|take a (?:deep )?breath|every (?:reaction|talk|no|answer|conversation|reply) (?:teaches|tells|helps|is data)|it(?:'s| is) (?:all )?(?:just )?(?:data|learning)\b|(?:that|this)(?:'s| is) (?:good|great|real|solid) progress|(?:that|it)(?:'s| is) a relief|it(?:'s| is) going to be (?:ok|okay|fine|all right)|you(?:'ve| have) got this|don't panic|things will work out)\b/iu;
 
 // How the turn was prepared ------------------------------------------------------------------------------------------
 
@@ -146,7 +160,13 @@ const LEADS_IN = new RegExp(
 const METHOD_IS = /(,? and |;? ?)(?:the|our) (?:program|programme)(?:['’]s)? (?:method|way|answer) is to /iu;
 
 /** A sentence without what leads into it from the prompt; as it is when nothing does. */
-export function withoutWorks(raw: string): string {
+export function withoutWorks(said: string): string {
+  // The server's own way to open a denial, said by the model of something else.
+  const raw = said.replace(
+    /^(\s*[*_]*)your (?:own )?(?:numbers|record|data) (?:say|says|speak|speaks) (?:otherwise|against (?:it|that|this))(?: too)?:\s+(\p{L})/iu,
+    (_m, gap: string, c: string) => `${gap}${c.toUpperCase()}`,
+  );
+  if (raw !== said) return raw;
   const unit = raw.replace(METHOD_IS, (_m, before: string, at: number) =>
     /^\s*$/u.test(raw.slice(0, at)) && before.trim() === '' ? before : '; ',
   );
@@ -167,9 +187,22 @@ export const ofTheWorks = (unit: string): boolean => OF_THE_WORKS.test(plain(uni
 
 /** "A qualified person decides this: …", the prompt's own line for who decides. */
 export const echoesReferral = (unit: string): boolean =>
-  /^(?:(?:a|the) qualified (?:person|professional) (?:decides|must decide|should decide|needs to decide|has to decide)\b|bring:\s)/iu.test(
+  /^(?:(?:a|the) qualified (?:person|professional) (?:decides|must decide|should decide|needs to decide|has to decide)\b|bring:\s|who decides (?:what to bring|it|this|that)\b[^.!?]*\?)/iu.test(
     plain(unit),
   );
+
+/** Who decides, as a line with nobody doing anything ("A startup lawyer, and you start with your EIR."). */
+export function namesWho(unit: string, who: string): boolean {
+  const said = stemsOf(plain(unit));
+  if (said.size < 2) return false;
+  const own = stemsOf(`${who} start lawyer office person`);
+  return (
+    sharedCount(said, own) / said.size >= 0.75 &&
+    !/\b(?:talk|ask|see|bring|book|call|email|meet|decides?|reads?|says?|tells?|helps?|is|are|can|will)\b/iu.test(
+      plain(unit),
+    )
+  );
+}
 
 // Beside a figure -----------------------------------------------------------------------------------------------------
 
@@ -290,6 +323,25 @@ function wrongErrand(text: string, guidance: PromptGuidance): boolean {
   );
 }
 
+/** A number they took back in this message, said as it was. */
+function saysGone(text: string, gone: readonly number[]): boolean {
+  return (
+    gone.length > 0 &&
+    !/\b(?:not|no longer|instead|before|was|were|used to|from|down|up)\b/iu.test(text) &&
+    figures(text).some((n) => gone.includes(n))
+  );
+}
+
+/** A figure they ask for that nobody worked out, concluded by the model in plain words: no marker, and no sum of code's. */
+const CONCLUDES =
+  /\b(?:fewest|least|lowest|minimum|at least|break(?:s|ing)? ?even|(?:need|have|must) (?:to )?sell|to cover|pays? (?:for itself|it back|off)|earn(?:s|ed)? (?:it|that) back)\b/iu;
+function concludes(text: string, guidance: PromptGuidance): boolean {
+  const { reading } = guidance;
+  if (reading === undefined || (reading.figures ?? []).length > 0 || text.includes('[[')) return false;
+  if (guidance.asksSum !== true && (guidance.calc ?? []).length === 0) return false;
+  return CONCLUDES.test(text) && figures(text).length > 0;
+}
+
 /** Whether a quotation is open at the end of `before`. */
 function inQuote(before: string): boolean {
   let open = false;
@@ -315,6 +367,8 @@ export function againstReading(
   // A line to say or send is theirs to change: none of its sentences is read alone.
   if (/^["“]/u.test(text) || inQuote(before)) return null;
   if (emptyVerdict(unit) || bareVerdict(unit)) return 'empty_verdict';
+  if ((GREETS.test(text) || INTRODUCES.test(text)) && guidance.kind !== 'social' && reading.kind !== 'social')
+    return 'greets';
   if (ofTheWorks(unit)) return 'scaffolding';
   if (againstFigure(unit, reading.figures)) return 'against_figure';
   if (deniesClaim(unit, reading)) return 'denies_claim';
@@ -323,9 +377,18 @@ export function againstReading(
     reading.referral !== null && reading.referral !== 'wellbeing' && reading.referral !== 'grants';
   if (decided && rulesTerms(unit)) return 'rules';
   if (reading.opened === 'held' && picksHeld(text, reading.heldOptions ?? [])) return 'rules';
+  // "Pick the one that …" under a pick.
+  if (
+    reading.opened === 'choice' &&
+    /^(?:pick|choose|keep|go with) (?:the one|whichever|one|any)\b/iu.test(text)
+  )
+    return 'second_pick';
   if (STARTS_WITH.test(text)) return 'second_plan';
   if (wrongErrand(text, guidance)) return 'wrong_errand';
-  if (reading.inOrder && COMFORTS.test(text)) return 'comforts';
+  if (saysGone(text, reading.gone ?? [])) return 'gone';
+  if (concludes(text, guidance)) return 'own_sum';
+  if ((reading.inOrder || reading.kind === 'result' || reading.kind === 'sum') && COMFORTS.test(text))
+    return 'comforts';
   if (reading.kind === 'pushback' && DEFENDS.test(text)) return 'defends';
   if (reading.kind === 'integrity' && FRIENDS.test(text) && !NO_FRIENDS.test(text)) return 'friends';
   // A question is held apart, a line that announces waits for what it announces, and a draft is as long as it is.

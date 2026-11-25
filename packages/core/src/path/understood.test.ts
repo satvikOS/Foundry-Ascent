@@ -157,7 +157,7 @@ describe('who decides where the rules and the reading disagree', () => {
 
   it('where to start beside what they report is answered, not only counted', () => {
     const { decision } = turn(
-      'two of the four letters are out and the shop cleared a shelf, what should I do first',
+      'two of the four shops wrote back and one cleared a shelf, where should I begin',
       {
         kind: 'next',
         also: ['update'],
@@ -252,6 +252,7 @@ describe('the server’s one opening', () => {
     expect(said?.kind).toBe('contradiction');
     expect(said?.text).toBe('Not quite, by your own numbers: nine of 34 buyers came back in October.');
     const changed = opening({
+      kind: 'update',
       contradicts: {
         line: record('You decided to sell to gift shops and not at markets.', 'decision'),
         why: 'The market was set aside.',
@@ -276,20 +277,29 @@ describe('the server’s one opening', () => {
     ]);
   });
 
-  it('no canned reading of news opens over what was read', () => {
-    const message = 'talked to 12 bakers and 9 of 12 said the lids leak';
-    expect(readTurnOf(message, null, PRICING).prompt.lead?.text).toMatch(/more than half is a pattern/);
+  it('a rule that read the counts stands over what was read, and not where friends are counted as proof', () => {
+    const counts = 'talked to 12 bakers and 9 of 12 said the lids leak';
+    const rule = readTurnOf(counts, null, PRICING).prompt;
+    expect(rule.lead?.text).toMatch(/more than half is a pattern/);
+    const result = {
+      verdict: 'weak' as const,
+      shows: 'Nine of 12 said the lids leak.',
+      doesNotShow: 'Whether it costs them anything.',
+      settles: null,
+    };
+    expect(turn(counts, { kind: 'result', result, points: ['A leak is small.'] }).prompt).toEqual(rule);
+    const message = 'talked to 12 of my classmates and 9 of 12 said the lids leak';
     const { prompt } = turn(message, {
       kind: 'result',
       result: {
         verdict: 'weak',
-        shows: 'Nine of 12 bakers said the lids leak, and you asked them about lids.',
+        shows: 'Nine of 12 classmates said the lids leak, and you asked them about lids.',
         doesNotShow: 'Whether it costs them anything.',
         settles: null,
       },
       points: ['A leak nobody paid to stop is a small one.'],
     });
-    expect(prompt.lead?.text).toMatch(/^(?:Weak|That is thin) so far: nine of 12 bakers/);
+    expect(prompt.lead?.text).toMatch(/^(?:Weak|That is thin) so far: nine of 12 classmates/);
     expect(prompt.lead?.text).not.toContain('pattern');
   });
 });
@@ -334,7 +344,7 @@ describe('the reply a founder sees', () => {
 
   it('under an opening a sentence stays only when it adds something', () => {
     const reply = seen(
-      'ok so 25 people tasted and 4 bought, rest said yum',
+      'a tasting, 25 came, four took one home and paid, the rest said yum',
       {
         kind: 'result',
         result: {
@@ -400,7 +410,7 @@ describe('the reply a founder sees', () => {
 
   it('a push is owned, with their numbers and the test that decides it', () => {
     const reply = seen(
-      'you keep saying that but where is your proof',
+      'you keep saying that and you have no evidence either',
       {
         kind: 'pushback',
         ask: 'whether there is any proof',
@@ -718,7 +728,7 @@ describe('what the writer is given', () => {
       points: ['Start with the chef at Orchard House.', 'Bring the jars and a price on one card.'],
       avoid: 'Telling them to build a list of fifty.',
     };
-    const message = 'how do i sell to restaurants, and what do i bring';
+    const message = 'the restaurants round here, how would you get in there, and with what in my hands';
     const memory = Array.from({ length: 8 }, (_, i) => ({
       id: `cccccccc-0000-4000-8000-00000000000${String(i)}`,
       type: 'fact' as const,

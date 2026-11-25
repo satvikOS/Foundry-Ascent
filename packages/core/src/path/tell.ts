@@ -108,7 +108,10 @@ export function toYou(text: string, name = ''): string {
   // The record tells of the founder: what it calls theirs is yours, and what else they do, you do.
   if (out !== of) {
     out = out.replace(AND_DOES, (_whole, verb: string) => `and ${verbOfYou(verb)}`);
-    if (!SOMEONE.test(of)) out = out.replace(/\b(?:his|her)\b(?= \p{L})/gu, 'your');
+    if (!SOMEONE.test(of))
+      out = out
+        .replace(/\b(?:his|her)\b(?= \p{L})/gu, 'your')
+        .replace(/\b(?:himself|herself|themsel(?:f|ves))\b/giu, 'yourself');
   }
   if (out !== of || /\btheir (?:initial|original|own|first)\b/u.test(out))
     out = out.replace(THEIRS_OF_FOUNDER, 'your ');
@@ -417,6 +420,7 @@ function candidatesOf(s: PriorSource): Candidate[] {
         contentStems(sentence).length < 4 ||
         (idea !== '' && sameThing(sentence, idea)) ||
         OF_THEMSELVES.test(sentence) ||
+        isGarbled(sentence) ||
         SUPPOSED.test(sentence.trim())
       )
         continue;
@@ -446,6 +450,13 @@ export function knownFacts(s: PriorSource): readonly { readonly fact: string; re
 /** What they only suppose ("ok just say everybody pays 5"): nothing that happened. */
 const SUPPOSED =
   /^(?:(?:ok(?:ay)?|so|and|but|well|then|now|fine)[, ]+)*(?:(?:just|let['’]?s|let us|lets) (?:say|suppose|assume|pretend|imagine)|suppose|assume|imagine|pretend|say (?:we|i|it|that|everyone|everybody|\d)|what if|if (?:we|i)\b)/i;
+
+/** A line as it was heard, and not as anyone would write it ("uh we, um, the the board"): never said back as a fact. */
+export const isGarbled = (sentence: string): boolean =>
+  /\b(?:um+|uh+|erm+)\b|\b(\p{L}{2,}) \1\b/iu.test(sentence) ||
+  /^(?:(?:so|like|no|well|ok(?:ay)?|and|but|i mean)[, ]+)*(?:how|what|why|where|when|who|which) (?:do|does|did|should|would|can|could|is|are)\b/i.test(
+    sentence.trim(),
+  );
 
 /** What they say of themselves and not of the venture ("I can run the process, but I'm new to business"). */
 const OF_THEMSELVES =
@@ -563,9 +574,13 @@ export function broughtUp(fact: string, seed: string, decision = false): string 
   if (THINGS_HAD.test(fact) && !fact.includes(':')) return `You have ${fact} to build on.`;
   // Told with what it is of ("one mill, two weeks: the drying fell from 50 to 36"): as it stands.
   if (TOLD_WITH_ITS_LABEL.test(fact)) return `${up}.`;
-  if (!isClause(fact)) return '';
+  if (!isClause(fact) || LACKS_WHO.test(fact)) return '';
   return `Keep in mind that ${fact}.`;
 }
+
+/** A verb with nobody who does it ("has two kilns and a van"). */
+const LACKS_WHO =
+  /^(?:has|have|had|is|are|was|were|does|did|wants?|needs?|uses|pays|says|asks|owns|runs|sells|makes|takes|gets|gives|keeps|loves|hates|knows|thinks|plans)\b/i;
 
 /** A label of a few words, and then a sentence with a number in it. */
 const TOLD_WITH_ITS_LABEL =

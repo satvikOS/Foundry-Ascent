@@ -19,10 +19,11 @@ of the first live run (none of its wording is here), and each has replies it mus
 from __future__ import annotations
 
 import datetime as dt
+import math
 import re
 from collections.abc import Callable, Iterable, Mapping
 
-from conversation_lab.client import reading
+from conversation_lab.client import reading, workings
 from conversation_lab.client.terms import GLOSSARY, defined
 from conversation_lab.client.turns import NA, PASS, Grade, ReplyTurn, asks_next, fact_named, fail, verdict
 from conversation_lab.live.checks import REPEAT_REQUEST, SINCERE_IDENTITY
@@ -134,7 +135,13 @@ def answers_the_number(t: ReplyTurn) -> Grade:
         return NA
     wanted = {float(n.replace(",", "")) for n in t.expect.number}
     said = reading.values(t.text)
-    if any(abs(v - w) <= max(0.005 * abs(w), 0.004) for v in said for w in wanted):
+    if any(
+        abs(v - w) <= max(0.005 * abs(w), 0.004, 1.0 if abs(w) >= 100 else 0.0) for v in said for w in wanted
+    ):
+        return PASS
+    # A count that must be reached is said as the next whole one ("62" for 61.3), never a small one or a length of time.
+    reached = workings.counts_to_reach(t.reply, t.founder)
+    if any(w >= 10 and w != int(w) and math.ceil(w) in reached for w in wanted):
         return PASS
     return fail("not_said: " + ", ".join(sorted(t.expect.number)))
 
@@ -229,11 +236,22 @@ def _day_key(t: ReplyTurn, said: str) -> str:
     return word
 
 
+def _template_lines(t: ReplyTurn) -> set[str]:
+    """The lines of the steps' own templates, as words: a line of one that the reply hands over says no step."""
+    out = set()
+    for step in (t.step, t.path_step):
+        template = (step or {}).get("template")
+        body = str(template.get("body") or "") if isinstance(template, Mapping) else ""
+        out |= {" ".join(reading.words(ln)) for ln in body.split("\n") if len(reading.words(ln)) >= 3}
+    return out
+
+
 def single_step_line(t: ReplyTurn) -> Grade:
     """One step said once: one declaration, one deadline, one done-check, and at most one line of what to do first."""
     if t.expect.kind in ("crisis", "rehearsal", "recall") or not t.reply.strip():
         return NA
-    said = reading.sentences(t.text)
+    template = _template_lines(t)
+    said = [s for s in reading.sentences(t.text) if " ".join(reading.words(s)) not in template]
     labels = [s for s in said if _declares(s)]
     if len(labels) > 1:
         return fail("declared_twice: " + " | ".join(labels))
@@ -401,16 +419,23 @@ def _loose_money(t: ReplyTurn) -> list[float]:
     amounts = {f.value for f in reading.figure_list(given) if "money" in f.classes}
     # What the founder or the record said is theirs, with its unit or without it ("charging 25 a pickup").
     amounts |= reading.values(f"{t.founder_said}\n{t.known}") | t.established
+    sums = workings.of_turn(t)
     out = []
-    stated = [f for f in reading.figure_list(t.reply) if "money" in f.classes]
+    stated = [f for f in reading.figure_list(sums.rest) if "money" in f.classes]
     counts = {f.value for f in reading.figure_list(t.reply) if not f.classes} | reading.spelled_values(
         t.reply
     )
     for f in stated:
-        if f.value in amounts or reading.derivable(f.value, amounts, period=reading.says_period(t.text)):
+        if f.value in amounts or f.value in sums.proven:
+            continue
+        if f.value not in sums.wrong and reading.derivable(
+            f.value, amounts, period=reading.says_period(t.text)
+        ):
             continue
         # An amount, so many times ("two kites at 16 dollars are 32").
-        if any(reading.derivable(f.value, (a, c)) for a in amounts for c in counts if a != c):
+        if f.value not in sums.wrong and any(
+            reading.derivable(f.value, (a, c)) for a in amounts for c in counts if a != c
+        ):
             continue
         out.append(f.value)
     return out
@@ -670,6 +695,11 @@ _SAME_SHARE = 0.4
 #: What joins or turns a sentence without adding to it.
 _JOINERS = frozenset(reading.content_stems("because why don't not no now so yes"))
 _MIN_WORDS = 4
+#: The path's own step, as the server says it under an answer to something else.
+_PATH_LINE = re.compile(r"^\W*on your path, next is\b", re.IGNORECASE)
+#: A sentence that sends them to who decides.
+_REFERS = re.compile(r"^\W*(?:talk to|ask|see|speak (?:to|with)|a qualified person decides)\b", re.IGNORECASE)
+_ENOUGH_BESIDES = 3
 
 
 def repeats_previous_reply(t: ReplyTurn) -> Grade:
@@ -682,21 +712,29 @@ def repeats_previous_reply(t: ReplyTurn) -> Grade:
     referral = (t.guidance or {}).get("referral")
     if referral:
         own.append(reading.content_stems(reading.leaf_text(referral)))
+    who = re.split(r"[,;]", str(referral.get("who") or ""))[0] if isinstance(referral, Mapping) else ""
+    named = reading.content_stems(who)
 
-    def lines(text: str) -> list[set[str]]:
+    def refers(stems: set[str], s: str) -> bool:
+        return len(named) >= 2 and named <= stems and bool(_REFERS.match(s))
+
+    def lines(text: str) -> list[tuple[set[str], bool]]:
         out = []
         for s in reading.sentences(reading.plain(text)):
             if len(reading.words(s)) < _MIN_WORDS or _declares(s) or _DONE.search(s) or _DO_BY.search(s):
                 continue
-            if _is_step_text(s, own):
+            if _is_step_text(s, own) or _PATH_LINE.match(s):
                 continue
             stems = reading.content_stems(s) - _JOINERS
             if len(stems) >= 2:
-                out.append(stems)
+                out.append((stems, refers(stems, s)))
         return out
 
-    mine = lines(t.reply)
-    before = [x for reply in t.same_session for x in lines(reply)]
+    all_mine = lines(t.reply)
+    # Who decides is said again whenever it applies: that line is set aside in a reply that says enough besides it.
+    besides = [x for x, refer in all_mine if not refer]
+    mine = besides if len(besides) >= _ENOUGH_BESIDES else [x for x, _ in all_mine]
+    before = [x for reply in t.same_session for x, _ in lines(reply)]
     again = [x for x in mine if any(reading.overlap(x, b) >= _SAME_SENTENCE for b in before)]
     if not mine:
         # Nothing but the step: over again when an ask is answered with lines that were all said before.

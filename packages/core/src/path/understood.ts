@@ -1,8 +1,9 @@
-import { type Understanding, type UnderstoodReferral } from '@foundry/ai';
+import { type Understanding, type UnderstoodReferral, type UnderstoodSum } from '@foundry/ai';
 import { type Play, type RiskCategory, type TurnGuidance } from '@foundry/contracts';
 
-import { asksOverview } from './kinds.js';
+import { asksFor, asksOverview } from './kinds.js';
 import { asksToStop } from './openings.js';
+import { readsOutcome } from './outcome.js';
 import { referralForRisk } from './referrals.js';
 import { bare, toYou } from './tell.js';
 import { type Playbook } from './types.js';
@@ -57,6 +58,14 @@ export interface Weighed {
   readonly countsPick: boolean;
   /** Both name the same option. */
   readonly samePick: boolean;
+  /** A specific rule read the message: its counts, its report, its change of direction, one ask of its own (fired.ts). */
+  readonly precise: boolean;
+  /** A rule answers with what it holds for any such ask: a play's paragraph, the whole path, a page to fill in. */
+  readonly generic: boolean;
+  /** The reading holds what that answer lacks: a figure, a pick, a result, a denial, who decides, another ask. */
+  readonly adds: boolean;
+  /** The rule counted as proof what the people or the record deny. */
+  readonly conflict: boolean;
 }
 
 /** Nothing known of it. */
@@ -81,10 +90,15 @@ export const NOTHING: Weighed = {
   picks: false,
   countsPick: false,
   samePick: false,
+  precise: false,
+  generic: false,
+  adds: false,
+  conflict: false,
 };
 
 export type Decides = 'rule' | 'reading';
-export type WeighedField = 'kind' | 'recall' | 'play' | 'step' | 'referral' | 'sum' | 'choice' | 'lead';
+export type WeighedField =
+  'answer' | 'kind' | 'recall' | 'play' | 'step' | 'referral' | 'sum' | 'choice' | 'lead';
 
 interface Row {
   readonly when: string;
@@ -98,6 +112,15 @@ const row = (when: string, test: (w: Weighed) => boolean, by: Decides): Row => (
  * a social turn, a wellbeing or conflict risk, a pivot and the writes of a report, which no reading changes.
  */
 export const PRECEDENCE: Readonly<Record<WeighedField, readonly Row[]>> = {
+  // The whole answer, with its step, its opening and its model: the reading fills gaps and overrides no rule that read the
+  // message precisely. Where the rule has it, the turn is the one without a reading.
+  answer: [
+    row('the rule counted as proof what the people or the record deny', (w) => w.conflict, 'reading'),
+    row('a specific rule read the message', (w) => w.precise, 'rule'),
+    row('a general answer, and the reading holds what it lacks', (w) => w.generic && w.adds, 'reading'),
+    row('a general answer', (w) => w.generic, 'rule'),
+    row('no rule, or only near words', () => true, 'reading'),
+  ],
   kind: [
     row('their own report, commitment or smaller ask', (w) => w.ownReport, 'rule'),
     row('a change of direction, another idea', (w) => w.turned, 'rule'),
@@ -192,7 +215,10 @@ export const speaks = (u: Understanding): boolean =>
   u.kind === 'recall' ||
   u.kind === 'integrity' ||
   u.kind === 'privacy' ||
-  (u.kind === 'pushback' && u.record.length > 0);
+  (u.kind === 'pushback' && u.record.length > 0) ||
+  // A part came: what kind of message it is, or the play that answers it.
+  (u.kind !== 'question' && u.kind !== 'social' && u.kind !== 'feelings') ||
+  (u.playId !== null && u.sure);
 
 const is = (u: Understanding, ...kinds: readonly Understanding['kind'][]): boolean =>
   kinds.includes(u.kind) || u.also.some((k) => kinds.includes(k));
@@ -319,6 +345,40 @@ const BARE_WORDS = new Set(
 );
 const YES_NO_PICK = /^(?:yes|no|not yet|neither|both|wait|stop|pause)\b/i;
 
+/** They want the words themselves: a recap, a wording, so many lines. */
+const TEXT_ASKED =
+  /\b(?:quick |short )?(?:re-?cap|summar(?:y|i[sz]e))\b|\bsum (?:it|this|that) up\b|\b(?:in )?(?:\d|one|two|three|four|five|six) (?:short |quick )?(?:lines|sentences|bullets|bullet points)\b|\bjust (?:need |want |give me )?(?:the |some )?words\b|\bwhat (?:can|should|could|do|does|would) (?:the |my |our |we put on the )?(?:\w+ )?(?:page|site|website|flyer|poster|post|sign|bio|caption|label|banner) (?:say|read)\b|\b(?:write|draft|word) (?:me |us )?(?:it|this|that|the|an?) (?:\w+ ){0,2}(?:line|note|email|e-mail|message|post|text|bio|blurb|caption|pitch|letter|page)\b/i;
+export const asksForText = (message: string): boolean => TEXT_ASKED.test(message);
+
+/** It is too much for them, in their own words. */
+const FEELS =
+  /\b(?:freak(?:ing|ed) out|overwhelm\w*|panick?ing|in a panic|stress(?:ed|ing)|losing it|can['’]?t cope|drowning|spiral\w*|a mess)\b/i;
+const WHERE_FIRST =
+  /\bwhere (?:do|should|would|can) (?:i|we) (?:even )?(?:start|begin)\b|\bwhat (?:comes|goes|do i do|should i do) first\b|\bwhat['’]?s first\b/i;
+
+/** "That she left is not true any more": the sentence that takes something back. */
+const TAKES_BACK =
+  /\b(?:change (?:it|that)|whatever you have|scratch that|take (?:it|that) back|not any ?more|no longer|forget (?:what|that)|is(?:n['’]t| not) (?:true|right) (?:any ?more|now)|coming back|correct (?:it|that))\b/i;
+/** Lines of the record that what they said since takes back: a name of theirs and what it was about. */
+function stillStands(r: Understanding['record'][number], said: readonly string[]): boolean {
+  const names = new Set(
+    (r.text.match(/(?<=\S\s)\p{Lu}\p{Ll}{2,}|^\p{Lu}\p{Ll}{2,}/gu) ?? []).map((n) => n.toLowerCase()),
+  );
+  const own = new Set(contentStems(r.text));
+  return !said
+    .flatMap((t) => t.split(/(?<=[.!?])\s+/u))
+    .some((s) => {
+      if (!TAKES_BACK.test(s)) return false;
+      const low = s.toLowerCase();
+      const named = [...names].some((n) => new RegExp(`\\b${n}s?\\b`, 'u').test(low));
+      return (
+        named &&
+        (LEAVES.test(r.text) ? LEAVES.test(s) : contentStems(s).filter((w) => own.has(w)).length >= 2)
+      );
+    });
+}
+const LEAVES = /\b(?:left|leave|leaves|leaving|quit|gone|job in another)\b/i;
+
 /**
  * A reading as the reply may rest on it: what is not said to them goes, a line of the program's is no fact of theirs, what a
  * person decides is nobody's pick (and who decides is then found), and a pick is one of theirs.
@@ -329,6 +389,8 @@ export function settled(
     readonly message: string;
     readonly earlier: readonly string[];
     readonly titles: readonly string[];
+    /** The figure they ask for that the reading lacks, where their own words hold it (asked-sums.ts). */
+    readonly sum?: UnderstoodSum | null;
   },
 ): Understanding {
   const person = personFor(u);
@@ -352,21 +414,48 @@ export function settled(
           settles: orNull(u.result.settles),
         };
   const why = u.contradicts === null ? '' : toThem(u.contradicts.why);
+  const text = asksForText(about.message) && u.kind !== 'integrity' && u.kind !== 'privacy';
+  const said = [...about.earlier, about.message];
+  const sum = about.sum ?? null;
+  // A verdict is read of an outcome they tell, or told and ask about: an idea, a plan or the time they have is none.
+  const outcome = readsOutcome(about.message, about.earlier);
+  const kind = u.kind === 'result' && !outcome ? (asksFor(about.message) ? 'question' : 'update') : u.kind;
+  const also = [
+    ...u.also,
+    ...(sum === null ? [] : (['sum'] as const)),
+    ...(FEELS.test(about.message) ? (['feelings'] as const) : []),
+    ...(WHERE_FIRST.test(about.message) ? (['next'] as const) : []),
+  ].filter((k, i, all) => k !== kind && all.indexOf(k) === i && (k !== 'result' || outcome));
   return {
     ...u,
+    kind: text && u.kind !== 'recall' ? 'draft' : kind,
     ask: u.ask.trim(),
-    record: u.record.filter((r) => isTheirFact(r.text)),
+    record: u.record.filter((r) => isTheirFact(r.text) && stillStands(r, said)),
     contradicts:
-      u.contradicts === null || !isTheirFact(u.contradicts.line.text) ? null : { ...u.contradicts, why },
-    missing: orNull(u.missing),
+      text ||
+      u.contradicts === null ||
+      !isTheirFact(u.contradicts.line.text) ||
+      !stillStands(u.contradicts.line, said)
+        ? null
+        : { ...u.contradicts, why },
+    sums: sum === null ? u.sums : [sum, ...u.sums],
+    also,
+    missing: sum === null ? orNull(u.missing) : null,
     choice:
+      text ||
       choice === null ||
       choice.pick === '' ||
       !isTheirPick(bare(choice.pick), told, about.titles) ||
       !asksToChoose(choice, told)
         ? null
         : choice,
-    result: result === null || (result.shows === '' && result.doesNotShow === null) ? null : result,
+    result:
+      text ||
+      (!outcome && kind !== 'pushback') ||
+      result === null ||
+      (result.shows === '' && result.doesNotShow === null)
+        ? null
+        : result,
     referral:
       u.referral !== null && !(person !== null && u.referral === 'grants')
         ? u.referral
@@ -584,7 +673,14 @@ export function firstActionOf(
     subjects.some((w) => held.has(w)) || SUBJECT_GROUPS.some((g) => g.test(stepText) && g.test(said));
   return belongs ? said : null;
 }
-const SAYS_NOW: ReadonlySet<string> = new Set(['held', 'contradiction', 'integrity', 'quit', 'pushback']);
+const SAYS_NOW: ReadonlySet<string> = new Set([
+  'held',
+  'contradiction',
+  'integrity',
+  'quit',
+  'pushback',
+  'result',
+]);
 const FREE = /\b(?:free|for nothing|not? charge|no price|charge (?:later|nothing))\b/i;
 const MONEY_ASKED = /\b(?:pay|charge|price|buy|order|deposit|money|\$ ?\d|dollars?)\b/i;
 
@@ -593,7 +689,7 @@ const MONEY_ASKED = /\b(?:pay|charge|price|buy|order|deposit|money|\$ ?\d|dollar
 /** Words a step and an ask share whatever either is about. */
 const OF_ANY_STEP = new Set(
   contentStems(
-    'write list ask people person sentence one next first number try run test make get week day find put give choose choice name start step pass line done show tell know want need thing way work good bad right now say plan idea venture customer student question answer thing part send back own word use little come',
+    'write list ask people person sentence one next first number try run test make get week day find put give choose choice name start step pass line done show tell know want need thing way work good bad right now say plan idea venture customer student question answer thing part send back own word use little come friend friendly within after before hour card template real exact still same',
   ),
 );
 /** Different words for one subject. */

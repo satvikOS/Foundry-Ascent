@@ -179,7 +179,7 @@ describe('on', () => {
     const off = await say(coreWith(false), ASK);
     const run = await say(coreWith(true), ASK);
     expect(gateway.requests.map((r) => r.schemaName).sort()).toEqual(
-      Object.values(UNDERSTAND_SCHEMA_NAMES).sort(),
+      UNDERSTAND_PARTS.map((part) => UNDERSTAND_SCHEMA_NAMES[part]).sort(),
     );
     for (const request of gateway.requests) {
       expect(request).toMatchObject({
