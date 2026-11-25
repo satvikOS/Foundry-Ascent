@@ -251,6 +251,95 @@ export function restOf(
   return { items, doneWhen: play.doneWhen, dueOn: dueOnFor(context.today, play.days, deadline) };
 }
 
+// What a pick or a result makes of it ------------------------------------------------------------------------------
+
+/** The people or the thing of a way to customers ("talk to team captains" → "team captains"). */
+export const wayOf = (option: string): string =>
+  option
+    .replace(/[\s.!?]+$/u, '')
+    .replace(
+      /^(?:talk(?:ing)? (?:to|with)|speak(?:ing)? (?:to|with)|go(?:ing)? (?:to|through)|ask(?:ing)?|us(?:e|ing)|do(?:ing)?|post(?:ing)? (?:on|in)|sell(?:ing)? (?:to|through)|try(?:ing)?|run(?:ning)?|through|via|by|the|a|an|two|three|our|my) /iu,
+      '',
+    )
+    .trim();
+
+/** "Which channel first?", decided by where their buyers came from: the step copies that way, and tries no three. */
+export function pickedChannel(view: PathStepView, option: string): PathStepView {
+  const way = lowerFirst(wayOf(option));
+  return {
+    ...view,
+    title: `Ask for 10 more orders through ${way}`.slice(0, TITLE_CHARS),
+    items: [
+      {
+        do: `List 10 more ${way.endsWith('s') ? way : `ways into ${way}`} like the ones that worked`,
+        how: 'Ask each buyer who came that way for one name like theirs.',
+        minutes: 30,
+        done: false,
+      },
+      {
+        do: 'Make each the same offer, at the same price',
+        how: 'Same words every time, so the count means something.',
+        minutes: 120,
+        done: false,
+      },
+      {
+        do: 'Write hours, talks and orders for each',
+        how: 'Hours for one order is the number to beat when you try another way later.',
+        minutes: 15,
+        done: false,
+      },
+    ],
+    doneWhen: `10 more were asked through ${way}, and the hours and orders of each are written down.`,
+    template: null,
+  };
+}
+
+/** A weak result: the ones it came from are asked why, both sides. Null: there is nobody to ask. */
+export function askWhyStep(
+  context: Pick<StepContext, 'today'>,
+  result: { readonly part: number; readonly whole: number },
+  view: PathStepView,
+): PathStepView | null {
+  const no = result.whole - result.part;
+  if (no <= 0) return null;
+  const others = no <= 5 ? `the ${String(no)} who did not` : `five of the ${String(no)} who did not`;
+  const yes = result.part === 0 ? '' : `the ${result.part === 1 ? 'one' : String(result.part)} who said yes`;
+  return {
+    ...view,
+    title: yes === '' ? `Ask ${others} what stopped them` : `Ask ${yes} why, and ${others} what stopped them`,
+    items: [
+      ...(yes === ''
+        ? []
+        : [
+            {
+              do: `Ask ${yes} what made them do it`,
+              how: 'What was going on that day, and what they would have done without it. Their words, not yours.',
+              minutes: 15 * Math.min(result.part, 6),
+              done: false,
+            },
+          ]),
+      {
+        do: `Ask ${others} what stopped them`,
+        how: 'Do not sell. Ask what they did instead, and what that cost them.',
+        minutes: 60,
+        done: false,
+      },
+      {
+        do: 'Write in one line what the two groups say differently',
+        how: 'That is the one thing to change before the next round.',
+        minutes: 15,
+        done: false,
+      },
+    ],
+    doneWhen:
+      yes === ''
+        ? 'You have their words from at least five of them, and one line says what to change.'
+        : 'You have the words of both groups, and one line says what they say differently.',
+    dueOn: dueOnFor(context.today, 5, null),
+    template: null,
+  };
+}
+
 // In the founder's own words ------------------------------------------------------------------------------------
 
 /** Most characters of a step's title (`path_steps`). */

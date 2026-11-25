@@ -1273,6 +1273,29 @@ export function hourlyOf(input: CalcInput): string | null {
   return sum.unsure || sum.missing !== null ? null : (sum.lines.at(-1) ?? null);
 }
 
+/** What an hour brought at the price before, against the one now ("not $300", "from $300 to $450"); null: none told. */
+export function hourlyBefore(input: CalcInput): string | null {
+  const b = bookOf(input, 'hourly');
+  if (b.price === null || b.unitTime === null || b.nouns.length > 1 || b.doubt || b.costs.length > 0)
+    return null;
+  const said = [...(input.record ?? []), ...(input.earlier ?? []), input.message].map(saidNumbers);
+  const old = [...said]
+    .reverse()
+    .flatMap((t) => [
+      ...t.matchAll(
+        /\b(?:not|instead of|no longer|rather than|up from|down from|from|was)\s+(?:at |for )?\$?(\d+(?:\.\d+)?)\b(?! ?(?:%|percent|hours?|minutes?))/g,
+      ),
+    ])
+    .map((m) => Number(m[1]))
+    .find((n) => n > 0 && n !== b.price?.low);
+  if (old === undefined || b.price.low !== b.price.high) return null;
+  const hours = b.unitTime.low / 60;
+  const was = old / hours;
+  const now = b.price.low / hours;
+  const change = now - was;
+  return `Before: ${money(old)} / ${number(hours)} ${hours === 1 ? 'hour' : 'hours'} = ${money(was)} an hour, so the change is ${money(Math.abs(change))} an hour ${change >= 0 ? 'more' : 'less'}.`;
+}
+
 /** The sums of what one of them brings: a number of the message with no place in them may be the one that matters. */
 const OF_ONE: ReadonlySet<CalcAsk> = new Set<CalcAsk>([
   'contribution',

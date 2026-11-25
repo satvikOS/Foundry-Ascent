@@ -32,6 +32,16 @@ export interface PathPromptGuidance {
   readonly lead?: { readonly text: string; readonly voice: string };
   /** What the server answers with when the model gave too little of an answer. */
   readonly fallback?: { readonly text: string; readonly voice: string };
+  /** What of the program's answer the conversation has not said yet, in order (`PromptGuidance.more`). */
+  readonly more?: readonly string[];
+  /** The things they ask in one message, each with what the server adds when the reply leaves it out. */
+  readonly parts?: readonly { readonly ask: string; readonly text: string; readonly voice: string }[];
+  /** What they set themselves, each with the sentence of the program's that keeps to it. */
+  readonly limits?: readonly { readonly said: string; readonly text: string }[];
+  /** What opens the reply is the one thing to do. */
+  readonly orders?: boolean;
+  /** They ask for a message or a template written out. */
+  readonly draft?: boolean;
   /** Sums of their numbers, given. */
   readonly calc?: readonly string[];
   /** They ask for a sum the calculator is not sure of. */
@@ -72,6 +82,8 @@ export interface PathPromptGuidance {
     readonly items: readonly { readonly do: string; readonly how: string; readonly minutes: number | null }[];
     readonly doneWhen: string;
     readonly dueOn: string | null;
+    /** The day it was due, when that passed. */
+    readonly wasDue?: string;
     readonly template: { readonly title: string; readonly body: string } | null;
   } | null;
   /** The path's own open step, when `step` answers their ask instead. */
@@ -129,6 +141,8 @@ export interface SupportInput {
   readonly evidence: readonly { readonly key: string; readonly title: string; readonly excerpt: string }[];
   readonly founderText: string;
   readonly guidanceText?: string;
+  /** What a figure of a cited sentence may come from beside its source: their own words, and the step. */
+  readonly citable?: string;
   readonly alsoKnown?: string;
 }
 

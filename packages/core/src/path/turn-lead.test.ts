@@ -164,13 +164,11 @@ describe('how to do the step just given', () => {
       first.decision.step?.view.title,
     ]);
     const item = decision.step?.view.items[0];
-    expect(prompt.ask?.answer).toContain(
-      `Start with the first part: ${(item?.do ?? '').charAt(0).toLowerCase()}`,
-    );
-    expect(prompt.ask?.answer).toContain(item?.how ?? '?');
-    expect(prompt.ask?.block).toContain('soap in refill pouches');
+    expect(prompt.lead?.text).toContain((item?.do ?? '?').slice(1).replace(/\.$/, ''));
+    expect(prompt.lead?.text).toContain(item?.how ?? '?');
+    expect(prompt.lead?.text).toContain('soap in refill pouches');
     // What they did not tell stays in its brackets.
-    expect(prompt.ask?.block).toMatch(/\[[^\]]+\]/);
+    expect(prompt.lead?.text).toMatch(/\[[^\]]+\]/);
   });
 });
 
@@ -203,7 +201,7 @@ describe('where they stand', () => {
       [first.prompt.lead?.text ?? ''],
     );
     expect(prompt.lead?.text).toMatch(
-      /^Start with one blank, "Who": type of person\. Write it in one plain line/,
+      /^The step starts with one blank, "Who": type of person\. Write it in one plain line/,
     );
     expect(prompt.lead?.text).not.toContain('1. Who:');
     expect(prompt.lead?.text).not.toContain('stage 1 of 7');

@@ -209,9 +209,12 @@ export function toldAs(m: Pick<pathRepo.PathMemory, 'type' | 'title' | 'content'
     if (DOES.test(you)) return `you decided to ${lowerFirst(you)}`;
     return /\b(?:is|are|will)\b/.test(you) ? lowerFirst(you) : `you decided: ${lowerFirst(you)}`;
   }
-  // Who someone is to them opens with a name.
-  return m.type === 'relationship' ? you : lowerFirst(you);
+  // Who someone is to them opens with a name ("Ben joined …"), and a kind of people with none ("Caterers pay …").
+  return m.type === 'relationship' && !KIND_OF_PEOPLE.test(you) ? you : lowerFirst(you);
 }
+
+const KIND_OF_PEOPLE =
+  /^\p{Lu}\p{Ll}+s (?:are|were|have|had|pay|paid|say|said|want|need|use|do|buy|bought|ask|asked|would|will|who|and|of|in|at|from)\b/u;
 
 const digitsOf = (text: string): Set<string> =>
   new Set([...(plain(text).match(/\d+(?:\.\d+)?/g) ?? []), ...countsIn(text).map(String)]);
@@ -299,6 +302,10 @@ export interface PriorSource {
   readonly venture?: string;
   /** The founder's first name, as the record may call them. */
   readonly founder?: string;
+  /** The first part of the step that answers them, for an answer that is theirs by nothing but the idea. */
+  readonly part?: string;
+  /** ISO date: what was told in days from then ("in nine days") is no fact of today. Absent: not read. */
+  readonly today?: string;
 }
 
 interface Candidate {
@@ -340,6 +347,7 @@ function candidatesOf(s: PriorSource): Candidate[] {
     if (m.type === 'experiment' && result === '') continue;
     const fact =
       result === '' ? toldAs(m, s.founder) : `${lowerFirst(bare(m.title))}: ${lowerFirst(bare(result))}`;
+    if (!stillTrue(fact, m.createdAt.slice(0, 10), s.today)) continue;
     out.push({
       fact,
       kind: 'record',
@@ -432,6 +440,38 @@ const OUTCOME =
 const OF_THE_COACHING =
   /\bstage \d\b|\b(?:five|5) (?:key )?lines\b|\bvalue proposition canvas\b|^(?:you|the founder) (?:(?:are|were|have|had|currently|also|now|been|on) )*(?:ask(?:s|ed|ing)? (?:about|for (?:help|advice|guidance|a plan|an?|the)|how|whether|if|what|which|why|where|who)|need(?:s|ed|ing)?|seek(?:s|ing)?|request(?:s|ed|ing)?|organi[sz]\w+|focus(?:es|ed|ing)?|clarif\w+|discuss\w*|explor\w+|consider\w*|want(?:s|ed)?)\b|\b(?:the|your) (?:next|first) steps?\b|\bwas advised\b|\bthe (?:coach|mentor|session|conversation)\b/i;
 
+/** What is only thought of them ("caterers are potential customers"), or of no one in particular: no fact of theirs. */
+const INFERRED =
+  /\b(?:potential(?:ly)?|likely|probably|possibly|presumably|prospective|seems?|appears?|suggests?|indicates?|implies|might be|may be|could be|target (?:audience|customers?|market|users?)|opportunit(?:y|ies) (?:to|for)|interested in (?:learning|exploring|understanding)|(?:is|are) considering)\b/i;
+/** Said of somebody else than them, or what they are told to do: the wrong person, or no fact at all. */
+const NOT_OF_THEM =
+  /\b(?:themsel(?:f|ves)|himself|herself|the (?:user|student|founder|coach|mentor|assistant|advisor(?='s))|need(?:s)? to|should|must|ha(?:s|ve) to|advised|recommended|encouraged)\b/i;
+/** A template, a machine's word, or a shrug. */
+const NO_FACT_OF_ANYONE =
+  /[[\]{}]|_{2,}|\b(?:idk|n\/a|tbd|not (?:specified|stated|mentioned)|i do not know|no idea)\b/i;
+/** A time counted from the day it was told. */
+const COUNTED_FROM_THEN =
+  /\b(?:in (?:\w+ )?(?:days?|weeks?)|tomorrow|today|tonight|yesterday|this (?:week|morning|evening|afternoon|weekend)|next (?:week|month|weekend|\w+day)|last (?:night|\w+day)|(?:due|is) (?:on |this )?(?:mon|tues|wednes|thurs|fri|satur|sun)day|right now|at the moment|currently)\b/i;
+
+/** Whether a fact told on `on` still says something today. */
+export const stillTrue = (fact: string, on: string, today: string | undefined): boolean =>
+  today === undefined || on === '' || on >= today || !COUNTED_FROM_THEN.test(fact);
+
+/** Something that was done, to it or by someone ("the patch was made in the lab on a grant", "Ben joined"). */
+const EVENT =
+  /\b(?:made|built|joined|wrote|writes|funded|worked|works|started|created|developed|lists?|uses?|used)\b/i;
+
+/** Whether a fact is theirs and concrete enough to be brought up by the server: a number, a name, a decision, an outcome, a quote. */
+export function concrete(fact: string): boolean {
+  return (
+    informative(fact) &&
+    !INFERRED.test(fact) &&
+    !NOT_OF_THEM.test(fact) &&
+    !NO_FACT_OF_ANYONE.test(fact) &&
+    (hasFigure(fact) || OUTCOME.test(fact) || EVENT.test(fact) || NAMED.test(fact) || /["“”]/.test(fact))
+  );
+}
+
 /** Whether a fact tells something to build on: a number, a name, a decision, an outcome; never a label or a plan. */
 export function informative(fact: string): boolean {
   if (PLANNED.test(fact) || OF_THE_COACHING.test(fact)) return false;
@@ -478,13 +518,20 @@ export function broughtUp(fact: string, seed: string, decision = false): string 
       pick([`${up}, so start from there.`, `Remember that ${fact}.`, `${up}, and that counts here.`], seed) ??
       up
     );
-  if ((!SAYS.test(fact) || THINGS_HAD.test(fact)) && !fact.includes(':'))
-    return pick([`You already have ${fact}.`, `You have ${fact} to build on.`], seed) ?? up;
-  return (
-    pick([`Remember that ${fact}.`, `Keep in mind that ${fact}.`, `You already know that ${fact}.`], seed) ??
-    up
-  );
+  // Something they have, and no sentence of its own: "two paid pilots at 40 dollars".
+  if (THINGS_HAD.test(fact) && !fact.includes(':')) return `You have ${fact} to build on.`;
+  if (!isClause(fact)) return `Keep this in mind: ${fact}.`;
+  return pick([`Remember that ${fact}.`, `Keep in mind that ${fact}.`], seed) ?? up;
 }
+
+/** Whether a fact is a sentence of its own, and not a thing named ("4 of 9 skippers named the wait"). */
+const isClause = (fact: string): boolean =>
+  !fact.includes(':') &&
+  (SAYS.test(fact) ||
+    /\b(?!need\b|bed\b|red\b|feed\b|seed\b|speed\b)\p{L}{3,}ed\b(?! (?:by|in|at|on|from|to|with|for)\b)/iu.test(
+      fact,
+    ) ||
+    new RegExp(`\\b\\p{L}+ ${VENTURE_DOES.source.replace(/^\^/u, '')}`, 'iu').test(fact));
 
 interface Ranked extends Candidate {
   readonly shared: number;
@@ -503,7 +550,11 @@ function rankedFacts(s: PriorSource): Ranked[] {
   return distinct(candidatesOf(s), (c) => c.fact)
     .filter((c) => {
       const words = contentStems(c.fact);
-      if (c.kind !== 'idea' && !informative(c.fact)) return false;
+      if (
+        c.kind !== 'idea' &&
+        (!informative(c.fact) || INFERRED.test(c.fact) || NO_FACT_OF_ANYONE.test(c.fact))
+      )
+        return false;
       if (words.length < 2) return false;
       // Nor is what this message takes back.
       if ([...digitsOf(c.fact)].some((d) => gone.has(d))) return false;
@@ -565,7 +616,7 @@ export function priorFact(s: PriorSource): PriorFact | null {
   const ofTheIdea = /\bmy (?:own )?(?:startup |business )?(?:idea|startup|venture|business)\b/i.test(
     s.message,
   );
-  const tells = (c: Ranked): boolean => isNear(s, c);
+  const tells = (c: Ranked): boolean => isNear(s, c) && (c.kind === 'idea' || concrete(c.fact));
   const justSaid = (c: Ranked): boolean => {
     // Asked about the idea itself, the answer names it.
     if (c.kind === 'idea' && ofTheIdea) return false;
@@ -579,31 +630,45 @@ export function priorFact(s: PriorSource): PriorFact | null {
     (s.always === true ? near.find((c) => tells(c)) : undefined);
   if (best === undefined) return near[0] === undefined ? null : { fact: near[0].fact, sentence: '' };
   const seed = `${s.message} ${best.fact}`;
-  const sentence =
-    best.kind === 'idea'
-      ? (pick(
-          [
-            `That is for your idea: ${ideaAs(best.fact, s.venture)}.`,
-            `Put that beside your idea: ${ideaAs(best.fact, s.venture)}.`,
-          ],
-          seed,
-        ) ?? '')
-      : broughtUp(best.fact, seed, best.decision === true);
-  return best.kind === 'idea' && ofTheIdea
-    ? {
-        fact: best.fact,
-        sentence,
-        spoken: `That is for your idea: ${shortIdea(ideaAs(best.fact, s.venture))}.`,
-      }
-    : { fact: best.fact, sentence };
+  // Their idea alone is put to nothing: the answer's first part is, for it.
+  if (best.kind === 'idea') {
+    const part = bare(s.part ?? '');
+    const words = contentStems(part);
+    const told = words.filter((w) => said.has(w)).length >= words.length * PRIOR_SAID;
+    // "Write the offer: what, for whom, when and the price" → "write the offer (what, for whom, when and the price)".
+    const doing = lowerFirst(part).replace(/: (.+)$/u, ' ($1)');
+    return {
+      fact: best.fact,
+      sentence:
+        part === '' || told
+          ? ''
+          : `For ${ideaNamed(best.fact, s.venture).replace(/,$/u, '')}, that starts with this: ${doing}.`,
+    };
+  }
+  return { fact: best.fact, sentence: broughtUp(best.fact, seed, best.decision === true) };
 }
 
-/** An idea in a few words: its first clause that tells something, at most {@link IDEA_WORDS} of them. */
-function shortIdea(idea: string): string {
-  const words = idea.split(/\s+/);
-  return words.length <= IDEA_WORDS ? idea : bare(words.slice(0, IDEA_WORDS).join(' '));
+/** Most words of an idea that is named with what it does. */
+const NAMED_WHOLE = 14;
+
+/** An idea by its name in a sentence ("your exam review packs", "BrewBike"). */
+export function ideaNamed(idea: string, venture = ''): string {
+  const name = bare(venture);
+  const named = name !== '' && !/^new venture\b/iu.test(name);
+  const said = ideaAs(idea, venture);
+  if (named && said.toLowerCase().startsWith(name.toLowerCase()))
+    return said.split(' ').length <= NAMED_WHOLE && said.length > name.length
+      ? `${said}${said.includes(', ') ? ',' : ''}`.replace(/,,$/u, ',')
+      : name;
+  const head = bare(
+    said.split(
+      /\s+(?:that|which|who|where|when|so|because|written|printed|sold|made|run|rented|shared|led|used|built|grown|mended|matched|for|by|with|from|without|at|in|on|near|near|between|late|every|each)\b|[,:;(]/u,
+    )[0] ?? said,
+  );
+  if (head === '' || /^(?:your plan to|something)\b/u.test(head) || head.split(' ').length > 5)
+    return named ? name : 'your idea';
+  return `your ${head.replace(/^(?:an?|the|my|our|your) /iu, '')}`;
 }
-const IDEA_WORDS = 14;
 
 /** The figures a message takes back ("450 now, not 300"; "no longer 300"; "from 300 to 450"). */
 function takenBack(message: string): Set<string> {
@@ -672,7 +737,16 @@ export function pivotSaid(to: string): string {
  * decision and as a note, are one), at most {@link STORY_LINES}. A change of direction says what brought it: the reason
  * they gave with it, else what they had last found.
  */
-export function storyLines(arc: readonly ArcEntry[]): { readonly on: string; readonly said: string }[] {
+export function storyLines(
+  arc: readonly ArcEntry[],
+  start = '',
+): { readonly on: string; readonly said: string }[] {
+  // The idea it opens with is no thing that happened.
+  const opening = contentStems(start);
+  const toldFirst = (said: string): boolean => {
+    const words = contentStems(said);
+    return words.length > 0 && words.filter((w) => opening.includes(w)).length >= words.length * STARTED;
+  };
   const days = new Map<string, ArcEntry[]>();
   for (const e of arc) if (STORY_KINDS.has(e.kind)) days.set(e.on, [...(days.get(e.on) ?? []), e]);
   let found = '';
@@ -683,7 +757,11 @@ export function storyLines(arc: readonly ArcEntry[]): { readonly on: string; rea
       const pivots = entries.filter((e) => e.kind === 'pivot' || /\bpivot/i.test(e.title));
       const pivot = pivots.find((e) => e.id.startsWith('pivot:')) ?? pivots.at(-1);
       const rest = entries.filter((e) => !pivots.includes(e));
-      const tells = distinct(rest.map(entrySaid), (t) => t, 0.5);
+      const tells = distinct(
+        rest.map(entrySaid).filter((t) => !toldFirst(t)),
+        (t) => t,
+        0.5,
+      );
       const before = found;
       found = tells.at(-1) ?? found;
       let turned = pivot === undefined ? '' : entrySaid(pivot);
@@ -704,6 +782,8 @@ export function storyLines(arc: readonly ArcEntry[]): { readonly on: string; rea
   return told.filter((l) => !left.has(l)).slice(-STORY_LINES);
 }
 
+/** Share of a line's words that are the opening idea's for it to be that idea again. */
+const STARTED = 0.75;
 const TURNED = /\byou (?:changed direction|went back to)\b/;
 
 export const dated = (line: { readonly on: string; readonly said: string }): string =>

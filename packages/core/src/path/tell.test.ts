@@ -136,7 +136,7 @@ describe('the one fact on record that bears on what they ask', () => {
   it('is said as a clause, with the server’s sentence for a reply that left it out', () => {
     expect(priorFact(source())).toEqual({
       fact: 'two salons pay 60 dollars a month each',
-      sentence: 'You already know that two salons pay 60 dollars a month each.',
+      sentence: 'Remember that two salons pay 60 dollars a month each.',
     });
   });
 
@@ -232,17 +232,18 @@ describe('the one fact on record that bears on what they ask', () => {
   });
 
   it('their idea is put beside an answer it can be applied to, when the record holds nothing nearer', () => {
-    const idea = { reads: NO_READS, applies: true };
-    expect(priorFact(source(idea))?.sentence).toBe('Put that beside your idea: soap in refill pouches.');
+    const idea = { reads: NO_READS, applies: true, part: 'Write the offer: what, for whom and the price.' };
+    expect(priorFact(source(idea))?.sentence).toBe(
+      'For your soap, that starts with this: write the offer (what, for whom and the price).',
+    );
+    // With nothing to start on, nothing is said: their idea beside an answer is no use of it.
+    expect(priorFact(source({ ...idea, part: '' }))?.sentence).toBe('');
     // Not again a moment after, unless the idea is what they ask about.
     const said = 'You sell soap in refill pouches.';
     expect(priorFact(source({ ...idea, said }))?.sentence).toBe('');
-    expect(priorFact(source({ ...idea, said, message: 'Tell me my idea is great.' }))).toEqual({
-      fact: 'soap in refill pouches',
-      sentence: expect.stringContaining('soap in refill pouches.') as string,
-      // Asked about the idea, a call names it too.
-      spoken: 'That is for your idea: soap in refill pouches.',
-    });
+    expect(priorFact(source({ ...idea, said, message: 'Tell me my idea is great.' }))?.sentence).toBe(
+      'For your soap, that starts with this: write the offer (what, for whom and the price).',
+    );
   });
 
   it('their idea alone is otherwise for the model to weave in', () => {

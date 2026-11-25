@@ -24,7 +24,7 @@ from conversation_lab.client.rubric import ANCHORS, COLUMN_TITLES, CRITERIA
 from conversation_lab.config import JUDGE_AUTO, LabModels, model_family
 from conversation_lab.live.student import BACKOFF_SECONDS, MODEL_RETRIES, TRANSIENT_MODEL_ERRORS
 
-JUDGE_PROMPT_VERSION = "client-judge/2026-11-25.2"
+JUDGE_PROMPT_VERSION = "client-judge/2026-11-25.3"
 MAX_TOKENS = 700
 
 SYSTEM = """You are a strict entrepreneurship professor grading an AI coach's reply to a student founder, one reply at a
@@ -381,10 +381,11 @@ def calendar_note(days: Sequence[int]) -> str:
         if d
     )
     return (
-        f"to let days pass, the lab moved the earlier conversations back ({moved}). The coach sees them, their decisions "
-        "and their steps on those earlier days. A date it gives from its record is therefore up to that many days before "
-        "the date in the conversation above: it is the right date, never an invented one, and no conflict. A step's day "
-        "that has passed may be given as it was due, or as a new day."
+        f"to let days pass, the lab moved the earlier conversations back ({moved}). They are shown above on the days they "
+        "were moved to, with the dates said in them moved as well, as the coach sees them. A date it gives from its record "
+        "may still be up to that many days off a date above: it is the right date, never an invented one, and no "
+        "conflict. A step carried over keeps its words; when its day has passed or has moved to a weekday, a new day, with "
+        'or without "It was due ...", is the same step on a day they can still make, and no second date.'
     )
 
 
@@ -412,9 +413,24 @@ ANSWERED_BY: tuple[tuple[str, str], ...] = (
 )
 
 
-def answered_by(expect: Any) -> str:
-    """What counts as answering this turn, from its expectations alone ('' when the plain thing asked does)."""
-    return " ".join(text for key, text in ANSWERED_BY if getattr(expect, key, None))
+def answered_by(expect: Any, facts: Mapping[str, tuple[str, ...]] | None = None) -> str:
+    """What counts as answering this turn, from its expectations alone ('' when the plain thing asked does). ``facts``: the
+    scenario's, for what a recall must give back."""
+    notes = [text for key, text in ANSWERED_BY if getattr(expect, key, None)]
+    known = facts or {}
+    wanted = [" or ".join(known[f][:3]) for f in getattr(expect, "remember", ()) if f in known]
+    if wanted:
+        notes.append(
+            "they ask for what is on record. Giving each of these from it is the full answer: "
+            + "; ".join(wanted)
+            + ". What else the record holds of it may stand beside."
+        )
+    number = getattr(expect, "number", ())
+    if number:
+        notes.append(
+            f"the figure asked for is {' or '.join(number)}: a reply that says it, and how it comes, answers."
+        )
+    return " ".join(notes)
 
 
 def card_text(guidance: Mapping[str, Any] | None) -> str:

@@ -402,7 +402,24 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
   const checks = replyChecks(guidance, today, {
     evidence: shown.map((k) => ({ key: k.item.key, title: k.item.title, excerpt: k.item.excerpt })),
     founderText: knownFigures,
-    ...(guidance === null ? {} : { guidanceText: guidanceWords(guidance) }),
+    ...(guidance === null
+      ? {}
+      : {
+          guidanceText: guidanceWords(guidance),
+          citable: [
+            ...(spec.earlierFounderFigures ?? []),
+            ...spec.history.map((t) => t.founderText),
+            spec.founderText,
+            ...rememberedText(spec.continuity, spec.venture),
+            guidance.step === null
+              ? ''
+              : [
+                  guidance.step.title,
+                  guidance.step.doneWhen,
+                  ...guidance.step.items.map((i) => `${i.do} ${i.how}`),
+                ].join('\n'),
+          ].join('\n'),
+        }),
     alsoKnown: [
       spec.personaName,
       spec.personaEirName ?? '',
@@ -723,8 +740,17 @@ export function withAnnotations(
   };
 }
 
-/** Notes the vEIR wrote in its own voice: what it said, never what the founder gave. */
-const OWN_WORDS = new Set(['lastAdvice', 'nextOpener', 'nextTopic', 'updatedAt', 'date', 'due', 'sessionId']);
+/** Notes the vEIR wrote in its own voice, and ids and days of the record: never what the founder gave. */
+const OWN_WORDS = new Set([
+  'id',
+  'lastAdvice',
+  'nextOpener',
+  'nextTopic',
+  'updatedAt',
+  'date',
+  'due',
+  'sessionId',
+]);
 
 /**
  * A sentence of a summary that tells what the vEIR put forward ("I suggested charging 40 cedis a session", "we

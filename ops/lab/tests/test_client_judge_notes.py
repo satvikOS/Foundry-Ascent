@@ -63,7 +63,7 @@ def test_a_refusal_or_an_honest_read_is_the_answer_where_the_scenario_expects_on
 
 def test_a_plain_question_has_no_such_note() -> None:
     assert answered_by(Expect()) == ""
-    assert answered_by(Expect(number=("12",), history=("jars",))) == ""
+    assert answered_by(Expect(history=("jars",))) == ""
     assert "What counts as answering" not in prompt()
 
 
@@ -90,6 +90,67 @@ def test_the_runner_derives_both_from_the_scenario() -> None:
     total = sum(p.gap_days for p in aged.sessions[1:])
     assert "Calendar:" not in first
     assert f"conversation 1 and what it left on record: {total} days back" in last
+
+
+def test_the_figure_and_what_a_recall_gives_back_are_named() -> None:
+    assert "the figure asked for is 12 or 12.5" in answered_by(Expect(number=("12", "12.5")))
+    note = answered_by(Expect(kind="recall", remember=("pots", "gone")), {"pots": ("pots", "labels")})
+    assert "pots or labels" in note
+    assert "gone" not in note
+
+
+@pytest.mark.parametrize(
+    ("text", "back", "moved"),
+    [
+        ("By Monday, November 30. Done when", 7, "By Monday, November 23. Done when"),
+        ("The talk on December 3 is yours.", 4, "The talk on November 29 is yours."),
+        ("Due Sat, Dec 5 at the latest", 1, "Due Friday, December 4 at the latest"),
+        ("In January 9 pots broke", 10, "In December 30 pots broke"),
+        ("Ask 20 people by Friday.", 7, "Ask 20 people by Friday."),
+        ("By Monday, November 30.", 0, "By Monday, November 30."),
+    ],
+)
+def test_dates_move_with_their_conversation(text: str, back: int, moved: str) -> None:
+    assert reading.move_dates(text, back, DAY) == moved
+
+
+def test_earlier_conversations_are_shown_on_the_days_they_were_moved_to() -> None:
+    scenarios = load(DAY).by_id()
+    aged = next(
+        s for s in scenarios.values() if len(s.sessions) > 1 and s.repeat == 1 and s.sessions[1].gap_days == 7
+    )
+    result = ScenarioResult(aged)
+    for index, plan in enumerate(aged.sessions, start=1):
+        for number, planned in enumerate(plan.turns, start=1):
+            result.turns.append(
+                TurnResult(
+                    f"{index}.{number}",
+                    index,
+                    plan.channel,
+                    planned,
+                    planned.say,
+                    reply="**Next:** Ask three by Monday, November 30.",
+                    kind="completed",
+                )
+            )
+    runner = ClientRunner(app=None, simulator=None, judge=None, today=DAY, log=lambda _m: None)
+    second = next(i for i, t in enumerate(result.turns) if t.session == 2)
+    shown = runner.judge_prompt(result, second)
+    assert "[conversation 1, 7 days before this one, Wednesday, November 18]" in shown
+    assert "Ask three by Monday, November 23." in shown
+    # Nothing of the same conversation is moved.
+    assert "days before this one" not in runner.judge_prompt(result, 0)
+
+
+def test_names_of_a_step_or_referral_on_record_are_grounded() -> None:
+    card = {
+        "step": {"title": "Book Orrin Licensing Office", "items": []},
+        "referral": {"who": "Orrin Licensing Office"},
+    }
+    said = "We agreed on two steps, and one was to book Orrin Licensing Office."
+    assert graders.grounded_names(replace(TURN, reply=said)).passed is False
+    record = reading.leaf_text(card)
+    assert graders.grounded_names(replace(TURN, reply=said, record=record)).passed
 
 
 DRAFTS = [

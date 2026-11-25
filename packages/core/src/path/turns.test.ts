@@ -338,7 +338,10 @@ describe('reports', () => {
     const d = at('What should I do next?', { reads });
     expect((d.step?.view.dueOn ?? '') >= TODAY).toBe(true);
     expect(d.checkIn?.overdue).toBe(true);
-    expect(at('What did we decide last time?', { reads }).step?.view.dueOn).toBe('2026-11-20');
+    // Recalled, it is the same step on a day they can still make, and the day it had is said.
+    const recalled = at('What did we decide last time?', { reads });
+    expect((recalled.step?.view.dueOn ?? '') >= TODAY).toBe(true);
+    expect(recalled.wasDue).toBe('2026-11-20');
   });
 
   it('what they say they will do is their step, in their words, with the method of its play', () => {

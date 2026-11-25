@@ -27,6 +27,7 @@ export type NewsKind =
   | 'disclosure'
   | 'meeting'
   | 'free'
+  | 'praise'
   | 'change';
 
 export interface News {
@@ -390,6 +391,100 @@ export function readAgain(ratio: Ratio): string {
   return `${String(ratio.part)} of ${String(ratio.whole)} is ${percent(ratio.part, ratio.whole)}, and no number was set to beat, so it is not enough to decide on yet. Before the next round, ${yes}ask ${no <= 5 ? 'the others' : 'five of the others'} what stopped them, and write down the number that would be enough.`;
 }
 
+/** A result read a moment ago, asked about again: what it shows, what it does not, and what would change it. */
+export function readFurther(
+  ratio: Ratio,
+  texts: readonly string[],
+): { readonly text: string; readonly spoken: string } {
+  const of = `${String(ratio.part)} of ${String(ratio.whole)}`;
+  const line = passLine(texts);
+  const at = [...texts]
+    .reverse()
+    .map((t) => /\$(\d+(?:\.\d+)?)/.exec(saidNumbers(t))?.[1])
+    .find((x) => x !== undefined);
+  const price = at === undefined ? 'that price' : `$${at}`;
+  const over =
+    line === null
+      ? null
+      : line.whole === null
+        ? ratio.part >= line.part
+        : ratio.part / ratio.whole >= line.part / line.whole;
+  const set =
+    line === null
+      ? ''
+      : line.whole === null
+        ? String(line.part)
+        : `${String(line.part)} of ${String(line.whole)}`;
+  const opens =
+    over === null
+      ? `Not decided yet: ${of}, and no number was set to beat.`
+      : over
+        ? `Yes, as a first round: ${of}, and the line you set was ${set}.`
+        : `No, not at this line: ${of}, and you set ${set}.`;
+  const shows =
+    ratio.part === 0
+      ? 'It shows that nobody took this offer, at this price, from you.'
+      : `It shows that people take it at ${price} when you are the one asking, once.`;
+  const not =
+    'It does not show that they come back, that a stranger to you buys too, or that one sale leaves money over.';
+  const change =
+    over === true
+      ? `A second round of ${String(ratio.whole)} below ${line?.whole === null ? set : String(line?.part ?? ratio.part)}, or a sale that costs you more than it brings, would change my mind.`
+      : 'One change, and a second round above the line, would change my mind.';
+  return { text: `${opens} ${shows} ${not} ${change}`, spoken: `${opens} ${shows} ${change}` };
+}
+
+export const DEAR_BUT_BOUGHT =
+  /\b(?:too expensive|too pricey|pricey|expensive|costs? too much|too much money|too dear|overpriced)\b[^.;]{0,60}\b(?:but|and|yet|still)\b[^.;]{0,30}\b(?:buy|buys|bought|pay|pays|paid|order|orders|ordered|take|takes|took)\b/;
+
+/**
+ * What a finding means for what they build, when they ask for that: read by rule, never told back to them. Null: no rule
+ * reads it, and the model does.
+ */
+export function readMeaning(
+  told: string,
+  about: { readonly customer: string | null; readonly venture: string },
+): { readonly text: string; readonly voice: string } | null {
+  if (DEAR_BUT_BOUGHT.test(plain(told))) {
+    const text =
+      'What they do counts more than what they say: they call it expensive and pay it, so the price holds for now. It does not show how many walked away without a word. Count that for one week, who asks the price and who then buys: if fewer than half buy, the price is the problem, and if most do, leave it.';
+    return {
+      text,
+      voice: text
+        .split(/(?<=[.!?])\s+/u)
+        .slice(0, 2)
+        .join(' '),
+    };
+  }
+  const found = newsOf({ message: told, before: [] });
+  if (found?.kind === 'barrier') {
+    const [head = ''] = found.means.split(/(?<=\.)\s/u);
+    const thing =
+      about.venture === '' || /^new venture\b/i.test(about.venture) ? 'what you build' : about.venture;
+    const text = `You learned what stops them, and it is not the idea. ${head} So ${thing} has to work without that, or bring it along, before anything else. It does not show that they pay once it is gone. What would: one of them, with it solved, who pays or books a day.`;
+    return {
+      text,
+      voice: `You learned what stops them, and it is not the idea. So solve that first, for one of them, and see if that one pays or books a day.`,
+    };
+  }
+  if (found?.kind !== 'said' || found.ratio === null) return null;
+  const { part, whole } = found.ratio;
+  const [head = ''] = found.means.split(/:| \(/u);
+  const what = /\) said (.+?)(?::|$)/u.exec(found.means.split(/: (?:more|less) than half/u)[0] ?? '')?.[1];
+  if (what === undefined) return null;
+  const thing = about.venture === '' || /^new venture\b/i.test(about.venture) ? 'it' : about.venture;
+  const strong = part * 2 >= whole;
+  const text = strong
+    ? `It changes what comes first: ${String(part)} of ${String(whole)} said ${what}, so ${thing} has to take that away before anything else, and what does not can wait. It does not show that they would pay to have it gone. So in the next talks, ask about that first: what they do about it today, and what it costs them. If most of them do nothing about it, it is not the one to build for.`
+    : `It changes nothing yet: ${String(part)} of ${String(whole)} said ${what}, and that is less than half. Find out what those ${String(part)} have in common, and ask the next ones about it before you build for it.`;
+  return {
+    text,
+    voice: strong
+      ? `It changes what comes first: ${thing} has to take that away before anything else. In the next talks, ask what they do about it today and what it costs them.`
+      : `${head} is less than half, so it changes nothing yet. Find out what those ${String(part)} have in common.`,
+  };
+}
+
 const COLD =
   /(?<![\d.$])(\d+)(?: of (?:them|those|these|the (\d+)))? (?:[a-z]+ ){0,2}?(?:did not|do not|could not|can not|cannot) (?:even |really )?(?:remember|recall|know (?:what|who|why))\b/;
 
@@ -405,6 +500,28 @@ function freeNews(message: string): Pick<News, 'means' | 'spoken'> | null {
     means: `${what} show that people take it when it costs nothing. They do not show that anyone pays, so put a price on the next ones, even a small one, and count who still comes back.`,
     spoken: `${what} show that they take it, not that they pay. Put a price on the next ones and count who still comes.`,
   };
+}
+
+const CLOSE_ONES =
+  /\b(friends|roommates|housemates|flatmates|classmates|teammates|family|parents|cousins|brothers|sisters|relatives|mom|mum|dad)\b/;
+const PRAISES =
+  /\b(?:love[sd]?|like[sd]?|adore[sd]?|(?:said|says?|told me|swore|promised) (?:that )?(?:they|she|he|it)(?:'d| would|'s| is| was)|would (?:all )?(?:buy|get|use|pay|order|want|take) |want(?:ed)? (?:one|it)|think (?:it|this|that))\b/;
+
+/** Friends like it: praise, which costs them nothing. */
+function praiseNews(told: readonly string[]): Pick<News, 'means' | 'spoken'> | null {
+  for (const sentence of told) {
+    const t = plain(sentence);
+    const who = CLOSE_ONES.exec(t)?.[1];
+    if (who === undefined || !PRAISES.test(t)) continue;
+    if (/\b(?:paid|pays|ordered|bought|deposit|never|problem|hate[sd]?|complain\w*|nobody|no one)\b/.test(t))
+      continue;
+    const said = `Your ${who} ${/^(?:family|mom|mum|dad)$/.test(who) ? 'likes' : 'like'} it`;
+    return {
+      means: `${said}, and that does not show that it sells: praise costs nothing, and they want you to do well. What counts is a stranger who gives something up for it: money, a signature or an hour. So the next ones to ask are people you do not know, at a price.`,
+      spoken: `${said}, and that does not show that it sells. The next ones to ask are people you do not know, at a price.`,
+    };
+  }
+  return null;
 }
 
 /** Sign-ups that do not remember it. */
@@ -537,7 +654,8 @@ export function newsOf(input: NewsInput): News | null {
   const given =
     news('funding', fundingNews(text)) ??
     news('disclosure', disclosureNews(text)) ??
-    news('free', freeNews(text));
+    news('free', freeNews(text)) ??
+    (message.includes('?') || asksFor(message) ? null : news('praise', praiseNews(told)));
   if (given !== null) return given;
   const flat = plain(text);
   // What others asked or said they would do is no plan of theirs.

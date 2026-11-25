@@ -11,7 +11,7 @@ import { type pathRepo, type retrievalRepo } from '@foundry/db';
 
 import { isReference } from './brief.js';
 import { calcAsked, calcOf, type CalcAsk, type CalcResult, type Ratio } from './calc.js';
-import { choiceIn, type Choice } from './choice.js';
+import { choiceIn, settledWay, type Choice } from './choice.js';
 import { addDays, dueOnFor } from './dates.js';
 import {
   asksAboutReply,
@@ -20,7 +20,9 @@ import {
   asksMessage,
   asksWhenDone,
   asksHowTo,
+  asksIfNeeded,
   asksMeaning,
+  asksOneThing,
   asksOverview,
   asksRecall,
   bringsNewIdea,
@@ -80,12 +82,14 @@ import {
   type PathState,
 } from './state.js';
 import {
+  askWhyStep,
   citationsOf,
   deadlineOf,
   isOpen,
   nowStep,
   openCriterionOf,
   ownStep,
+  pickedChannel,
   playOf,
   restOf,
   shownStep,
@@ -95,7 +99,7 @@ import {
   type ChosenStep,
   type StepContext,
 } from './steps.js';
-import { currentOnes, informative, toldAs } from './tell.js';
+import { concrete, currentOnes, stillTrue, toYou, toldAs } from './tell.js';
 import { type PathIntent, type Playbook } from './types.js';
 import { contentStems, countsIn, plain, sentences, subjectStems } from './words.js';
 
@@ -253,6 +257,10 @@ export interface Decision {
   readonly finding: string;
   /** They tell how hard it is, and ask nothing of the work. */
   readonly vents: boolean;
+  /** One thing to do is asked, and the last result they told is a weak one: the ones it came from are asked why. */
+  readonly weak: Ratio | null;
+  /** The day the turn's step was due, when it passed and the step has another day now. */
+  readonly wasDue: string | null;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -513,6 +521,7 @@ const NEWS_PLAYS: Readonly<Partial<Record<NewsKind, { readonly company: string; 
     disclosure: { company: 'patent-now-or-wait', person: 'patent-now-or-wait' },
     meeting: { company: 'investor-meeting', person: 'investor-meeting' },
     free: { company: 'concierge-test', person: 'concierge-test' },
+    praise: { company: 'friends-love-it', person: 'friends-love-it' },
   };
 /** What a report beside it changes: the customer, the buyer or the way in, whatever else it counts. */
 const MOVES_THE_CUSTOMER: ReadonlySet<NewsKind> = new Set<NewsKind>([
@@ -527,15 +536,27 @@ const MOVES_THE_CUSTOMER: ReadonlySet<NewsKind> = new Set<NewsKind>([
   'cold',
   'barrier',
   'free',
+  'praise',
   'left',
   'funding',
   'disclosure',
 ]);
 
 /** Early proof of the same kind a later stage already has: there the path's own step goes on. */
-const EARLY_PROOF: ReadonlySet<NewsKind> = new Set<NewsKind>(['paid', 'yes', 'interest', 'cold', 'free']);
+const EARLY_PROOF: ReadonlySet<NewsKind> = new Set<NewsKind>([
+  'paid',
+  'yes',
+  'interest',
+  'cold',
+  'free',
+  'praise',
+]);
+
+/** What they charge, changed. */
+const OF_A_PRICE = /\b(?:fee|price|rate|charge|cost)s?\b/i;
 
 function playOn(playbook: Playbook, state: PathState, news: News, message: string): Play | null {
+  if (news.kind === 'change') return OF_A_PRICE.test(message) ? playOf(playbook, 'pricing') : null;
   const plays = NEWS_PLAYS[news.kind];
   if (plays === undefined) return null;
   if (EARLY_PROOF.has(news.kind) && state.stageIndex >= stageOrder(playbook).indexOf('commercialization'))
@@ -609,13 +630,18 @@ function moved(context: StepContext, step: ChosenStep, play: Play | null): Chose
 // ------------------------------------------------------------------------------------------------
 
 /** One concrete fact of the venture's record: a confirmed one with a figure first, then any confirmed one. */
-export function concreteFact(memory: readonly pathRepo.PathMemory[], founder = ''): string | null {
+export function concreteFact(
+  memory: readonly pathRepo.PathMemory[],
+  founder = '',
+  today?: string,
+): string | null {
   const ranked = currentOnes(memory).filter(
     (m) =>
       m.status === 'confirmed' &&
       ['evidence', 'fact', 'milestone', 'decision'].includes(m.type) &&
       !isReference(m) &&
-      (m.type === 'decision' || informative(toldAs(m, founder))),
+      stillTrue(toldAs(m, founder), m.createdAt.slice(0, 10), today) &&
+      (m.type === 'decision' || concrete(toldAs(m, founder))),
   );
   const figure = ranked.find((m) => m.type !== 'decision' && /\d/.test(toldAs(m, founder)));
   const told = figure ?? ranked[0];
@@ -840,6 +866,35 @@ const NO_CALC: CalcResult = { ask: null, lines: [], missing: null };
 
 /** The plays whose answer is a sum of their numbers. */
 const SUM_PLAYS: Readonly<Record<string, CalcAsk>> = { 'unit-economics': 'contribution' };
+/** The play a sum they ask for belongs to, when no phrase names one. */
+const PLAY_OF_SUM: Readonly<Partial<Record<CalcAsk, string>>> = {
+  hourly: 'pricing',
+  slot_price: 'pricing',
+  target_price: 'pricing',
+  churn: 'retention',
+  same_rate: 'retention',
+};
+/** A pitch on its day, and what they ask about it on the way: its step stays. */
+const PART_OF: Readonly<Record<string, readonly string[]>> = {
+  'pitch-competition': ['pitch-deck', 'elevator-pitch', 'qa-prep', 'demo'],
+  'investor-meeting': ['pitch-deck', 'elevator-pitch', 'qa-prep'],
+};
+
+/** A change of an amount, as a record tells it ("change the price from $20 to $25 a patch"). */
+const CHANGED_AMOUNT =
+  /\b(?:chang\w+|rais\w+|lower\w*|mov\w+|updat\w+|increas\w+|reduc\w+|set|put|went|goes|adjust\w+|switch\w+|fee|price|rate|it)\b([^.;]{0,30}?) (?:up |down )?from (\$? ?\d[\d.,]*(?: dollars)?) to (\$? ?\d[\d.,]*(?: dollars)?)((?: (?:per|an?|each|for each|for an?) (?:[a-z]+ ){0,2}[a-z]+)?)/gi;
+
+/** A record's sentence of them as they would say it ("the founder charges $450" → "I charge $450"), for the calculator. */
+export function inTheirVoice(text: string): string {
+  return toYou(text)
+    .replace(CHANGED_AMOUNT, (_whole, what: string, from: string, to: string, per: string) => {
+      const thing = /\b(fee|price|rate|charge)\b/i.exec(`${_whole} ${what}`)?.[1]?.toLowerCase() ?? 'price';
+      return `the ${thing} is ${to}${per} now, not ${from}`;
+    })
+    .replace(/\byour\b/gi, 'my')
+    .replace(/\byou (?:are|were)\b/gi, 'I am')
+    .replace(/\byou\b/gi, 'I');
+}
 
 /** What the record and the intake hold, as the calculator and a pass line read it: oldest first. */
 function recordTexts(input: DecideInput): string[] {
@@ -853,6 +908,7 @@ function recordTexts(input: DecideInput): string[] {
       const result = typeof m.attributes.result === 'string' ? m.attributes.result : '';
       return [m.content.trim() === '' ? m.title : m.content, result]
         .filter((t) => t.trim() !== '')
+        .map(inTheirVoice)
         .join('. ');
     }),
     // Their words, never the count kept before them ("2 of 5: …").
@@ -916,6 +972,8 @@ export function decide(input: DecideInput): Decision {
     actsOn: null,
     finding: '',
     vents: false,
+    weak: null,
+    wasDue: null,
   } as const;
 
   if (input.crisis) return { ...base, kind: 'crisis' };
@@ -1025,6 +1083,12 @@ export function decide(input: DecideInput): Decision {
   const ruled: PathIntent | null =
     referralMatch?.intent ??
     (pivot !== null ? null : (match?.intent ?? risky ?? (pushes ? heldIntent : null)));
+  // A sum has its play, whatever its words are near to ("what share of my clubs did I lose?" is no runway).
+  const sumAsked = calcAsked(message);
+  const sumPlay =
+    ruled !== null || asksPath || newIdea || pivot !== null || !askLike || sumAsked === null
+      ? null
+      : playOf(playbook, PLAY_OF_SUM[sumAsked] ?? null);
   const work = recall || newIdea || pivot !== null ? [] : reportedWork(before, theirs);
   // They tell how hard it is, and ask nothing: no task is pushed.
   const vents = isVenting(message);
@@ -1032,6 +1096,7 @@ export function decide(input: DecideInput): Decision {
   // Nothing any phrase or rule reads in it: what is left may be matched by meaning.
   const unread =
     ruled === null &&
+    sumPlay === null &&
     !asksPath &&
     !recall &&
     !newIdea &&
@@ -1067,7 +1132,7 @@ export function decide(input: DecideInput): Decision {
         });
   const intent = ruled ?? semantic?.intent ?? words?.intent ?? null;
   const overview = asksPath || intent?.overview !== undefined;
-  const answered = playOf(playbook, intent?.playId ?? null);
+  const answered = playOf(playbook, intent?.playId ?? null) ?? (recall ? null : sumPlay);
   // "Get me organized" is answered by where this venture stands: a play of another stage ("you are on move one") is not.
   const play =
     intent?.overview === 'path' || (overview && answered?.stage !== before.stage) ? null : answered;
@@ -1084,7 +1149,7 @@ export function decide(input: DecideInput): Decision {
               ? words === null
                 ? 'semantic'
                 : words.how
-              : overview
+              : overview || (sumPlay !== null && play === sumPlay)
                 ? 'rule'
                 : null;
   const passing =
@@ -1181,16 +1246,29 @@ export function decide(input: DecideInput): Decision {
   let smallerOffer: PathStepView | null = null;
   let cutTo: SmallerAsk | null = null;
   if (newIdea) turn = ideaStep(now) ?? turn;
+  else if (recall && sumPlay !== null) turn = newsStep(now, state, sumPlay, own);
   else if (pivot !== null && referral === null) {
     // "The plan is to ask 5 caterers this week": the first step of the new direction, in their own words.
     const theirs = commitment === null ? null : said(now, state, commitment);
     turn = { step: theirs ?? own, offered: false };
   } else if (recall || overview) turn = { step: own, offered: false };
+  else if (
+    play !== null &&
+    kind === 'coaching' &&
+    asksIfNeeded(message) &&
+    play.referral === null &&
+    stageOrder(playbook).indexOf(play.stage) > state.stageIndex
+  )
+    // "Do I need one now?" of a later stage: not yet, so the path's own step stands.
+    turn = { step: own, offered: false };
   else if (play !== null && kind === 'coaching') {
-    if (pushes && earlier !== null) {
+    if (
+      (pushes && earlier !== null) ||
+      (earlier?.step != null && (PART_OF[earlier.step.view.playId ?? ''] ?? []).includes(play.id))
+    ) {
       turn = earlier;
       carried = true;
-    } else turn = askStep(now, state, play, own);
+    } else turn = askStep(now, state, untested(now, told, play) ?? play, own);
   } else if (kind === 'report') {
     const mine = commitment !== null && reported === null && work.length === 0 ? commitment : null;
     const theirs = mine === null ? null : (accepted(now, mine, earlier) ?? said(now, state, mine));
@@ -1232,9 +1310,35 @@ export function decide(input: DecideInput): Decision {
     }
   }
   // A step past its day is given one they can still make (what was due, and when, is in the check-in and the opening).
-  if (turn.step !== null && !recall && turn.step.view.status === 'now' && isPast(turn.step, input.today)) {
+  let wasDue: string | null = null;
+  if (turn.step !== null && turn.step.view.status === 'now' && isPast(turn.step, input.today)) {
     const again = moved(now, turn.step, playOf(playbook, turn.step.view.playId));
-    if (again !== null) turn = { step: again, offered: turn.offered };
+    if (again !== null) {
+      if (recall) wasDue = turn.step.view.dueOn;
+      turn = { step: again, offered: turn.offered };
+    }
+  }
+  // A choice they asked to have made, and the pick their record decides: the step acts on it, and reopens nothing.
+  const choice =
+    (kind === 'coaching' || kind === 'new_idea') && !overview && intent?.holds !== true
+      ? choiceIn({ message: theirs, earlier: told.earlier, told: told.record })
+      : null;
+  const way =
+    turn.step?.view.playId === 'channel-choice'
+      ? (choice?.pick?.option ??
+        settledWay([...told.earlier, theirs], [...told.record, ...told.earlier, theirs]))
+      : null;
+  if (way !== null && turn.step !== null)
+    turn = { ...turn, step: { ...turn.step, view: pickedChannel(turn.step.view, way) } };
+  const weak = overview && news === null && asksOneThing(message) ? weakResult(told) : null;
+  if (weak !== null && turn.step !== null) {
+    const read = playOf(playbook, 'read-results');
+    const base1 =
+      read === null ? null : stepFor(now, read, { status: 'later', criterionId: null, origin: 'coach' });
+    const asksThem =
+      base1 === null ? null : base1.row === null ? askWhyStep(now, weak, base1.view) : base1.view;
+    if (asksThem !== null)
+      turn = { step: { view: asksThem, write: null, storedVersion: null }, offered: true };
   }
   if (support) turn = { step: null, offered: false };
   const calc =
@@ -1294,11 +1398,10 @@ export function decide(input: DecideInput): Decision {
         : null,
     pivot: appliedPivot,
     checkIn: checkIn !== null && namesStep(input.previousReply, checkIn.title) ? null : checkIn,
-    choice:
-      (kind === 'coaching' || kind === 'new_idea') && referral === null && !overview && intent?.holds !== true
-        ? choiceIn({ message: theirs, earlier: told.earlier, told: told.record })
-        : null,
-    newIdea: newIdea ? { ventureName: input.venture.name, fact: concreteFact(input.reads.memory) } : null,
+    choice,
+    newIdea: newIdea
+      ? { ventureName: input.venture.name, fact: concreteFact(input.reads.memory, '', input.today) }
+      : null,
     firstTime,
     firstTimeNow: base.firstTimeNow,
     news,
@@ -1319,10 +1422,38 @@ export function decide(input: DecideInput): Decision {
     rejects: kind === 'coaching' && intent === null && !overview && !support && rejects,
     actsOn,
     finding:
-      foundIn(theirs, kind, news, appliedPivot, overview && work.length + Number(news !== null) > 0) ||
-      (kind === 'coaching' && restates === null && asksMeaning(message) ? lastFinding(input) : ''),
+      // What they say they will do is no finding.
+      (commitment !== null && reported === null && work.length === 0 && news === null
+        ? ''
+        : foundIn(theirs, kind, news, appliedPivot, overview && work.length + Number(news !== null) > 0)) ||
+      (kind === 'coaching' && restates === null && asksMeaning(message)
+        ? findingIn(theirs) || lastFinding(input)
+        : ''),
     vents: vents && reported === null,
+    weak: turn.step === null ? null : weak,
+    wasDue,
   };
+}
+
+/** "Go on or stop?" of what nobody has tried: there are no tests to list, so the step is the first one. */
+function untested(
+  context: StepContext,
+  told: { readonly record: readonly string[]; readonly earlier: readonly string[] },
+  play: Play,
+): Play | null {
+  if (play.id !== 'quit-or-continue' || lastResult([...told.record, ...told.earlier]) !== null) return null;
+  if (hasEvidence(context.reads.memory) || context.reads.criteria.some((c) => c.evidence !== null))
+    return null;
+  return playOf(context.playbook, 'smallest-test');
+}
+
+/** The last result they told, when it is a weak one (less than half); null: none, or a good one. */
+function weakResult(told: {
+  readonly record: readonly string[];
+  readonly earlier: readonly string[];
+}): Ratio | null {
+  const result = lastResult([...told.record, ...told.earlier]);
+  return result === null || result.part * 2 >= result.whole ? null : result;
 }
 
 /** Money for a part of it, and what goes public: a qualified person decides. */
@@ -1338,7 +1469,11 @@ function lastFinding(input: DecideInput): string {
   const told = input.reads.criteria
     .filter((c) => c.evidence !== null && c.sourceSessionId !== null)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-  return told === undefined ? '' : findingIn(wordsOfEvidence(told.evidence ?? ''));
+  if (told !== undefined) return findingIn(wordsOfEvidence(told.evidence ?? ''));
+  const done = input.reads.steps
+    .filter((s) => s.status === 'done' && s.evidence !== null)
+    .sort((a, b) => (b.completedAt ?? b.createdAt).localeCompare(a.completedAt ?? a.createdAt))[0];
+  return done === undefined ? '' : findingIn(done.evidence ?? '');
 }
 
 /** What came of their work, for the model to read: the result beside another ask, else what they tell. */

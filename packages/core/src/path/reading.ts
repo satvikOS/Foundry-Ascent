@@ -97,11 +97,15 @@ function payersIn(clause: string): number | null {
 const PROBLEM =
   /\b(?:takes? (?:an?|up to|about|over|\w+) ?(?:\w+ )?(?:hours?|days?|weeks?|months?|minutes)|too (?:long|slow|expensive|far|late|loud|hard|many|heavy)|goes? wrong|went wrong|wast(?:e|es|ed|ing)|los(?:e|es|ing)|cannot|can not|no (?:way|place|space|room|time) to|hard to|wait(?:s|ing)?|throw(?:s|n)? (?:\w+ )?(?:out|away)|a mess|breaks? down|forget|nowhere|stuck|pile up|the problem is)\b/;
 
+/** Asked of the coach ("Guarantee me they can't take it away"), never told. */
+const ASKED_OF_US =
+  /^\W*(?:(?:please|just|so|and|then|ok|okay|come on),? )*(?:guarantee|promise|assure|tell|give|show|cite|say|let|help|explain|convince|prove|swear|admit|make sure|convince|stop|don['’]?t|do not)\b/iu;
+
 /** What goes wrong today, as they told it ("delivery takes an hour on weekends"): never their plan for it. */
 export function problemIn(texts: readonly string[], not: readonly string[] = []): string {
   for (const text of texts)
     for (const sentence of ownSentences(text)) {
-      if (sentence.trim().endsWith('?') || asksFor(sentence)) continue;
+      if (sentence.trim().endsWith('?') || asksFor(sentence) || ASKED_OF_US.test(sentence)) continue;
       // Their plan, or what they think of it, is cut off it.
       const told = bare(
         sentence.replace(/,?\s+(?:and|so|but)\s+(?:i|we|my|our)(?:['’]\w+)?\s.*$/iu, '').replace(/\s+/g, ' '),
@@ -530,8 +534,62 @@ function goOn(a: AnswerSource): PersonalAnswer | null {
   const share = Math.round((part / whole) * 1000) / 10;
   const head = `${String(part)} of ${String(whole)} bought, which is ${String(share)}%`;
   return {
-    text: `Do not decide on this one result. ${head}: ${part === 0 ? 'nobody paid' : 'low, and not zero, because strangers paid'}. No number was set first, so it does not say stop. Change one thing, the group, the offer or the price, write the number that means go on, and ask ${String(Math.min(whole, 20))} more. Below it twice, you stop with good reason.`,
-    voice: `Do not decide on this one result. ${head}. Change one thing, set the number that means go on, and ask ${String(Math.min(whole, 20))} more.`,
+    text: `Do not decide on this one result. ${head}: ${part === 0 ? 'nobody paid' : 'low, and not zero'}. No number was set first, so it does not say stop, and it does not say go. What decides is a list, not one evening: each test you ran, the number it had to beat, and what came. Stop when two in a row miss a number you wrote first, with one change between them. You have one, and no number, so stopping now would be a mood and not a decision.`,
+    voice: `Do not decide on this one result. ${head}, and no number was set first. Stop when two tests in a row miss a number you wrote first.`,
+    opens: true,
+  };
+}
+
+/** The opening of a pitch: one person, then their own number. */
+function openPitch(a: AnswerSource): PersonalAnswer | null {
+  const { reading: r } = a;
+  if (r.best === '' || !/\b(?:open|start|begin|first (?:line|sentence|words?)|hook)\b/.test(plain(a.message)))
+    return null;
+  const proof = `${r.best}${r.measured === '' ? '' : `, and ${r.measured}`}`;
+  return {
+    text: `Open with one person and the moment it goes wrong for them, in one sentence. Then your number, at once: ${proof}. Then what you do in five words, and what you ask for. No agenda, no thanks, no market size: the first twenty seconds decide whether they listen.`,
+    voice: `Open with one person and the moment it goes wrong, in one sentence. Then your number: ${proof}.`,
+    opens: true,
+  };
+}
+
+/** Ready to leave the program, and where to: by the six lines of the check that their record has evidence for. */
+function leavingAin(a: AnswerSource): PersonalAnswer | null {
+  const { reading: r } = a;
+  const facts = plain([r.best, r.measured, ...a.facts].join('. '));
+  const pays = r.level === 'some_paid' || r.level === 'one_paid';
+  const lines: readonly (readonly [boolean, string])[] = [
+    [pays, 'strangers pay'],
+    [
+      pays && r.lost === '' && /\b(?:renew\w*|came back|come back|stayed|every month)\b/.test(facts),
+      'they come back',
+    ],
+    [/\bleaves? \$?\d|\bleft (?:per|from|on) (?:each|one)\b|\bmargin\b/.test(facts), 'what one sale leaves'],
+    [/\b(?:came|come) (?:from|through|by)\b|\bchannel\b/.test(facts), 'one channel that works'],
+    [/\b(?:roles?|who does what)\b/.test(facts), 'written roles in the team'],
+    [/\b(?:owns?|ownership|assigned)\b/.test(facts), 'who owns what'],
+  ];
+  const has = lines.filter(([x]) => x).map(([, x]) => x);
+  const lacks = lines.filter(([x]) => !x).map(([, x]) => x);
+  const count = ['None', 'One', 'Two', 'Three', 'Four', 'Five', 'Six'][has.length] ?? String(has.length);
+  const ready = has.length >= 4;
+  const proof = r.best === '' ? '' : ` (${r.best})`;
+  const opens = ready
+    ? `Yes, by what you have told me: ${count.toLowerCase()} of the six lines of the readiness check have evidence.`
+    : `Not yet, by what you have told me. ${count} of the six lines of the readiness check ${has.length === 1 ? 'has' : 'have'} evidence${has.length === 0 ? '' : `, ${has.join(' and ')}${proof}`}.`;
+  const missing = lacks.length === 0 ? '' : `Still open: ${lacks.join(', ')}.`;
+  const gap =
+    r.lost !== ''
+      ? `yours is that ${r.lost} and nobody knows why. No incubator or accelerator answers that, your customers do`
+      : pays
+        ? 'yours is that the next sale does not come without you. No incubator or accelerator fixes that, your customers do'
+        : 'yours is a first stranger who pays. No incubator or accelerator gives you that, your customers do';
+  const stay = ready
+    ? 'So go, with that as the first thing to close.'
+    : 'So stay this term and close it. If you must go at the end of it, an incubator fits for space and peers, and an accelerator once the sales repeat.';
+  return {
+    text: joined(opens, missing, `Where next: the biggest gap picks the place, and ${gap}.`, stay),
+    voice: joined(opens, `The biggest gap picks the place, and ${gap}.`),
     opens: true,
   };
 }
@@ -544,16 +602,16 @@ function whatFoundersDo(a: AnswerSource): PersonalAnswer | null {
     )
   )
     return null;
-  const own = a.idea === '' ? '' : `For you that is about ${bare(ideaAs(a.idea, a.venture))}.`;
+  const named = a.idea === '' ? 'the idea' : bare(ideaAs(a.idea, a.venture));
+  const claim = named.includes(', which ') ? `${named},` : named;
   return {
     text: joined(
       'A founder finds out what is true, one small test at a time: talks to people who have the problem, offers something small for money, and changes one thing from what they did.',
-      'Treat it like an experiment: the idea is the claim, and what people do is the data.',
-      own,
+      `Treat it like an experiment: ${claim} is the claim, and what people do is the data.`,
       a.reading.lacks,
       'So your first days go into three talks, and none into building.',
     ),
-    voice: joined('A founder finds out what is true, one small test at a time.', own),
+    voice: `A founder finds out what is true, one small test at a time: ${claim} is the claim, and what people do is the data.`,
     opens: true,
   };
 }
@@ -574,7 +632,61 @@ const ANSWERS: Readonly<Record<string, (a: AnswerSource) => PersonalAnswer | nul
   'first-ten-customers': firstCustomers,
   'quit-or-continue': goOn,
   'start-from-zero': whatFoundersDo,
+  'leaving-ain': leavingAin,
+  'elevator-pitch': openPitch,
 };
+
+// What a qualified person decides ------------------------------------------------------------------------------------
+
+const ON_A_DATE =
+  /\bon ((?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2})\b/i;
+const GOES_PUBLIC =
+  /\b(?:present(?:ing|s|ation)?|talk|poster|abstract|paper|publish\w*|conference|demo|pitch|competition|defen[cs]e|thesis|fair|expo|exhibit\w*|showcase)\b/i;
+
+/** When it goes public, in their words ("the conference on December 19, and before the abstract"). */
+function publicOn(texts: readonly string[]): string {
+  for (const text of [...texts].reverse())
+    for (const sentence of ownSentences(text)) {
+      const day = ON_A_DATE.exec(sentence)?.[1];
+      if (day === undefined || !GOES_PUBLIC.test(sentence)) continue;
+      const what =
+        /\b(conference|talk|poster|paper|demo|pitch|competition|thesis|defen[cs]e|presentation|fair|expo|showcase)\b/i.exec(
+          sentence,
+        )?.[1];
+      const on = `${what === undefined ? '' : `the ${what.toLowerCase()} on `}${day.replace(/^\w/, (c) => c.toUpperCase())}`;
+      return /\babstract\b/i.test(sentence) && what !== 'abstract'
+        ? `${on}, and before the abstract is out`
+        : on;
+    }
+  return '';
+}
+
+/**
+ * What can be said at once when they ask for a ruling that a qualified person gives (now or wait? do I sign? may I?): what not
+ * to do yet, and until who has said what. Never the ruling. Null: the program's own answer opens with it.
+ */
+export function holdsAnswer(
+  play: { readonly id: string; readonly answer: string },
+  args: { readonly texts: readonly string[]; readonly today: string },
+): string | null {
+  switch (play.id) {
+    case 'patent-now-or-wait': {
+      const on = publicOn(args.texts);
+      const before = on === '' ? 'Before you show how it works to anyone' : `Before ${on}`;
+      return `Do not wait to ask, and do not file on your own. ${before}, UR Ventures has to see it, because they decide whether to file, what and when. That day is the reason: once how it works is public, a one-year clock runs in the United States, and most other countries are closed to you. Until they answer, speak about the result and never the method.`;
+    }
+    case 'sign-ip-form':
+      return 'Not yet: sign nothing before UR Ventures, or a lawyer who works for you and not for the lab, has read it. Whether the form itself is a yes or a no is theirs to say.';
+    case 'student-ip':
+      return 'Do not act on that yet. Who owns it is for UR Ventures to say, from what you used, who paid and what you signed, and nobody in the lab can say it for them.';
+    case 'international-student':
+      return 'Not before the International Services Office has said so in writing. What counts as work on your visa is theirs to say, and being paid by your own venture can count.';
+    default: {
+      const [first = ''] = sentencesOf(play.answer);
+      return /^(?:do not|not|no\b|never|hire only|grow on|ask before)/i.test(first) ? first : null;
+    }
+  }
+}
 
 /** The plays whose answer is a judgement: what they have and what is missing is said with it. */
 export const JUDGEMENT_PLAYS: ReadonlySet<string> = new Set([

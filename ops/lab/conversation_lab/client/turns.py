@@ -61,6 +61,8 @@ class ReplyTurn:
     #: How many replies in a row, just before this one, named the path's step to a founder who asked something else
     #: (:func:`nags`).
     nagged_before: int = 0
+    #: The steps, and who decides, that the venture's record holds from the earlier turns (their guidance).
+    record: str = ""
     #: The coach's earlier replies in this same session, oldest first.
     same_session: tuple[str, ...] = ()
 
@@ -96,7 +98,14 @@ class ReplyTurn:
         """Where a figure, date or name may come from."""
         evidence = "\n".join(f"{e.get('title', '')} {e.get('excerpt', '')}" for e in self.evidence)
         return "\n".join(
-            (self.founder_said, self.known, reading.leaf_text(self.guidance), evidence, self.founder_name)
+            (
+                self.founder_said,
+                self.known,
+                reading.leaf_text(self.guidance),
+                self.record,
+                evidence,
+                self.founder_name,
+            )
         )
 
 

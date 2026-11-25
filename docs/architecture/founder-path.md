@@ -116,7 +116,19 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
   good?", where they stand ("get me organized", as a numbered list when they ask for a plan), a recall, the story, a change
   of direction, a choice the record decides, the message they asked for, when a step is done. Said once: what the model says
   of it again (its figures, the stage, a second plan, its dates) goes, and a lead said a moment ago is cut to the next blank
-  or part. No stage is told to someone who did not ask where they stand.
+  or part. No stage is told to someone who did not ask where they stand. Also leads: an either-or or a yes-or-no on what a
+  person decides (what can be said and by when, never the ruling: `holdsAnswer`), "do I need one now?" by their stage, what a
+  finding means for what they build (`readMeaning`), a doubter's doubt of a pick, a no, "is it worth my hours?", "what did you
+  tell me to do?", how the others seem to do, friends' praise.
+- **Two things asked** (`parts`) are listed for the model to answer one after the other, and what they set ("10", "this
+  month", "one evening": `limits`) is to be kept to; a part or a limit the reply leaves out is said from the play.
+- **Nothing twice** (`validators/said-before.ts`): a sentence an earlier reply said, or this one above, is left out, typed and
+  spoken; what the program has not said yet of the answer (`more`: its other sentences, the parts with how, the trap, the
+  reason) stands in its place, with no second model call. A question asked for the first time after a statement its play had
+  answered still opens with what answers it. The step line, a template, a working and who decides may come again.
+- **One next thing.** The step acts on what the record or the answer picked (`pickedChannel`, `askWhyStep` after a weak
+  result, the first test where nothing was tried, a pitch's own step while they ask on the way to it); a second next thing of
+  the model's goes, and where the server gives the one thing to do (`orders`) the model gives none.
 - **Read for them** (`reading.ts`). On a judgement (a real business? which money? what will the judges ask? which path?) the
   program's answer is made from the record: their best proof with its number and who, and the nearest thing nobody has shown
   that matters for this ask. A verdict on them ("tell me it is great", "is it a real business?", "would they pay?", "stop or
@@ -149,9 +161,15 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
   with the ask or bears on the same thing, and tells a number, a name, a decision or an outcome; else the idea, where the
   answer is for it; else none. Never advice of a course, a plan, a label, or a doing with nothing found. The model weaves it
   in; a typed reply that did not gets one sentence, said as a person says it, never of what the coach said in its last
-  reply, of what this message takes back, or of an order in a message.
+  reply, of what this message takes back, or of an order in a message. An inference ("X are potential customers"), a template,
+  another person's or a day counted from when it was told is none. With only their idea the sentence is the first part of the
+  step, for it; never a line that puts the idea beside the answer.
+- **Length.** A typed answer of the model's own ends at about 110 words, less beside a long lead; a list begun is finished,
+  and what they asked to have written is as long as it is (`overTyped`).
 - **Their facts only** (`said`, `validators/own-facts.ts`): a line of a template that says more than they did keeps its
-  bracket; a sentence that gives them customers, sales or money nobody told goes; so do our words ("the playbook says").
+  bracket; a sentence that gives them customers, sales, money or other people's words nobody told goes; so do our words ("the
+  playbook says"). A cited sentence holds what its source, they or the record say, as strictly as the lab reads it
+  (`citable`, `heldBy`); a message or a letter of the step's that nobody asked for is the card's (`template: 'shown'`).
 - **Business words** are told in ten words or fewer, once, to who has not said they know them (`validators/glossary.ts`).
 - **Sums** are worked out by code, never by the model, in two ways:
   - `calc.ts` (numbers and their roles: `calc-read.ts`) opens the reply when it is **sure**: every role is said beside its
@@ -175,7 +193,8 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
   table by kind); a survey as the next thing, a pass line on what people say, sign-ups or a few payments as "proof" or
   "demand", praise, sentences that say nothing, empty brackets, and a question they just answered go. A sentence that warns
   of these says the same words and stays: the rules read who proves what, denied or not, only if or to. Ten or more payments
-  told may be read as demand. The whole playbook and the shared knowledge base pass it (`path/method.test.ts`). When nothing
+  told may be read as demand (who paid, never how many were asked). A price set above the workaround or by what people say,
+  and a verdict on a price that its numbers cannot carry, go. A draft in quotes is theirs to say. The whole playbook and the shared knowledge base pass it (`path/method.test.ts`). When nothing
   is left, the program's answer, or a reading of the news (`newsFallback`), stands.
 - **Beside a lead**: under a sum code worked out, a number that is neither theirs, the sum's nor given this turn is a second
   sum nobody checked, and goes (`besideTheSum`); so do another count of the same whole, the template or the message the lead
@@ -220,7 +239,7 @@ whole reply (`packages/ai` `validators/reply-contract.ts`, `sentence-gate.ts`):
 - **The idea.** Stated in a conversation while the intake has none, it is kept word for word (at most 400 characters), and
   leads the brief, with the latest decision. A recall carries in its lead what they asked for: the idea, what was decided and
   when, what was reported, which idea they are on, what the venture has and has not; the open step and its day end the reply
-  as on every turn; the story is dated lines, each thing once, at most eight, a change of direction with what brought it. A
+  as on every turn (one whose day passed has a new day, and "It was due ..."); the story is dated lines after the idea it opens with, each thing once, at most eight, a change of direction with what brought it. A
   change of direction wins over a report or a missed day, keeps the new idea, dates the old one in the arc
   (`venture_paths.pivots`, their words), ends a step of theirs that was about the old one, and opens what the old customer
   had shown, from talking to customers on (their words stay on the criterion, dated). Going back to an earlier idea (the

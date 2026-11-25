@@ -458,7 +458,7 @@ describe('one thing to do, a rejection, and a fee', () => {
     const text = leadOf(message, {}, ['x'], ['Some reply.']);
     // Whose it is, what nobody has shown yet, and the part that starts on it.
     expect(text).toMatch(
-      /^It is for your idea: SailMend, which mends sails .* So one thing: write the five lines/,
+      /^Nobody outside your own circle .* So one thing, for SailMend, which mends sails on the pier in two days: write the five lines/,
     );
     expect(text).not.toContain('[');
   });
@@ -489,7 +489,7 @@ describe('one thing to do, a rejection, and a fee', () => {
       ['Make a list of 50.'],
     );
     expect(prompt.rejected).toBe(true);
-    expect(prompt.fallback?.text).toMatch(/^Start with the nearest: two more are on a free trial/);
+    expect(prompt.lead?.text).toMatch(/^Fair\b.* Start with the nearest: two more are on a free trial/);
   });
 
   it('a step cut to their time is said by the server, with its parts', () => {
@@ -507,7 +507,7 @@ describe('one thing to do, a rejection, and a fee', () => {
     const message = 'One repair takes me about eight hours and I charge 200 dollars. Is the fee right?';
     const { prompt } = turnOf(message);
     expect(prompt.lead?.text).toMatch(
-      /^\$200 \/ 8 hours = \$25 an hour, before any cost\. Whether it is right is for buyers to show, and no buyer has answered yet/,
+      /^Not proven yet: no buyer has answered it, .* \$200 \/ 8 hours = \$25 an hour, before any cost\./,
     );
     expect(prompt.lead?.text).not.toContain('?');
     const shown =

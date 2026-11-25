@@ -68,11 +68,13 @@ import {
   contractApplies,
   isServerText,
   leadText,
+  mayRepeat,
   spokenReserve,
   fitSpoken,
   saidVerbatim,
   withoutStart,
 } from './reply-contract.js';
+import { saidSentences, saysAgain } from './said-before.js';
 import { unitsOf } from './units.js';
 import { SPOKEN_MAX_CHARS, SPOKEN_MAX_WORDS, clampWords, deriveSpoken, toSpeakable } from './speech.js';
 import { SumFacts, sumsText } from './sums.js';
@@ -664,20 +666,42 @@ export function validateCoachResponse(
         keepReferrals: forcedEscalationFor(options.preRisk) !== null,
         signOffs: social === null && !welcomesSignOff(options.founderText),
         strictQuestions: stuckOn(options.founderText, options.previousReply),
-        ...(guidance === null ? {} : { keep: (sentence: string) => carriesContract(sentence, guidance) }),
+        ...(guidance === null ? {} : { keep: (sentence: string) => mayRepeat(sentence, guidance) }),
         asked: askedBefore(options.previousReply, options.earlierReplies),
       });
       // A reply that only signed off again keeps its sign-off: never a stock line in its place.
       const instead =
-        unrepeated.dropped === 0
-          ? out
-          : unrepeated.text !== ''
-            ? unrepeated.text
-            : (repeatFallbackFor(unrepeated.removed, social === 'closing' || wrapsUp(options.founderText)) ??
-              out);
+        guidance !== null && unrepeated.dropped > 0
+          ? unrepeated.text
+          : unrepeated.dropped === 0
+            ? out
+            : unrepeated.text !== ''
+              ? unrepeated.text
+              : (repeatFallbackFor(
+                  unrepeated.removed,
+                  social === 'closing' || wrapsUp(options.founderText),
+                ) ?? out);
       if (instead !== out) {
         if (note) notes.push(`repeated_sentences_removed:${unrepeated.dropped}`);
         out = instead;
+      }
+    }
+    // On the path, most of a sentence said before is that sentence again (validators/said-before.ts).
+    if (previous !== null && guidance !== null) {
+      const again = saidSentences(previous);
+      const kept = unitsOf(out).filter(
+        (u) =>
+          isProtectedLine(u.text, forcedEscalationFor(options.preRisk) !== null) ||
+          mayRepeat(u.text, guidance) ||
+          !saysAgain(u.text, again),
+      );
+      const text = kept
+        .map((u) => u.raw)
+        .join('')
+        .trim();
+      if (text !== out.trim()) {
+        if (note) notes.push('said_again_removed');
+        out = text;
       }
     }
     if (social !== null) {

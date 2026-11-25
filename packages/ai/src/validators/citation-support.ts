@@ -10,7 +10,7 @@ import {
 } from './figures.js';
 import { isProtectedLine } from './social.js';
 import { sharedCount, stemsOf } from './stems.js';
-import { isBlockUnit, unitsOf, wordsIn } from './units.js';
+import { isBlockUnit, renumbered, unitsOf, wordsIn } from './units.js';
 
 /**
  * Whether what a reply states is in what it was given (owner, 2026-11-24: "zero hallucination, cited"). Deterministic,
@@ -42,6 +42,11 @@ export interface SupportInput {
   readonly guidanceText?: string;
   /** The sources the path's answer cites: its own words count as theirs (`ask.evidenceKeys`, and the answer and why). */
   readonly pathSources?: { readonly keys: readonly string[]; readonly text: string };
+  /**
+   * What a figure of a cited sentence may come from beside its source: the founder's own words and what is kept of them, and
+   * the step. A sum of the server's, or a figure of another source, is nothing the source says. Absent: everything given.
+   */
+  readonly citable?: string;
   /** Names the program itself uses (the persona, the venture, the doctrine's referrals, today's date). */
   readonly alsoKnown?: string;
   /** The founder asked for a number: a reasoned range is the answer (validators/figures.ts). */
@@ -62,6 +67,7 @@ export type SupportFinding =
 interface SourceIndex {
   readonly stems: ReadonlySet<string>;
   readonly text: string;
+  readonly flat: string;
 }
 
 /** What may be stated this turn, indexed once and read per sentence. */
@@ -75,6 +81,8 @@ export interface SupportIndex {
   readonly words: ReadonlySet<string>;
   /** The numbers of the founder's words and the path's decision (what a citation may also lean on). */
   readonly ownNumbers: readonly number[];
+  /** The numbers a cited sentence may state beside its source's. */
+  readonly citableNumbers: readonly number[];
   /** The numbers of the founder's words alone: what a product said without its operands may use. */
   readonly founderNumbers: readonly number[];
   readonly askedNumber: boolean;
@@ -133,7 +141,7 @@ export function buildSupportIndex(input: SupportInput): SupportIndex {
   for (const e of input.evidence) {
     const own = input.pathSources?.keys.includes(e.key) === true ? `\n${input.pathSources.text}` : '';
     const text = `${e.title}\n${e.excerpt}${own}`;
-    sources.set(e.key.toUpperCase(), { stems: stemsOf(text), text });
+    sources.set(e.key.toUpperCase(), { stems: stemsOf(text), text, flat: ` ${flat(text)} ` });
   }
   const own = [input.founderText, input.guidanceText ?? '', input.alsoKnown ?? ''].join('\n');
   const all = [own, ...input.evidence.map((e) => `${e.title}\n${e.excerpt}`)].join('\n');
@@ -146,6 +154,8 @@ export function buildSupportIndex(input: SupportInput): SupportIndex {
     knownDates: datesIn(all),
     words: wordSet(all),
     ownNumbers: knownNumbersIn(own),
+    // A day of the record is no figure of it.
+    citableNumbers: knownNumbersIn((input.citable ?? own).replace(/\b\d{4}-\d{2}-\d{2}\S*/gu, ' ')),
     founderNumbers: knownNumbersIn(input.founderText),
     askedNumber: input.askedNumber === true,
   };
@@ -174,6 +184,24 @@ function needed(size: number): number {
 
 function overlaps(stems: ReadonlySet<string>, source: ReadonlySet<string>): boolean {
   return sharedCount(stems, source) >= needed(stems.size);
+}
+
+/**
+ * Whether the passages a sentence cites hold enough of it: two of its words in each, and of one alone three (two of a short
+ * sentence) and three in ten. The same the lab holds a reply to (`supported_citations`), or more.
+ */
+function heldBy(
+  body: string,
+  stems: ReadonlySet<string>,
+  source: SourceIndex,
+  union: ReadonlySet<string>,
+  alone: boolean,
+): boolean {
+  const said = flat(body).replace(/[.!?]+$/u, '');
+  if (wordsIn(said) >= 3 && source.flat.includes(said)) return true;
+  const shared = sharedCount(stems, source.stems);
+  if (!alone) return shared >= 2 && sharedCount(stems, union) / Math.max(1, stems.size) >= 0.3;
+  return shared >= (stems.size <= 4 ? 2 : 3) && shared / Math.max(1, stems.size) >= 0.3;
 }
 
 /** Numbers a sentence states: digits (never its list marker or a citation), and words above three ("twenty"). */
@@ -253,12 +281,14 @@ function founderArithmetic(value: number, index: SupportIndex): boolean {
 /** Whether every number, date, name and quoted phrase of a cited sentence is in its sources, the founder's words or the path. */
 function detailsSupported(body: string, cited: readonly SourceIndex[], index: SupportIndex): boolean {
   const text = cited.map((s) => s.text).join('\n');
-  const numbers = [...knownNumbersIn(text), ...index.ownNumbers];
+  const numbers = [...knownNumbersIn(text), ...index.citableNumbers];
   const dates = datesIn(text);
   for (const d of datesIn(body)) if (!dates.has(d) && !index.knownDates.has(d)) return false;
   const withoutDates = body.replace(MONTH_DAY, ' ');
   if (
-    !statedNumbers(withoutDates).every((n) => given(n, numbers) || shownArithmetic(n, withoutDates, numbers))
+    ![...statedNumbers(withoutDates), ...numbersIn(withoutDates)].every(
+      (n) => given(n, numbers) || shownArithmetic(n, withoutDates, numbers),
+    )
   )
     return false;
   const words = wordSet(text);
@@ -646,8 +676,9 @@ export function supportUnit(
         ? cited
             .filter(
               (c) =>
-                overlaps(stems, c.source.stems) ||
-                (cited.length > 1 && overlaps(stems, union) && sharedCount(stems, c.source.stems) >= 2),
+                (overlaps(stems, c.source.stems) ||
+                  (cited.length > 1 && overlaps(stems, union) && sharedCount(stems, c.source.stems) >= 2)) &&
+                heldBy(body, stems, c.source, union, cited.length === 1),
             )
             .map((c) => c.key)
         : [],
@@ -714,21 +745,4 @@ export function checkCitationSupport(
     .trim();
   if (removedItem) text = renumbered(text);
   return { text, findings: [...findings], citationsDropped, sentencesRemoved, sentencesNeutralised };
-}
-
-/** Numbered lists counted from their first number again. */
-function renumbered(text: string): string {
-  let n = 0;
-  return text
-    .split('\n')
-    .map((l) => {
-      const m = /^(\s*)(\d{1,3})([.)]\s)/.exec(l);
-      if (m === null) {
-        if (l.trim() !== '') n = 0;
-        return l;
-      }
-      n += 1;
-      return `${m[1] ?? ''}${String(n)}${m[3] ?? ''}${l.slice(m[0].length)}`;
-    })
-    .join('\n');
 }

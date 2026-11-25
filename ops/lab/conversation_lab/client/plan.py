@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from conversation_lab.client.scenarios import GROUPS, Scenario, ScenarioError
+from conversation_lab.client.scenarios import GROUPS, HELD_OUT, Scenario, ScenarioError
 from conversation_lab.config import DEFAULT_THINK, Price, foundation_model_id
 from conversation_lab.live.plan import COACH_BASELINE_MODEL, coach_cost_factor
 
@@ -110,7 +110,7 @@ def estimate(
 
 
 def parse_groups(text: str) -> tuple[str, ...]:
-    """``numbers,news`` -> the groups, in run order; empty: every group."""
+    """``numbers,news`` -> the groups, in run order; empty: every group but the held-out one (``in_groups``)."""
     named = [g.strip() for g in (text or "").split(",") if g.strip()]
     unknown = sorted(set(named) - set(GROUPS))
     if unknown:
@@ -118,8 +118,11 @@ def parse_groups(text: str) -> tuple[str, ...]:
     return tuple(g for g in GROUPS if g in named)
 
 
-def in_groups(scenarios: Sequence[Scenario], groups: Sequence[str]) -> list[Scenario]:
-    return [s for s in scenarios if not groups or s.group in groups]
+def in_groups(scenarios: Sequence[Scenario], groups: Sequence[str], *, named: bool = False) -> list[Scenario]:
+    """The scenarios of ``groups``; with none given, all but the held-out ones (those too when ``named`` by id)."""
+    if groups:
+        return [s for s in scenarios if s.group in groups]
+    return [s for s in scenarios if named or s.group not in HELD_OUT]
 
 
 def refusal(

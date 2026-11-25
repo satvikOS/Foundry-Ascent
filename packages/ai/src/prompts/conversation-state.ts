@@ -1070,6 +1070,10 @@ const DEAD_MATTER =
 /** The step or the work is too big ("that's too much before the exam"), never "it's all too much". */
 const TOO_MUCH_WORK =
   /\b(?:that|this|it)(?:'s| is)(?: (?:a bit|a lot|way|still|kind of|kinda|just|probably|honestly|really))* too much\b/g;
+/** Figures or a plan taken apart ("a breakdown of the costs", "no full breakdown, only the total"), never a person. */
+const FIGURES_BREAKDOWN =
+  /\b(?:cost|price|market|budget|revenue|number|figure|detailed|line[- ]by[- ]line|step[- ]by[- ]step|time|fee|expense|unit)s? breakdowns?\b|\bbreakdowns? (?:of|by) (?:the |my |our |all |each |every |it |these |those )?(?:costs?|prices?|numbers?|figures?|market|budget|revenue|fees?|expenses?|steps?|segments?|groups?|months?|weeks?|parts?|sales|hours|time)\b|\b(?:not (?:an?|the)|no) (?:(?:whole|full|big|long|detailed|complete) )?breakdown(?=(?: please)?,? (?:just|only|but)\b[^.!?]{0,40}\b(?:estimate|number|figure|guess|ballpark|range|rough|total|summary|answer)\b)/g;
+
 /** They ask for less to do, or say how much time they have: what "too much" is about. */
 const ASKS_FOR_LESS =
   /\bsomething (?:much |a bit |a little |a lot )?(?:smaller|shorter|easier|quicker|lighter)\b|\b(?:smaller|shorter|quicker|lighter) (?:step|version|task|thing|one|piece)\b|\bsmallest (?:thing|step|version|piece)\b|\b(?:give me|need|want|is there|got) (?:something|anything) (?:i|we) can (?:do|finish|fit|get done) (?:in|within|tonight|today|before|this)\b|\b(?:i|we)(?:'ve)? (?:only |just )?(?:have|got)(?: got)? (?:only |just |about |maybe )?(?:an?|one|two|three|half an|\d+) (?:evenings?|hours?|minutes?|mins?|afternoons?)\b/;
@@ -1077,9 +1081,9 @@ const ASKS_FOR_LESS =
 /** They cannot ("this is too much, I can't…"): it is about them, whatever they ask for. */
 const THEY_CANNOT = /\b(?:i|we) (?:really |just |honestly |even )*(?:can't|cannot|can not|couldn't)\b/;
 
-/** The message without what it says of things and of the size of the work ({@link DEAD_MATTER}, {@link TOO_MUCH_WORK}). */
+/** The message without what it says of things, figures and the size of the work ({@link DEAD_MATTER}, {@link TOO_MUCH_WORK}). */
 function ofThePerson(t: string): string {
-  const without = t.replace(DEAD_MATTER, ' ');
+  const without = t.replace(DEAD_MATTER, ' ').replace(FIGURES_BREAKDOWN, ' ');
   return ASKS_FOR_LESS.test(without) && !THEY_CANNOT.test(without)
     ? without.replace(TOO_MUCH_WORK, ' ')
     : without;

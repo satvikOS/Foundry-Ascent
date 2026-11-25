@@ -647,6 +647,12 @@ const MEMORY_TITLE_SQL = `CASE WHEN m.type = 'milestone' AND (m.attributes ->> '
                         AND coalesce(m.attributes ->> 'status', '') NOT IN ('done', 'completed', 'reached', 'met')
                    THEN 'Goal, not reached yet: ' || m.title ELSE m.title END AS title`;
 
+/** What an item says: an experiment's result is kept beside its words, and is as much of it as they are. */
+const MEMORY_WORDS_SQL = `CASE WHEN m.type = 'experiment' AND coalesce(m.attributes ->> 'result', '') <> ''
+                         AND position('result:' IN lower(m.content)) = 0
+                         AND position(m.attributes ->> 'result' IN m.content) = 0
+                    THEN m.content || ' Result: ' || (m.attributes ->> 'result') ELSE m.content END`;
+
 function memorySearch(query: VentureMemoryQuery): StoreSearch {
   const q = withModel(query);
   const statuses = (q.statuses ?? ACTIVE_MEMORY_STATUSES).filter((s) => MemoryStatus.options.includes(s));
@@ -657,7 +663,7 @@ function memorySearch(query: VentureMemoryQuery): StoreSearch {
       `SELECT m.id, m.venture_id, NULL::uuid AS source_id, NULL::text AS source_scope, m.type AS memory_type,
               m.visibility,
               ${MEMORY_TITLE_SQL},
-              ${excerptSql('m.content', PASSAGE_CHARS)} AS excerpt, m.updated_at AS freshness_at, m.status, m.tsv,
+              ${excerptSql(MEMORY_WORDS_SQL, PASSAGE_CHARS)} AS excerpt, m.updated_at AS freshness_at, m.status, m.tsv,
               ${vecSql('m.embedding', 'm.embedding_model', q)} AS vec,
               ${recencySql('m.updated_at')} AS recency,
               CASE WHEN m.pinned THEN 1.0

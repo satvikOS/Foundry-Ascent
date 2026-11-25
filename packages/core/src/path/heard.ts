@@ -125,6 +125,8 @@ export function heardRight(message: string, names: readonly string[], lines: rea
 export function withoutStutter(text: string): string {
   const out = text
     .replace(/\b(?:um+|uh+|erm+|uhm+)\b[,.]?\s*/gi, '')
+    // "How much wood they pay".
+    .replace(/\bwood (?=(?:they|you|we|i|he|she|it|people|anyone|somebody|someone|the)\b)/gi, 'would ')
     .replace(/\b(\p{L}{1,12})(?: \1\b)+/giu, '$1')
     .replace(/\b((?:\p{L}+ ){1,2}\p{L}+) \1\b/giu, '$1')
     .replace(/\s{2,}/g, ' ')

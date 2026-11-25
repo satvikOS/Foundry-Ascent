@@ -1,5 +1,5 @@
 import { READING_EXAMPLE } from '../prompts/guidance.js';
-import { knownNumbersIn, numbersIn } from './figures.js';
+import { numbersIn } from './figures.js';
 import { coverage, stemOf, stemsOf } from './stems.js';
 import { unitsOf, wordsIn } from './units.js';
 
@@ -14,7 +14,9 @@ import { unitsOf, wordsIn } from './units.js';
  * 2. a survey as the next thing to do; a pass line on what people say they would do;
  * 3. sign-ups, a spoken yes, kind words or a few payments read as demand, proof, a market, "validated";
  * 4. praise, and sentences that say nothing ("This is the core of your venture");
- * 5. an empty bracket; a question they answered in this very message.
+ * 5. an empty bracket; a question they answered in this very message;
+ * 6. a price set above what the customer pays now, or by what people say they would pay; a verdict on a price from a
+ *    comparison that cannot carry it (a total against the price of one).
  *
  * A sentence that warns of these says the same words and stays: each rule reads what the words claim (who proves what,
  * denied or not, only if, only to), never a word alone (method.test.ts holds both, and the whole playbook: it must pass).
@@ -27,7 +29,9 @@ export type MethodFinding =
   | 'praise'
   | 'filler'
   | 'empty_bracket'
-  | 'answered_question';
+  | 'answered_question'
+  | 'price_rule'
+  | 'verdict_without_basis';
 
 export interface MethodUnit {
   /** The unit as it may be said; '' when nothing of it may. */
@@ -94,13 +98,37 @@ function enoughPaid(text: string): boolean {
       )
     )
       return false;
-    if (/\b(?:nobody|no one|none|not|never|\w+n't)\b/iu.test(part)) return false;
-    const counts = knownNumbersIn(
-      part.replace(/\$\s?\d[\d,.]*|\b\d[\d,.]*\s?(?:dollars|bucks|usd|%|percent)/giu, ' '),
-    );
+    // People they do not know are the ones that count.
+    if (
+      /\b(?:nobody|no one|none|not|never|\w+n't)\b/iu.test(
+        part.replace(/\b(?:do not|don['’]t) know\b/giu, ' '),
+      )
+    )
+      return false;
+    // How many did it, never how many were asked ("I asked 40 people and only 3 bought").
+    const t = digitsOf(part.replace(/\$\s?\d[\d,.]*|\b\d[\d,.]*\s?(?:dollars|bucks|usd|%|percent)/giu, ' '));
+    const counts = [...t.matchAll(PAYERS), ...t.matchAll(WON)].map((m) => Number(m[1]));
     return counts.some((n) => n >= ENOUGH_PAID);
   });
 }
+const SPELLED: Readonly<Record<string, string>> = Object.fromEntries(
+  'zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty'
+    .split(' ')
+    .map((w, i): [string, string] => [w, String(i)])
+    .concat([
+      ['thirty', '30'],
+      ['forty', '40'],
+      ['fifty', '50'],
+      ['sixty', '60'],
+      ['hundred', '100'],
+    ]),
+);
+const digitsOf = (text: string): string => text.toLowerCase().replace(/\b[a-z]+\b/g, (w) => SPELLED[w] ?? w);
+/** "14 marinas pay", "11 of 20 people ordered", "3 bought". */
+const PAYERS =
+  /(?<![\d.$])(\d+)(?: (?:of|out of) (?:the |my |our |those )?\d+)?(?: (?!(?:and|but|or|of|to|who|were|was|asked|said|did)\b)[a-z'-]+){0,3} (?:(?:have|has|had|already|now|each|who|that) )*(?:paid|pay|paying|bought|ordered|pre-?ordered|signed(?! (?:up|in|on)\b)|subscribed|renewed)\b/g;
+/** "Sold 30 jars", "signed 12 clinics". */
+const WON = /\b(?:sold|signed|won|got paid by|charged) (?:all |about |over )?(\d+)\b/g;
 
 /**
  * Whether the claim at `at` (its verb) is one about what they found: its clause neither denies it nor keeps it open, and
@@ -109,7 +137,7 @@ function enoughPaid(text: string): boolean {
 function claimed(text: string, at: number, end: number, context: MethodContext): boolean {
   const start = clauseStart(text, at);
   // "What they said shows …" is about what they said; "what proves it" defines.
-  const subject = text.slice(start, at).replace(WHAT_THEY_SAID, '');
+  const subject = text.slice(start, at).replace(WHAT_THEY_SAID, '').replace(WHAT_THIS_SAYS, '');
   if (DENIES.test(subject) || OPEN.test(subject)) return false;
   if (opensAfter(text.slice(end))) return false;
   if (/^\s*(?:if|when|once|until|unless|before|suppose|imagine)\b/iu.test(text)) return false;
@@ -210,9 +238,20 @@ const VALIDATED: readonly RegExp[] = [
   /\b(?:is|are|was|were|been|gets?|now|already|fully|partly) (?:now |already |fully |pretty much |clearly |basically )*validated\b/giu,
   /\b(?:is|are|was|that's|it's|this is) (?:\w+ ){0,2}(?:validation|proof of (?:demand|the market|interest|value)|proof (?:that )?(?:people|they|there|the market|customers|students|your (?:idea|price|concept)))\b/giu,
 ];
+/** A price set by what people say, or above what the workaround costs: the program's is below that, and above one's own cost. */
+const PRICE_RULE: readonly RegExp[] = [
+  /\b(?:price|charge|fee|set it)\b[^.;]{0,60}\babove (?:the (?:price|cost) of )?(?:the |their |that |your )?(?:alternatives?|workarounds?|current (?:fix|solution|cost|way)|what (?:they|people|customers|students) (?:pay|paid|spend|spent)(?: now| today)?)\b/iu,
+  /\bprice (?:it )?above (?:it|that|this|them|the alternatives?)\b/iu,
+  /\b(?:that|this|the) (?:sum|total|cost|number|amount|price of the alternative) (?:is|becomes|sets) (?:the |your )?(?:floor|minimum|lowest)(?: (?:for|of) (?:your|the))? (?:price|fee)?\b/iu,
+  /\b(?:price|charge|fee|set)\b[^.;]{0,80}\bwhat (?:they|people|customers|students|the \w+) (?:say|said|tell|told you) (?:that )?they(?:'d| would)(?: be willing to)? pay\b/iu,
+];
+/** "If that is more than $30, the raise is right": a total against the price of one, and a verdict on top. */
+const NO_BASIS =
+  /\bif (?:it(?:'s| is)?|that(?:'s| is)?|the (?:total|money|profit|sum|amount)|what (?:you keep|is left|'s left)|you keep|you make)(?: is| comes?(?: out)?| ends? up)? (?:higher|more|greater|above|bigger|over|better|lower|less) (?:than )?\$\s?\d[^.;]{0,40}?\b(?:raise|price|fee|increase|change|it) (?:is|was|works|holds|makes sense|was right)\b/iu;
+
 /** "Their answer will tell us if there's a paying market", "this will show what price works": what words cannot tell. */
 const WORDS_WILL_TELL =
-  /\b(?:(?:their|the|these|those|your) (?:answers?|replies|responses|feedback|survey|results?)|(?:this|that|it)) (?:will|would|should|can|helps?|lets?) (?:(?:us|you|to) )?(?:help (?:us|you) )?(?:tell|show|reveal|prove|confirm|validate|know|see|learn|understand)(?: (?:us|you))? (?:if|whether|how much|what (?:price|they(?:'d| would))|which price|who(?:'d| would)|(?:that )?there(?:'s| is)) ?(?:there(?:'s| is)|they(?:'ll| will|'d| would)? ?(?:pay|buy|use|want)?|people|customers|students|works?|would|the|to charge|a)\b/iu;
+  /\b(?:(?:their|the|these|those|your) (?:answers?|replies|responses|feedback|survey|results?)|(?:this|that|it)) (?:will|would|should|can|helps?|lets?) (?:also )?(?:(?:us|you|to) )?(?:help (?:us|you) )?(?:tell|show|reveal|prove|confirm|validate|know|see|learn|understand)(?: (?:us|you))? (?:if|whether|how much|what (?:price|they(?:'d| would))|which price|who(?:'d| would)|(?:that )?there(?:'s| is)) ?(?:there(?:'s| is)|they(?:'ll| will|'d| would)? ?(?:pay|buy|use|want)?|people|customers|students|works?|would|the|to charge|a)\b/iu;
 
 const GOOD = String.raw`(?:solid|great|strong|good|promising|encouraging|excellent|positive|fantastic|impressive|nice|healthy|amazing|exciting|remarkable|wonderful|powerful|terrific|superb|super|awesome|incredible|brilliant|outstanding|smart|clever|decent|fine|big|huge|clear|useful|helpful|valuable|important|meaningful|respectable|perfect|real|genuine)`;
 const THING = String.raw`(?:start|starts|signals?|signs?|results?|traction|numbers?|response|rates?|foundation|indicators?|momentum|proof|evidence|validation|margins?|progress|wins?|milestones?|achievements?|news|outcome|base|basis|conversion(?: rate)?|feedback|data points?|findings?|accomplishment|point|insight|indications?|beginning|turnout|work|job|effort|thinking|instinct|move|idea|news)`;
@@ -226,6 +265,8 @@ const VERDICT = new RegExp(
   'giu',
 );
 
+/** "What that shows is that they care": the claim, with its verb inside. */
+const WHAT_THIS_SAYS = /^\s*what (?:this|that|it) $/iu;
 const WHAT_THEY_SAID =
   /^\s*what (?:they|he|she|you|your \w+) (?:said|did|told you|have|heard|saw|found|got|did there)\b/iu;
 
@@ -313,6 +354,24 @@ const PRAISE_LINE: readonly RegExp[] = [
 const PRAISED_IDEA =
   /^\s*(?:your|this|that|the) (?:\w+ )?(?:idea|concept|venture|plan|product|approach|startup|business) (?:sounds?|is|looks?|seems?|feels?) (?:already |really |very |so |truly |genuinely |like an? |an? )*(?:exciting|great|amazing|promising|interesting|fantastic|brilliant|impressive|cool|wonderful|excellent|awesome|compelling|clever|smart)\b/iu;
 const FILLER: readonly RegExp[] = [
+  /^\s*(?:(?:that|this|it) is for (?:your|this) idea\b|(?:put|set|hold) (?:that|this|it) (?:beside|next to|against) your idea\b|for you,? that means your idea\b)/iu,
+  /^\s*(?:that(?:'s| is) (?:a )?(?:tough|hard|rough|difficult) (?:feeling|spot|place|one),? (?:but|and|so) )?(?:so |now |ok(?:ay)?,? )?let(?:'s| us) (?:just )?look at the (?:facts|numbers|evidence|data)[.!]*\s*$/iu,
+  /^\s*we (?:haven't|have not) hit (?:our|the) target\b[^.!?]*[.!]*\s*$/iu,
+  /^\s*(?:ok(?:ay)?|alright|all right|right|great|sure|perfect),? (?:\p{Lu}\p{L}+,? )?let(?:'s| us) (?:get (?:this|that|it) (?:done|sorted|going|moving)|do (?:this|it|that)|get (?:started|going|to it))[.!]*\s*$/iu,
+  /^\s*(?:\p{Lu}\p{L}+, )?here(?:'s| is) (?:the|your|a) (?:one-?page(?:r)?|page|sheet|canvas|table) (?:idea |plan |sheet |version )?(?:for|of|with|on) [^.!?:]{1,50}[.!]*\s*$/iu,
+  /^\s*(?:i(?:'m| am) )?sorry (?:if|that) (?:that|it|this|my (?:last )?\w+) (?:came across|sounded|felt|seemed|was) [^.!?:]{1,30}[.!]*\s*$/iu,
+  /^\s*you said ["'‘“][^"'’”]{1,40}["'’”][.!]*\s*$/iu,
+  /^\s*understanding (?:the reasons? (?:behind|for|why)|why|how|what)\b[^.!?]{0,60}\bis (?:key|crucial|important|essential|critical|vital) (?:to|for)\b/iu,
+  /^\s*what matters (?:now|most|here|right now) is (?:how|that|to|what) you (?:respond|react|keep|stay|learn|do (?:next|now|with))\b/iu,
+  /\b(?:this|that)(?:'s| is) (?:exactly |precisely |just )?(?:the |a )?(?:kind|sort|type) of (?:learning|feedback|insight|progress|work|thinking)\b/iu,
+  /^\s*(?:just |so )?(?:keep )?focus(?:ing)? on what you can control\b/iu,
+  /\byour progress (?:is(?:n't| not)) (?:about|measured)\b|\bnot a measure of your progress\b/iu,
+  /^\s*you(?:'re| are) not failing\b|\byou(?:'re| are) learning what works\b/iu,
+  /^\s*(?:so |now )?let(?:'s| us) make (?:that|this|the|your) (?:next )?\w+ count\b/iu,
+  /^\s*(?:that|this) feeling is (?:common|normal|natural)\b|^\s*(?:it|this|that)(?:'s| is) (?:just )?a starting point\b/iu,
+  /^\s*you have a clear (?:next step|path|way forward|roadmap)\b/iu,
+  /^\s*(?:it|this|that|the page|one page|a one-?page(?:r)?|putting (?:it|this|\w+) on one page|having (?:it|this) on one page) (?:will |can )?(?:lines up what|keeps? everything|puts? everything|forces? you|helps? you (?:see|separate|know)|makes? it (?:easy|easier)|tells? you who cares|shows? (?:you )?what you know|is a (?:great|quick|good|simple|fast|useful) way)\b/iu,
+  /\bwe need to refine our approach\b|\brefine (?:your|our) approach\b/iu,
   /\bRome (?:wasn't|was not) built\b/iu,
   /^\s*(?:this|that|it|doing (?:this|that|so)) (?:will|would|can|should) (?:also )?(?:strengthen|boost|elevate|enhance|improve|sharpen|propel|accelerate) your (?:venture|business|idea|case|position|startup|story|credibility|chances|pitch|journey)\b/iu,
   /^\s*(?:this|that|it)(?:'s| is) an? (?:big|huge|great|real|important|major|giant|significant) step (?:forward|in the right direction|ahead)\b/iu,
@@ -374,7 +433,7 @@ const PASS_LINE: readonly RegExp[] = [
     'iu',
   ),
   new RegExp(
-    String.raw`\b(?:if|when|once) (?:they|people|customers|students|users|buyers|someone|the \w+) (?:all |both |mostly |really )?(?:say (?:yes|they(?:'d| would))|love it|like it|like the idea|seem interested|sound interested|are (?:excited|interested))[^.;:]{0,30}, (?:then )?(?:you(?:'ve| have| can| know)|it(?:'s| is| works)|that(?:'s| is| means)|there(?:'s| is)|go ahead|build|start building)`,
+    String.raw`\b(?:if|when|once) (?:they|people|customers|students|users|buyers|someone|the \w+) (?:all |both |mostly |really )?(?:say (?:yes|they(?:'d| would))(?: (?:pay|buy|use|want)\w*(?: (?:it|for it|that))?)?|love it|like it|like the idea|seem interested|sound interested|are (?:excited|interested))[^.;:]{0,30}, (?:then )?(?:you(?:'ve| have| can| know|'re| are)|it(?:'s| is| works)|that(?:'s| is| means)|there(?:'s| is)|go ahead|go on|build|start building|move on|keep going|continue|carry on|proceed|stick with|you're good)`,
     'iu',
   ),
 ];
@@ -401,7 +460,7 @@ const ASKS: readonly (readonly [QuestionKind, RegExp])[] = [
   ],
   [
     'choice',
-    /\bwhat (?:would|might|could|will) (?:make|get|convince|lead|persuade|cause|take for) you\b|\bwhat would (?:it take|have to)\b[^?]{0,30}\byou\b[^?]{0,20}\b(?:switch|buy|use|choose|pay|try)\b|\bwhich (?:features?|version|option|one|price|plan) (?:would|do|will|could|might) you (?:like|prefer|want|choose|pick|use|need|rather)\b|\bwhat (?:features?|else)? ?(?:would|should) you (?:like|want|love|wish|expect|look for)(?! (?:to know|me|us))(?: to (?:see|have)| in| from| it| the| most)?\b|\bwhat features?\b/iu,
+    /\bwhat (?:would|might|could|will) (?:make|get|convince|lead|persuade|cause|take for) (?:you|this|that|it|the \w+|an? \w+|my \w+|our \w+)\b|\bwhat would you (?:change|improve|add|remove|do differently)\b|\bwhat would (?:it take|have to)\b[^?]{0,30}\byou\b[^?]{0,20}\b(?:switch|buy|use|choose|pay|try)\b|\bwhich (?:features?|version|option|one|price|plan) (?:would|do|will|could|might) you (?:like|prefer|want|choose|pick|use|need|rather)\b|\bwhat (?:features?|else)? ?(?:would|should) you (?:like|want|love|wish|expect|look for)(?! (?:to know|me|us))(?: to (?:see|have)| in| from| it| the| most)?\b|\bwhat features?\b/iu,
   ],
   [
     'use',
@@ -501,7 +560,10 @@ function givesBefore(before: string): boolean {
 
 /** Indirect: "ask them if they would use it", "ask how much they'd pay". */
 const INDIRECT =
-  /\b(ask(?:ing|s)?|find out from|check with)((?: (?:them|him|her|people|students|customers|users|buyers|each(?: of them| one)?|those \w+|these \w+|the \w+(?: \w+){0,2}|your \w+|all (?:of )?\w+|everyone|\w+ (?:people|students|customers|users|friends|nurses|parents|owners|teachers)))?) (if|whether|how much|what(?: price)?|which \w+|how likely|how often)((?: it is)?) (they|he|she|people|it)?(?:'d|'ll|'re| would| will| might| could| are| is|)? ?((?:definitely |really |ever |actually |be )*)(pay|spend|use|buy|try|order|like|love|want|interested|willing|likely|sign up|subscribe|consider|prefer|recommend|feels? fair|fair|worth|useful|download|join|switch|need)\b[^.;:!?"]*/giu;
+  /\b(ask(?:ing|s)?|find out(?: from)?|learn|figure out|discover|check with)((?: (?:them|him|her|people|students|customers|users|buyers|each(?: of them| one)?|those \w+|these \w+|the \w+(?: \w+){0,2}|your \w+|all (?:of )?\w+|everyone|(?:two|three|four|five|six|seven|eight|nine|ten|twelve|twenty|\d+|some|a few) (?:\w+ )?\w+|\w+ (?:people|students|customers|users|friends|nurses|parents|owners|teachers)))?) (if|whether|how much|what(?: price)?|which \w+|how likely|how often)((?: it is)?) (they|he|she|people|it)?(?:'d|'ll|'re| would| will| might| could| are| is|)? ?((?:definitely |really |ever |actually |be )*)(pay|spend|use|buy|borrow|rent|hire|book|try|order|like|love|want|interested|willing|likely|sign up|subscribe|consider|prefer|recommend|feels? fair|fair|worth|useful|download|join|switch|need)\b[^.;:!?"]*/giu;
+/** "…, and what they would pay", of a sentence that says what to ask. */
+const INDIRECT_TAIL =
+  /(,\s*(?:and |or )?|\s(?:and|or) )(if|whether|how much|what(?: price)?|how likely|how often) (?:they|he|she|people|students|customers|users|buyers|it)(?:'d|'ll| would| will| might| could) (?:(?:definitely|really|ever|actually|be|willing|to|consider|happily) )*(pay|spend|use|buy|borrow|rent|hire|book|try|order|want|like|love|switch|subscribe|sign up)\b[^,.;:!?"]*/giu;
 const INDIRECT_PAST: Readonly<Record<QuestionKind, string>> = {
   price: 'what they spent on this last time',
   use: 'what they use now and when they last used it',
@@ -568,6 +630,12 @@ function indirect(unit: string, plain: string): string | null {
     const whole = unit.slice(m.index, m.index + m[0].length);
     if (REAL_OFFER.test(whole) || DENIES.test(plain.slice(clauseStart(plain, m.index), m.index))) continue;
     if (/\b(?:you|your|we|i|me)\b/iu.test(m[5] ?? '')) continue;
+    // What doing it tells ("you learn what they need") is no question to put to anyone.
+    if (
+      /\b(?:you|we|they|i)(?:'ll| will| can| also)? $/iu.test(plain.slice(0, m.index)) &&
+      !/^ask/iu.test(m[1] ?? '')
+    )
+      continue;
     const verb = m[7] ?? '';
     // "Ask them what they use now" is the method itself.
     if (
@@ -580,8 +648,19 @@ function indirect(unit: string, plain: string): string | null {
       continue;
     const kind = indirectKind(m[3] ?? '', verb);
     const who = (m[2] ?? '').trim();
-    out = out.replace(whole, `${m[1] ?? 'ask'}${who === '' ? ' them' : ` ${who}`} ${INDIRECT_PAST[kind]}`);
+    const them = who !== '' ? ` ${who}` : /^ask/iu.test(m[1] ?? '') ? ' them' : '';
+    out = out.replace(whole, `${m[1] ?? 'ask'}${them} ${INDIRECT_PAST[kind]}`);
     changed = true;
+  }
+  // "… what the tear cost them, and what they would pay to skip that": the rest of what they are told to ask.
+  if (GIVES.test(plain)) {
+    for (const m of [...straight(out).matchAll(INDIRECT_TAIL)]) {
+      const whole = out.slice(m.index, m.index + m[0].length);
+      if (REAL_OFFER.test(whole) || DENIES.test(straight(out).slice(0, m.index))) continue;
+      const past = INDIRECT_PAST[indirectKind(m[2] ?? '', m[3] ?? '')];
+      out = out.replace(whole, out.includes(past) ? '' : `${m[1] ?? ' and '}${past}`);
+      changed = true;
+    }
   }
   return changed ? out : null;
 }
@@ -593,6 +672,8 @@ function warnsOfQuestion(plain: string, before: string): boolean {
   // The words of the question itself ("Would you not miss it?") are no warning: only what stands outside it.
   const outside = plain
     .replace(/"[^"]*"/gu, ' ')
+    // "… to skip that" warns of nothing.
+    .replace(/\bto (?:avoid|skip|stop|cut|replace) (?:it|that|this|them)\b/giu, ' ')
     .replace(/[^.!?:;—]*\?/gu, (q) => (/\bask\b/iu.test(q) ? q : ' '));
   if (WARNS.test(outside)) return true;
   const lead =
@@ -705,6 +786,17 @@ const plainWords = (text: string): string =>
 /** The sentences of the prompt's own example: copied word for word they say nothing of the founder's. */
 const EXAMPLE: ReadonlySet<string> = new Set(unitsOf(READING_EXAMPLE).map((u) => plainWords(u.text)));
 
+/** Whether a quotation is open at the end of `text`. */
+function quoteOpens(text: string): boolean {
+  let open = false;
+  for (const ch of text.slice(text.lastIndexOf('\n\n') + 1)) {
+    if (ch === '"') open = !open;
+    else if (ch === '\u201C') open = true;
+    else if (ch === '\u201D') open = false;
+  }
+  return open;
+}
+
 /** One unit of a reply as the method lets it stand (see the module comment). Idempotent. */
 export function methodUnit(unit: string, context: MethodContext = {}): MethodUnit {
   if (unit.trim() === '') return { text: unit, findings: [] };
@@ -718,9 +810,19 @@ export function methodUnit(unit: string, context: MethodContext = {}): MethodUni
   const plain = straight(unit).replace(/\[\s*E\d+(?:\s*[,;]\s*E\d+)*\s*\]/giu, '');
   const body = plain.replace(/^\s*(?:(?:[-*+•]|\d{1,3}[.)])\s+)?/u, '');
   // A line for them to say or send is theirs to say: nothing in it is the coach's verdict.
-  const own = body.replace(/"[^"]*"/gu, ' ');
+  const inDraft = quoteOpens(context.before ?? '');
+  const own = (inDraft ? body.replace(/^[^"]*(?:"|$)/u, ' ') : body)
+    .replace(/"[^"]*(?:"|$)/gu, ' ')
+    .replace(
+      /^(\s*)what (this|that|it) ((?:tells|shows|means|says|suggests)(?: us| you)?) is (?:that )?/iu,
+      '$1$2 $3 that ',
+    );
   if (context.founderText !== undefined && answered(unit, context.founderText))
     return out('', 'answered_question');
+  // All of it is a draft in quotes, over several sentences.
+  if (own.trim() === '' && (inDraft || /"[^"]*$/u.test(body))) return { text: unit, findings: [] };
+  if (PRICE_RULE.some((re) => re.test(own)) && !DENIES.test(own.slice(0, 30))) return out('', 'price_rule');
+  if (NO_BASIS.test(own)) return out('', 'verdict_without_basis');
   const question = QUESTION_END.test(own.trim());
   if (
     !question &&
@@ -732,7 +834,8 @@ export function methodUnit(unit: string, context: MethodContext = {}): MethodUni
     return out('', 'survey');
   if (
     !question &&
-    !COSTS.test(own) &&
+    // "They would pay for it" costs them nothing yet.
+    !COSTS.test(own.replace(/(?:\bwould|'d|\bwill) pay(?: for (?:it|that|one))?\b/giu, ' ')) &&
     !ASKED_MONEY.test((context.before ?? '').slice(-300)) &&
     PASS_LINE.some((re) => re.test(body.replace(/"/gu, '')))
   )
@@ -758,7 +861,7 @@ export function methodUnit(unit: string, context: MethodContext = {}): MethodUni
   }
   if (EXAMPLE.has(plainWords(own)) || FILLER.some((re) => re.test(own))) return out('', 'filler');
   const found = verdict(own, context);
-  if (found !== null && own.length === body.length)
+  if (found !== null && own.length === body.length && own === body)
     return out(restAfter(unit, offset + found.end, context), 'over_claim');
   if (found !== null || overClaim(own, context) !== null || FRIENDS_PROVE.test(own)) {
     if (

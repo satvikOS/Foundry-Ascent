@@ -35,6 +35,22 @@ export interface PromptGuidance {
    * when the conversation already listed them, the next of them. Additive; absent: the step's parts.
    */
   readonly fallback?: { readonly text: string; readonly voice: string };
+  /**
+   * What the program has not said yet of what it answers with (the parts of the step with how, the trap, why, their own words
+   * put in), in order: given in place of an answer the conversation holds already. Additive.
+   */
+  readonly more?: readonly string[];
+  /**
+   * The things they ask in one message, in order (two or more), each with what the server adds when the reply leaves it out
+   * ('' : nothing). Additive.
+   */
+  readonly parts?: readonly { readonly ask: string; readonly text: string; readonly voice: string }[];
+  /** What they set themselves ("10", "this month", "one evening"): the answer keeps to it and says it. Additive. */
+  readonly limits?: readonly { readonly said: string; readonly text: string }[];
+  /** What opens the reply is the one thing to do: no order, list or plan of the model's own stands beside it. Additive. */
+  readonly orders?: boolean;
+  /** They ask for a message, a template or a text written out: the model may write one. Additive. */
+  readonly draft?: boolean;
   /** Sums of their own numbers, worked out by code: the model says them as they are, and any other as a marker. Additive. */
   readonly calc?: readonly string[];
   /** They ask for a sum that code could not read one way: the model writes it as a marker (validators/sums.ts). Additive. */
@@ -87,6 +103,8 @@ export interface PromptGuidance {
     readonly doneWhen: string;
     /** ISO date. */
     readonly dueOn: string | null;
+    /** The day it was due, when that passed and it has another one now (a recall says both). Additive. */
+    readonly wasDue?: string;
     readonly template: { readonly title: string; readonly body: string } | null;
   } | null;
   /** The path's own open step, when `step` answers their ask instead (named in half a line, only when asked). */
@@ -144,7 +162,8 @@ export interface PromptGuidance {
  * `missing_referral`: a qualified person must decide and the reply does not say who, or what to bring; `wrong_date`: another
  * day than the step's; `step_talk`: the model wrote a step, a deadline or what done means itself (the server writes the one
  * step line), or said again what the server opened with; `missing_lead`, `missing_prior`: what the server says first, or the
- * thing on record the answer builds on, is not in the reply; `missing_pick`: they ask to have one of two things chosen, and
+ * thing on record the answer builds on, is not in the reply; `missing_part`: one of the things they asked, or what they set
+ * ("this month"), is not; `missing_pick`: they ask to have one of two things chosen, and
  * the first sentence chooses none.
  */
 export type ReplyContractFinding =
@@ -159,6 +178,7 @@ export type ReplyContractFinding =
   | 'step_talk'
   | 'missing_lead'
   | 'missing_prior'
+  | 'missing_part'
   | 'missing_pick';
 
 /** What the reply-contract check found (`validators/reply-contract.ts`). */
@@ -357,7 +377,19 @@ export function renderGuidance(
   if (lead !== null)
     lines.push(
       `<opens>${line(voice ? lead.voice : lead.text, 900)}</opens>`,
-      'Your reply already opens with that, word for word. Write only what comes after it, one to three sentences: what it means for them and why. Never say it again and never contradict it.',
+      g.orders === true
+        ? 'Your reply already opens with that, word for word, and it is the one thing they do. Write only why that one, in one sentence. No other order, list, plan or question, and never say it again.'
+        : 'Your reply already opens with that, word for word. Write only what comes after it, one to three sentences: what it means for them and why. Never say it again and never contradict it.',
+    );
+  const parts = full && restate === null ? (g.parts ?? []) : [];
+  if (parts.length > 1)
+    lines.push(
+      `They ask ${parts.length === 2 ? 'two' : 'three'} things. Answer each, in this order, and none of them twice: ${parts.map((p, i) => `${String(i + 1)}) ${line(p.ask, 120)}`).join(' ')}`,
+    );
+  const limits = full && restate === null ? (g.limits ?? []) : [];
+  if (limits.length > 0)
+    lines.push(
+      `They set this: ${limits.map((l) => line(l.said, 40)).join(', ')}. Say how the answer keeps to it.`,
     );
   if (g.newIdea !== null) {
     const fact =
@@ -380,6 +412,12 @@ export function renderGuidance(
       ...(g.matched === 'semantic' ? [SEMANTIC_LINE] : []),
       '</answer>',
     );
+    const more = (g.more ?? []).slice(0, 3);
+    if (more.length > 0)
+      lines.push(
+        `<not_said_yet>${more.map((m) => line(m, 200)).join(' ')}</not_said_yet>`,
+        'They have that answer from your last replies. Say none of it again: answer from what is not said yet, for their case.',
+      );
   }
   if (facts.length > 0)
     lines.push(`<facts>${facts.map((f) => line(f, FACT_CHARS)).join(' | ')}</facts>`, FACTS_LINE);
@@ -513,6 +551,9 @@ export function guidanceText(guidance: PromptGuidance, today?: string | null): s
     g.lead?.text ?? '',
     g.lead?.voice ?? '',
     ...(g.calc ?? []),
+    ...(g.more ?? []),
+    ...(g.parts ?? []).map((p) => p.text),
+    ...(g.limits ?? []).map((l) => l.text),
     g.askBack ?? '',
     g.prior?.sentence ?? '',
     g.prior?.spoken ?? '',

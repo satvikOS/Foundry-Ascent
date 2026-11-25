@@ -166,6 +166,33 @@ def shifted(days: Iterable[tuple[int, int]], back: int, today: dt.date) -> set[t
     return out
 
 
+_SAID_DATE = re.compile(
+    rf"(?:\b((?:mon|tues?|wed(?:nes)?|thu(?:rs)?|fri|sat(?:ur)?|sun)(?:day)?)\.?,?\s+)?\b{_MONTH}\.?\s+{_DAY}\b(?!\s*%)",
+    re.IGNORECASE,
+)
+
+
+def move_dates(text: str, back: int, today: dt.date) -> str:
+    """A text as it reads once the conversation it was said in is ``back`` days earlier: each date moved, with its weekday."""
+    if back == 0:
+        return text
+
+    def moved(m: re.Match[str]) -> str:
+        month = _MONTHS[next(name for name in _MONTHS if name.startswith(m.group(2).lower()[:3]))]
+        try:
+            day = dt.date(today.year, month, int(m.group(3)))
+        except ValueError:
+            return m.group(0)
+        # A date of early next year is said without its year.
+        if (today - day).days > 200:
+            day = dt.date(today.year + 1, day.month, day.day)
+        day -= dt.timedelta(days=back)
+        weekday = f"{day:%A}, " if m.group(1) else ""
+        return f"{weekday}{day:%B} {day.day}"
+
+    return _SAID_DATE.sub(moved, text or "")
+
+
 def without_dates(text: str) -> str:
     """A text with its dates, clock times, years, list numbers and evidence keys blanked: what is left is figures."""
     out = _LIST_MARK.sub("\n", plain(text))

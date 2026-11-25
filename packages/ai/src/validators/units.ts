@@ -23,6 +23,9 @@ const ABBREVIATIONS = new Set([
   'i.e',
   'a.m',
   'p.m',
+  'u.s',
+  'u.k',
+  'ph.d',
 ]);
 /** A Markdown block line: a list item or a heading. */
 const BLOCK_LINE = /^[ \t]{0,3}(?:[-*+•][ \t]|\d{1,3}[.)][ \t]|#{1,6}[ \t])/;
@@ -139,6 +142,52 @@ export function isBlockUnit(unit: string): boolean {
   return BLOCK_LINE.test(unit.replace(/^\s*\n/, '').replace(/^\n+/, ''));
 }
 
+/** A code fence on a line of its own: the model's way to set a draft apart, which no reply needs. */
+const FENCE = /(^|\n)[ \t]*```[\w-]*[ \t]*(?=\n|$)/gu;
+
+/** A text without its code fences; what stands between them stays. */
+export function withoutFences(text: string): string {
+  return text.includes('```') ? text.replace(FENCE, '$1').replace(/\n{3,}/g, '\n\n') : text;
+}
+
+const LETTER_OPENS =
+  /(?:^|\n)[ \t]*(?:>[ \t]*)?(?:(?:hi|hello|hey|dear)\b[^\n.?!:]{0,60},|subject[*_]*:[^\n]*)[ \t]*(?=\n|$)/giu;
+const LETTER_ENDS =
+  /\n[ \t]*(?:>[ \t]*)?(?:(?:many )?thanks|thank you|best|all the best|kind regards|regards|cheers|sincerely|yours|warmly)\b[^\n]{0,40}(?:\n|$)/iu;
+
+/** Whether `text` ends inside a letter written for them ("Hi [name], ..." that was not signed off yet). */
+export function letterOpen(text: string): boolean {
+  const opened = [...text.matchAll(LETTER_OPENS)].at(-1);
+  return opened !== undefined && !LETTER_ENDS.test(text.slice(opened.index + opened[0].length));
+}
+
+const NUMBERED = /^(\s*)(\d{1,3})([.)]\s)/u;
+
+/** A numbered item after `last` (0: none yet), counted on from it; what is no item, or stands in order, as it is. */
+export function inOrder(unit: string, last: number): { readonly text: string; readonly last: number } {
+  const m = NUMBERED.exec(unit);
+  if (m === null) return { text: unit, last };
+  const n = Number(m[2]);
+  if (n <= last + 1) return { text: unit, last: n };
+  return {
+    text: `${m[1] ?? ''}${String(last + 1)}${m[3] ?? ''}${unit.slice(m[0].length)}`,
+    last: last + 1,
+  };
+}
+
+/** The numbered lists of a text counted on again where an item was left out of one. */
+export function renumbered(text: string): string {
+  let last = 0;
+  return text
+    .split('\n')
+    .map((line) => {
+      const out = inOrder(line, last);
+      last = out.last;
+      return out.text;
+    })
+    .join('\n');
+}
+
 /** Whether a list item ("1. …", "- …"). */
 export function isListUnit(unit: string): boolean {
   return /^\s*(?:[-*+•]|\d{1,3}[.)])\s/.test(unit);
@@ -146,12 +195,17 @@ export function isListUnit(unit: string): boolean {
 
 /** A sentence that says nothing without the one before it ("That will show us …"). */
 const LEANS =
-  /^(?:and |so )?(?:that|this|it|those|these)(?:['’](?:s|re|ll|d)| (?:is|are|was|were|means|will|would|gives|keeps|tells))\b/iu;
-const LEANS_MAX_WORDS = 16;
+  /^(?:and |so |but |plus,? |also,? )?(?:(?:that|this|it|those|these)(?:['’](?:s|re|ll|d)| (?:(?:also|alone|way|only) )?(?:is|are|was|were|means|will|would|gives|keeps|tells|helps|lets|makes|shows))|they(?:['’]ll| will| help| give| keep| let| make))\b/iu;
+const LEANS_MAX_WORDS = 24;
+/** "It also shows …": beside what went, however long it is. */
+const SAYS_ALSO = /^(?:and |so |but |plus,? )?(?:it|this|that|they) also\b/iu;
+const ALSO_MAX_WORDS = 40;
 
 /** Whether a unit only leans on the one before it, which went. */
 export function leansBack(unit: string): boolean {
-  return LEANS.test(unit.trim()) && unit.split(/\s+/).filter((w) => w !== '').length <= LEANS_MAX_WORDS;
+  const text = unit.trim();
+  const words = text.split(/\s+/).filter((w) => w !== '').length;
+  return (LEANS.test(text) && words <= LEANS_MAX_WORDS) || (SAYS_ALSO.test(text) && words <= ALSO_MAX_WORDS);
 }
 
 /** The words of a text. */

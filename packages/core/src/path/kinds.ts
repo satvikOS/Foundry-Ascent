@@ -319,7 +319,7 @@ export function asksAboutReply(text: string): Restating | null {
 }
 
 const MEANING =
-  /\b(?:so )?what (?:does|did|would) (?:that|this|it|all (?:of )?(?:that|this)|the (?:result|finding|answer)s?) (?:mean|tell|show|say|change|prove)\b|\bwhat (?:did|do|have) (?:i|we) (?:learn|learned|find out|take from|make of)\b|\bwhat (?:do|should|would|can) (?:i|we) do with (?:that|this|it|them|what (?:they|the \w+) (?:said|told)|the (?:result|answer|finding)s?)\b|\bwhat(?: now| then)?,? with (?:that|this)\b|^(?:ok(?:ay)?[, ]+)?so what\s*[?.!]*$|\bwhat (?:do|should) (?:i|we) make of (?:that|this|it)\b/;
+  /\b(?:so )?what (?:does|did|would) (?:that|this|it|all (?:of )?(?:that|this)|the (?:result|finding|answer)s?) (?:mean|tell|show|say|change|prove)\b|\bwhat (?:did|do|have) (?:i|we) (?:learn|learned|find out|take from|make of)\b|\bwhat (?:do|should|would|can) (?:i|we) do with (?:that|this|it|them|what (?:they|the \w+) (?:said|told)|the (?:result|answer|finding)s?)\b|\bwhat(?: now| then)?,? with (?:that|this)\b|^(?:ok(?:ay)?[, ]+)?so what\s*[?.!]*$|\bwhat (?:do|should) (?:i|we) make of (?:that|this|it)\b|\bso what (?:do|should) (?:i|we) (?:build|make|sell|offer|change)(?: (?:then|now|instead|next))?\s*[?.!]*$|\bwhat (?:does )?(?:that|this|it)? ?means? (?:that|this|it)\b|\bwhat (?:that|this|it) means?\b(?=\s*[?.!]|$| for)|\bwhat is (?:that|this|it) telling (?:me|us)\b/;
 
 /** They ask what they just found means ("so what does that mean for what I'm building?", "what do I do with that?"). */
 export function asksMeaning(text: string): boolean {
@@ -356,6 +356,97 @@ const FILLS_IN =
 /** They ask to have the step's own template, written out for them. */
 export function asksForTemplate(text: string): boolean {
   return sentences(text).some((s) => FILLS_IN.test(s));
+}
+
+// ------------------------------------------------------------------------------------------------
+// Two things asked in one message, and what they set themselves
+// ------------------------------------------------------------------------------------------------
+
+/** Where a second question starts in one sentence ("…, and where do I look for them?", "… and what now?"). */
+const AND_ASKS =
+  /\s*(?:,|;|\s[-–—])?\s+(?:and|but|then)\s+(?:also |then |so )?(?=(?:(?:how|what|where|who|whom|when|which|why)\b(?! (?:much|many|far|long) of\b)|(?:do|does|did|is|are|am|can|could|should|would|will) (?:i|we|it|that|this|they|there|my|our|the)\b))/i;
+/** Most things asked that are kept apart. */
+const MOST_ASKS = 3;
+
+/**
+ * The things a message asks, in order, when it asks two or more ("Am I ready to leave? Where do I go next?", "Is that good, and
+ * what now?"); [] for one ask, or none.
+ */
+export function asksIn(text: string): string[] {
+  const out: string[] = [];
+  for (const sentence of ownSentences(ownWords(text))) {
+    if (!sentence.trim().endsWith('?') && !QUESTION_START.test(plain(sentence))) continue;
+    for (const part of sentence.split(AND_ASKS)) {
+      const said = part.replace(/[\s?.!]+$/u, '').trim();
+      const words = plain(said)
+        .split(/\s+/)
+        .filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+      if ((words < 2 && !/^(?:how|why)$/i.test(said)) || /^(?:or not|right|ok(?:ay)?|you know)$/i.test(said))
+        continue;
+      out.push(said);
+    }
+  }
+  return out.length < 2 ? [] : out.slice(0, MOST_ASKS);
+}
+
+/** A time they set for it, in their words. */
+const TIME_SET =
+  /\b(?:(?:this|next) (?:week|weekend|month|term|semester|evening|afternoon)|(?:one|an?|two|three) (?:evening|hour|afternoon|morning|weekend)s?|tonight|tomorrow(?: (?:morning|evening|night))?|before (?:the )?(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|exam|finals?|break|move-?out|launch|pitch)|by (?:(?:mon|tues|wednes|thurs|fri|satur|sun)day))\b/g;
+/** How many they want ("10 of them", "my first 100 users"). */
+const COUNT_SET =
+  /\b(?:get|find|reach|win|land|sell|talk to|ask|interview|sign|to|first) (?:me |my |the |our |to )*(?:first )?(\d{1,5})\b(?! ?(?:%|percent|dollars?|minutes?|mins?|hours?|days?|weeks?|months?|years?|am|pm))/g;
+
+/** What an ask sets itself: how many, and by when or in how long, in their words. [] when it asks nothing. */
+export function limitsIn(text: string): string[] {
+  const out: string[] = [];
+  for (const sentence of sentences(text)) {
+    if (!asksFor(sentence)) continue;
+    const t = sentence.replace(
+      /\b(?:ten|twenty|thirty|fifty|a hundred|one hundred)\b/g,
+      (w) => SPELLED_SET[w] ?? w,
+    );
+    for (const m of t.matchAll(COUNT_SET)) out.push(m[1] ?? '');
+    for (const m of t.matchAll(TIME_SET)) out.push(m[0]);
+  }
+  return [...new Set(out)].filter((x) => x !== '').slice(0, 3);
+}
+
+const SPELLED_SET: Readonly<Record<string, string>> = {
+  ten: '10',
+  twenty: '20',
+  thirty: '30',
+  fifty: '50',
+  'a hundred': '100',
+  'one hundred': '100',
+};
+
+/** "And if they say no?": what to do with a no to the step just given. */
+const IF_NO =
+  /^(?:(?:and|but|so|ok(?:ay)?)[, ]+)*(?:what (?:do i do |should i do |happens )?)?if (?:they|he|she|someone|people|everyone|the \w+|nobody|no one)(?: all| just)? (?:says? no|refuses?|do(?:es)? not (?:want|answer|reply|care)|answers?|replies|responds?|ignores? me)\b|\bwhat if (?:they|he|she|someone|people|everyone|it|nobody|no one)(?: all| just)? (?:says? no|refuses?|is a no|do(?:es)? not (?:answer|reply)|answers|replies|ignores? me)\b/;
+export function asksIfNo(text: string): boolean {
+  // "If they say no, I leave" is their plan for it.
+  return sentences(text).some((s) => IF_NO.test(s) && !/,\s*(?:i|we)(?: will|'ll)? [a-z]+/.test(s));
+}
+
+/** "Is that really worth my two free hours?": whether the step just given is worth its time. */
+const WORTH_IT =
+  /\b(?:is|are) (?:it|that|this|they|those|the (?:step|talks?|test)) (?:really |even |actually )*worth (?:it|my|the|doing|\w+ing)\b|\bwhy (?:would|should) i (?:even )?bother\b|\bwhat is the point of (?:that|this|it)\b/;
+export function asksIfWorth(text: string): boolean {
+  return sentences(text).some((s) => WORTH_IT.test(s));
+}
+
+/** "Do I need one now?": whether a thing of the method is for now. */
+const NEED_NOW =
+  /\bdo (?:i|we) (?:really |even )?need (?:one|it|that|this|an? [\w -]{3,40}?)(?: (?:now|yet|already|right now|at this (?:stage|point)|today))?\s*[?.!]*$/;
+export function asksIfNeeded(text: string): boolean {
+  return sentences(text).some((s) => s.endsWith('?') && NEED_NOW.test(s));
+}
+
+/** "What did you tell me to do?": the step as it was given, never where they stand. */
+const TOLD_TO_DO =
+  /\bwhat (?:did|was it that) you (?:tell|ask|want|told|asked) (?:me|us) to do\b|\bwhat (?:was|is) it (?:that )?i (?:was|am) supposed to do\b/;
+export function asksWhatTold(text: string): boolean {
+  return sentences(text).some((s) => TOLD_TO_DO.test(s));
 }
 
 const MESSAGE_ASKED =

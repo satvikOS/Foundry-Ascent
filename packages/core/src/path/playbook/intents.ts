@@ -1043,6 +1043,7 @@ export const INTENTS: readonly PathIntent[] = [
     make my value proposition clearer
     what's in it for the customer
     what makes my offer valuable
+    what is a value proposition
     fill in a value proposition canvas
     unique value proposition
     `,
@@ -1473,6 +1474,8 @@ export const INTENTS: readonly PathIntent[] = [
     is my fee right
     what should the fee be
     price it
+    how much would they pay
+    money bit
     `,
     { unless: ['ticket', 'patent', 'lawyer', 'valuation', 'testing'] },
   ),
@@ -1822,6 +1825,8 @@ export const INTENTS: readonly PathIntent[] = [
     my first sale
     go from a few customers to ten
     get from four customers to ten
+    how do I get from ... to ten
+    how do I go from ... to ten
     `,
     { unless: ['month', 'interview', 'talk', 'interviews'] },
   ),
@@ -1939,6 +1944,9 @@ export const INTENTS: readonly PathIntent[] = [
     long sales cycle
     who has the budget at a company
     procurement is blocking my deal
+    get the ... department to pay
+    get the ... office to pay
+    how do I get a department to pay
     how do I get a meeting with a big company
     sell software to restaurants
     `,
@@ -2158,6 +2166,9 @@ export const INTENTS: readonly PathIntent[] = [
     how do I get repeat customers
     users drop off after a week
     people stopped using my app
+    what share of my ... did I lose
+    how many of my ... did I lose
+    if the same share leaves again
     no one comes back
     engagement is going down
     `,

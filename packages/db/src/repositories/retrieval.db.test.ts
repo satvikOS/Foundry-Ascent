@@ -125,6 +125,20 @@ describe('venture-scoped retrieval', () => {
     expect(leak.some((i) => i.excerpt.includes(canaryB))).toBe(false);
   });
 
+  it('an experiment is shown with its result, which is kept beside its words', async () => {
+    const memory = await t.db.system((sx) =>
+      retrievalRepo.searchVentureMemory(sx, {
+        tenantId: seed.tenantId,
+        ventureId: A.id,
+        query: 'repeat visitors of the hand-counted seat map',
+        embedding: null,
+      }),
+    );
+    const test = memory.find((m) => m.title === 'Hand-counted seat map posted hourly for one week');
+    expect(test?.excerpt).toMatch(/measure repeat use\. Result: 38 repeat visitors/);
+    expect(memory.filter((m) => m.excerpt.includes('Result: ')).length).toBe(1);
+  });
+
   it('a founder asking for another venture gets nothing (RLS), even if the service passed the wrong id', async () => {
     const results = await t.db.withContext(makeContext(A.founder, seed.tenantId), async (tx) => [
       ...(await retrievalRepo.searchVentureMemory(tx, {

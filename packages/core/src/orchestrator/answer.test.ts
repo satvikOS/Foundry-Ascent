@@ -1101,6 +1101,21 @@ describe('what the notes remember as given (the figures a reply may state)', () 
     expect(text).not.toContain('15 cedis');
     expect(text).not.toContain('30 cedis');
   });
+
+  it('an id of the record is none of it', () => {
+    const text = rememberedText(
+      {
+        notebook: {
+          summary: 'They sell 120 plates a week.',
+          founderProfile: [{ id: 'fp-9m11ur', text: 'Likes short replies.' }],
+        },
+      } as unknown as AnswerSpec['continuity'],
+      null,
+    ).join('\n');
+    expect(text).toContain('120 plates');
+    expect(text).toContain('Likes short replies.');
+    expect(text).not.toContain('9m11ur');
+  });
 });
 
 describe('a turn that may reason first (CORE_THINK)', () => {

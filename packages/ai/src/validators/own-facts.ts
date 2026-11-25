@@ -15,7 +15,8 @@ import { sharedCount, stemOf, stemsOf } from './stems.js';
  * 5. a verdict only buyers can give ("your fee is right", "they are willing to pay") goes while none has paid or answered, and
  *    so does a number they are said to have set and never did;
  * 6. "By now we ran it at two piers" in a line written for them, when they told of nothing of the kind, keeps its
- *    [bracket].
+ *    [bracket];
+ * 7. what people are said to have said that nothing of theirs tells ("the sailmakers said they want a phone version") goes.
  */
 
 /** Words that claim nothing of their own in a line written for them. */
@@ -31,7 +32,7 @@ const GENERIC: ReadonlySet<string> = new Set(
 );
 
 const LABELLED =
-  /^(\s*(?:[-*+•]\s+|\d{1,3}[.)]\s+)?[*_]{0,2}([\p{L}][\p{L}\d '’/-]{1,40}?)[*_]{0,2}\s*:[*_]{0,2}\s*)(\S[\s\S]*)$/u;
+  /^(\s*(?:[-*+•]\s+|\d{1,3}[.)]\s+)?[*_]{0,2}([\p{L}][\p{L}\d '’/-]{1,40}?)[*_]{0,2}\s*(?::|[—–]|\s-\s)[*_]{0,2}\s*)(\S[\s\S]*)$/u;
 
 /** What a line of the five-line page asks for, when no template of the turn says it. */
 const ASKS_FOR: Readonly<Record<string, string>> = {
@@ -154,6 +155,33 @@ function unearned(unit: string, guidance: PromptGuidance): boolean {
   return pays !== null && !HEDGED.test(unit.slice(0, pays.index + pays[0].length));
 }
 
+const PEOPLE =
+  '(?:teachers?|students?|customers?|users?|buyers?|parents?|nurses?|owners?|managers?|founders?|clients?|families|shops?|clinics?|caterers?|people|interviewees|patients?|diners?|restaurants?|trucks?|marinas?|labs?|they|most(?: of them)?|some(?: of them)?|all of them|the (?:others|rest|ones?)|\\p{L}+(?:ers|ors|ists|ians|ants|ents))';
+/** "The sailmakers who lack a bench said they want a phone version": people quoted. */
+const PEOPLE_SAID = new RegExp(
+  String.raw`(?:^|[\s(,;:])(?:(?:the|your|these|those|\d+|\p{L}+) )?${PEOPLE}\b(?:[^.!?;:]{0,40}?) (?:said|told (?:you|us)|mentioned|reported|agreed|admitted|confirmed|complained|explained)(?: to you)?(?: that)? ([^.!?;]{12,})`,
+  'iu',
+);
+const SAYING_OPEN =
+  /\b(?:if|when|once|whether|what|until|unless|imagine|suppose|ask|who|anyone|someone|people often)\b/iu;
+
+/** What people are said to have said, when nothing the founder told holds it. */
+function inventsSpeech(unit: string, guidance: PromptGuidance): boolean {
+  if (guidance.said === undefined || /[?]["'”’)\]*_]*\s*$/u.test(unit.trim())) return false;
+  const m = PEOPLE_SAID.exec(unit);
+  // "The sailmakers who lack a bench said" names them; "ask who said" does not.
+  const opens = unit
+    .slice(0, m === null ? 0 : m.index + m[0].length - (m[1] ?? '').length)
+    .replace(/\b(?:the|your|these|those|\d+) \p{L}+ who\b/giu, ' ');
+  if (m?.[1] === undefined || SAYING_OPEN.test(opens)) return false;
+  const claim = stemsOf(m[1]);
+  if (claim.size < 2) return false;
+  // One sentence of theirs holds most of it: words of the idea gathered from everywhere are nobody's answer.
+  return !`${guidance.said}\n${guidance.lead?.text ?? ''}\n${(guidance.facts ?? []).join('\n')}`
+    .split(/(?<=[.!?;])\s+|\n/u)
+    .some((s) => sharedCount(claim, stemsOf(s)) >= claim.size * 0.5);
+}
+
 /** "By now we ran it at two piers…" of a pitch written for them, when nothing they told says so. */
 function soFar(unit: string, guidance: PromptGuidance): string | null {
   const opens = SO_FAR.exec(unit);
@@ -172,7 +200,7 @@ function soFar(unit: string, guidance: PromptGuidance): string | null {
 /** Our own words for the method, said to a founder. */
 const OUR_WORDS: readonly (readonly [RegExp, string])[] = [
   [
-    /(?<=^\s*|[.!?]\s+)(?:as )?the (?:playbook|play) (?:says|suggests|recommends|tells (?:you|us))(?: to| that)?,?\s+/giu,
+    /(?<=^\s*|[.!?]\s+)(?:as )?the (?:playbook|play|program(?:me)?) (?:says|suggests|recommends|tells (?:you|us))(?: to| that)?,?\s+/giu,
     '',
   ],
   [
@@ -204,6 +232,7 @@ export interface OwnFacts {
     | 'sum_beside'
     | 'count_beside'
     | 'own_words'
+    | 'speech_unsupported'
     | 'verdict_unsupported'
   )[];
 }
@@ -376,6 +405,10 @@ export function ownFactsUnit(
     if (bracketed !== null) {
       findings.push('template_bracketed');
       return { text: bracketed, findings };
+    }
+    if (inventsSpeech(text, guidance)) {
+      findings.push('speech_unsupported');
+      return { text: '', findings };
     }
     if (claimsTraction(text, guidance)) {
       findings.push('traction_unsupported');

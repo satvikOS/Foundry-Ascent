@@ -41,7 +41,9 @@ class PlanRefusedError(RuntimeError):
 def planned(scenario_ids: tuple[str, ...], groups: str, today: dt.date | None = None) -> list[Scenario]:
     """The scenarios a run plays (their wording is the harness's to overlay later)."""
     day = today or dt.datetime.now(dt.UTC).date()
-    return in_groups(choose(load(day).scenarios, scenario_ids), parse_groups(groups))
+    return in_groups(
+        choose(load(day).scenarios, scenario_ids), parse_groups(groups), named=bool(scenario_ids)
+    )
 
 
 def check_plan(
@@ -88,7 +90,11 @@ def prepare(ctx: Any, env: dict[str, str], summary: dict[str, Any]) -> None:
     os.environ.pop("LAB_CLIENT_PACK", None)
     env.pop("LAB_CLIENT_PACK", None)
     chosen, today = load_set(pack)
-    scenarios = in_groups(choose(chosen.scenarios, ctx.scenario_ids), parse_groups(ctx.client_groups))
+    scenarios = in_groups(
+        choose(chosen.scenarios, ctx.scenario_ids),
+        parse_groups(ctx.client_groups),
+        named=bool(ctx.scenario_ids),
+    )
     seeded = seed(ctx, env, scenarios)
     ctx.client = {
         "pack": pack,

@@ -18,20 +18,45 @@ import {
   decide,
   evidencePlayOf,
   guidanceOf,
+  inTheirVoice,
   type AppliedPivot,
   type DecideInput,
   type Decision,
 } from './engine.js';
-import { asksIfPriceRight, hourlyOf } from './calc.js';
+import { asksIfPriceRight, hourlyBefore, hourlyOf, percent } from './calc.js';
 import { heardRight, type Heard } from './heard.js';
-import { asksFor, asksOneThing, asksOverview, isVenting, timeSaid } from './kinds.js';
+import {
+  asksFor,
+  asksIfNeeded,
+  asksIfNo,
+  asksIfWorth,
+  asksIn,
+  asksMeaning,
+  asksOneThing,
+  asksOverview,
+  asksWhatTold,
+  isVenting,
+  limitsIn,
+  timeSaid,
+} from './kinds.js';
 import { doneWhenOf, playOf } from './steps.js';
 import { meaningWords, phraseIntent, pointsBack, refersBack } from './match.js';
-import { asksIfGood, lastResult, readAgain, readResult } from './news.js';
+import { ratesOf } from './choice.js';
+import {
+  asksIfGood,
+  DEAR_BUT_BOUGHT,
+  lastResult,
+  newsOf,
+  readAgain,
+  readFurther,
+  readMeaning,
+  readResult,
+} from './news.js';
 import { CRITERION_COUNTED, CRITERION_NAMES, STAGE_DOING } from './playbook/phrases.js';
 import {
   JUDGEMENT_PLAYS,
   gapFor,
+  holdsAnswer,
   personalAnswer,
   problemIn,
   readingOf,
@@ -46,7 +71,7 @@ import {
   dated,
   distinct,
   factsFor,
-  ideaAs,
+  ideaNamed,
   ideaSaid,
   informative,
   listed,
@@ -275,6 +300,9 @@ function promptOf(input: PathTurnInput, decision: Decision): PathPromptGuidance 
   const sends = decision.message ? messageOf(input, decision) : null;
   const kind = decision.kind === 'crisis' ? 'coaching' : decision.kind;
   const talks = kind !== 'social' && kind !== 'rehearsal';
+  const more = talks ? moreOf(input, decision, asked, lead) : [];
+  const parts = kind === 'coaching' && decision.restates === null ? partsOf(input, decision) : [];
+  const limits = kind === 'coaching' && decision.restates === null ? limitsOf(input, decision, asked) : [];
   return {
     matched,
     ...(stepRole === undefined ? {} : { stepRole }),
@@ -299,6 +327,11 @@ function promptOf(input: PathTurnInput, decision: Decision): PathPromptGuidance 
                 : fallbackOf(input, step.view),
         }
       : {}),
+    ...(more.length === 0 ? {} : { more }),
+    ...(parts.length === 0 ? {} : { parts }),
+    ...(limits.length === 0 ? {} : { limits }),
+    ...(lead !== null && givesOrders(input, decision) ? { orders: true } : {}),
+    ...(decision.message || decision.fills ? { draft: true } : {}),
     ...(talks && decision.restates !== null
       ? { restate: { how: decision.restates, reply: lastSaid(input) } }
       : {}),
@@ -307,7 +340,11 @@ function promptOf(input: PathTurnInput, decision: Decision): PathPromptGuidance 
       ? { template: templateBy(input, decision, lead) ?? 'shown' }
       : {}),
     ...(kind === 'coaching' && asksJudgement(input, decision) ? { judgement: true } : {}),
-    ...(talks && choice !== null && decision.calc.ask === null
+    // What a person decides is never ruled on: the server's own sentence opens that answer, or the program's does.
+    ...(talks &&
+    choice !== null &&
+    decision.calc.ask === null &&
+    (decision.referral === null || decision.play === null)
       ? { choice: { kind: choice.kind, options: choice.options } }
       : {}),
     ...(talks && decision.finding !== '' ? { finding: decision.finding } : {}),
@@ -328,6 +365,7 @@ function promptOf(input: PathTurnInput, decision: Decision): PathPromptGuidance 
               .map((i) => ({ do: i.do, how: i.how, minutes: i.minutes })),
             doneWhen: doneSaid(step.view.doneWhen),
             dueOn: step.view.dueOn,
+            ...(decision.wasDue === null ? {} : { wasDue: decision.wasDue }),
             template:
               sends !== null
                 ? { title: sends.title, body: fillTemplate(sends.body, facts) }
@@ -435,18 +473,30 @@ function leadOf(
   if (kind === 'social' || kind === 'rehearsal' || kind === 'crisis') return null;
   const sum =
     decision.calc.ask !== null && decision.calc.lines.length > 0
-      ? sumLead(decision.calc.lines.filter((l, i) => i === 0 || !saidLately(input, l)))
+      ? sumRead(decision, sumLead(decision.calc.lines.filter((l, i) => i === 0 || !saidLately(input, l))))
       : null;
-  if (kind === 'recall') return sum ?? recallLead(input, decision);
+  if (kind === 'recall') return sum === null ? recallLead(input, decision) : withBefore(input, decision, sum);
   if (kind === 'new_idea') return null;
   if (decision.pivot !== null) return pivotLead(input, decision, decision.pivot);
   // "What share is that, and is it enough?": the result read against its line has the share.
   if (decision.result !== null) return resultLead(input, decision.result);
   // Which of two, decided by their own figures: the pick says the sum.
   if (choice !== null && choice.pick !== null) return { text: choice.pick.text, voice: choice.pick.voice };
-  if (sum !== null) return sum;
+  if (sum !== null) return keptApart(input, withBefore(input, decision, sum));
   if (kind === 'coaching' && !decision.pushes) {
-    const right = priceRightLead(input, decision) ?? changesLead(input, decision);
+    const right =
+      priceRightLead(input, decision) ??
+      changesLead(input, decision) ??
+      convinceLead(decision, input) ??
+      plainPickLead(decision, input) ??
+      neededLead(input, decision) ??
+      holdsLead(input, decision) ??
+      meaningLead(input, decision) ??
+      comparesLead(input, decision) ??
+      rejectedLead(input, decision) ??
+      ifNoLead(input, decision) ??
+      worthLead(input, decision) ??
+      toldLead(input, decision);
     if (right !== null) return right;
     // A verdict on them is the server's, word for word, and said once.
     if (personal?.opens === true && gaveBefore(input, personal.text) === 0)
@@ -454,7 +504,7 @@ function leadOf(
   }
   if (kind === 'news')
     return decision.news === null ? null : { text: decision.news.means, voice: decision.news.spoken };
-  if (kind === 'report') return reportLead(decision);
+  if (kind === 'report') return reportLead(decision) ?? notYetLead(input, decision);
   if (decision.whenDone) return doneLead(decision);
   if (decision.message) return sendLead(input, decision);
   if (decision.fills) return fillLead(input, decision);
@@ -462,10 +512,320 @@ function leadOf(
     return overviewLead(input, decision, start);
   if (start !== null) return startLead(input, start);
   if (decision.smaller !== null && decision.play === null && decision.step !== null) {
-    const less = smallerAsk(decision)?.answer;
+    const less = smallerAsk(input, decision)?.answer;
     return less === undefined ? null : { text: less, voice: firstSentence(less) };
   }
+  if (decision.howTo) return howToLead(input, decision);
   return null;
+}
+
+/** Whether what opens the reply is the one thing to do, or the parts of it in order. */
+function givesOrders(input: PathTurnInput, decision: Decision): boolean {
+  if (decision.smaller !== null || decision.weak !== null || decision.rejects) return true;
+  // A page to fill in is the work: nothing of the model's own beside it but why.
+  if (startOf(input, decision) !== null) return true;
+  if (decision.kind === 'report') return decision.report?.state === 'not_yet';
+  return (
+    decision.overview &&
+    (asksOneThing(input.message) || asksForPlan(input.message) || nextBlank(input, decision) !== '')
+  );
+}
+
+/** The sum they ask for, against the one before when they ask for both ("what does it change?"). */
+function withBefore(input: PathTurnInput, decision: Decision, sum: Lead): Lead {
+  if (decision.calc.ask !== 'hourly' || !COMPARES_OLD.test(plain(input.message))) return sum;
+  const before = hourlyBefore({
+    message: input.message,
+    earlier: input.earlierMessages,
+    record: recordLines(input),
+  });
+  return before === null
+    ? sum
+    : { text: joined(sum.text, before), voice: joined(sum.voice, heardSum(before)) };
+}
+/** Their sum, of money another thing of theirs makes: it is that one's. */
+function keptApart(input: PathTurnInput, sum: Lead): Lead {
+  const m = OTHER_OWN.exec(plain(input.message));
+  const other = m?.[1] ?? m?.[2];
+  const name = bare(input.venture.name);
+  if (other === undefined || name === '' || /^new venture\b/i.test(name)) return sum;
+  const apart = `Keep the two apart: that money is your ${other}'s, and it covers nothing of ${name} until you decide to put it in.`;
+  return { text: joined(sum.text, apart), voice: joined(sum.voice, apart) };
+}
+const OTHER_OWN =
+  /\bmy ([a-z]+)(?:'s| is)? (?:just |also )?(?:the |my |an? )?other (?:thing|business|venture|project|company|job|shop|startup) (?:that )?(?:i|we)\b|\bmy other (?:business|venture|shop|company|project|thing),? (?:the |an? |is (?:an? |the )?)?([a-z]+)\b/;
+const COMPARES_OLD =
+  /\b(?:old|before|previous(?:ly)?|used to|compared?|versus|vs|against|difference|more than|chang(?:e|es|ed)|than it was|up from|new one and)\b/;
+const recordLines = (input: PathTurnInput): string[] =>
+  currentOnes(input.reads.memory)
+    .concat(input.reads.memory)
+    .filter((m, i, all) => all.indexOf(m) === i && m.status === 'confirmed' && !isReference(m))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .map((m) => inTheirVoice(m.content.trim() === '' ? m.title : m.content));
+
+/** An either-or or a yes-or-no on what a qualified person decides: what can be said of it, first, and never the ruling. */
+function holdsLead(input: PathTurnInput, decision: Decision): Lead | null {
+  const { play, choice, referral } = decision;
+  if (play === null || referral === null || choice === null || decision.howTo) return null;
+  if (choice.kind === 'which') return null;
+  const said = holdsAnswer(play, {
+    texts: [...input.earlierMessages, input.message, ...input.reads.memory.map((m) => m.content)],
+    today: input.today,
+  });
+  if (said === null || gaveBefore(input, said) > 0) return null;
+  return {
+    text: said,
+    voice: said
+      .split(/(?<=[.!?])\s+/u)
+      .slice(0, 2)
+      .join(' '),
+  };
+}
+
+/** "So what does that mean for what I'm building?": their finding read, never told back to them. */
+function meaningLead(input: PathTurnInput, decision: Decision): Lead | null {
+  if (decision.finding === '' || decision.restates !== null || decision.play !== null) return null;
+  if (!asksMeaning(input.message)) return null;
+  const replies = input.earlierReplies ?? [];
+  const told1 = [input.message, ...[...input.earlierMessages].reverse()].find(
+    (m) => newsOf({ message: m, before: [] }) !== null || DEAR_BUT_BOUGHT.test(plain(m)),
+  );
+  const turned = (input.reads.path?.pivots ?? []).filter((x) => x.to !== '' && !/^back\b/i.test(x.to)).at(-1);
+  const read =
+    turned !== undefined && told1 === undefined
+      ? keptFrom(decision.finding, lowerFirst(shortOf(ideaSaid(turned.to))))
+      : readMeaning(told1 ?? decision.finding, {
+          customer: templateFacts(input, decision).customer,
+          venture: bare(input.venture.name),
+        });
+  if (read === null || replies.some((r) => stemsShared(read.text, r) >= GAVE_IT)) return null;
+  return read;
+}
+
+/** What was found for the idea they left: why they left it, and the one thing of it to check for the new one. */
+function keptFrom(finding: string, idea: string): Lead {
+  const text = `Keep it as the reason you changed direction: ${lowerFirst(bare(finding))}. It says nothing yet about the new idea (${idea}): those are other people. One thing carries over, whatever stopped the first ones, so check that first with the new ones, by asking what they do today.`;
+  return {
+    text,
+    voice: text
+      .split(/(?<=[.!?])\s+/u)
+      .slice(0, 2)
+      .join(' '),
+  };
+}
+
+/** "Convince a sceptic." of a pick their own counts decide: the doubt, how far the numbers carry, what would settle it. */
+function convinceLead(decision: Decision, input: PathTurnInput): Lead | null {
+  if (decision.restates !== 'convince') return null;
+  const rated = pickBefore(input);
+  if (rated === null) return null;
+  const { best, other } = rated;
+  const fewer = Math.max(1, Math.round(best.part - (other.part / other.whole) * best.whole));
+  const text = `The doubt is fair: ${String(best.whole)} is a small group, and ${fewer === 1 ? 'one' : String(fewer)} fewer there would make the two equal. What speaks for it is the share: the same offer got about ${perTen(best)} in ten there, and about ${perTen(other)} in ten in the other, so the bigger group only looks better because more were asked. What would prove it wrong: ask 20 more in each with the same words. If the first falls to ${percent(other.part, other.whole)} or lower, I would drop it.`;
+  return {
+    text,
+    voice: text
+      .split(/(?<=[.!?])\s+/u)
+      .slice(0, 2)
+      .join(' '),
+  };
+}
+
+/** A pick said in plain words, when they ask for that. */
+function plainPickLead(decision: Decision, input: PathTurnInput): Lead | null {
+  if (decision.restates !== 'plain') return null;
+  const rated = pickBefore(input);
+  if (rated === null) return null;
+  const { best, other } = rated;
+  const name = lowerFirst(bare(best.option));
+  const text = `Go with ${/^(?:north|south|east|west)/i.test(name) ? `the ${name}` : name}. Out of every ten you asked there, about ${perTen(best)} said yes. In the other place it was about ${perTen(other)} out of ten. That is why it goes first.`;
+  return { text, voice: text };
+}
+
+const perTen = (r: { readonly part: number; readonly whole: number }): string => {
+  const n = Math.round((r.part / r.whole) * 10);
+  return (
+    (['none', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'] as const)[n] ??
+    String(n)
+  );
+};
+
+/** The choice the conversation had made for them by their own counts. */
+function pickBefore(input: PathTurnInput): NonNullable<ReturnType<typeof choiceRates>> | null {
+  const asks = [...input.earlierMessages].reverse().find((m) => choiceRates(m, input) !== null);
+  return asks === undefined ? null : choiceRates(asks, input);
+}
+const choiceRates = (message: string, input: PathTurnInput): ReturnType<typeof ratesOf> =>
+  ratesOf({
+    message,
+    earlier: input.earlierMessages,
+    told: input.reads.memory.filter((m) => m.status === 'confirmed').map((m) => m.content),
+  });
+
+/** "What is a value proposition, and do I need one now?": whether it is for now, by the stage they are on. */
+function neededLead(input: PathTurnInput, decision: Decision): Lead | null {
+  if (!asksIfNeeded(input.message)) return null;
+  const order = input.playbook.stages.map((x) => x.stage);
+  const named = asksIn(input.message)
+    .concat([input.message])
+    .map((a) =>
+      phraseIntent(
+        input.playbook,
+        a,
+        (i) => i.note !== true && i.referral !== true && i.overview === undefined,
+      ),
+    )
+    .find((m) => m !== null);
+  const play = playOf(input.playbook, named?.intent.playId ?? null);
+  if (play?.referral !== null) return null;
+  const at = order.indexOf(play.stage);
+  if (at < 0) return null;
+  const doing = STAGE_DOING[play.stage];
+  const here = decision.state.stageIndex;
+  const thing = bare(play.template?.title ?? play.title).toLowerCase();
+  const text =
+    at > here
+      ? `Not yet. It belongs to stage ${String(at + 1)}, ${doing}, and you are on stage ${String(here + 1)}, ${STAGE_DOING[decision.state.stage]}. Until then one plain line does its work: who has the problem, and what they do about it today.`
+      : `Yes, now. It belongs to ${doing}, where you are${at < here ? ' already past' : ''}, and it is one page: ${thing}.`;
+  return {
+    text,
+    voice: text
+      .split(/(?<=[.!?])\s+/u)
+      .slice(0, 2)
+      .join(' '),
+  };
+}
+
+const COMPARES =
+  /\b(?:every ?(?:one|body) else|all the others|the others|other (?:founders|teams|people|students)(?: here| in the program)?)\b[^.?!]{0,40}\b(?:seems?|is|are|looks?|flying|ahead|doing|further|faster|better|already|killing|crushing)\b|\b(?:i am|we are) (?:so |way |far |always |just )?(?:behind|slower than|worse than) (?:everyone|everybody|the others|all|them)\b/;
+
+/** They measure themselves by what others show: their own numbers, and what decides. */
+function comparesLead(input: PathTurnInput, decision: Decision): Lead | null {
+  if (asksFor(input.message) || !COMPARES.test(plain(input.message))) return null;
+  const r = readingIn(input, decision);
+  const own = r.best === '' ? '' : `Yours say this: ${r.best}.`;
+  const text = joined(
+    'What you see of the others is what they announce, never their numbers, so it tells you nothing about yours.',
+    own,
+    r.lacks,
+    'That is the one thing to be ahead of, and nobody else in the room can do it for you.',
+  );
+  return {
+    text,
+    voice: joined('You see what the others announce, never their numbers.', own === '' ? r.lacks : own),
+  };
+}
+
+/** They reject the answer: it is owned, and what their own facts allow stands in its place. */
+function rejectedLead(input: PathTurnInput, decision: Decision): Lead | null {
+  const { step } = decision;
+  if (!decision.rejects || step === null) return null;
+  const stands = standOn(input, decision, step.view);
+  // Only what is said as theirs is said to be.
+  const own = stands.own ? 'From your own facts, then.' : '';
+  const opens = /\b(?:textbook|generic|boilerplate|vague|useless|obvious)\b/.test(plain(input.message))
+    ? 'Fair, that was general.'
+    : 'Fair.';
+  return {
+    text: joined(opens, own, stands.text),
+    voice: joined(opens, stands.voice),
+  };
+}
+
+/** "And if they say no?": a no to the step just given is part of it. */
+function ifNoLead(input: PathTurnInput, decision: Decision): Lead | null {
+  const { step } = decision;
+  if (step === null || decision.play !== null || !asksIfNo(input.message)) return null;
+  const about = `${step.view.title} ${step.view.items.map((i) => i.do).join(' ')} ${(input.earlierReplies ?? []).at(-1) ?? ''}`;
+  const sells = /\b(?:pay|sell|offer|price|order|buy|pilot|letter)\b/i.test(step.view.title);
+  const silent = /\b(?:answer|reply|respond|ignore)/i.test(plain(input.message));
+  const text = silent
+    ? 'If they do not answer, that is normal, and it is why the list is long: wait three days, send one short line once more, then go to the next name. Ten names for three talks is normal. If nobody of 20 answers, change the first sentence, not the person.'
+    : sells
+      ? 'If they say no, thank them and ask two things: what they did the last time, and what would have to be different. Do not argue and do not drop the price on the spot. Write the no and its reason the same day: one no teaches little, and three with the same reason tell you what to change.'
+      : 'If they say no, thank them and ask who else deals with this. A no to a talk is about their time, not your idea, so go to the next name the same day. Write down each no: if most of 10 say no, change the first line of the message before you send more.';
+  return about === ''
+    ? null
+    : {
+        text,
+        voice: text
+          .split(/(?<=[.!?])\s+/u)
+          .slice(0, 2)
+          .join(' '),
+      };
+}
+
+/** "Is that worth my two hours?": the step by its time, what it settles, and when to leave it. */
+function worthLead(input: PathTurnInput, decision: Decision): Lead | null {
+  const { step } = decision;
+  if (step === null || decision.play !== null || !asksIfWorth(input.message)) return null;
+  const play = playOf(input.playbook, step.view.playId);
+  const items = step.view.items.filter((i) => !i.done);
+  const minutes = items.reduce((sum, i) => sum + (i.minutes ?? 0), 0);
+  const had = timeSaid(input.message);
+  const first = items[0];
+  const takes =
+    minutes === 0
+      ? ''
+      : had !== null && minutes > had.minutes
+        ? `All of it is about ${hoursSaid(minutes)}, so in your ${had.said} do the first part${first === undefined ? '' : `: ${lowerFirst(bare(first.do))}`}.`
+        : `It is about ${hoursSaid(minutes)}${had === null ? '' : `, so it fits your ${had.said}`}.`;
+  const r = readingIn(input, decision);
+  const why = play === null ? '' : play.why;
+  const skip = r.best === '' ? '' : `Skip it only if it tells you nothing about this: ${r.best}.`;
+  const text = joined('Yes, if it settles something.', takes, why, skip);
+  return {
+    text,
+    voice: joined('Yes.', takes, r.have === '' ? (why.split(/(?<=[.!?])\s+/u)[0] ?? '') : r.have),
+  };
+}
+
+const hoursSaid = (minutes: number): string =>
+  minutes >= 120 ? `${String(Math.round(minutes / 30) / 2)} hours` : `${String(minutes)} minutes`;
+
+/** "What did you tell me to do?": the step as it stands, with its first part and when it is done. */
+function toldLead(input: PathTurnInput, decision: Decision): Lead | null {
+  const { step } = decision;
+  if (step === null || !asksWhatTold(input.message)) return null;
+  const last = input.reads.steps.find((x) => x.id === step.view.id);
+  const first = step.view.items.find((i) => !i.done);
+  const others = input.reads.steps
+    .filter(
+      (x) => x.id !== step.view.id && x.origin === 'path' && (x.status === 'next' || x.status === 'now'),
+    )
+    .slice(0, 1)
+    .map((x) => lowerFirst(bare(x.title)));
+  const gave = last === undefined ? 'The step is this' : 'I gave you this';
+  const text = joined(
+    `${gave}: ${lowerFirst(bare(step.view.title))}.`,
+    first === undefined ? '' : `It starts with this part: ${lowerFirst(bare(first.do))}.`,
+    others[0] === undefined ? '' : `Before it you were on this one, and it is still open: ${others[0]}.`,
+  );
+  return { text, voice: text };
+}
+
+/** A step not done: the day it moves to, and the smaller one to do instead. */
+function notYetLead(input: PathTurnInput, decision: Decision): Lead | null {
+  if (decision.report?.state !== 'not_yet') return null;
+  const made = reportAsk(input, decision, null);
+  return made === null ? null : { text: made.answer, voice: made.answer };
+}
+
+/** How to do the step just given: its first part, whole, and its template when the conversation has not shown it. */
+function howToLead(input: PathTurnInput, decision: Decision): Lead | null {
+  const made = howToAsk(input, decision);
+  if (made === null || gaveBefore(input, made.answer) > 0) return null;
+  const idea = decision.offered ? ideaTold(input) : '';
+  const body =
+    idea === ''
+      ? made.answer
+      : `For ${idea}, the first part is this: ${made.answer.replace(/^Start with the first part: /u, '')}`;
+  const template = decision.step?.view.template ?? null;
+  const block =
+    made.block === undefined || template === null || showsTemplate(input.earlierReplies ?? [], template.body)
+      ? ''
+      : `\n\n${made.block}`;
+  return { text: `${body}${block}`, voice: body };
 }
 
 /** "What changes because of that?", after a change of direction: what stays true, and what is to be shown again. */
@@ -519,13 +879,13 @@ function priceRightLead(input: PathTurnInput, decision: Decision): Lead | null {
   });
   if (line === null) return null;
   const reading = readingIn(input, decision);
-  const buyers =
-    reading.level === 'one_paid' || reading.level === 'some_paid'
-      ? `Whether it is right is for buyers to show. ${reading.have}`
-      : 'Whether it is right is for buyers to show, and no buyer has answered yet, so it is neither right nor wrong.';
+  const paid = reading.level === 'one_paid' || reading.level === 'some_paid';
+  const opens = paid
+    ? `So far it holds: somebody pays it. ${reading.have}`
+    : 'Not proven yet: no buyer has answered it, so nobody can call it right or wrong.';
   const decides =
-    'Two things decide it: whether that hour is worth yours, and what they pay for the way they do it now.';
-  return { text: joined(line, buyers, decides), voice: joined(heardSum(line), buyers) };
+    'Two things decide it: whether that hour is worth yours, and what they pay for the way they do it now. If an hour of yours is worth more than that, it is too low already. If five of them in a row say yes without a pause, it is too low as well.';
+  return { text: joined(opens, line, decides), voice: joined(opens, heardSum(line)) };
 }
 
 // Read for them ----------------------------------------------------------------------------------------------------
@@ -538,11 +898,21 @@ function priorSource(input: PathTurnInput, decision: Decision, lead: Lead | null
     earlier: input.earlierMessages,
     message: input.message,
     about: `${decision.play?.title ?? ''} ${decision.step?.view.title ?? ''}`,
-    said: [(input.earlierReplies ?? []).at(-1) ?? '', lead?.text ?? ''].join(' '),
+    // Without its step line: the step is the same on every turn. What answered a statement is no answer to the ask itself.
+    said: [answeredStatement(input) ? '' : lastSaid(input), lead?.text ?? ''].join(' '),
     applies: decision.kind === 'coaching' && lead === null && decision.play !== null,
     venture: input.venture.name,
+    today: input.today,
     ...(input.continuity.founderFirstName == null ? {} : { founder: input.continuity.founderFirstName }),
+    ...partOfAnswer(decision),
   };
+}
+
+/** The first part of the step that answers them. */
+function partOfAnswer(decision: Decision): { readonly part?: string } {
+  const { step, play } = decision;
+  const first = step?.view.items.find((i) => !i.done);
+  return play === null || step?.view.playId !== play.id || first === undefined ? {} : { part: first.do };
 }
 
 /** What they have, what is missing, and what goes wrong today. */
@@ -593,20 +963,53 @@ function standOn(
   input: PathTurnInput,
   decision: Decision,
   view: NonNullable<Decision['step']>['view'],
-): { readonly text: string; readonly voice: string } {
+): { readonly text: string; readonly voice: string; readonly own: boolean } {
   const r = readingIn(input, decision);
   const play = playOf(input.playbook, view.playId);
   const own = play === null ? null : personalFor(input, decision, play);
-  if (decision.rejects && own !== null && gaveBefore(input, own.text) === 0)
-    return { text: own.text, voice: own.voice };
-  if (r.have === '' && !decision.rejects) return fallbackOf(input, view);
+  const all = decision.rejects && own !== null ? sentencesOf(own.text) : [];
+  const left = all.filter((x) => !saidIn(input, x)).slice(0, 3);
+  if (decision.rejects && own !== null && all.every((x) => !saidIn(input, x)))
+    return { text: own.text, voice: own.voice, own: true };
+  // What the reply they reject left out of it.
+  if (left.length > 0 && contentStems(left.join(' ')).length >= LEAST_LEFT)
+    return { text: left.join(' '), voice: left.slice(0, 2).join(' '), own: true };
+  if (r.have === '' && !decision.rejects) return { ...fallbackOf(input, view), own: false };
+  const fresh = (x: string): string =>
+    decision.rejects && x !== '' && (input.earlierReplies ?? []).some((y) => saysMost(y, x)) ? '' : x;
   const first = view.items.find((i) => !i.done);
   const go = first === undefined ? '' : `One part, today: ${lowerFirst(bare(first.do))}. ${first.how}`;
+  // What they have was said: the one of their facts the last reply did not stand on, or it, once more.
+  const told = concreteFact(input.reads.memory, input.continuity.founderFirstName ?? '', input.today);
+  const last = lastSaid(input);
+  const others = [told === null ? '' : `${upperFirst(told)}.`, r.have].filter((x) => x !== '');
+  const again = (input.earlierReplies ?? []).some((x) => /^Fair\b/u.test(x)) ? '' : r.have;
+  const have =
+    fresh(r.have) !== '' || !decision.rejects
+      ? r.have
+      : (others.find((x) => stemsShared(x, last) < GAVE_IT) ?? again);
+  const facts = [have, fresh(r.lacks)].filter((x) => x !== '');
   return {
-    text: joined(r.have, r.lacks, go),
-    voice: joined(r.have, r.lacks),
+    text: joined(...facts, go),
+    voice: joined(...facts, decision.rejects ? (go.split(/(?<=[.])\s/u)[0] ?? '') : ''),
+    own: facts.some((x) => x !== r.lacks),
   };
 }
+
+/** They only told something before this message: what they ask now was not asked yet. */
+const answeredStatement = (input: PathTurnInput): boolean => {
+  const last = input.earlierMessages.at(-1);
+  return (
+    last !== undefined &&
+    asksFor(input.message) &&
+    !asksFor(last) &&
+    !last.includes('?') &&
+    !asksOverview(last)
+  );
+};
+
+/** Fewest words of an answer that still say something of it. */
+const LEAST_LEFT = 6;
 
 /** The last reply as it was said, without what the server ends it with. */
 const lastSaid = (input: PathTurnInput): string =>
@@ -627,7 +1030,10 @@ function templateBy(
   lead: Lead | null,
 ): 'opens' | 'shown' | 'offer' | null {
   const template = decision.step?.view.template ?? null;
-  if (template === null || labelledLines(template.body) < 3) return null;
+  if (template === null) return null;
+  if (labelledLines(template.body) < 3)
+    // A letter or a script of the step's is the card's, on a turn that asks for none of it.
+    return decision.play === null && !decision.message && !decision.fills && !decision.howTo ? 'shown' : null;
   const first = plainTemplate(template.body)
     .split('\n')
     .map((l) => l.trim().split(':')[0] ?? '')
@@ -673,15 +1079,40 @@ function sumLead(lines: readonly string[]): Lead {
   return { text: lines.join(' '), voice: lines.slice(0, 2).map(heardSum).join(' ') };
 }
 
+/** A share of customers lost is read: what it costs to go on with it, and whom to ask. */
+function sumRead(decision: Decision, sum: Lead): Lead {
+  if (decision.calc.ask !== 'churn') return sum;
+  const m = /(\d+) of (?:the )?(\d+) ([a-z]+(?: [a-z]+)?) = (\d+(?:\.\d+)?)%/.exec(sum.text);
+  if (m === null || Number(m[4]) < 10) return sum;
+  const [, part = '', , noun = 'customers'] = m;
+  const read = `If that goes on, every new one only replaces one who left. So before you add ${noun}, ask the ${part} who left what they used it for and what they do now.`;
+  return { text: joined(sum.text, read), voice: joined(sum.voice, read.split(/(?<=\.)\s/u)[1] ?? '') };
+}
+
 function resultLead(input: PathTurnInput, result: NonNullable<Decision['result']>): Lead {
   const read = readResult(result, [...input.earlierMessages, ...input.reads.memory.map((m) => m.content)]);
-  // Read a moment ago: what would be enough, never the same lines again.
+  // Read a moment ago: what would be enough, or what it shows and what it does not, never the same lines again.
   if (gaveBefore(input, read.text) > 0 && read.text.includes('No pass line')) {
     const again = readAgain(result);
     return { text: again, voice: again };
   }
+  if (saidResult(input, result)) {
+    const further = readFurther(result, [
+      ...input.earlierMessages,
+      ...input.reads.memory.map((m) => m.content),
+    ]);
+    return { text: further.text, voice: further.spoken };
+  }
   return { text: read.text, voice: read.spoken };
 }
+
+/** Whether the conversation read this result already. */
+const saidResult = (input: PathTurnInput, r: { readonly part: number; readonly whole: number }): boolean =>
+  (input.earlierReplies ?? []).some(
+    (x) =>
+      x.includes(`${String(r.part)} of ${String(r.whole)}`) &&
+      /\b(?:number to beat|pass line|passed)\b/i.test(x),
+  );
 
 const nameOf = (c: { readonly id: string; readonly title: string }): string =>
   CRITERION_NAMES[c.id] ?? lowerFirst(bare(c.title));
@@ -698,7 +1129,7 @@ const ASKS_WHERE =
 function overviewLead(input: PathTurnInput, decision: Decision, start: Start | null): Lead {
   const { state, missing, step, then, news } = decision;
   const name = bare(input.venture.name);
-  const fact = concreteFact(input.reads.memory, input.continuity.founderFirstName ?? '');
+  const fact = concreteFact(input.reads.memory, input.continuity.founderFirstName ?? '', input.today);
   const have = state.criteria
     .filter((c) => c.status !== 'open' && (c.by === 'path' || c.by === 'record'))
     .slice(-3)
@@ -713,7 +1144,7 @@ function overviewLead(input: PathTurnInput, decision: Decision, start: Start | n
   const plan =
     asksForPlan(input.message) && step !== null ? `\n\n${planLines(input, decision).join('\n')}` : '';
   const heard = news === null ? '' : news.spoken;
-  const weak = weakResult(input, decision);
+  const weak = weakLead(input, decision);
   if (weak !== '') return { text: weak, voice: weak };
   if (
     asksOneThing(input.message) &&
@@ -726,15 +1157,9 @@ function overviewLead(input: PathTurnInput, decision: Decision, start: Start | n
     const replies = input.earlierReplies ?? [];
     const r = readingIn(input, decision);
     const idea = ideaOf(input, decision);
-    const own = [
-      r.have !== ''
-        ? r.have
-        : idea === null
-          ? ''
-          : `It is for your idea: ${bare(ideaAs(idea, input.venture.name))}.`,
-      r.lacks,
-    ].filter((x) => x !== '' && !replies.slice(-1).some((y) => saysMost(y, x)));
-    const go = `So one thing: ${lowerFirst(bare(first.do))}. ${first.how}`;
+    const own = [r.have, r.lacks].filter((x) => x !== '' && !replies.slice(-1).some((y) => saysMost(y, x)));
+    const whose = idea === null || r.have !== '' ? '' : ` for ${ideaNamed(idea, input.venture.name)},`;
+    const go = `So one thing${whose === '' ? '' : `,${whose.replace(/,+$/u, '')}`}: ${lowerFirst(bare(first.do))}. ${first.how}`;
     return { text: joined(...own, go), voice: joined(own.at(-1) ?? '', firstSentence(go)) };
   }
   if (decision.actsOn !== null && news !== null) {
@@ -793,14 +1218,13 @@ function overviewLead(input: PathTurnInput, decision: Decision, start: Start | n
 }
 
 /** One thing to do, when the last result is a weak one: ask the ones it came from. */
-function weakResult(input: PathTurnInput, decision: Decision): string {
-  if (!asksOneThing(input.message) || decision.news !== null) return '';
+function weakLead(input: PathTurnInput, decision: Decision): string {
   const texts = [
     ...input.reads.memory.filter((m) => m.status === 'confirmed' && !isReference(m)).map((m) => m.content),
     ...input.earlierMessages,
   ];
-  const result = lastResult(texts);
-  if (result === null || result.part * 2 >= result.whole) return '';
+  const result = decision.weak;
+  if (result === null) return '';
   const from = [...texts].reverse().find((t) => lastResult([t]) !== null) ?? '';
   // The sentence with the numbers, never what they felt about it ("honestly I feel stupid").
   const counted = from.split(/(?<=[.!?])\s+/u).find((s) => lastResult([s]) !== null) ?? from;
@@ -834,11 +1258,11 @@ function nextBlank(input: PathTurnInput, decision: Decision): string {
       const what = /^\w+ \d$/.test(m[3] ?? '') && said !== '' ? `${said}, one thing` : (m[3] ?? '');
       return [{ label: m[1] ?? '', what }];
     });
-  const given = replies.filter((r) => /Start with one blank|Take the next blank/.test(r)).length;
+  const given = replies.filter((r) => /one blank, "|Take the next blank/.test(r)).length;
   const blank = blanks[Math.min(given, blanks.length - 1)];
   if (blank === undefined) return '';
   const idea = facts.idea === null ? '' : ` for this idea: ${lowerFirst(shortOf(ideaSaid(facts.idea)))}`;
-  return `${given === 0 ? 'Start with one blank' : 'Take the next blank'}, "${blank.label}": ${blank.what}. Write it in one plain line${idea}. A guess is fine if you mark it as one; five minutes is enough.`;
+  return `${given === 0 ? 'The step starts with one blank' : 'Take the next blank of it'}, "${blank.label}": ${blank.what}. Write it in one plain line${idea}. A guess is fine if you mark it as one; five minutes is enough.`;
 }
 
 /** How the step fits the time they say they have ("four hours a week and an exam in nine days"). */
@@ -994,9 +1418,13 @@ function planLines(input: PathTurnInput, decision: Decision): string[] {
     .map((i) => `${bare(i.do)}${i.minutes === null ? '' : ` (${String(i.minutes)} min)`}.`);
   const by = step.view.dueOn === null ? '' : ` by ${sayDue(input.today, step.view.dueOn)}`;
   const own = items.length === 0 ? [`${bare(step.view.title)}${by}.`] : items;
-  return [...own, ...then.map((t) => `Then: ${lowerFirst(bare(t.title))}.`)].map(
-    (l, i) => `${String(i + 1)}. ${l}`,
-  );
+  // What follows, each with how it starts.
+  const after = then.map((t) => {
+    const first = t.items.find((i) => !i.done);
+    const how = first === undefined || first.how === '' ? '' : ` ${sentence(first.how)}`;
+    return `Then: ${lowerFirst(bare(t.title))}.${first === undefined ? '' : ` It starts with this: ${lowerFirst(bare(first.do))}.${how}`}`;
+  });
+  return [...own, ...after].map((l, i) => `${String(i + 1)}. ${l}`);
 }
 
 /** What a report changed, as a mentor says it: what they found first, then how far it gets them. */
@@ -1129,9 +1557,12 @@ const STORY =
 
 /** How they got here, from the record's own dated entries, as a story. */
 function storyLead(input: PathTurnInput, decision: Decision): Lead | null {
-  const lines = storyLines(arcOf(briefSource(input, decision)));
   const first = (input.reads.path?.pivots ?? []).find((x) => x.from !== '')?.from;
   const start = first ?? ideaOf(input, decision);
+  const lines = storyLines(
+    arcOf(briefSource(input, decision)),
+    start === null ? '' : `${start} ${input.venture.name}`,
+  );
   const opens = start === null ? '' : `You started with this idea: ${lowerFirst(shortOf(ideaSaid(start)))}.`;
   if (opens === '' && lines.length === 0) return null;
   return {
@@ -1378,10 +1809,10 @@ function askOf(
   if (decision.pushes && (decision.referral !== null || play !== null)) return pushAsk(input, decision);
   if (kind === 'report') return reportAsk(input, decision, lead);
   if (decision.message || decision.fills) return null;
-  if (decision.howTo) return howToAsk(input, decision);
+  if (decision.howTo) return lead === null ? howToAsk(input, decision) : null;
   if (play !== null && !(decision.overview && lead !== null))
     return playAsk(input, decision, play, lead === null ? (personal?.text ?? null) : null);
-  if (decision.smaller !== null && !decision.overview) return smallerAsk(decision);
+  if (decision.smaller !== null && !decision.overview) return smallerAsk(input, decision);
   return null;
 }
 
@@ -1471,6 +1902,125 @@ function playAsk(input: PathTurnInput, decision: Decision, play: Play, personal:
   );
 }
 
+const sentencesOf = (text: string): string[] =>
+  text
+    .split(/(?<=[.!?])\s+/u)
+    .map((x) => x.trim())
+    .filter((x) => x !== '');
+/** Share of a sentence's words one reply holds when it said it in other words. */
+const SAID_OF_IT = 0.6;
+const saidIn = (input: PathTurnInput, text: string): boolean =>
+  (input.earlierReplies ?? []).some((r) => stemsShared(text, r) >= SAID_OF_IT);
+/** Most pieces of what was not said yet. */
+const MOST_PIECES = 6;
+
+/**
+ * What the program has not said yet of what it answers with, when the conversation holds that answer already: its other
+ * sentences, the parts of the step with how, the trap and the reason.
+ */
+function moreOf(input: PathTurnInput, decision: Decision, asked: Ask, lead: Lead | null): string[] {
+  if (asked === null || lead !== null || (input.earlierReplies ?? []).length === 0) return [];
+  const { play, step } = decision;
+  if (play === null || decision.kind !== 'coaching') return [];
+  // Who to see and what to bring is asked for: said again, it is the answer.
+  if (decision.referral !== null && ASKS_WHO_AND_WHAT.test(plain(input.message))) return [];
+  // The answer itself, never the part of it that stands in its place when it is asked again.
+  const afresh = answeredStatement(input);
+  const whole = afresh
+    ? (personalFor(input, decision, play)?.text ?? play.answer)
+    : /^(?:What I said stands|Go on with the next part)/u.test(asked.answer)
+      ? play.answer
+      : asked.answer;
+  const answer = sentencesOf(whole).filter((x) => contentStems(x).length >= 4);
+  const held = answer.filter((x) => saidIn(input, x)).length;
+  if (answer.length === 0 || held / answer.length < HELD) return [];
+  const items = step?.view.playId === play.id ? step.view.items.filter((i) => !i.done) : [];
+  // Asked for the first time, it opens with what answers it, whatever a statement got.
+  const opens = afresh ? sentencesOf(whole).slice(0, OPENS_WITH) : [];
+  const rest = distinct(
+    [
+      ...answer,
+      ...items.map(partSaid),
+      ...play.traps.slice(0, 1).map((t) => `One trap: ${lowerFirst(bare(t))}.`),
+      ...sentencesOf(play.why),
+    ].filter((x) => !saidIn(input, x)),
+    (x) => x,
+    0.8,
+  ).slice(0, MOST_PIECES);
+  return [...opens, ...rest.filter((x) => !opens.includes(x))];
+}
+/** Sentences of the answer that open it when it is asked for the first time. */
+const OPENS_WITH = 3;
+/** Share of an answer's sentences the conversation holds when it was given. */
+const HELD = 0.4;
+
+const WHAT_NOW =
+  /^(?:(?:and|so|then|but) )*what (?:now|next|then)\b|\bwhat (?:do|should|would) (?:i|we) do (?:now|next|then|with it)\b/;
+
+/** The things they ask, each with what the server adds when the reply leaves it out. */
+function partsOf(input: PathTurnInput, decision: Decision): NonNullable<PathPromptGuidance['parts']> {
+  const asks = asksIn(input.message);
+  if (asks.length < 2 || decision.pushes) return [];
+  const { play, step } = decision;
+  const items = (step?.view.items ?? []).filter((i) => !i.done);
+  const own = play === null ? null : (personalFor(input, decision, play)?.text ?? play.answer);
+  return asks.map((ask, i) => {
+    const none = { ask, text: '', voice: '' };
+    const first = items[0];
+    if (WHAT_NOW.test(plain(ask))) {
+      if (first === undefined) return none;
+      const text = `So now: ${lowerFirst(bare(first.do))}. ${sentence(first.how)}`.trim();
+      return { ask, text, voice: `So now: ${lowerFirst(bare(first.do))}.` };
+    }
+    if (/^(?:how|why)$/i.test(ask)) {
+      const next = /^how$/i.test(ask)
+        ? items.map(partSaid).find((x) => !saidIn(input, x))
+        : sentencesOf(play?.why ?? '').find((x) => !saidIn(input, x));
+      return next === undefined ? none : { ask, text: next, voice: next };
+    }
+    const found = phraseIntent(input.playbook, ask, (x) => x.note !== true && x.overview === undefined);
+    const other = playOf(input.playbook, found?.intent.playId ?? null);
+    if (other !== null && other.id !== play?.id && i > 0) {
+      const said = sentencesOf(personalFor(input, decision, other)?.text ?? other.answer);
+      const text = said.slice(0, 2).join(' ');
+      return { ask, text, voice: said[0] ?? '' };
+    }
+    if (own === null) return none;
+    // What the conversation said already is no answer to it now.
+    const all = [...sentencesOf(own), ...(step?.view.playId === play?.id ? items.map(partSaid) : [])].filter(
+      (x) => !saidIn(input, x),
+    );
+    const wanted = contentStems(ask);
+    const ranked1 = all
+      .map((x, n) => ({ x, n, shared: contentStems(x).filter((w) => wanted.includes(w)).length }))
+      .filter((x) => x.shared > 0)
+      .sort((a, b) => b.shared - a.shared || a.n - b.n)[0];
+    if (ranked1 === undefined) return none;
+    const text = joined(ranked1.x, i > 0 ? (all[ranked1.n + 1] ?? '') : '');
+    return { ask, text, voice: ranked1.x };
+  });
+}
+
+/** What they set themselves, each with the sentence of the program's that keeps to it ('' : none). */
+function limitsOf(
+  input: PathTurnInput,
+  decision: Decision,
+  asked: Ask,
+): NonNullable<PathPromptGuidance['limits']> {
+  const all = [
+    ...sentencesOf(asked?.answer ?? ''),
+    ...(decision.play === null ? [] : sentencesOf(decision.play.answer)),
+    ...(decision.step?.view.items ?? []).filter((i) => !i.done).map(partSaid),
+  ];
+  return limitsIn(input.message).map((said) => ({
+    said,
+    text:
+      all.find((x) =>
+        /^\d+$/.test(said) ? new RegExp(`(?<![\\d.$])${said}(?![\\d.%])`).test(x) : plain(x).includes(said),
+      ) ?? '',
+  }));
+}
+
 /** The step's parts, or the next of them when the conversation already listed them. */
 function fallbackOf(
   input: PathTurnInput,
@@ -1556,9 +2106,20 @@ function howToAsk(input: PathTurnInput, decision: Decision): Ask {
     `Start with the first part: ${lowerFirst(bare(first.do))}. ${first.how}${time}`,
     'One part you can finish today moves more than a plan for all of them.',
   );
+  // Its template is filled in for the idea it is for.
+  const told = decision.offered ? ideaTold(input) : '';
+  const facts = templateFacts(input, decision);
   return made === null || view.template === null
     ? made
-    : { ...made, block: plainTemplate(fillTemplate(view.template.body, templateFacts(input, decision))) };
+    : {
+        ...made,
+        block: plainTemplate(
+          fillTemplate(
+            view.template.body,
+            told === '' ? facts : { ...facts, idea: told, customer: customerIn(told), problem: null },
+          ),
+        ),
+      };
 }
 
 /** The office or person alone, without what it is ("UR Ventures"). */
@@ -1621,16 +2182,31 @@ const PUSHED =
   /a yes or no from me would be a guess|not even a hint|Still no, and nobody|No promise from me|That answer will not change/;
 
 /** The step cut to their time: what it is now. */
-function smallerAsk(decision: Decision): Ask {
+function smallerAsk(input: PathTurnInput, decision: Decision): Ask {
   const items = decision.step?.view.items.filter((i) => !i.done) ?? [];
   const minutes = items.reduce((sum, i) => sum + (i.minutes ?? 0), 0);
   const timed = items.length > 0 && items.every((i) => i.minutes !== null);
   const doing = items.map((i) => lowerFirst(bare(i.do))).join('; then ');
   return ask(
     'A smaller version of the step',
-    `Make it smaller: ${doing}. ${timed ? `That is about ${String(minutes)} minutes, and the rest waits.` : 'The rest waits, and what comes of this part tells you what to change in it.'}`,
+    `Make it smaller: ${doing}. ${timed ? `That is about ${String(minutes)} minutes${fitsIn(input.message)}, and the rest waits${untilSaid(input)}.` : 'The rest waits, and what comes of this part tells you what to change in it.'}`,
     'A small part that is done this week is worth more than a whole step that is not.',
   );
+}
+
+/** "…, so it fits one evening", when they said the time they have. */
+function fitsIn(message: string): string {
+  const [time] = limitsIn(message).filter((l) => /\b(?:evening|hour|afternoon|morning|weekend)s?\b/.test(l));
+  const had = time ?? timeSaid(message)?.said;
+  return had === undefined ? '' : `, so it fits ${/^(?:one|an?|two|three) /.test(had) ? had : `your ${had}`}`;
+}
+
+/** "… until after the exam", when one is what it is too much before. */
+function untilSaid(input: PathTurnInput): string {
+  const what = /\b(?:before|until after|because of|with) (?:the |my |our )?(exams?|midterms?|finals?)\b/.exec(
+    plain([...input.earlierMessages.slice(-2), input.message].join(' ')),
+  )?.[1];
+  return what === undefined ? '' : ` until after your ${what}`;
 }
 
 /** A step not done, a commitment made: said when the lead says nothing of it. Never asks for what they reported. */
@@ -1656,7 +2232,7 @@ function reportAsk(input: PathTurnInput, decision: Decision, lead: Lead | null):
     );
   }
   if (decision.smaller !== null) {
-    const less = smallerAsk(decision)?.answer;
+    const less = smallerAsk(input, decision)?.answer;
     if (less !== undefined) parts.push(less);
   }
   return parts.length === 0 ? null : ask('What they report, and what it changes', parts.join(' '), '');
@@ -1706,16 +2282,6 @@ function priorOf(input: PathTurnInput, decision: Decision, lead: Lead | null): P
   if (kind === 'recall' || kind === 'social' || kind === 'rehearsal') return null;
   if (kind === 'new_idea') return null;
   const source = priorSource(input, decision, lead);
-  // The first part of a step for another idea is for that idea.
-  if (decision.howTo && decision.offered) {
-    const told = ideaTold(input);
-    if (told !== '')
-      return {
-        fact: told,
-        sentence: `That is for this idea: ${told}.`,
-        spoken: `That is for this idea: ${told}.`,
-      };
-  }
   const found = priorFact({
     ...source,
     applies: kind === 'coaching' && lead === null && play !== null,
@@ -1742,11 +2308,14 @@ function priorOf(input: PathTurnInput, decision: Decision, lead: Lead | null): P
         : `${upperFirst(bare(found.sentence))}.`;
   const last = (input.earlierReplies ?? []).at(-1) ?? '';
   const missing = gap === '' || (input.earlierReplies ?? []).some((r) => saysMost(r, gap)) ? '' : gap;
-  // Their record is not told twice in a row; with nothing but the idea, the answer still says whose it is.
-  const whole = joined(has === '' || (r.have !== '' && saysMost(last, has)) ? '' : has, missing);
+  // Their record is not told twice in a row on the same question, and stands beside another one's answer.
+  const same = input.previous?.step?.playId === play.id;
+  const whole = joined(has === '' || (same && r.have !== '' && saysMost(last, has)) ? '' : has, missing);
   if (whole === '') return heard;
-  const both = joined(r.have, gap);
-  const spoken = both.split(' ').length <= SPOKEN_PRIOR_WORDS ? both : r.have;
+  // On a call too, nothing of it twice in a row.
+  const saidHave = same && r.have !== '' && saysMost(last, r.have);
+  const both = joined(saidHave ? '' : r.have, missing);
+  const spoken = both.split(' ').length <= SPOKEN_PRIOR_WORDS ? both : saidHave ? '' : r.have;
   return {
     fact: r.best !== '' ? r.best : (found?.fact ?? r.problem),
     sentence: whole,

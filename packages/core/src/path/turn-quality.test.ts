@@ -499,8 +499,8 @@ describe('a reply that starts a step holds the thing itself', () => {
     const first = leadOf('Can you help me get organised?', idea);
     const second = leadOf('where do I even begin', { ...idea, started: true }, ['x'], [first]);
     const third = leadOf('orders pls', { ...idea, started: true }, ['x', 'y'], [first, second]);
-    expect(second).toMatch(/^Start with one blank, "Problem": what goes wrong, how often\./);
-    expect(third).toMatch(/^Take the next blank, "Today": /);
+    expect(second).toMatch(/^The step starts with one blank, "Problem": what goes wrong, how often\./);
+    expect(third).toMatch(/^Take the next blank of it, "Today": /);
     expect(new Set([first, second, third]).size).toBe(3);
   });
 

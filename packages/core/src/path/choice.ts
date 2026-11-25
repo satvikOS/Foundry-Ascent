@@ -76,7 +76,7 @@ const APART = 8;
 /** Fewest that were asked for a rate to decide. */
 const LEAST_ASKED = 10;
 
-interface Rated {
+export interface Rated {
   readonly option: string;
   readonly part: number;
   readonly whole: number;
@@ -117,14 +117,34 @@ function ratedOf(options: readonly string[], told: readonly string[]): Rated[] {
   });
 }
 
-/** The option whose rate is plainly the higher; null when they are close, few were asked, or one of them was never told. */
-function decided(options: readonly string[], told: readonly string[]): Choice['pick'] {
+/** Two options by what was counted of each, the plainly higher first; null when they are close, or few were asked. */
+function ranked(
+  options: readonly string[],
+  told: readonly string[],
+): { readonly best: Rated; readonly other: Rated } | null {
   if (options.length !== 2) return null;
   const rated = ratedOf(options, told).sort((a, b) => b.part / b.whole - a.part / a.whole);
   const [best, other] = rated;
   if (best === undefined || other === undefined || rated.length !== 2) return null;
   if (Math.min(best.whole, other.whole) < LEAST_ASKED) return null;
-  if ((best.part / best.whole - other.part / other.whole) * 100 < APART) return null;
+  return (best.part / best.whole - other.part / other.whole) * 100 < APART ? null : { best, other };
+}
+
+/** The counts that decided a choice they asked to have made; null: none, or it was not decided by counts. */
+export function ratesOf(input: {
+  readonly message: string;
+  readonly earlier: readonly string[];
+  readonly told: readonly string[];
+}): { readonly best: Rated; readonly other: Rated } | null {
+  const either = choiceOf(input.message);
+  return either.length < 2 ? null : ranked(either, [...input.told, ...input.earlier, input.message]);
+}
+
+/** The option whose rate is plainly the higher; null when they are close, few were asked, or one of them was never told. */
+function decided(options: readonly string[], told: readonly string[]): Choice['pick'] {
+  const found = ranked(options, told);
+  if (found === null) return null;
+  const { best, other } = found;
   const said = (r: Rated): string => `${String(r.part)} of ${String(r.whole)} (${percent(r.part, r.whole)})`;
   const name = upperFirst(bare(toYou(best.option)));
   return {
@@ -132,6 +152,11 @@ function decided(options: readonly string[], told: readonly string[]): Choice['p
     text: `${name}: ${said(best)}, against ${said(other)} for the other. Go by the share, not by the bigger number.`,
     voice: `${name}: ${said(best)}, against ${said(other)} for the other.`,
   };
+}
+
+/** The way most of their buyers came, of the ones they could use; null: nothing they told decides it. */
+export function settledWay(said: readonly string[], told: readonly string[]): string | null {
+  return concentrated('which channel', optionsTold(said), told)?.option ?? null;
 }
 
 const CAME_FROM =

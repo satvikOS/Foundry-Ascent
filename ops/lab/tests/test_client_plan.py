@@ -36,7 +36,9 @@ NOVA = "us.amazon.nova-2-lite-v1:0"
 HAIKU = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 HAIKU_5_5 = "us.anthropic.claude-haiku-5-5"
 LUNA = "us.openai.gpt-6-luna"
-EVERY = list(load(DAY).scenarios)
+ALL = list(load(DAY).scenarios)
+#: What an unnamed run plays: the held-out group is beside it.
+EVERY = in_groups(ALL, ())
 
 
 def plan(scenarios=EVERY, coach: str = NOVA, judge: str = HAIKU, think: str = "default"):
@@ -143,6 +145,18 @@ def test_groups_are_read_in_run_order() -> None:
         parse_groups("numbers,x")
     assert {s.group for s in in_groups(EVERY, ("odd",))} == {"odd"}
     assert len(in_groups(EVERY, ())) == len(EVERY)
+
+
+def test_the_held_out_group_is_played_only_when_named() -> None:
+    assert "heldout" not in {s.group for s in EVERY}
+    held = in_groups(ALL, parse_groups("heldout"))
+    assert len(held) == 16
+    assert len(ALL) == len(EVERY) + len(held)
+    assert all(judged_turns(s) for s in held)
+    assert plan(held, think="typed").total_usd <= PLAN_LIMIT_USD
+    assert [s.id for s in suite.planned(("HO-01", "CP-01"), "", DAY)] == ["CP-01", "HO-01"]
+    assert suite.planned((), "", DAY) == EVERY
+    assert [s.id for s in suite.planned((), "heldout", DAY)] == [s.id for s in held]
 
 
 # The models ---------------------------------------------------------------------------------------------------------

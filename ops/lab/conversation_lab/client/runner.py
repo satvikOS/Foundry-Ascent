@@ -427,6 +427,7 @@ class ClientRunner:
             previous_step=previous,
             established=frozenset(figures),
             established_dates=frozenset(dates),
+            record="\n".join(reading.leaf_text(t.guidance) for t in before if t.guidance is not None),
             nagged_before=0 if last is None else last.nag_row,
             same_session=tuple(t.reply for t in before if t.session == turn.session and t.reply),
         )
@@ -471,7 +472,7 @@ class ClientRunner:
 
     def judge_prompt(self, r: ScenarioResult, index: int) -> str:
         s, turn = r.scenario, r.turns[index]
-        seen = self.reply_turn(r, index)
+        earlier = self._as_seen(r, index)
         tests = (
             f"{question(turn.plan.q).category}, {question(turn.plan.q).test_type}"
             if turn.plan.q
@@ -481,7 +482,7 @@ class ClientRunner:
             role=s.role,
             founder=f"{s.founder}, {s.studies}" if s.studies else s.founder,
             known=s.known_text,
-            earlier=seen.earlier,
+            earlier=earlier,
             founder_text=turn.founder,
             reply=turn.reply,
             card=card_text(turn.guidance) if turn.channel == "chat" else "",
@@ -491,8 +492,30 @@ class ClientRunner:
             passing=s.passing,
             first_time=s.first_time,
             calendar=calendar_note([self._days_back(s, n, turn.session) for n in range(1, turn.session)]),
-            answers=answered_by(turn.plan.expect),
+            answers=answered_by(turn.plan.expect, s.facts),
         )
+
+    def _as_seen(self, r: ScenarioResult, index: int) -> tuple[tuple[str, str], ...]:
+        """The exchanges before a turn as the coach sees them: those of earlier conversations on the days the lab moved them
+        to, with every date said in them moved as well."""
+        s, turn = r.scenario, r.turns[index]
+        before = [t for t in r.turns[:index] if s.repeat == 1 or t.session == turn.session]
+        out = []
+        for t in before:
+            back = self._days_back(s, t.session, turn.session)
+            mark = ""
+            if back:
+                day = self.today - dt.timedelta(days=back)
+                mark = (
+                    f"[conversation {t.session}, {back} days before this one, {day:%A}, {day:%B} {day.day}] "
+                )
+            out.append(
+                (
+                    mark + reading.move_dates(t.founder, back, self.today),
+                    reading.move_dates(t.reply, back, self.today),
+                )
+            )
+        return tuple(out)
 
 
 def _number(value: Any) -> float | None:

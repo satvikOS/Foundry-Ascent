@@ -118,7 +118,7 @@ on:
         options: [builtin, evals]
         default: builtin
       groups:
-        description: client only - just these groups of scenarios, comma-separated (protocol, questions, organise, calls, arcs, numbers, news, followups, novice, odd, memory, hard, repeats, adversarial); empty = all
+        description: client only - just these groups of scenarios, comma-separated (protocol, questions, organise, calls, arcs, numbers, news, followups, novice, odd, memory, hard, repeats, adversarial, heldout); empty = all but heldout
         type: string
         default: ''
       coach_model:
@@ -244,13 +244,13 @@ jobs:
             echo "::error::repeat must be a whole number from 1 to 10."
             exit 1
           fi
-          if [[ ! "${SCENARIO_GROUPS}" =~ ^([a-z]{3,12}(,[a-z]{3,12}){0,13})?$ ]]; then
+          if [[ ! "${SCENARIO_GROUPS}" =~ ^([a-z]{3,12}(,[a-z]{3,12}){0,14})?$ ]]; then
             echo "::error::groups must be empty or comma-separated group names like numbers,news."
             exit 1
           fi
           for group in ${SCENARIO_GROUPS//,/ }; do
             found=no
-            for known in protocol questions organise calls arcs numbers news followups novice odd memory hard repeats adversarial; do
+            for known in protocol questions organise calls arcs numbers news followups novice odd memory hard repeats adversarial heldout; do
               if [ "${group}" = "${known}" ]; then found=yes; fi
             done
             if [ "${found}" = no ]; then

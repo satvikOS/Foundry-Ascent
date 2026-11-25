@@ -40,7 +40,11 @@ const TERMS: readonly Term[] = [
   { id: 'churn', said: /\bchurn\b/iu, means: 'customers who stop buying' },
   { id: 'runway', said: /\brunway\b/iu, means: 'how long the money lasts' },
   { id: 'burn rate', said: /\bburn rate\b/iu, means: 'what you spend in a month' },
-  { id: 'margin', said: /\b(?:gross|contribution) margins?\b/iu, means: 'the share of the price you keep' },
+  {
+    id: 'margin',
+    said: /\b(?:gross|contribution) margins?\b/iu,
+    means: 'what a sale leaves after its own costs',
+  },
   { id: 'break-even', said: /\bbreak[- ]?even\b/iu, means: 'where sales cover the costs' },
   { id: 'cac', said: /\bCAC\b|\bcustomer acquisition cost\b/u, means: 'what it costs to win one customer' },
   { id: 'ltv', said: /\bLTV\b|\blifetime value\b/u, means: 'what one customer leaves you in all' },
@@ -77,7 +81,7 @@ const TERMS: readonly Term[] = [
 
 /** What already tells its meaning where it stands. */
 const DEFINED_AFTER =
-  /^["”'’)*_]*\s*(?:\(|[-–—:=]|,? ?(?:which|that|this) (?:is|means)|,? ?meaning\b|,? ?i\.e\.|,? ?that is|means?\b|is (?:a|an|the|one|what|how|when|just|simply|your)\b|,? or\b)/iu;
+  /^["”'’)*_]*\s*(?:\(|[-–—:=]|,? ?(?:which|that|this) (?:is|means)|,? ?meaning\b|,? ?i\.e\.|,? ?that is|means?\b|is (?:a|an|the|one|what|how|when|just|simply|your)\b|,? or\b|(?: point| rate| number)?,? (?:the|an?|what|how|where) (?=\p{L}))/iu;
 const DEFINED_BEFORE =
   /(?:called|known as|that(?:['’]s| is) (?:a|the|your)|\(|,? or) (?:an?|the|your)?\s*["“*_]*$/iu;
 
