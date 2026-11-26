@@ -68,6 +68,7 @@ import {
   reasoningAccess,
   usesMantle,
   usesOpenAiProfile,
+  withoutUnderstand,
 } from '../lib/models.js';
 import {
   acknowledge,
@@ -313,7 +314,8 @@ export class AppStack extends Stack {
     // InvokeModel/InvokeModelWithResponseStream. Profiles are granted in the invoking region; the foundation model
     // behind them where the profile routes: the destination regions of a geography profile whose model card was
     // checked (Nova 2 Lite's `us.` profile: us-east-1, us-east-2, us-west-2), every region otherwise, plus the
-    // region-less ARN that `global.` profiles are authorized against.
+    // region-less ARN that `global.` profiles are authorized against. A bare id served in the region with no profile
+    // (Mistral Large 3, gpt-oss-120b: lib/models.ts `servedInRegionOnly`) is granted in the platform region alone.
     const foundationModelArn = (modelId: string, region = '*'): string =>
       `arn:${Aws.PARTITION}:bedrock:${region}::foundation-model/${modelId}`;
     const regionlessFoundationModelArn = (modelId: string): string =>
@@ -332,30 +334,32 @@ export class AppStack extends Stack {
         ? [`arn:${Aws.PARTITION}:bedrock:${config.region}:${Aws.ACCOUNT_ID}:project/default`]
         : []),
     ];
-    const reasoningResources = [
-      ...runtimeResources(reasoningAccess(models, config.region)),
+    // The understand call's models go to the API alone: only it runs turns with the call on and is given its
+    // variables (understandEnvironment); the worker's are the same models without them.
+    const modelsOf = (fn: PlatformFunction) => (fn === this.api ? models : withoutUnderstand(models));
+    const reasoningResourcesOf = (fn: PlatformFunction): string[] => [
+      ...runtimeResources(reasoningAccess(modelsOf(fn), config.region)),
       ...runtimeResources(embeddingsAccess(models, config.region)),
     ];
     const embeddingResources = runtimeResources(embeddingsAccess(models, config.region));
 
-    const reasoningStatements = [
-      new iam.PolicyStatement({
-        sid: 'BedrockRuntimeModels',
-        actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-        resources: reasoningResources,
-      }),
-    ];
-    if (usesMantle(models)) {
-      reasoningStatements.push(
+    for (const fn of [this.api, this.worker]) {
+      fn.role.addToPolicy(
         new iam.PolicyStatement({
-          sid: 'BedrockMantleInference',
-          actions: ['bedrock-mantle:CreateInference'],
-          resources: ['*'],
+          sid: 'BedrockRuntimeModels',
+          actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+          resources: reasoningResourcesOf(fn),
         }),
       );
-    }
-    for (const fn of [this.api, this.worker]) {
-      for (const statement of reasoningStatements) fn.role.addToPolicy(statement);
+      if (usesMantle(modelsOf(fn))) {
+        fn.role.addToPolicy(
+          new iam.PolicyStatement({
+            sid: 'BedrockMantleInference',
+            actions: ['bedrock-mantle:CreateInference'],
+            resources: ['*'],
+          }),
+        );
+      }
     }
     // Seeding computes embeddings only.
     this.migrate.role.addToPolicy(
@@ -424,7 +428,7 @@ export class AppStack extends Stack {
         }));
     // One finding id (Resource::*) per role, so the reasons for every statement on * are joined.
     const wildcardReasons = (fn: PlatformFunction): string[] => [
-      ...(usesMantle(models)
+      ...(usesMantle(modelsOf(fn))
         ? [
             'bedrock-mantle:CreateInference (GPT-6 Luna on the OpenAI-compatible Mantle endpoint) does not support resource-level permissions; it is the only Bedrock action granted on *.',
           ]
@@ -437,7 +441,7 @@ export class AppStack extends Stack {
         : []),
     ];
     for (const fn of [this.api, this.worker]) {
-      acknowledge(fn.role, ...foundationModelAcks(reasoningResources));
+      acknowledge(fn.role, ...foundationModelAcks(reasoningResourcesOf(fn)));
       const reasons = wildcardReasons(fn);
       if (reasons.length > 0)
         acknowledge(fn.role, { id: wildcardResource(this, '*'), reason: reasons.join(' ') });

@@ -78,7 +78,7 @@ PARTS: dict[str, tuple[str, ...]] = {
     "judge": ("pick", "news", "friends"),
 }
 #: The groups that are never read unless they are named: what nobody has looked at.
-UNSEEN = frozenset({"heldoutb", "heldoutc"})
+UNSEEN = frozenset({"heldoutb", "heldoutc", "heldoutd"})
 #: Kinds of reading that agree with what a scenario expects of the turn.
 KINDS: dict[str, frozenset[str]] = {
     "recall": frozenset({"recall"}),

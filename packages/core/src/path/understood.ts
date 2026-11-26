@@ -348,7 +348,16 @@ const YES_NO_PICK = /^(?:yes|no|not yet|neither|both|wait|stop|pause)\b/i;
 /** They want the words themselves: a recap, a wording, so many lines. */
 const TEXT_ASKED =
   /\b(?:quick |short )?(?:re-?cap|summar(?:y|i[sz]e))\b|\bsum (?:it|this|that) up\b|\b(?:in )?(?:\d|one|two|three|four|five|six) (?:short |quick )?(?:lines|sentences|bullets|bullet points)\b|\bjust (?:need |want |give me )?(?:the |some )?words\b|\bwhat (?:can|should|could|do|does|would) (?:the |my |our |we put on the )?(?:\w+ )?(?:page|site|website|flyer|poster|post|sign|bio|caption|label|banner) (?:say|read)\b|\b(?:write|draft|word) (?:me |us )?(?:it|this|that|the|an?) (?:\w+ ){0,2}(?:line|note|email|e-mail|message|post|text|bio|blurb|caption|pitch|letter|page)\b/i;
-export const asksForText = (message: string): boolean => TEXT_ASKED.test(message);
+/** The words to send or say, asked in plainer ways: "write me the note", "gimme the words", "what do I tell the landlord". */
+const WORDS_ASKED =
+  /\b(?:write|draft|type) (?:for me|for us|me|us) (?:the|a|an|my|our) (?:\w+ )?(?:message|email|e-mail|text|note|reply|answer|letter|post)\b|\b(?:gimme|give me|tell me|need)\b[^.?!]{0,12}\bthe (?:exact )?words\b|\bwhat (?:do|should|can|would) (?:i|we) (?:say|write|tell|text|email|answer|reply)(?: to)? (?:him|her|them|the \w+|back)\b|\bwhat (?:would|should|does|do) (?:the|a|our|my) (?:\w+ )?(?:sticker|sign|label|tag|card|note|slide|flyer|poster|banner|subject line) (?:have to |need to )?(?:say|read)\b|\b(?:write|draft) (?:the|a) (?:\w+ )?(?:text|message|email|reply) (?:i|we) (?:send|post)\b|\bthe (?:text|message|email) (?:i|we) send\b/i;
+export const asksForText = (message: string): boolean =>
+  TEXT_ASKED.test(message) || WORDS_ASKED.test(message);
+
+/** Made-up work asked for: testimonials, reviews, interviews or results nobody gave. */
+const MAKES_UP =
+  /\b(?:make|made|making|knock|come|dream|whip|cook) (?:up|out)\b[^.?!]{0,40}\b(?:testimonials?|reviews?|quotes?|interviews?|answers|results|signatures?|users|customers)\b|\b(?:fake|invent\w*|made-up|fabricat\w*)\b[^.?!]{0,30}\b(?:testimonials?|reviews?|quotes?|interviews?|answers|results|data|numbers|signatures?)\b|\b(?:testimonials?|reviews?|quotes?)\b[\s\S]{0,140}\b(?:no ?one|nobody)(?:['’]s| is| will)? (?:ever )?(?:check|ring|call|verif)\w*/i;
+export const asksToMakeUp = (message: string): boolean => MAKES_UP.test(message);
 
 /** It is too much for them, in their own words. */
 const FEELS =
@@ -414,7 +423,12 @@ export function settled(
           settles: orNull(u.result.settles),
         };
   const why = u.contradicts === null ? '' : toThem(u.contradicts.why);
-  const text = asksForText(about.message) && u.kind !== 'integrity' && u.kind !== 'privacy';
+  const madeUp = asksToMakeUp(about.message);
+  const text =
+    (asksForText(about.message) || u.kind === 'draft') &&
+    !madeUp &&
+    u.kind !== 'integrity' &&
+    u.kind !== 'privacy';
   const said = [...about.earlier, about.message];
   const sum = about.sum ?? null;
   // A verdict is read of an outcome they tell, or told and ask about: an idea, a plan or the time they have is none.
@@ -428,7 +442,7 @@ export function settled(
   ].filter((k, i, all) => k !== kind && all.indexOf(k) === i && (k !== 'result' || outcome));
   return {
     ...u,
-    kind: text && u.kind !== 'recall' ? 'draft' : kind,
+    kind: madeUp ? 'integrity' : text && u.kind !== 'recall' ? 'draft' : kind,
     ask: u.ask.trim(),
     record: u.record.filter((r) => isTheirFact(r.text) && stillStands(r, said)),
     contradicts:

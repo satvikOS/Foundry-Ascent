@@ -19,7 +19,6 @@ import {
 } from './figures.js';
 import { lossLabel, phraseOf, withPeriod } from './labels.js';
 import { meant, turnedShare, type SumMend } from './meaning.js';
-import { slotWords } from './shapes.js';
 import type { RawInput, RawSum, RawUnderstanding } from './schema.js';
 import { type RecordLine, type SumUnit, type UnderstoodSum } from './types.js';
 
@@ -693,9 +692,7 @@ export function checkSums(
     });
     if ('drop' in summed) {
       drops.push(summed.drop);
-      // A slot's name says what it is in words ("cost12": what it costs you).
-      if (summed.invented !== undefined && raws.asked)
-        invented ??= slotWords(summed.invented) ?? summed.invented.replace(/_/g, ' ');
+      if (summed.invented !== undefined && raws.asked) invented ??= summed.invented.replace(/_/g, ' ');
     } else if (!sums.some((s) => s.said === summed.sum.said && s.working === summed.sum.working)) {
       sums.push(summed.sum);
       mends.push(...summed.mends);

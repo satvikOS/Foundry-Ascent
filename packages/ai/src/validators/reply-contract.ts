@@ -1697,7 +1697,7 @@ export function rulesForAPerson(text: string): boolean {
 /** What talking of it does to a patent: for the office that decides, and nobody else. */
 const OF_PATENTS = /\b(?:ur ventures|patent|technology transfer)\b/iu;
 const RULES_DISCLOSURE =
-  /^yes\b[^.!?]{0,80}\b(?:talk|tell|show|share|speak|demo|present|pitch|result|method)\b|\b(?:won['’]?t|will not|does(?:n['’]?t| not)|should(?:n['’]?t| not)|can(?:no|['’])t|without) (?:hurt|harm|affect|risk|endanger|damage|ruin|jeopardi[sz]|threaten|weaken|put)\w*\b[^.!?]{0,40}\b(?:patent|rights?|invention|protection|filing|claim)\b|\b(?:keeps?|stays?|leaves?|remains?|is|are) (?:(?:the|your|it) )?(?:invention |patent |rights |idea )?(?:safe|protected|intact)\b|\bit(?:['’]s| is) (?:safe|fine|okay|ok) to (?:talk|tell|show|share|speak|present)\b/iu;
+  /^yes\b[^.!?]{0,80}\b(?:talk|tell|show|share|speak|demo|present|pitch|result|method)\b|\b(?:won['’]?t|will not|does(?:n['’]?t| not)|should(?:n['’]?t| not)|can(?:no|['’])t|without) (?:hurt|harm|affect|risk|endanger|damage|ruin|jeopardi[sz]|threaten|weaken|put)\w*\b[^.!?]{0,40}\b(?:patent|rights?|invention|protection|filing|claim)\b|\b(?:keeps?|stays?|leaves?|remains?|is|are) (?:(?:the|your|it) )?(?:invention |patent |rights |idea )?(?:safe|protected|intact)\b|\bit(?:['’]s| is) (?:safe|fine|okay|ok) to (?:talk|tell|show|share|speak|present)\b|(?:^|[.;:]\s*)(?:yes[,.:]?\s+)?(?:send|share|show|hand over|give|email|upload|post|publish|forward)(?: (?:him|her|them|it))? (?:the|your|all|every|it|them)\b[^.!?]{0,40}\b(?:files?|designs?|code|method|diagrams?|drawings?|data|prototypes?|invention|details|set|sources?)\b/iu;
 
 /** Whether a unit decides what the turn's referral decides: never the coach's to say. */
 export function rulesOnIt(unit: string, guidance: PromptGuidance): boolean {
@@ -1800,6 +1800,49 @@ export function pointsNowhere(question: string, said: string): boolean {
 }
 
 /** Whether a unit only says what the lead said. */
+/** Contractions and spelled numbers said out, so that "isn’t" and "is not", "ten" and "10" read alike. */
+function unContracted(text: string): string {
+  return spelledAsDigits(
+    text
+      .replace(
+        /\b(\p{L}+)n['’]t\b/giu,
+        (_w, stem: string) => `${stem === 'ca' ? 'can' : stem === 'wo' ? 'will' : stem} not`,
+      )
+      .replace(/\b(it|that|there|what|he|she)['’]s\b/giu, '$1 is')
+      .replace(/\b(you|we|they)['’]re\b/giu, '$1 are')
+      .replace(/[—–]/gu, ', '),
+  );
+}
+const SPELLED: Readonly<Record<string, string>> = {
+  two: '2',
+  three: '3',
+  four: '4',
+  five: '5',
+  six: '6',
+  seven: '7',
+  eight: '8',
+  nine: '9',
+  ten: '10',
+  twenty: '20',
+};
+const spelledAsDigits = (text: string): string =>
+  text.replace(
+    /\b(two|three|four|five|six|seven|eight|nine|ten|twenty)\b/giu,
+    (w) => SPELLED[w.toLowerCase()] ?? w,
+  );
+
+/** A sentence that says the lead again in other words: most of its words are the lead's, and nothing of it is new. */
+export function saysLeadAgain(unit: string, lead: string): boolean {
+  // A list, a template's line, a step line or a line to fill in is never read as one.
+  if (lead === '' || isListUnit(unit) || /[\n[\]*]/u.test(unit.trim())) return false;
+  const own = stemsOf(unContracted(unit));
+  if (own.size < 3) return false;
+  const held = stemsOf(unContracted(lead));
+  const figures = [...own].filter((w) => /^\d/.test(w));
+  const fresh = [...own].filter((w) => !held.has(w)).length;
+  return figures.every((f) => held.has(f)) && fresh <= 1 && coverage(own, held) >= 0.65;
+}
+
 export function repeatsLead(unit: string, lead: ReadonlySet<string>): boolean {
   const said = stemsOf(unit);
   if (said.size >= 3 && coverage(said, lead) >= 0.85) return true;

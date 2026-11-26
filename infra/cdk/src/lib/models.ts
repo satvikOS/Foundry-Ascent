@@ -2,11 +2,12 @@
  * Model selection and the Bedrock resources each model needs, derived from `config.models`.
  *
  * While `models.luna.enabled` is false (AWS gates GPT-6 Luna per account), the configured `primary` and
- * `fallback` (the coach, Amazon Nova 2 Lite, with its global profile behind it) are used as-is. Once enabled, Luna
+ * `fallback` (the coach, Mistral Large 3, with Nova 2 Lite's US profile behind it: ADR-0025) are used as-is. Once enabled, Luna
  * becomes primary and the configured `primary` becomes the fallback. The background route (`models.background`) is
  * never changed by Luna. The runtime contract (MODEL_PRIMARY_ID / MODEL_FALLBACK_ID / MODEL_EMBEDDINGS_ID and
  * MODEL_BACKGROUND_PRIMARY_ID / MODEL_BACKGROUND_FALLBACK_ID / MODEL_BACKGROUND_PURPOSES) carries the effective ids.
- * The understand call's own model and its SUMS part's (`models.understand`) are granted with them when it names them.
+ * The understand call's own model and its SUMS part's (`models.understand`) are granted with them, to the API alone (the
+ * only function that runs it and is given its variables), when it names them.
  */
 import type { BackgroundPurpose, PlatformConfig } from '../config.js';
 
@@ -60,6 +61,12 @@ export function reasoningModelIds(models: EffectiveModels): string[] {
     ...(models.understand === undefined ? [] : [models.understand]),
     ...(models.understandSums === undefined ? [] : [models.understandSums]),
   ]);
+}
+
+/** The models without the understand call's own (`understand`, `understandSums`): what a function that never runs it calls. */
+export function withoutUnderstand(models: EffectiveModels): EffectiveModels {
+  const { understand: _understand, understandSums: _understandSums, ...rest } = models;
+  return rest;
 }
 
 /**
@@ -117,6 +124,22 @@ export function geoDestinations(profileId: string, region: string): readonly str
   return GEO_DESTINATIONS[region]?.[profileId] ?? null;
 }
 
+/**
+ * Bare foundation-model ids served on demand in `region` itself and through no inference profile there: their Bedrock
+ * model cards list In-Region for the region and "Not supported" as both the Geo and the Global inference ID (checked
+ * 2026-11-25: Mistral Large 3, the coach; gpt-oss-120b, the understand call's SUMS part). A call with such an id runs
+ * in the invoking region alone, so its foundation model is granted there alone, and no `us.` retry profile is granted
+ * (none exists). A bare id not listed here keeps the wider grant (every region, and its `us.` profile).
+ */
+const IN_REGION_ONLY: Readonly<Record<string, readonly string[]>> = {
+  'us-east-1': ['mistral.mistral-large-3-675b-instruct', 'openai.gpt-oss-120b-1:0'],
+};
+
+/** Whether a bare model id is served in `region` with no inference profile (checked on its model card). */
+export function servedInRegionOnly(modelId: string, region: string): boolean {
+  return !isInferenceProfile(modelId) && (IN_REGION_ONLY[region]?.includes(modelId) ?? false);
+}
+
 export interface BedrockRuntimeAccess {
   /**
    * Foundation-model ids granted in every region: a bare id (served in the invoking region, or through its `us.`
@@ -131,7 +154,8 @@ export interface BedrockRuntimeAccess {
   readonly globalFoundationModels: readonly string[];
   /**
    * Foundation models reached only through geography profiles with checked destinations: granted in those regions
-   * alone (GPT-6 Luna behind `us.`: us-east-1, us-east-2, us-west-2).
+   * alone (GPT-6 Luna behind `us.`: us-east-1, us-east-2, us-west-2); and a bare id served in the invoking region
+   * with no profile (`servedInRegionOnly`): granted in that region alone.
    */
   readonly regionalFoundationModels: readonly {
     readonly modelId: string;
@@ -165,7 +189,11 @@ export function runtimeAccess(ids: readonly string[], region: string): BedrockRu
   const regional = new Map<string, Set<string>>();
   for (const id of ids) {
     const model = foundationModelId(id);
-    const regions = isInferenceProfile(id) ? geoDestinations(id, region) : null;
+    const regions = isInferenceProfile(id)
+      ? geoDestinations(id, region)
+      : servedInRegionOnly(id, region)
+        ? [region]
+        : null;
     if (regions === null) {
       everywhere.add(model);
       continue;
@@ -186,11 +214,12 @@ export function runtimeAccess(ids: readonly string[], region: string): BedrockRu
 
 /**
  * Bedrock runtime resources for reasoning models (Converse). A bare foundation-model id also gets its
- * `us.` profile: the gateway retries with it when on-demand throughput is not offered for the bare id.
+ * `us.` profile: the gateway retries with it when on-demand throughput is not offered for the bare id. A bare id
+ * served in the region with no profile (`servedInRegionOnly`) gets none: that retry never happens for it.
  */
 export function reasoningAccess(models: EffectiveModels, region = 'us-east-1'): BedrockRuntimeAccess {
   const ids = reasoningModelIds(models).filter((id) => !isMantleModel(id));
-  const bare = ids.filter((id) => !isInferenceProfile(id));
+  const bare = ids.filter((id) => !isInferenceProfile(id) && !servedInRegionOnly(id, region));
   const access = runtimeAccess(ids, region);
   return {
     ...access,

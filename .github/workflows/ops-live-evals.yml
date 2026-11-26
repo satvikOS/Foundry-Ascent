@@ -25,20 +25,20 @@ name: Ops - live conversation evals
 # Spend: budget_usd is a hard cap for the whole run, split across shards by estimated cost; within a shard the
 # app's share is enforced by the app itself (its daily platform cap) and the simulator and judge are metered and
 # refused before they could go over. The owner caps a paid run at USD 2 (the default; sample defaults to 8, estimated
-# USD 0.62 on production's coach, Nova 2 Lite, judged by Claude Haiku 4.5; the estimate takes
+# USD 0.86 on production's coach, Mistral Large 3, judged by Claude Haiku 4.5; the estimate takes
 # no prompt-cache discount): a budget_usd above 2 is refused unless approved_over_cap holds the owner's
 # approval code for that budget, made today with the owner's spend key (scripts/approve-spend.sh;
 # docs/runbooks/conversation-lab.md "Spend cap"); a dry run (no model called) may estimate a larger budget without it.
 #
 # coach_model (an A/B of the coach, docs/runbooks/conversation-lab.md "Coach model A/B"): `default` runs the app's coach
-# on production's models (infra/cdk/config/production.json: Amazon Nova 2 Lite since 2026-11-24, ADR-0024; judged on auto
-# by another family, Claude Haiku 4.5 then Llama 4 Maverick, never Nova); a model of ops/lab/models.json `live.coach` (Nova
-# 2 Lite, now production's own coach, with no global fallback; Claude Sonnet 4.6; GPT-6 Luna, ADR-0024, judged by no OpenAI model) runs it on that
+# on production's models (infra/cdk/config/production.json: Mistral Large 3 since 2026-11-26, ADR-0025; judged on auto
+# by another family, Claude Haiku 4.5 then Llama 4 Maverick then Nova Premier, never Mistral); a model of ops/lab/models.json
+# `live.coach` (Nova 2 Lite, production's coach before ADR-0025 and now its fallback, alone with no fallback; Claude Sonnet 4.6; GPT-6 Luna, ADR-0024, judged by no OpenAI model) runs it on that
 # Bedrock model instead, as both primary and fallback, in the lab's API process only: production's configuration is
 # never changed. An A/B is graded by ONE judge independent of every arm (judge_model ab: Llama 4 Maverick, no fallback;
 # a coach_model other than default uses it on auto), so run the default arm of an A/B with judge_model ab too, and
 # compare the arms with `live-compare`, which refuses arms graded by different judges. The plan prints the coach's
-# estimated cost (Nova 2 Lite, production's, is the baseline; Haiku 4.5 about 3.5x per turn; Sonnet 4.6 about 10x; no cache discount
+# estimated cost (Nova 2 Lite is the baseline; production's Mistral Large 3 about 1.5x per turn; Haiku 4.5 about 3.5x; Sonnet 4.6 about 10x; no cache discount
 # assumed). The lab seeds the persona releases production runs
 # (`homeTenant.ownerReleases`: Thomas, ADR-0021).
 on:

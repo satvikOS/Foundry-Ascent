@@ -101,9 +101,21 @@ describe('FoundryAscent-App', () => {
     });
 
     it('passes exactly the lambda-contract environment of each role', () => {
+      // production.json names models.understand (ADR-0025): its variables, as the contract says, reach the API alone.
+      const understand = {
+        CORE_UNDERSTAND: 'on',
+        MODEL_UNDERSTAND_ID: 'us.amazon.nova-2-lite-v1:0',
+        MODEL_UNDERSTAND_SUMS_ID: 'openai.gpt-oss-120b-1:0',
+      };
       for (const [name, role] of FUNCTIONS) {
         const env = envOf(name);
-        expect(Object.keys(env).sort(), name).toEqual([...environmentNames(role), 'NODE_OPTIONS'].sort());
+        expect(Object.keys(env).sort(), name).toEqual(
+          [
+            ...environmentNames(role),
+            'NODE_OPTIONS',
+            ...(role === 'api' ? Object.keys(understand) : []),
+          ].sort(),
+        );
         expect(env).toMatchObject({
           APP_ENV: 'production',
           APP_VERSION: 'test-sha',
@@ -127,6 +139,7 @@ describe('FoundryAscent-App', () => {
         OWNER_DISPLAY_NAME: 'Platform Owner',
         HOME_TENANT_NAME: 'Ain Foundry',
       });
+      expect(envOf('FoundryAscent-Api')).toMatchObject(understand);
       expect(envOf('FoundryAscent-Api')).not.toHaveProperty('OWNER_ACCESS_CODE_HASH');
       expect(envOf('FoundryAscent-Worker')).not.toHaveProperty('OWNER_ACCESS_CODE_HASH');
       expect(envOf('FoundryAscent-Api').DB_RESUME_BUDGET_MS).toBe(

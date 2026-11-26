@@ -46,27 +46,29 @@ h: true only when p plainly answers it.
 
 ${DATA}`;
 
-const SUMS_RULES = `You find the figure a student founder's message asks for and fill in how it is worked out. Code builds the sum from its shape, does the arithmetic and refuses any number that is not in the message, the conversation or the record.
+const SUMS_RULES = `You find the figure a student founder's message asks for and write how to work it out. Code does the arithmetic and refuses any number that is not in the message, the conversation or the record.
 
 Fields; null or [] where nothing applies:
-q: the figure THIS message asks for, in a few words (what is left, how many, how long, what share, what to charge, what it is all worth). A message that only brings news, chooses, or asks for advice, a recap, a text, how shares are split or about another team asks for none: null, and s is []. A figure asked earlier is not asked now; a follow-up ("and at 50?", "so in total?") is: the sum before with what is new in it.
-w: how it is worked out, at most 20 words: what comes in, EVERY cost and share that comes off, the periods.
-s: never [] when q is there and m is null. One sum, or one for each figure asked. l: what the figure is, to "you", a phrase that can stand before "is" ("what you keep a month"), with its period; never "how much". u: $, %, months, hours, what is counted ("boats"), or "". k: its shape. a: its slots, role=value@where, the value as written there (4, $70, 12%, 20 hours a week, a third), where: message, history or the record key; every number it needs, none it does not. e: for free only, over the names of a: + - * / ( ), 100, ceil(...).
-m: the one number that is nowhere, in words ("what one boat costs you"), and then no sum.
+q: the figure THIS message asks for, in a few words: what is left, whether they make money, how many, how often, a hit rate or accuracy, how long, what share, how much better, what to charge, what an hour pays, what an offer says the whole is worth. A message that only brings news, chooses, or asks for advice, a recap, a text, how shares are split or about another team asks for none: null, and n and s are []. A figure asked earlier is not asked now; a follow-up ("and at 50?", "so in total?") is: the sum before with what is new in it.
+w: how it is worked out, at most 22 words: what comes in, EVERY cost and share that comes off, the periods.
+n: the numbers it needs, each once: name=value@where. Value with its sign: 4, $70, 12%; two numbers of one line may be worked on: 9 - 2. where: message, history or the record key. Only numbers written there, all of them used.
+s: never [] when q is there and m is null. One sum, or one for each figure asked. l: what the figure is, to "you", a phrase that can stand before "is" ("what you keep a month"), with its period; never "how much". u: $, %, months, weeks, hours, what is counted ("boats"), x only for how many times as much. e: names of n, numbers of theirs, + - * / ( ), 100, ceil(...).
+m: the one number that is nowhere, in words ("what one boat costs you"), and then no sum; not the figure they ask for.
 
-Shapes, k: slots (+: may repeat); periods as they stand, code turns weeks and months:
-cover: how many cover or earn back a cost: fixed+ (the cost), target+ (to make on top), price, cost+ (of one), cut (their share of the price) or ours (our share of it), gain (what one brings, if said)
-hourly: what an hour pays: count, price or amount+, cost+, hours
-left: what is left: count, price or amount+, unitcost+ (of each), cost+ (once), cut
-ours: what our share brings: count, price or amount+, ours, cost+
-stake: what an offer says the whole is worth: amount, share
-total: parts told: amount+, or count+ and price
-runway: how long money lasts: cash, burn+, income+
-price: what to charge: cost+, margin (of the price) or markup (on the cost)
-change: old, new (u %)
-rate: how often, a hit rate: part, whole
-chain: a share of a share: whole, share+
-free: any other sum; a cost per visit or piece that comes as often as the visits is one.
+Shapes:
+- one sale: price - every cost of one. Each cost comes off the PRICE, never off another cost.
+- what is kept: sold * (price - costs of one) - what is paid once. A cost per call, visit or piece comes off as often as there are calls, visits or pieces.
+- fewest to break even, cover, earn back: ceil(fixed / (price - costs of one)); to earn a target: ceil((fixed + target) / (price - costs of one))
+- price that keeps p%: cost / (1 - p / 100). From a rate: rate * part of it
+- fee after a discount: price * (1 - off / 100) * (1 - fee / 100)
+- p% on top, the whole known: whole / (1 + p / 100). p% that others take of it: what is kept is whole * (1 - p / 100)
+- p% that THEY take (a commission, a cut, a skim): what they earn is whole * p / 100; how many to reach an amount: ceil(amount / (whole * p / 100))
+- share, how often, hit rate, accuracy: part / whole, u %. Change: (new - old) / old; a good fall: (old - new) / old
+- the same share lost again: left * (1 - lost / all). A share of a share: p / 100 * q / 100 * whole
+- a job: hours * rate - costs of it. A total told in parts: add every part once
+- how long money lasts: cash / (what goes out a month - what comes in a month), u months. An hour: money / hours
+- worth that p% for money says: money / (p / 100)
+Write weeks and months as they stand: code turns one into the other.
 
 ${DATA}`;
 
@@ -178,31 +180,12 @@ export const UNDERSTAND_EXAMPLES: {
       answer: {
         q: "what is left of Saturday's tunings",
         w: 'three full fees and half of one, less petrol and strings at all four halls',
+        n: ['halls=4@message', 'price=$70@R1', 'petrol=$9@R2', 'strings=$6@R2'],
         s: [
           {
             l: 'what Saturday left you',
             u: '$',
-            k: 'free',
-            a: ['halls=4@message', 'price=$70@R1', 'petrol=$9@R2', 'strings=$6@R2'],
             e: '(halls - 1) * price + price / 2 - halls * (petrol + strings)',
-          },
-        ],
-        m: null,
-      },
-    },
-    {
-      record: PIANOS,
-      message: 'the tuning lever is 210 bucks, how many halls b4 its paid for',
-      answer: {
-        q: 'how many halls pay for the lever',
-        w: 'the lever over what one hall leaves after petrol and strings',
-        s: [
-          {
-            l: 'the halls that pay for the lever',
-            u: 'halls',
-            k: 'cover',
-            a: ['fixed=210@message', 'price=$70@R1', 'cost=$9@R2', 'cost=$6@R2'],
-            e: null,
           },
         ],
         m: null,
@@ -213,23 +196,16 @@ export const UNDERSTAND_EXAMPLES: {
       message: 'are my mends quicker since may, and by how much',
       answer: {
         q: 'how much faster a mend is',
-        w: 'the minutes saved over the minutes it took before',
-        s: [
-          {
-            l: 'the cut in the time a mend takes',
-            u: '%',
-            k: 'change',
-            a: ['old=50@R1', 'new=32@R1'],
-            e: null,
-          },
-        ],
+        w: 'the minutes saved over the minutes it took before, as a share',
+        n: ['before=50@R1', 'after=32@R1'],
+        s: [{ l: 'the cut in the time a mend takes', u: '%', e: '(before - after) / before' }],
         m: null,
       },
     },
     {
       record: HIVES,
       message: 'is the fair worth it or do i ask the club first',
-      answer: { q: null, w: null, s: [], m: null },
+      answer: { q: null, w: null, n: [], s: [], m: null },
     },
   ],
   judge: [

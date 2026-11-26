@@ -78,6 +78,7 @@ import {
 import { type Playbook } from '../path/types.js';
 import { createDraftEscalation, reviseDraftEscalation } from '../services/escalations.js';
 import { proposeMemoryCandidates, settleKeptMemory } from '../services/memory.js';
+import { ofAnotherBusiness, otherBusinessesIn } from '../path/other-business.js';
 import { statedMemory } from '../services/founder-statements.js';
 import { conversationGrounding } from '../services/memory-dedupe.js';
 import { historyAsHeard } from '../services/spoken-text.js';
@@ -1560,7 +1561,11 @@ export function createOrchestrator(
     // (founder-statements.ts, LAB-K1: no model call; a chat is otherwise distilled only after nine idle minutes).
     const keepableOf = (response: CoachResponse): CoachResponse['memory_candidates'] => {
       if (checked.blocked || pre.session.privacy !== 'standard') return [];
-      const proposed = response.memory_candidates;
+      // A fact of another business they run ("the pottery is a separate business") is never one of this venture.
+      const others = otherBusinessesIn([turn.founderText, ...coach.history.map((t) => t.founderText)]);
+      const proposed = response.memory_candidates.filter(
+        (m) => !ofAnotherBusiness(`${m.title} ${m.content}`, others),
+      );
       return [
         ...proposed,
         ...statedMemory(turn.founderText, {

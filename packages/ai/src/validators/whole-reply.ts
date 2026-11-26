@@ -46,6 +46,10 @@ export interface WholeContext {
 /** The share of a sentence's words another one holds that makes it the same one: an instruction about a fact is none. */
 const SAID_WHOLE = 0.9;
 
+/** The answer left to them: "you must decide whether …", "it depends on …". */
+const DEFERS =
+  /\b(?:you(?:['’]ll| will)? (?:must|need to|have to|should|will have to|get to) (?:decide|choose|weigh|figure out)|(?:it(?:['’]s| is)|that(?:['’]s| is)) (?:really |all )?(?:up to you|your (?:call|decision|choice))|only you can (?:decide|say|choose)|it (?:all |really )?depends on (?:what|whether|how|your))\b/iu;
+
 /** A unit of the writer's as it stands, or why it is cut. */
 export function wholeUnit(
   unit: string,
@@ -60,6 +64,7 @@ export function wholeUnit(
   const reason = falseUnit(text, guidance, context.before) ?? (rulesOnIt(text, guidance) ? 'rules' : null);
   if (reason !== null) return cut(reason);
   if (flatters(text)) return cut('flattery');
+  if (guidance.reading?.referral == null && DEFERS.test(text)) return cut('defers');
   const undated = withoutDeadline(text, guidance, context.today);
   return undated !== text && wordsIn(undated) < 3 ? cut('date') : { text: undated, cut: null };
 }
@@ -75,6 +80,8 @@ export const CUT_WORDS: Readonly<Record<string, string>> = {
   gone: 'it uses a number they took back',
   own_sum: 'it gives a figure nobody worked out',
   friends: 'friends who like it prove nothing',
+  made_up: 'it is made-up work, as if it were real',
+  defers: 'it leaves the answer to them: say it',
   flattery: 'it only flatters',
   said: 'it was said already',
   step_line: 'the step goes on the last line only',
@@ -84,6 +91,11 @@ export const CUT_WORDS: Readonly<Record<string, string>> = {
   repeat: 'an earlier reply said it',
   leans: 'it goes on from a sentence that was cut',
 };
+
+/** Words in quotes, a few of them at least. */
+const QUOTED_WORDS = /["“][^"”]{12,}/u;
+/** Lines of their own (a recap, a list), the words as they asked for them. */
+const AS_LINES = /\S[^\n]*\n(?!\s*\n)[^\n]*\S/u;
 
 /** A sentence that says something. */
 const says = (text: string): boolean =>
@@ -106,6 +118,9 @@ export function sentencesNeeded(guidance: PromptGuidance, channel: TurnChannel):
 
 /** Whether the writer's own text (without the server's opening and the step) is a reply. */
 export function isWholeReply(text: string, guidance: PromptGuidance, channel: TurnChannel): boolean {
+  // The words they asked for are in it: in quotes, or as lines of their own.
+  if (guidance.reading?.words === true && !QUOTED_WORDS.test(text) && !AS_LINES.test(text.trim()))
+    return false;
   return unitsOf(text).filter((u) => says(u.text)).length >= sentencesNeeded(guidance, channel);
 }
 
@@ -137,10 +152,22 @@ export function missingOf(released: string, guidance: PromptGuidance, channel: T
   return out;
 }
 
+/** What stands for a figure nobody worked out, when the reply is completed without the writer. */
+export const NO_GUESS: Readonly<Record<TurnChannel, string>> = {
+  text: 'I will not guess that number. Write me each amount that goes into it, with what it is for, and I work it out with you.',
+  voice: 'I will not guess that number. Tell me each amount that goes into it.',
+};
+
 /** What the writer is asked when its draft, with what was cut, is no reply. */
 export function repairBrief(
   draft: string,
   cuts: readonly { readonly text: string; readonly why: string }[],
+  need: {
+    /** The words themselves were asked for. */
+    readonly words?: boolean;
+    /** The figure they asked for was cut: code's own, '' when code has none. */
+    readonly figure?: string;
+  } = {},
 ): string {
   const said = draft.replace(/\s+/gu, ' ').trim().slice(0, 900);
   const list = cuts
@@ -150,5 +177,18 @@ export function repairBrief(
         `- "${c.text.replace(/\s+/gu, ' ').trim().slice(0, 180)}": ${CUT_WORDS[c.why] ?? 'it may not be said'}`,
     )
     .join('\n');
-  return `[Your reply was: "${said}"\nThese sentences of it cannot be shown:\n${list === '' ? '- none of it answers them' : list}\nWrite the whole reply again without them, keeping the rest, in the same form with its NEXT line. Only what you say to them.]`;
+  const needs = [
+    need.words === true
+      ? 'They asked for the words themselves: open with them, complete, in quotes, using only facts they gave; [brackets] for the rest.'
+      : '',
+    need.figure === undefined
+      ? ''
+      : need.figure === ''
+        ? 'The figure they asked for cannot be given: nothing worked it out. Give no figure of your own; say in one sentence which of their numbers it needs, or ask for the one that is missing.'
+        : `The figure they asked for, worked out: ${need.figure.replace(/\s+/gu, ' ').slice(0, 240)} Open with it as it is.`,
+  ]
+    .filter((x) => x !== '')
+    .map((x) => `\n${x}`)
+    .join('');
+  return `[Your reply was: "${said}"\nThese sentences of it cannot be shown:\n${list === '' ? '- none of it answers them' : list}${needs}\nWrite the whole reply again without them, keeping the rest, in the same form with its NEXT line. Only what you say to them.]`;
 }

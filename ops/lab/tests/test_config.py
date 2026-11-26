@@ -11,29 +11,38 @@ from conversation_lab import config
 
 def test_app_models_follow_the_production_config_while_luna_is_disabled() -> None:
     models = config.app_models()
-    # The coach is Nova 2 Lite (its global profile behind it); the background purposes run on Nova too (ADR-0024).
+    # The coach is Mistral Large 3 with Nova 2 Lite's US profile behind it; every turn is read first by Nova 2 Lite,
+    # its sums on gpt-oss-120b; the background purposes run on Nova (ADR-0025).
     assert models == config.AppModels(
-        primary="us.amazon.nova-2-lite-v1:0",
-        fallback="global.amazon.nova-2-lite-v1:0",
+        primary="mistral.mistral-large-3-675b-instruct",
+        fallback="us.amazon.nova-2-lite-v1:0",
         embeddings="amazon.titan-embed-text-v2:0",
         background=config.BackgroundModels(
             primary="us.amazon.nova-2-lite-v1:0",
             fallback="global.amazon.nova-2-lite-v1:0",
             purposes=("classification", "eval", "ingestion", "seed"),
         ),
+        understand=config.UnderstandSettings(
+            enabled=True,
+            model_id="us.amazon.nova-2-lite-v1:0",
+            sums_model_id="openai.gpt-oss-120b-1:0",
+        ),
     )
-    # The lab's API process gets the same route (packages/ai router.ts reads these variables).
+    # The lab's API process gets the same route (packages/ai router.ts reads these variables), the reading included.
     assert models.env() == {
-        "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
-        "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
+        "MODEL_PRIMARY_ID": "mistral.mistral-large-3-675b-instruct",
+        "MODEL_FALLBACK_ID": "us.amazon.nova-2-lite-v1:0",
         "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
         "MODEL_BACKGROUND_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
         "MODEL_BACKGROUND_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
         "MODEL_BACKGROUND_PURPOSES": "classification,eval,ingestion,seed",
+        "CORE_UNDERSTAND": "on",
+        "MODEL_UNDERSTAND_ID": "us.amazon.nova-2-lite-v1:0",
+        "MODEL_UNDERSTAND_SUMS_ID": "openai.gpt-oss-120b-1:0",
     }
     assert models.for_purpose("turn") == (
+        "mistral.mistral-large-3-675b-instruct",
         "us.amazon.nova-2-lite-v1:0",
-        "global.amazon.nova-2-lite-v1:0",
     )
     assert models.for_purpose("distill") == models.for_purpose("turn")
     assert models.for_purpose("eval") == ("us.amazon.nova-2-lite-v1:0", "global.amazon.nova-2-lite-v1:0")
@@ -53,8 +62,8 @@ def test_app_models_put_luna_first_once_enabled(tmp_path: Path) -> None:
     path.write_text(json.dumps(raw), encoding="utf-8")
     models = config.app_models(path)
     assert models.primary == "openai.gpt-6-luna"
-    # Nova stays behind Luna: the configured primary becomes the fallback.
-    assert models.fallback == "us.amazon.nova-2-lite-v1:0"
+    # The configured primary (the coach, Mistral Large 3) goes behind Luna.
+    assert models.fallback == "mistral.mistral-large-3-675b-instruct"
     assert models.background == config.app_models().background
 
 
@@ -112,6 +121,7 @@ def test_lab_models_refuse_an_unpriced_model(tmp_path: Path) -> None:
 def test_the_understand_call_is_the_deployments_unless_a_run_says_otherwise(tmp_path: Path) -> None:
     lab = config.lab_models()
     nova = "us.amazon.nova-2-lite-v1:0"
+    # default adds nothing: the lab's API process keeps production's own reading (on, ADR-0025); off is still a choice.
     assert config.understand_env("default", "default", lab) == {}
     assert config.understand_env("off", "", lab) == {"CORE_UNDERSTAND": "off"}
     assert config.understand_env("on", nova, lab) == {"CORE_UNDERSTAND": "on", "MODEL_UNDERSTAND_ID": nova}
@@ -134,8 +144,19 @@ def test_the_understand_call_is_the_deployments_unless_a_run_says_otherwise(tmp_
     ):
         with pytest.raises(ValueError, match=said):
             config.understand_env(choice, model, lab)
-    # Production names none today; once it does, the lab's API process gets the same variables.
-    assert config.app_models().understand is None
+    # Production names it (ADR-0025): the lab's API process gets the same variables; a run's own go over them.
+    assert config.app_models().understand == config.UnderstandSettings(
+        enabled=True, model_id=nova, sums_model_id=oss
+    )
+    # What a client run reads with (and is planned at): default is production's, off turns it off, on names its own.
+    production = config.app_models()
+    assert (
+        config.run_understand(production, config.understand_env("default", "", lab)) == production.understand
+    )
+    assert config.run_understand(production, config.understand_env("off", "", lab)).enabled is False
+    assert config.run_understand(
+        production, config.understand_env("on", "", lab, None, "openai.gpt-oss-20b-1:0")
+    ) == (config.UnderstandSettings(enabled=True, model_id=nova, sums_model_id="openai.gpt-oss-20b-1:0"))
     raw = json.loads(config.PRODUCTION_CONFIG.read_text(encoding="utf-8"))
     raw["models"]["understand"] = {
         "enabled": True,

@@ -68,6 +68,7 @@ import {
   overTyped,
   pointsNowhere,
   repeatsLead,
+  saysLeadAgain,
   repeatsReferral,
   restates,
   meansNothing,
@@ -84,8 +85,8 @@ import {
   withoutDeadline,
 } from './reply-contract.js';
 import { checkStep, splitNext, withFitted, type Fitted, type UnfitReason } from './fitted-step.js';
-import { composedWhole, isWholeReply, missingOf, wholeUnit } from './whole-reply.js';
-import { bareVerdict } from './reading.js';
+import { composedWhole, isWholeReply, missingOf, NO_GUESS, wholeUnit } from './whole-reply.js';
+import { bareVerdict, inQuote } from './reading.js';
 import { saidSentences, saysAgain, type SaidSentence } from './said-before.js';
 import { danglingAsk, danglingLine, echoesThem, readsAgain, refusesUnderLead } from './second-reading.js';
 import { coverage, stemsOf } from './stems.js';
@@ -164,6 +165,14 @@ export { findUnitEnd } from './units.js';
 export const LEAD_IN_MAX_WORDS = 4;
 
 /** A reply that would open on a sentence that was cut. */
+/** A unit that opens words in quotes, a list item's too. */
+const OPENS_QUOTE = /^\s*(?:[-*•]\s+|\d+[.)]\s+)?["“]/u;
+/** Why a sentence with a figure goes for its figure. */
+const FIGURE_CUTS: ReadonlySet<string> = new Set(['support', 'own_facts', 'own_sum', 'against_figure']);
+/** They ask for a figure, and none of code's opens the reply. */
+const asksFigure = (g: PromptGuidance): boolean =>
+  g.reading?.opened !== 'sum' &&
+  (g.asksSum === true || g.reading?.kind === 'sum' || (g.calc ?? []).length > 0);
 const POINTS_BACK = /^(?:and |so |but )?(?:this|that|it|these|those|they|he|she|which)\b/iu;
 
 /** An acknowledgement said to the founder, not a thinking-aloud opener: it never waits for the next unit. */
@@ -302,6 +311,8 @@ export interface SentenceGateOptions {
   leadSaid?: boolean;
   /** The caller writes a whole reply that is none again ({@link SentenceGate.repair}). Default false: it is completed. */
   repairs?: boolean;
+  /** The caller asks for the step line once more when a whole reply came without one ({@link SentenceGate.stepDue}). */
+  asksStep?: boolean;
 }
 
 export interface GateUnit {
@@ -574,6 +585,12 @@ export class SentenceGate {
   #kept: GateUnit[] = [];
   #flowing = false;
   #repairDue = false;
+  /** A sentence of the words they asked for was false: the words are written again whole, never shown with a hole. */
+  #quoteBroken = false;
+  /** The reply is shown and its step line never came: the caller asks for it ({@link SentenceGate.settleStep}). */
+  #stepDue = false;
+  /** The figure they asked for was cut and code worked out none: the reply is written again, never left with its scraps. */
+  #figureCut = false;
   /** Sentences of the writer's own cut, with why. */
   #cuts: { readonly text: string; readonly why: string }[] = [];
   /** The writer's step line, as it came. */
@@ -766,6 +783,27 @@ export class SentenceGate {
   /** The writer's step line as it came ('' : none), for a second draft that has none. */
   get nextLine(): string {
     return this.#nextRaw.trim();
+  }
+
+  /** The reply is shown and its step line never came: the caller asks the writer for that line alone. */
+  get figureCut(): boolean {
+    return this.#figureCut;
+  }
+
+  get stepDue(): boolean {
+    return this.#stepDue;
+  }
+
+  /** The step line asked for once more ('' : none came): what the reply lacks, then the step, end it. */
+  settleStep(raw: string): GateResult {
+    const units: GateUnit[] = [];
+    if (!this.#stepDue || this.#whole === null) return this.#nothing();
+    this.#stepDue = false;
+    this.#nextRaw = splitNext(raw).next || (/^\s*NEXT\b/u.test(raw) ? raw.trim() : '');
+    this.#finishTail(this.#whole, units);
+    return this.#blocked !== null
+      ? this.#block(this.#blocked, units)
+      : { units, blocked: null, fallback: null, cut: null };
   }
 
   /** The writer's whole reply is completed as it stands, from the claims it was to make (no second draft, or none that is one). */
@@ -1273,6 +1311,8 @@ export class SentenceGate {
     if (isProtectedLine(unit, keep) || mayRepeat(unit, this.#contract)) return null;
     // On the path, a list is a draft or a template made better: an item of it is never left out of it.
     if (this.#path !== null && isListItem(unit)) return null;
+    // The words they asked for are theirs to send: none of their sentences is left out for being said before.
+    if (this.#whole !== null && (inQuote(before) || OPENS_QUOTE.test(unit))) return null;
     if (saysAgain(unit, this.#saidBefore)) return 'repeat';
     if (repeatsPrevious(unit, this.#previousGrams, { signOffs: !this.#signOffWelcome })) return 'repeat';
     // A question for someone else (in a quoted draft, a list of questions to send) is the founder's prep, never a
@@ -1421,6 +1461,7 @@ export class SentenceGate {
       if (
         this.#leadShown &&
         (repeatsLead(unit, this.#leadStems) ||
+          saysLeadAgain(unit, this.#lead) ||
           this.#onlyRestates(unit) ||
           onlyVerdict(unit) ||
           saidInLead(unit, this.#lead) ||
@@ -1811,11 +1852,37 @@ export class SentenceGate {
       this.#cuts.push({ text: rawUnit.trim(), why });
       this.#keepDropped('contract', rawUnit, why);
       this.#leanedOn = isFalse;
+      if (FIGURE_CUTS.has(why) && /\d/u.test(rawUnit) && asksFigure(guidance)) this.#figureCut = true;
       return 'out';
     };
     const leaned = this.#leanedOn;
     this.#leanedOn = false;
     const protectedLine = isProtectedLine(rawUnit, this.#keepReferrals);
+    // Words to send or say: nothing of them is cut but what is false (their facts) or unsafe, and then they are written again.
+    if (inQuote(this.#raw.slice(0, this.#cursor)) || OPENS_QUOTE.test(rawUnit)) {
+      const read = wholeUnit(rawUnit, guidance, {
+        said: [],
+        before: this.#raw.slice(0, this.#cursor),
+        today: this.#options.today,
+      });
+      if (read.cut === 'works' || read.cut === 'step_line') return out(read.cut);
+      // Words for made-up work are never written for them.
+      if (guidance.reading?.kind === 'integrity' && !protectedLine) {
+        this.#quoteBroken = true;
+        return out('made_up');
+      }
+      const held = protectedLine
+        ? { text: rawUnit }
+        : ownFactsUnit(rawUnit, guidance, {
+            known: this.#figures ?? '',
+            before: this.#releasedText.slice(-400),
+          });
+      if (held.text === '') {
+        this.#quoteBroken = true;
+        return out('own_facts');
+      }
+      return { unit: rawUnit };
+    }
     // What goes on from a sentence that was false goes with it.
     const dangles =
       this.#nothingModel() && this.#lead === '' && this.#cuts.length > 0 && POINTS_BACK.test(rawUnit.trim());
@@ -1871,7 +1938,14 @@ export class SentenceGate {
   /** Whether what the writer wrote so far is a reply. */
   #enough(unit = ''): boolean {
     const channel = this.#options.spoken === true ? 'voice' : 'text';
-    return this.#whole === null || isWholeReply(`${this.#modelText}${unit}`, this.#whole, channel);
+    return (
+      this.#whole === null ||
+      (!this.#quoteBroken &&
+        !this.#figureCut &&
+        // Words they asked for are shown once they are all there.
+        !(this.#whole.reading?.words === true && inQuote(`${this.#modelText}${unit}`)) &&
+        isWholeReply(`${this.#modelText}${unit}`, this.#whole, channel))
+    );
   }
 
   #flow(units: GateUnit[]): void {
@@ -1897,20 +1971,43 @@ export class SentenceGate {
       return;
     }
     this.#contractDone = true;
+    this.#flow(units);
+    if (!whole && this.#figureCut && (guidance.calc ?? []).length === 0)
+      this.#addWhole(NO_GUESS[channel], units);
+    if (!whole) this.#addWhole(composedWhole(guidance, channel, this.#releasedText), units);
+    // A reply that came whole without its step line: it stands, and its step is asked for once more.
+    if (
+      whole &&
+      this.#nextRaw === '' &&
+      this.#options.asksStep === true &&
+      guidance.fit !== undefined &&
+      this.#blocked === null
+    ) {
+      this.#stepDue = true;
+      return;
+    }
+    this.#finishTail(guidance, units);
+  }
+
+  /** Adds a whole text of the server's after the reply. */
+  #addWhole(text: string, units: GateUnit[]): void {
+    if (text.trim() === '' || this.#blocked !== null) return;
+    this.#contractAppended = true;
+    this.#rewritten = true;
+    this.#sayWhole(text, this.#options.spoken === true ? ' ' : '\n\n', units);
+  }
+
+  /** What the reply lacks (what the record denies, who decides), then its step. */
+  #finishTail(guidance: PromptGuidance, units: GateUnit[]): void {
+    const channel = this.#options.spoken === true ? 'voice' : 'text';
     if (this.#nextRaw !== '') this.#rewritten = true;
     this.#step = checkStep(this.#nextRaw, guidance, {
       founderText: this.#options.founderText ?? '',
       known: `${this.#figures ?? ''}\n${guidance.said ?? ''}`,
     });
-    this.#flow(units);
-    const gap = voice ? ' ' : '\n\n';
     const add = (text: string): void => {
-      if (text.trim() === '' || this.#blocked !== null) return;
-      this.#contractAppended = true;
-      this.#rewritten = true;
-      this.#sayWhole(text, gap, units);
+      this.#addWhole(text, units);
     };
-    if (!whole) add(composedWhole(guidance, channel, this.#releasedText));
     const lead = this.#leadShown ? '' : leadText(guidance, channel);
     for (const text of missingOf([lead, this.#releasedText].join(' ').trim(), guidance, channel)) add(text);
     add(sayStep(withFitted(guidance, this.#step.fitted), channel, this.#options.today));

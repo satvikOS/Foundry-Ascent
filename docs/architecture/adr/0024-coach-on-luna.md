@@ -1,9 +1,12 @@
 # ADR-0024: The coach on Amazon Nova 2 Lite now; GPT-6 Luna prepared behind a one-line switch
 
-- **Status:** Accepted on 2026-11-24 (it supersedes [ADR-0022](0022-coach-on-claude-haiku.md): the coach is Amazon Nova
-  2 Lite, not Claude Haiku 4.5). The Luna half is prepared and switched off: the gateway, permissions and measurements
-  are in place, and the switch below stays one line. It replaces the path ADR-0014 reserved for Luna (Bedrock Mantle,
-  `models.luna`).
+- **Status:** Superseded on 2026-11-26 by [ADR-0025](0025-coach-on-mistral.md) for the coach: production's coach is
+  Mistral Large 3 with Nova 2 Lite (`us.amazon.nova-2-lite-v1:0`) behind it, and every turn is read first (Nova 2 Lite,
+  sums on gpt-oss-120b). Decision 0 below is the record of 2026-11-24. The Luna half stands: prepared and switched off,
+  still one line (`models.primary` `us.openai.gpt-6-luna`, now with `us.amazon.nova-2-lite-v1:0` behind it, as the
+  fallback became under ADR-0025). Accepted on 2026-11-24 (it superseded [ADR-0022](0022-coach-on-claude-haiku.md): the
+  coach became Amazon Nova 2 Lite, not Claude Haiku 4.5). It replaces the path ADR-0014 reserved for Luna (Bedrock
+  Mantle, `models.luna`).
 - **Date:** 2026-11-24
 - **Deciders:** Platform owner. Request of **2026-11-24**: a cheaper coach ("GPT-6 Luna, else Nova 2 Lite; not Haiku
   4.5") and "better cheaper faster stronger embedding models", with replies that cite what they rest on. Decision of

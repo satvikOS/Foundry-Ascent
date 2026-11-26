@@ -13,7 +13,6 @@ path decides and the reply is written. Code checks every field, works out every 
 | `…/merge.ts`                                      | The parts as one reading: what a late part leaves empty, what the others then justify                    |
 | `…/conflicts.ts`, `salvage.ts`                    | When the record denies what they say; an answer one field swallowed                                      |
 | `…/check.ts`                                      | `readParts`, `readUnderstanding`: ids, numbers, days, names, rulings, the method lint                    |
-| `…/shapes.ts`                                     | The shapes a sum may take, their named slots, the expression code builds from them                       |
 | `…/expr.ts`, `sums.ts`, `figures.ts`, `labels.ts` | The expression parser; the sums, their units and periods; the figures of a text; what a figure is called |
 | `packages/core/src/path/record-lines.ts`          | The record as lines `R1`, `R2`, …                                                                        |
 | `packages/core/src/orchestrator/understand.ts`    | `prepareUnderstand` (pure), `understandDue`, `understandTurn` (metered, with its budget)                 |
@@ -24,18 +23,20 @@ path decides and the reply is written. Code checks every field, works out every 
 Where no rule read the message precisely, the reading decides the turn and goes to the writer as notes: the writer writes the whole reply
 and its one fitted step, and code checks them (founder-path.md, "Resting on a reading"). Where a rule did, or the switch is off, the turn is
 the one without a reading, to the byte. A reply that is none once its false sentences are out is written again once, within
-`REPAIR_BUDGET_MS` (`orchestrator/generate.ts`: 2.5 s typed, 1.2 s on a call, counted from the end of the first draft).
+`REPAIR_BUDGET_MS` (`orchestrator/generate.ts`: 2.5 s typed, 1.2 s on a call, counted from the end of the first draft). A whole reply without its
+step line has that line asked for alone, once (`STEP_ASK_BUDGET_MS`: 1.5 s typed, 1 s on a call). A rule that read the message as
+another kind of thing (words to send beside news, feelings, made-up work, a complaint) gives way to the reading.
 
 ## The three calls
 
 One call wrote about 380 tokens: 2.3 s at the median and 4.7 s at the 95th percentile on Nova 2 Lite, so most typed turns went on
 without it. What each part writes is what its decision needs, so a reading takes as long as its longest part.
 
-| Part  | What it answers                                                                                                                                                                   | Asked to write | Shown                                                                                       |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------- |
-| ROUTE | what they ask, a second ask, the kinds (main first), the record lines, the line the message denies, who must decide, the play, the step's play, whether it is sure                | about 60       | the plays (the only part that needs them), the open step, short record lines, two exchanges |
-| SUMS  | the figure this message asks for, how it is worked out in words, each sum's shape and its slots (`price=$70@R1`), an expression only for a `free` one, the number that is missing | 60 to 100      | the lines and replies that hold a figure, the founder's own words, three exchanges          |
-| JUDGE | what the record says instead, the pick with its reason and what would turn it, what a result shows and what settles it, the points                                                | about 150      | the record, three exchanges                                                                 |
+| Part  | What it answers                                                                                                                                                    | Asked to write | Shown                                                                                       |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- | ------------------------------------------------------------------------------------------- |
+| ROUTE | what they ask, a second ask, the kinds (main first), the record lines, the line the message denies, who must decide, the play, the step's play, whether it is sure | about 60       | the plays (the only part that needs them), the open step, short record lines, two exchanges |
+| SUMS  | the figure this message asks for, how it is worked out in words, the numbers (`price=$70@R1`), the sums as expressions, the number that is missing                 | 60 to 100      | the lines and replies that hold a figure, the founder's own words, three exchanges          |
+| JUDGE | what the record says instead, the pick with its reason and what would turn it, what a result shows and what settles it, the points                                 | about 150      | the record, three exchanges                                                                 |
 
 - **When.** Once the turn is admitted, beside the query's embedding (a refused request buys no call). Never for a crisis, a
   rehearsal or a message that is only social (`understandDue`); a message the safety screen reads first waits for its verdict.
@@ -51,7 +52,7 @@ without it. What each part writes is what its decision needs, so a reading takes
   at low effort read SUMS better than Nova 2 Lite (lab-bench3-oss: the own cases' open half 21/24 against 16/24, the held half 19/21
   against 14/21) at about the same median (978 ms against 947) and for less, while its ROUTE and JUDGE were worse: so only SUMS. It
   has no fallback: a SUMS that fails or is late on it is not asked of the other model (there is no time), and the turn goes on with
-  the parts it has, as for any late part. gpt-oss reports no cached tokens, so the SUMS prompt is kept short (about 4,200
+  the parts it has, as for any late part. gpt-oss reports no cached tokens, so the SUMS prompt is kept short (about 4,400
   characters).
 - **On a call** JUDGE has a form of its own (`judgeVoice`): the pick and what happened, which open the reply, and nothing else (about 70
   tokens); a contradiction, points and a first action are the typed turn's.
@@ -62,17 +63,14 @@ without it. What each part writes is what its decision needs, so a reading takes
 - **A part that is late or failed** leaves its fields empty. Without ROUTE the others say what the message is: a figure they asked
   for is a `sum`, a pick a `choice`, a verdict a `result`; nothing of those is no reading, and the turn goes on by its rules. ROUTE
   and JUDGE each name a line the message denies; without either there is no contradiction.
-- **Shapes.** A sum names its shape (`k`) and fills its slots (`a`, `role=value@where`), and code writes the expression
-  (`shapes.ts`): `cover` (how many cover a cost or earn it back: (fixed + target) ÷ (price − cost of one − their share), or
-  price × our share, or the gain they name), `hourly` (money over hours), `left` (what comes in less each one's cost, what is paid
-  once and their share), `ours` (our share of what comes in), `stake` (amount ÷ share), `total` (parts told across turns), `runway`
-  (cash ÷ (burn − income)), `price` (cost ÷ (1 − margin), cost × (1 + markup)), `change` (difference over the old figure, a fall
-  when the words say so), `rate` (part ÷ whole), `chain` (a share of a share) and `free` (the model's own expression over its
-  slots, the fallback). Slots are numbers of theirs found where they say, as any input; periods are read from where the number
-  stands, and code turns weeks and months into each other (52 ÷ 12). A shape that lacks a slot it needs says what is missing (the
-  model's `m` first, else the slot in words: "the cost to cover"); so does a `free` sum of one number whose plan takes something off
-  it. **Asked** is code's: the call or the message's own words ask for a figure (how much, how many, what is, what does that make,
-  what am I into, written as people write them), and the sum is the only one, or of the shape the words ask for.
+- **What code decides of a sum.** Whether it was **asked**: the call says so or the message's own words ask for a figure (how
+  much, how many, what is, what does that make, what am I into, written as people write them; "what can the page say" is no
+  figure). What is **missing** where nothing can be worked out: the model's `m`, else the number that is nowhere, else, for a sum of
+  one number of theirs whose plan takes something off it, "the other numbers it needs". How a number is read: "a third" is a share,
+  "350 every week" an amount and not a time, a number before one thing ("the 600 website") is no count of it, a number at a line's end
+  counts nothing of the next line, and a bracket left at the end of an expression is the answer's. A sum asked as named shapes with
+  slots that code builds was measured worse on the models (lab-bench4: the common 24 open cases, Nova 2 Lite 16 to 11, gpt-oss 21 to
+  10), so SUMS writes the expression.
 - **SUMS again.** A cheap check that disagrees with the sum asks for it once more, in what is left of the budget (`again.ts`): a plan
   with no sum, a sum code could not work out (with the reason), or a figure of what is kept, reached or charged that leaves out an
   amount, a share or a count told in the line it takes a number from. The second stands only where it answers the doubt. A field that

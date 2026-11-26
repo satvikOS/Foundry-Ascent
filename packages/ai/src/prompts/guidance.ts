@@ -176,6 +176,8 @@ export interface PromptGuidance {
     readonly inOrder: boolean;
     /** The words themselves are asked for: they are the answer. */
     readonly words?: boolean;
+    /** They ask yes or no ("do we send?", "she's bluffing, right?"): the reply opens with it. */
+    readonly yesNo?: boolean;
     /** What a result shows with their numbers, what it does not, and what would settle it. */
     readonly result?: {
       readonly verdict: string;
@@ -377,8 +379,13 @@ const READ_LINES: Readonly<Partial<Record<UnderstoodKind, string>>> = {
   integrity:
     'What they can do for real in the time they have, with people they do not know, and what they truly have to show.',
 };
-const WORDS_LINE =
-  'They want the words themselves: write them, complete and in quotes, from their facts as they stand now; as many lines as they ask for, each on its own line.';
+const YES_NO_LINE =
+  'They ask yes or no: your first sentence says yes, no or not yet, in their terms, with the reason from their own facts; then the weakest thing it rests on and the result that would settle it. Never leave it to them ("you must decide", "it depends").';
+const WORDS_LINE: Readonly<Record<TurnChannel, string>> = {
+  text: 'They asked for the words themselves. Open with them, nothing before: the whole message or what to say, in quotes, short, ready to send, for their situation now (to whom, what happened, what comes next) and in their voice; [brackets] only for what nobody told you; as many lines or sentences as they ask for. After the words, at most one sentence. Never advice in place of the words.',
+  voice:
+    'They asked for the words themselves. Say them first, in quotes, short and complete, as they would say them; then at most one sentence.',
+};
 const IN_ORDER_LINE =
   'Several things at once: one sentence that you heard it, then each on a line of its own, the most urgent first, with what to do about it.';
 /** Nothing of how the turn was prepared is ever said to them. */
@@ -386,13 +393,13 @@ const TO_THEM_LINE =
   'Speak to them as "you". Nothing here is known to them: never mention notes, a brief, a record, a method, the program, a mentor or a founder.';
 /** The shape of the whole reply. */
 const WHOLE_LINES: Readonly<Record<TurnChannel, string>> = {
-  text: 'Write the whole reply, about 60 to 120 words: the answer first, in their terms; what their own facts show, with the numbers; the weakest thing it rests on; the result that would settle it, as a number, and what each way of it would mean ("if N of M …; if fewer, …"). Leave out what does not fit the ask. Plain words, whole sentences, nothing that would fit anyone, no heading, no praise, at most one question.',
+  text: 'Write the whole reply, about 60 to 120 words: your first sentence answers exactly what they asked, in their terms (yes or no, which one, how much, what to do with what they have), with the reason from their facts; what their own facts show, with the numbers; the weakest thing it rests on; the result that would settle it, as a number, and what each way of it would mean ("if N of M …; if fewer, …"). Leave out what does not fit the ask. Plain words, whole sentences, nothing that would fit anyone, no heading, no praise, at most one question.',
   voice:
-    'Say the whole reply in two to four short sentences, 45 words at most: the answer first, in their terms, with their own numbers, then what would settle it. No question unless one number is missing.',
+    'Say the whole reply in two to four short sentences, 45 words at most: your first sentence answers exactly what they asked, in their terms, with their own numbers; then what would settle it. No question unless one number is missing.',
 };
 /** The last line, which code turns into the step. */
 const NEXT_LINES = [
-  'End with exactly one line, in this form and nothing after it:',
+  'Your reply ends with exactly one line, on a call too, in this form and nothing after it:',
   'NEXT: <one thing to do, for them: a verb first, who, how many, what words or which place> | DONE: <what will be true then, with the number that decides>',
   'At most 25 words on each side, no day or date in it (it is added), no second step. Never say the step anywhere else.',
 ];
@@ -452,7 +459,7 @@ function readingLines(
   if (g.ask !== null)
     lines.push(
       `<how>${line(g.ask.answer, READ_ANSWER_CHARS)}</how>`,
-      `How it is done well, only where it answers them.${cite}`,
+      `How such work is done well: a method, never a fact about them or their customers. Use it for their case, with only what they told you, and only where it answers them.${cite}`,
     );
   return lines;
 }
@@ -461,13 +468,14 @@ function readingLines(
 function fitLines(fit: NonNullable<PromptGuidance['fit']>): string[] {
   return [
     `<method title="${attr(fit.title, 160)}" done_when="${attr(fit.doneWhen, 240)}">${fit.parts.map((p, i) => `${String(i + 1)}) ${line(p, 140)}`).join(' ')}</method>`,
-    `Their one step, fitted to what they ask now, with that as the way to do it.${fit.trap === null ? '' : ` Beware: ${line(fit.trap, 140)}`}${fit.way === null ? '' : ` One way: ${line(fit.way, 160)}`}${fit.hours === null ? '' : ` They have ${String(fit.hours)} hours.`}`,
+    'That is how such work is done, not their step. Their one step comes from what they ask now: when they bring news (a new deal, an offer, a deadline, a call, a complaint, a refusal, a limit), the step is about that news, with who, what words and how many. It is the one thing your reply tells them to do: never a second one in the reply.',
+    `Fit it to them.${fit.trap === null ? '' : ` Beware: ${line(fit.trap, 140)}`}${fit.way === null ? '' : ` One way: ${line(fit.way, 160)}`}${fit.hours === null ? '' : ` They have ${String(fit.hours)} hours.`}`,
     ...NEXT_LINES,
     ...(fit.open === null
       ? []
       : [
           `<open_step title="${attr(fit.open.title, 160)}" done_when="${attr(fit.open.doneWhen, 200)}"/>`,
-          'If that open step already serves what they ask, the line is only: NEXT: same',
+          'Only if that open step still serves what they ask now, and they bring no news, the line is: NEXT: same',
         ]),
   ];
 }
@@ -755,8 +763,13 @@ function renderRead(
       `<decides who="${attr(g.referral.who, 160)}" bring="${attr(g.referral.bring, 200)}"/>`,
       'A person decides that part: say who, and what to bring them, in one or two whole sentences, and help with the rest. Never decide it.',
     );
-  const kind = r.words === true ? WORDS_LINE : r.inOrder ? IN_ORDER_LINE : READ_LINES[r.kind];
-  lines.push(WHOLE_LINES[voice ? 'voice' : 'text'], ...(kind === undefined ? [] : [kind]));
+  const kind =
+    r.words === true ? WORDS_LINE[voice ? 'voice' : 'text'] : r.inOrder ? IN_ORDER_LINE : READ_LINES[r.kind];
+  lines.push(
+    WHOLE_LINES[voice ? 'voice' : 'text'],
+    ...(r.yesNo === true && r.words !== true ? [YES_NO_LINE] : []),
+    ...(kind === undefined ? [] : [kind]),
+  );
   if (g.fit !== undefined) lines.push(...fitLines(g.fit));
   else if (g.step !== null) lines.push(NO_STEP_LINE);
   lines.push(`</${PATH_TAG}>`);

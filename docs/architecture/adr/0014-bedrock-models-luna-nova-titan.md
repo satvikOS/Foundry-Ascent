@@ -6,7 +6,11 @@
   probe script instead; amended 2026-11-06 by [ADR-0022](0022-coach-on-claude-haiku.md): the coach is Claude
   Haiku 4.5 with Nova 2 Lite (`us.`) behind it, and the background purposes run on Nova 2 Lite with its `global.`
   profile as fallback; amended 2026-11-24 by [ADR-0024](0024-coach-on-luna.md), which supersedes ADR-0022: the coach is
-  Nova 2 Lite again (`us.`, with `global.` behind it) and Luna's Bedrock-runtime path is prepared, off)
+  Nova 2 Lite again (`us.`, with `global.` behind it) and Luna's Bedrock-runtime path is prepared, off; amended
+  2026-11-26 by [ADR-0025](0025-coach-on-mistral.md), which supersedes ADR-0024 for the coach: the primary is Mistral
+  Large 3 (`mistral.mistral-large-3-675b-instruct`, its bare id, served in us-east-1 with no inference profile) with
+  Nova 2 Lite (`us.`) as fallback, and every turn is read first by Nova 2 Lite with its sums on gpt-oss-120b; the
+  background purposes and Titan embeddings are unchanged)
 - **Date:** 2026-10-05
 - **Deciders:** Platform owner
 - **Blueprint basis:** 03 §8 "Data minimization" and "Vendor", §14 "Model memorization / retention",

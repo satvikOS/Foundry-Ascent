@@ -307,8 +307,9 @@ describe('FoundryAscent-Foundation', () => {
           Effect: 'Allow',
           Action: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
           Resource: [
-            // The app's models (infra/cdk/config/production.json: the Claude Haiku 4.5 coach with Nova 2 Lite behind
-            // it, Nova 2 Lite for the background purposes, Titan embeddings), the lab's simulator and judge
+            // The app's models (infra/cdk/config/production.json, ADR-0025: the Mistral Large 3 coach with Nova 2 Lite
+            // behind it, Nova 2 Lite for the background purposes and the understand call, gpt-oss-120b for its sums,
+            // Titan embeddings), the lab's simulator and judge
             // (ops/lab/models.json), the live evaluation's simulator, judge and A/B coaches ("live"), the client
             // suite's ("client"), the understand suite's ("understand") and the models suite's candidates
             // ("benchmark"); sorted.
@@ -332,7 +333,8 @@ describe('FoundryAscent-Foundation', () => {
             'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
             // A reranker only in the region it is called in.
             'arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0',
-            // Candidates with no inference profile: only in the lab's region.
+            // Models with no inference profile (the app's coach and sums model among them): only in the lab's region,
+            // and no `us.` profile ARN for them (none exists).
             'arn:aws:bedrock:us-east-1::foundation-model/deepseek.v3.2',
             'arn:aws:bedrock:us-east-1::foundation-model/mistral.mistral-large-3-675b-instruct',
             'arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-120b-1:0',

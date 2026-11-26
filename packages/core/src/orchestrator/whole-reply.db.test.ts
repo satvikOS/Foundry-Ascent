@@ -174,4 +174,27 @@ describe('a whole reply', () => {
     expect(run.turn?.response?.answer).not.toMatch(/NEXT|DONE|\|/);
     expect(run.turn?.response?.answer).toMatch(/\*\*(?:Next|On your path, next is):\*\*/);
   });
+
+  it('that came without its step line has that line asked for alone, once, and kept', async () => {
+    drafts = [
+      'Move it only if somebody there uses it. Nobody in that room was asked yet.',
+      'NEXT: Ask 4 people in the second room what they borrow | DONE: 4 answered',
+    ];
+    const run = await say(core(), ASK);
+    expect(gateway.wrote).toHaveLength(2);
+    expect(gateway.wrote[1]?.messages.at(-1)?.content).toMatch(
+      /It has no last line\. Write only that line now/,
+    );
+    expect(run.shown).toMatch(/\*\*Next:\*\* Ask 4 people in the second room what they borrow by /);
+    expect(run.phase).toMatchObject({ stepAsk: 'ok', step: 'fitted' });
+    expect(run.turn?.guidance?.step?.title).toBe('Ask 4 people in the second room what they borrow');
+  });
+
+  it('whose step line, asked for again, is late, has the play’s own step', async () => {
+    drafts = ['Move it only if somebody there uses it. Nobody in that room was asked yet.'];
+    gateway.hangs = true;
+    const run = await say(core(), ASK);
+    expect(run.phase).toMatchObject({ stepAsk: 'late', step: 'missing' });
+    expect(run.shown).toMatch(/\*\*(?:Next|On your path, next is):\*\*/);
+  });
 });

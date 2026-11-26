@@ -6,6 +6,7 @@ import { buildSupportIndex } from './citation-support.js';
 import { validateCoachResponse } from './coach-response.js';
 import { checkStep, readNext, splitNext, withFitted } from './fitted-step.js';
 import { SentenceGate } from './sentence-gate.js';
+import { saysLeadAgain } from './reply-contract.js';
 import { isWholeReply, missingOf, repairBrief } from './whole-reply.js';
 
 /** A potter with one rented kiln, whose message was read: the writer writes the whole reply and its step. */
@@ -213,7 +214,13 @@ describe('a reply that is none', () => {
     expect(isWholeReply('Not yet: 2 of 14 waited.', guidance(), 'text')).toBe(false);
     expect(isWholeReply('Not yet: 2 of 14 waited. Ask both what it cost.', guidance(), 'text')).toBe(true);
     expect(isWholeReply('Not yet: 2 of 14 waited.', guidance(), 'voice')).toBe(true);
-    expect(isWholeReply('Not yet: 2 of 14 waited.', guidance({ words: true }), 'text')).toBe(true);
+    expect(
+      isWholeReply('"The kiln is free on Tuesdays, from nine."', guidance({ words: true }), 'text'),
+    ).toBe(true);
+    // Words asked for are the words, in quotes: advice about them is none.
+    expect(isWholeReply('Tell them the kiln is free on Tuesdays.', guidance({ words: true }), 'text')).toBe(
+      false,
+    );
     expect(isWholeReply('', guidance({ opened: 'sum' }), 'text')).toBe(true);
   });
 
@@ -364,5 +371,183 @@ describe('the fitted step', () => {
     expect(out).toContain('<method title="Ask 20 people to pay and count who does"');
     expect(out).not.toContain('Never write a next step');
     expect(renderGuidance(guidance({}, { fit: { ...FIT, open: null } }), 'text')).not.toContain('NEXT: same');
+  });
+});
+
+describe('the words they asked for', () => {
+  const WORDS = guidance({ kind: 'draft', words: true, ask: 'the text to the two who waited' });
+  it('are shown whole: nothing in them is cut for being said before or unsupported', () => {
+    const draft =
+      '"Hi, sorry you waited a day for the kiln. It is free on Tuesdays now. Two of 14 waited, and that is two too many."\n' +
+      'NEXT: Send the text to the 2 who waited | DONE: Both have it, and 1 of 2 answered';
+    const w = write(draft, WORDS);
+    expect(w.text).toContain(
+      '"Hi, sorry you waited a day for the kiln. It is free on Tuesdays now. Two of 14 waited',
+    );
+    expect(why(w)).toEqual([]);
+  });
+
+  it('with a fact of theirs nobody gave are written again whole, never shown with a hole', () => {
+    const draft =
+      '"Hi, sorry you waited. Your refund of $25 comes Friday. Thanks for your patience."\nNEXT: same';
+    const w = write(draft, WORDS, { repairs: true });
+    expect(w.gate.repair).not.toBeNull();
+    expect(w.text).not.toContain('Thanks for your patience');
+  });
+
+  it('for made-up work are never written', () => {
+    const fake = guidance({ kind: 'integrity', ask: 'three testimonials for a form' });
+    const w = write(
+      'Here are three:\n- “The kiln saved my term.”\n- “Best studio in town.”\nThese are made up, but they read well.',
+      fake,
+      {
+        repairs: true,
+      },
+    );
+    expect(w.text).not.toMatch(/saved my term|Best studio|made up/);
+    expect(why(w)).toContain('made_up');
+  });
+
+  it('are asked for again with what was wrong', () => {
+    expect(repairBrief('Tell them sorry.', [], { words: true })).toMatch(
+      /open with them, complete, in quotes/,
+    );
+  });
+});
+
+describe('what they asked, answered first', () => {
+  it('yes or no opens the reply, and is never left to them', () => {
+    const yes = guidance({ yesNo: true });
+    expect(renderGuidance(yes, 'text', { today: TODAY })).toMatch(
+      /They ask yes or no: your first sentence says yes, no or not yet/,
+    );
+    expect(renderGuidance(guidance(), 'text', { today: TODAY })).not.toMatch(/They ask yes or no/);
+    const w = write(
+      'Not yet: 2 of 14 waited one day. You must decide whether a second kiln is worth it. If 3 of the next 10 would pay $40 more, rent it.\nNEXT: same',
+      yes,
+    );
+    expect(w.text).not.toMatch(/must decide/);
+    expect(why(w)).toContain('defers');
+    expect(w.text).toMatch(/^Not yet: 2 of 14 waited one day\. If 3 of the next 10/);
+  });
+});
+
+describe('a reply that came without its step line', () => {
+  const gateOf = (asksStep: boolean) =>
+    new SentenceGate({
+      personaName: 'Thomas',
+      mentor: true,
+      otherVentureNames: [],
+      otherVentureCanaries: [],
+      founderText: SAID,
+      guidance: guidance(),
+      today: TODAY,
+      knownFigures: SAID,
+      repairs: true,
+      asksStep,
+    });
+  const BODY =
+    'Not yet: 2 of 14 waited one day. If 3 of the next 10 would pay $40 more, rent it; if fewer, book the free days better.';
+
+  it('stands, and its line is asked for alone, then kept as the step', () => {
+    const gate = gateOf(true);
+    const shown = [...gate.open().units, ...gate.push(BODY).units, ...gate.end().units]
+      .map((u) => u.text)
+      .join('');
+    expect(shown).toContain('Not yet: 2 of 14 waited one day.');
+    expect(shown).not.toMatch(/\*\*Next/);
+    expect(gate.stepDue).toBe(true);
+    const tail = gate.settleStep(
+      'NEXT: Ask the 2 who waited what that day cost them | DONE: Both answered',
+    ).units;
+    expect(tail.map((u) => u.text).join('')).toMatch(
+      /\*\*Next:\*\* Ask the 2 who waited what that day cost them/,
+    );
+    expect(gate.step?.fitted).toMatchObject({ title: 'Ask the 2 who waited what that day cost them' });
+    expect(gate.stepDue).toBe(false);
+  });
+
+  it('with none in time, has the play’s step; without the ask, has it at once', () => {
+    const late = gateOf(true);
+    late.push(BODY);
+    late.end();
+    expect(
+      late
+        .settleStep('')
+        .units.map((u) => u.text)
+        .join(''),
+    ).toMatch(/\*\*Next:\*\* List 20 office managers/);
+    const at = gateOf(false);
+    const shown = [...at.push(BODY).units, ...at.end().units].map((u) => u.text).join('');
+    expect(at.stepDue).toBe(false);
+    expect(shown).toMatch(/\*\*Next:\*\* List 20 office managers/);
+  });
+});
+
+describe('a figure cut as false', () => {
+  const SUM = guidance({ kind: 'sum', ask: 'what a second kiln costs a month' }, { asksSum: true });
+  it('leaves no scraps: the reply is written again, saying what it needs, or completed with that', () => {
+    const draft =
+      'A second kiln costs you $230 a month. That is before the electricity. If 3 of 14 pay more, it covers itself.\nNEXT: same';
+    const w = write(draft, SUM, { repairs: true });
+    expect(w.gate.figureCut).toBe(true);
+    expect(w.gate.repair).not.toBeNull();
+    expect(w.text).toBe('');
+    const done = w.gate
+      .settle()
+      .units.map((u) => u.text)
+      .join('');
+    expect(done).toMatch(/I will not guess that number\./);
+    expect(done).not.toMatch(/\$230|before the electricity/);
+  });
+
+  it('is asked for again with code’s figure, or with what it needs', () => {
+    expect(repairBrief('x', [], { figure: '' })).toMatch(
+      /Give no figure of your own; say in one sentence which of their numbers it needs/,
+    );
+    expect(repairBrief('x', [], { figure: 'A month of the kiln comes to $160: 4 × $40.' })).toMatch(
+      /worked out: A month of the kiln comes to \$160: 4 × \$40\. Open with it as it is\./,
+    );
+  });
+
+  it('their own amount, said in words, is theirs in digits', () => {
+    const said = 'she said no at seventy two, then forty eight once the permit is in';
+    const g = guidance({ kind: 'draft', words: true, ask: 'what to say at noon' }, { said });
+    const w = write('"You said no at $72. I can do $48 once the permit is in."\nNEXT: same', g);
+    expect(w.text).toContain('"You said no at $72. I can do $48 once the permit is in."');
+  });
+});
+
+describe('a lead said again in other words', () => {
+  const LEAD =
+    'Neither yet: it is not dead, it is untested. Run one test this week with 10 people who are not friends.';
+  it.each([
+    ['Your kiln isn’t dead yet—it’s just untested.', true],
+    ['Run one test this week with ten people who are not friends.', true],
+    ['Ask the two who waited what the day cost them.', false],
+    ['It is untested: 2 of 14 waited.', false],
+    ['1. Run one test this week with 10 people', false],
+  ])('%s', (unit, again) => {
+    expect(saysLeadAgain(unit, LEAD)).toBe(again);
+  });
+});
+
+describe('what a person decides of an invention', () => {
+  it('is never ruled on, by a yes or by an order to hand it over', () => {
+    const ip = guidance(
+      { kind: 'question', referral: 'ip' },
+      {
+        referral: {
+          who: 'the technology transfer office, about a patent',
+          bring: 'your dates',
+          category: 'ip_licensing',
+        } as never,
+      },
+    );
+    const w = write(
+      'Send the drawings; it costs you nothing. Ask the office what may be shown first.\nNEXT: same',
+      ip,
+    );
+    expect(w.text).not.toMatch(/Send the drawings/);
   });
 });

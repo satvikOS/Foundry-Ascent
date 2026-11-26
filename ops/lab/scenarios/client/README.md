@@ -24,6 +24,7 @@ over it at run time from the client's pack, which is never committed.
 | `c15-heldout.yaml`    | heldout     | sixteen held-out conversations, played only when named; never tuned against       |
 | `c16-heldoutb.yaml`   | heldoutb    | sixteen more, written after the first were read; played only when named           |
 | `c17-heldoutc.yaml`   | heldoutc    | a third sixteen, written without sight of the second; played only when named      |
+| `c18-heldoutd.yaml`   | heldoutd    | a fourth sixteen, written without sight of the product or the others; when named  |
 
 The judge's hand-graded set is beside this folder (`../client-calibration.yaml`).
 

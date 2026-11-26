@@ -10,6 +10,7 @@ import { type EvidenceItem, type Play, type TurnGuidance } from '@foundry/contra
 import { type pathRepo } from '@foundry/db';
 
 import { saysStanding, type PathPromptGuidance } from './ai-adapter.js';
+import { ofAnotherBusiness, otherBusinessesIn } from './other-business.js';
 import {
   arcOf,
   briefOf,
@@ -369,6 +370,38 @@ function readsMoreThan(input: PathTurnInput, rule: Decision, u: Understanding): 
   );
 }
 
+/** Rules that read the message as one kind of thing: news, a report, a result, a text of the program's, a smaller step. */
+const READS_ONE_KIND: ReadonlySet<string> = new Set([
+  'news',
+  'report',
+  'result',
+  'message',
+  'fills',
+  'restates',
+  'how_to',
+  'smaller',
+]);
+/** Of those, the rules that write a text of the program's in place of theirs. */
+const WRITES_TEXT: ReadonlySet<string> = new Set(['message', 'restates', 'fills', 'how_to']);
+/** Something gone wrong with somebody they serve. */
+const COMPLAINT =
+  /\b(?:angry|upset|furious|annoyed|disappointed|complain\w*|refund\w*|(?:is|are|was|were|got) mad|responsible for this|fell|hurt|injur\w*|broken|damaged)\b/i;
+/** News beside what they ask: somebody did or said something new. */
+const NEWS_TOLD =
+  /\b(?:said no|says no|turned (?:us|me) down|phoned|called|rang|emailed|texted|wrote back|offered|wants|asked (?:me|us|for)|ordered|cancel\w*|paid|left)\b/i;
+
+/**
+ * The rule read the message as another kind of thing than it is: words to send beside news, how they feel, made-up work, or
+ * a complaint read as a result (a choice read as news stays the rule's: the tuned turns read it right). The reading decides those; every other rule keeps its turn.
+ */
+function misreads(fired: string, u: Understanding, message: string): boolean {
+  if (!READS_ONE_KIND.has(fired)) return false;
+  const news = NEWS_TOLD.test(message) || COMPLAINT.test(message);
+  if (u.kind === 'draft' || u.also.includes('draft')) return !WRITES_TEXT.has(fired) || news;
+  if (u.kind === 'feelings' || u.kind === 'integrity') return true;
+  return COMPLAINT.test(message) && COUNTS_A_RESULT.has(fired);
+}
+
 /** The turn as it is decided: by the rule that read the message precisely, as with no reading, or by the reading. */
 function decided(input: PathTurnInput, source: DecideInput): Decision {
   const u = readingFor(source);
@@ -377,7 +410,7 @@ function decided(input: PathTurnInput, source: DecideInput): Decision {
   const fired = firedRule(input, rule);
   // What reads as a push and is a question of its own is the reading's.
   const asksOwn = fired === 'pushes' && !['pushback', 'privacy', 'feelings'].includes(u.kind);
-  if (fired === null || asksOwn) return decide(source);
+  if (fired === null || asksOwn || misreads(fired, u, input.message)) return decide(source);
   const generic = GENERIC_RULES.has(fired);
   // Too much at once is taken in order; a recall with another ask in it is no recall alone.
   const loose =
@@ -802,11 +835,15 @@ interface ReadTurn {
   /** What the writer writes from, beside the claims. */
   readonly notes: Pick<
     NonNullable<PathPromptGuidance['reading']>,
-    'words' | 'result' | 'choice' | 'contradicts' | 'missing' | 'says'
+    'words' | 'yesNo' | 'result' | 'choice' | 'contradicts' | 'missing' | 'says'
   >;
   /** What stands when the writer's reply is none: the claims it was given to make. */
   readonly fallback: { readonly text: string; readonly voice: string } | null;
 }
+
+/** "She's bluffing, right?", "… or not", "or nah": yes or no asked at the end. */
+const TAG_ASKED =
+  /(?:\b(?:or not|or nah|yes or no)\s*[?!.]*|\b(?:right|yeah|no|correct|true|fine|ok(?:ay)?|good)\s*\?+)\s*$/i;
 
 /** Most claims the writer is given. */
 const MOST_POINTS = 5;
@@ -816,8 +853,9 @@ function readTurn(input: PathTurnInput, decision: Decision, u: Understanding): R
   const { calc, choice } = decision;
   const { message } = input;
   const by = decision.decidedBy;
-  const text = asksForText(message);
+  const text = asksForText(message) || u.kind === 'draft';
   const yesNo = choice?.kind === 'yes_no';
+  const asksYes = yesNo || TAG_ASKED.test(message.trim()) || /\byes or no\b|\bgo or no.?go\b/i.test(message);
   // A line of its working that the reply before said is not said again.
   const newLines = calc.lines.filter((l, i) => i === 0 || !saidLately(input, l));
   const told = isHeld(decision) ? (decision.play?.answer ?? '') : '';
@@ -866,6 +904,7 @@ function readTurn(input: PathTurnInput, decision: Decision, u: Understanding): R
     sums: lead !== null && opened === 'sum' ? [lead.text] : u.sums.map((x) => sumOfReading(u, x, message)),
     notes: {
       ...(text ? { words: true } : {}),
+      ...(asksYes && !text ? { yesNo: true } : {}),
       ...(u.result === null || text || !readsOutcome(message, input.earlierMessages)
         ? {}
         : { result: u.result }),
@@ -876,7 +915,7 @@ function readTurn(input: PathTurnInput, decision: Decision, u: Understanding): R
       ...(u.missing === null || opened === 'sum' ? {} : { missing: u.missing }),
       ...(inConfidence(message) ? { says: [KEPT_SAID] } : {}),
     },
-    fallback: said.length === 0 || text ? null : { text: said.join(' '), voice: said.slice(0, 2).join(' ') },
+    fallback: said.length === 0 ? null : { text: said.join(' '), voice: said.slice(0, 2).join(' ') },
   };
 }
 
@@ -2275,13 +2314,15 @@ function statusLead(input: PathTurnInput, decision: Decision): Lead | null {
   const { state, missing } = decision;
   const name = bare(input.venture.name);
   const who = name === '' || /^new venture\b/i.test(name) ? 'You have' : `${name} has`;
+  const others = otherBusinessesIn([input.message, ...input.earlierMessages]);
   const facts = input.reads.memory
     .filter(
       (m) =>
         m.status === 'confirmed' &&
         !isReference(m) &&
         ['evidence', 'fact', 'milestone', 'experiment'].includes(m.type) &&
-        (m.type !== 'milestone' || milestoneReached(m)),
+        (m.type !== 'milestone' || milestoneReached(m)) &&
+        !ofAnotherBusiness(`${m.title} ${m.content}`, others),
     )
     .map((m) => {
       const result = typeof m.attributes.result === 'string' ? m.attributes.result : '';

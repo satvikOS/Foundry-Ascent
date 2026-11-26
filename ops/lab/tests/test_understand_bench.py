@@ -453,11 +453,18 @@ def test_own_cases_are_in_no_scenarios_words() -> None:
         for text in (c.say, *c.record, *(x for pair in c.talk for x in pair))
     )
     for path in sorted(CLIENT_DIR.glob("*.yaml")):
-        for s in yaml.safe_load(path.read_text(encoding="utf-8"))["scenarios"]:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        found = 0
+        for s in doc["scenarios"]:
             for turn in (t for session in s["sessions"] for t in session["turns"]):
                 words = re.findall(r"[a-z0-9']+", turn["say"].lower())
                 shared = sum(1 for i in range(len(words) - 5) if " ".join(words[i : i + 6]) in told)
-                assert shared == 0, s["id"]
+                found += shared
+                # Of an unseen group, a failure names neither the scenario nor the wording: a count alone.
+                if doc["group"] not in bench.UNSEEN:
+                    assert shared == 0, s["id"]
+        if found:
+            pytest.fail(f"{doc['group']} shares wording with the own cases: {found}", pytrace=False)
 
 
 def test_own_grades() -> None:
@@ -554,8 +561,18 @@ def test_the_client_suites_inputs_reach_the_api_process_alone() -> None:
     from conversation_lab.stack import api_env
 
     models = config.app_models()
+    # No input of the run: production's own reading (ADR-0025), exactly.
     plain = api_env({}, models=models, database_url="d", speech=False)
-    assert not [k for k in plain if "UNDERSTAND" in k]
+    assert {k: v for k, v in plain.items() if "UNDERSTAND" in k} == {
+        "CORE_UNDERSTAND": "on",
+        "MODEL_UNDERSTAND_ID": NOVA,
+        "MODEL_UNDERSTAND_SUMS_ID": "openai.gpt-oss-120b-1:0",
+    }
+    # understand=off is the arm without it.
+    off = api_env(
+        {}, models=models, database_url="d", speech=False, understand=config.understand_env("off", "", LAB)
+    )
+    assert off["CORE_UNDERSTAND"] == "off"
     on = api_env(
         {}, models=models, database_url="d", speech=False, understand=config.understand_env("on", NOVA, LAB)
     )
@@ -568,7 +585,8 @@ def test_the_client_suites_inputs_reach_the_api_process_alone() -> None:
         understand=config.understand_env("on", "", LAB, None, "openai.gpt-oss-120b-1:0"),
     )
     assert sums["MODEL_UNDERSTAND_SUMS_ID"] == "openai.gpt-oss-120b-1:0"
-    assert "MODEL_UNDERSTAND_ID" not in sums
+    # The reading's own model is production's (Nova 2 Lite), as the run named none.
+    assert sums["MODEL_UNDERSTAND_ID"] == NOVA
 
 
 def test_the_workflow_runs_the_suite_without_an_app_under_its_cap() -> None:

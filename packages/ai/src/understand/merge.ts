@@ -1,7 +1,5 @@
 export { inputOf } from './merge-inputs.js';
 import { inputOf } from './merge-inputs.js';
-import type { RawInput } from './schema.js';
-import { SUM_SHAPES, built, slotsOf, type SumShape } from './shapes.js';
 import type {
   JudgeReading,
   RawSum,
@@ -65,21 +63,12 @@ export function mergeReadings(
   const kinds = (route?.k ?? []).flatMap((k) => kindOf(k) ?? []).filter((k, i, all) => all.indexOf(k) === i);
   const figure = text(sums?.q);
   const asked = asks(figure, route !== null, kinds, message);
-  const reads = sums === null ? [] : sums.s.map((s, i) => sumOf(s, i, message, text(sums.w) ?? ''));
-  // The figure is asked for (the call says so, or the message's own words); of several sums, those of the shape the words
-  // ask for, else all of them.
+  const reads = sums === null ? [] : sums.s.map((s) => sumOf(s, text(sums.w) ?? ''));
+  // The figure is asked for where the call says so or the message's own words do.
   const put = asked || (figure !== null && ASK_FORM.test(message));
-  const fits = reads
-    .filter((r) => r.sum !== null || r.lacks !== null)
-    .filter((r) => SHAPE_ASKED[r.shape].test(message));
-  const askedHere = (r: SumRead): boolean =>
-    put &&
-    (reads.filter((x) => x.sum !== null || x.lacks !== null).length <= 1 ||
-      fits.length === 0 ||
-      fits.includes(r));
-  const worked = reads.flatMap((r) => (r.sum === null ? [] : [{ ...r.sum, asked: askedHere(r) }]));
-  const lacks = reads.find((r) => r.sum === null && r.lacks !== null && askedHere(r))?.lacks ?? null;
-  const missing = asked || worked.some((s) => s.asked) || lacks !== null ? (text(sums?.m) ?? lacks) : null;
+  const worked = reads.flatMap((r) => (r === 'lacks' ? [] : [{ ...r, asked: put }]));
+  const lacks = put && reads.includes('lacks') ? LACKS_REST : null;
+  const missing = put ? (text(sums?.m) ?? (worked.length === 0 ? lacks : null)) : null;
   const choice = judge?.o != null && (kinds.includes('choice') || OPTIONS_PUT.test(message)) ? judge.o : null;
   const pushed = kinds.includes('pushback');
   const result =
@@ -89,9 +78,7 @@ export function mergeReadings(
       ? judge.t
       : null;
   const found: UnderstoodKind[] = [
-    ...(worked.some((s) => s.asked) || (asked && missing !== null) || lacks !== null
-      ? (['sum'] as const)
-      : []),
+    ...(put && (worked.length > 0 || missing !== null) ? (['sum'] as const) : []),
     ...(choice === null ? [] : (['choice'] as const)),
     ...(result === null || pushed ? [] : (['result'] as const)),
     ...(tellsUpdate(message) ? (['update'] as const) : []),
@@ -110,7 +97,7 @@ export function mergeReadings(
     also,
     record: route?.r ?? [],
     contradicts: contradictionOf(route, judge, shown.keys),
-    inputs: reads.flatMap((r) => r.inputs),
+    inputs: (sums?.n ?? []).flatMap((n) => inputOf(n) ?? []),
     sums: worked,
     missing,
     choice:
@@ -197,58 +184,12 @@ const ASK_FORM =
   /\b(?:how (?:much|many|long|often|far|soon|mu?ch)|hw (?:much|many|long)|howmuch|howmany|wh?at(?:['’]?s|s| is| are| was)\b|wh?at (?:does|do|did|would|will|am) (?:i|we|you|they|it|that|this|us|the \w+)(?: \w+){0,2} (?:make|makes|earn|keep|charge|ask|get|clear|pocket|bring|land|leave|cost|pay|need|spend|come|owe|put|into|left)\b|wh?at (?:does|do) (?:that|it|this) say\b|tell me (?:the|what)|work (?:it )?out|add(?:s)? up|in total|all in|so far)/iu;
 /** A plan that takes something off: a sum of one number of theirs then lacks the rest. */
 const COMES_OFF = /\b(?:minus|less|after|once|without|net of|take away|takes? off|subtract\w*)\b|\s[-−]\s/iu;
-/** Words that ask for a figure of each shape. */
-const SHAPE_ASKED: Readonly<Record<SumShape, RegExp>> = {
-  cover:
-    /\b(?:how many|fewest|least|min(?:imum)?|break ?even|cover|pay(?:s)? (?:for|back|off)|earn (?:it )?back|get (?:it )?back|till|until|before)\b/iu,
-  hourly: /\b(?:an? hour|per hour|hourly|each hour|by the hour)\b/iu,
-  left: /\b(?:left|keep|kept|make|earn|take home|stays?|pocket|clear|net|profit|lose|lost)\b/iu,
-  ours: /\b(?:our|my|us|we|i) (?:cut|share|commission|part|take)\b|\bland(?:s)? with us\b/iu,
-  stake: /\b(?:worth|whole thing|value|valuation)\b/iu,
-  total: /\b(?:total|altogether|all in|so far|into (?:this|it)|spent|in all|adds? up)\b/iu,
-  runway: /\b(?:how long|last|run out|out of money|empty|hit zero|months? (?:left|of))\b/iu,
-  price: /\b(?:price|charge|sticker|ask for|sell (?:it|them) for)\b/iu,
-  change:
-    /\b(?:better|worse|quicker|faster|slower|more|less|grew|growth|drop|change|cut|percent(?:age)?(?: wise)?)\b/iu,
-  rate: /\b(?:how often|accura\w+|share|percent|hit rate|out of|rate)\b/iu,
-  chain: /\bhow many\b/iu,
-  free: /(?!)/u,
-};
+const LACKS_REST = 'the other numbers it needs';
 
-interface SumRead {
-  readonly shape: SumShape;
-  readonly sum: RawSum | null;
-  readonly inputs: readonly RawInput[];
-  /** The slot it lacks, in words. */
-  readonly lacks: string | null;
-}
-
-/** One sum of SUMS: its shape built by code over its slots, or the free expression over the numbers it names. */
-function sumOf(s: SumsReading['s'][number], index: number, label: string, plan: string): SumRead {
-  const shape = SUM_SHAPES.find((k) => k === s.k.trim().toLowerCase()) ?? 'free';
-  const told = unitOf(s.u);
-  if (shape === 'free') {
-    const inputs = s.a.flatMap((a) => inputOf(a) ?? []);
-    // A bracket or quote left over at its end is the answer's syntax, not the sum's.
-    const expr = text((s.e ?? '').replace(/[\s}\]"'`]+$/u, ''));
-    // "price", where the plan takes the sitter off it: what comes off is missing.
-    const lone = expr !== null && /^[a-z_][a-z0-9_]*$/iu.test(expr) && COMES_OFF.test(plan);
-    if (lone) return { shape, inputs, lacks: 'the other numbers it needs', sum: null };
-    return {
-      shape,
-      inputs,
-      lacks: null,
-      sum: expr === null ? null : { label: s.l, ...told, expr, round: 'none', asked: false },
-    };
-  }
-  const { inputs, by } = slotsOf(s.a, index + 1);
-  const made = built(shape, by, `${s.l} ${label}`);
-  const unit = s.u.trim() === '' && made.unit !== null ? { unit: made.unit, noun: null } : told;
-  return {
-    shape,
-    inputs,
-    lacks: made.lacks,
-    sum:
-      made.expr === null ? null : { label: s.l, ...unit, expr: made.expr, round: made.round, asked: false },
-  };
+/** One sum of SUMS; `lacks`: one number of theirs where the plan takes something off it ("price", the sitter left out). */
+function sumOf(s: SumsReading['s'][number], plan: string): RawSum | 'lacks' {
+  // A bracket or quote left over at its end is the answer's syntax, not the sum's.
+  const expr = s.e.replace(/[\s}\]"'`]+$/u, '');
+  if (/^[a-z_][a-z0-9_]*$/iu.test(expr) && COMES_OFF.test(plan)) return 'lacks';
+  return { label: s.l, ...unitOf(s.u), expr, round: 'none', asked: false };
 }

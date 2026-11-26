@@ -87,13 +87,17 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   - Bedrock access follows the effective models (see [Models](#models)): `bedrock:InvokeModel` and
     `bedrock:InvokeModelWithResponseStream` (Converse and ConverseStream authorize through these) on the
     inference profiles in `us-east-1` (`…:inference-profile/us.amazon.nova-2-lite-v1:0` and
-    `…/global.amazon.nova-2-lite-v1:0`; no Claude model since ADR-0024 moved the coach to Nova; a model reached only
+    `…/global.amazon.nova-2-lite-v1:0`; no Claude model since ADR-0024; a model reached only
     through a geography profile whose destinations were checked is granted only where that profile routes:
     `arn:aws:bedrock:{us-east-1,us-east-2,us-west-2}::foundation-model/…`, from its Bedrock model card:
     `src/lib/models.ts` `GEO_DESTINATIONS`), the Nova foundation model in every region
     (`arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0`, since its global profile routes anywhere), its
-    region-less ARN for the global profile (`arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0`) and Titan;
-    `bedrock-mantle:CreateInference` on `*` only while GPT-6 Luna is enabled.
+    region-less ARN for the global profile (`arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0`), the coach
+    Mistral Large 3 in `us-east-1` alone (`arn:aws:bedrock:us-east-1::foundation-model/mistral.mistral-large-3-675b-instruct`,
+    ADR-0025: its model card offers no inference profile, so none is granted: `src/lib/models.ts` `IN_REGION_ONLY`)
+    and Titan; the API alone also gets the understand call's SUMS model, gpt-oss-120b, the same way
+    (`arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-120b-1:0`; the worker never runs that call);
+    `bedrock-mantle:CreateInference` on `*` only while GPT-6 Luna is enabled (gpt-oss is Converse's, not Mantle's).
 - `Custom::FoundryMigrations` with properties `{ version: appVersion, migrationsChecksum }`, so it runs on
   every deploy. **The API, worker and site deployments depend on it**: new code goes live only after its migrations applied,
   and a failed migration rolls the stack back before any function changes.
@@ -198,13 +202,15 @@ Set a number once the account quota allows (it must leave 10 unreserved).
 
 `config/production.json` → `models` is mapped to the runtime contract by `src/lib/models.ts`:
 
-| `models.luna.enabled`                             | `MODEL_PRIMARY_ID`                              | `MODEL_FALLBACK_ID`                                  | Mantle permission                |
-| ------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------- | -------------------------------- |
-| `false` (current: AWS gates Luna for the account) | `models.primary` (`us.amazon.nova-2-lite-v1:0`) | `models.fallback` (`global.amazon.nova-2-lite-v1:0`) | none                             |
-| `true`                                            | `models.luna.modelId` (`openai.gpt-6-luna`)     | `models.primary` (Nova 2 Lite)                       | `bedrock-mantle:CreateInference` |
+| `models.luna.enabled`                             | `MODEL_PRIMARY_ID`                                         | `MODEL_FALLBACK_ID`                              | Mantle permission                |
+| ------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------ | -------------------------------- |
+| `false` (current: AWS gates Luna for the account) | `models.primary` (`mistral.mistral-large-3-675b-instruct`) | `models.fallback` (`us.amazon.nova-2-lite-v1:0`) | none                             |
+| `true`                                            | `models.luna.modelId` (`openai.gpt-6-luna`)                | `models.primary` (Mistral Large 3)               | `bedrock-mantle:CreateInference` |
 
-GPT-6 Luna as the coach through Bedrock Converse is not that flag: it is `models.primary` `us.openai.gpt-6-luna`, one
-line, prepared and off (ADR-0024: the account was refused it, so production's coach is Nova 2 Lite; `test/models.test.ts` proves its environment and permissions).
+Production's coach is Mistral Large 3 with Nova 2 Lite's US profile behind it (ADR-0025, owner decision 2026-11-26);
+rolling back is one line, `models.primary` back to `us.amazon.nova-2-lite-v1:0`. GPT-6 Luna as the coach through
+Bedrock Converse is not that flag: it is `models.primary` `us.openai.gpt-6-luna`, one line, prepared and off
+(ADR-0024: the account was refused it; `test/models.test.ts` proves its environment and permissions).
 
 `MODEL_EMBEDDINGS_ID` is always `models.embeddings` (`amazon.titan-embed-text-v2:0`). `models.background` (primary,
 fallback, purposes: Nova 2 Lite `us.` then `global.` for `classification`, `eval`, `ingestion`, `seed`; embeddings always go to Titan)
@@ -212,9 +218,11 @@ becomes `MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID` and `MODEL
 (all three empty without it; a `turn` is never a background purpose), and Luna never moves it (ADR-0022, ADR-0024). Flipping
 the flag is a config change plus a normal deploy.
 
-`models.understand` (`enabled`, and optionally `modelId` and `think: "low"`; unset today) turns the understand call of a turn on
+`models.understand` (`enabled`, and optionally `modelId` and `think: "low"`) turns the understand call of a turn on
 (docs/architecture/understand.md): `CORE_UNDERSTAND`, `MODEL_UNDERSTAND_ID`, `MODEL_UNDERSTAND_THINK`, `MODEL_UNDERSTAND_SUMS_ID` and `MODEL_UNDERSTAND_SUMS_THINK` (`sumsModelId`, `sumsThink`: the SUMS part's own model, absent = the understand call's) go to the API alone, and a model
-of its own is granted with the effective models. Unset, no variable is passed and the API's default, off, stands.
+of its own is granted to the API alone. Unset, no variable is passed and the API's default, off, stands. Production sets it
+(ADR-0025): `enabled: true`, `modelId` `us.amazon.nova-2-lite-v1:0` (the reading), `sumsModelId` `openai.gpt-oss-120b-1:0`
+(its sums; Converse, not Mantle), so the API gets `CORE_UNDERSTAND=on`, `MODEL_UNDERSTAND_ID` and `MODEL_UNDERSTAND_SUMS_ID`.
 
 Production's coach model is this configuration: an A/B on another Bedrock model runs in the conversation lab first
 (`coach_model`, docs/runbooks/conversation-lab.md), never by changing production; the lab role may invoke the A/B

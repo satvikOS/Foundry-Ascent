@@ -1,5 +1,5 @@
 import type { PromptGuidance } from '../prompts/guidance.js';
-import { knownNumbersIn, numbersIn } from './figures.js';
+import { knownNumbersIn, spelledNumbersIn, numbersIn } from './figures.js';
 import { TO_FILL, withoutEmptyBrackets } from './method.js';
 import { sharedCount, stemOf, stemsOf } from './stems.js';
 import { operandsIn, workedFrom, workedShape, type Operand } from './worked.js';
@@ -282,7 +282,9 @@ function moneyValues(text: string): number[] {
 /** Money of a sentence that is neither theirs, the program's, nor a sum given or worked out from theirs. */
 function inventedMoney(unit: string, guidance: PromptGuidance, known: string, before = ''): number[] {
   const said = `${guidance.said ?? ''}\n${(guidance.calc ?? []).join('\n')}`;
-  const given = [...moneyValues(known), ...saidMoney(said)];
+  // On a turn whose message was read, an amount said aloud is in words ("seventy two, then forty eight"): theirs too, from ten on.
+  const spoken = guidance.reading === undefined ? [] : spelledNumbersIn(said).filter((n) => n >= 10);
+  const given = [...moneyValues(known), ...saidMoney(said), ...spoken];
   const counts = knownNumbersIn(said);
   const ok = (v: number): boolean =>
     v === 0 || given.some((g) => Math.abs(g - v) < 0.005) || derived(v, given, counts);

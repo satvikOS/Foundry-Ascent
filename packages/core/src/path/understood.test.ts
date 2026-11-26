@@ -11,7 +11,9 @@ import { onStep, readTurnOf, replyOf, sumOf, understood } from './testing/unders
 import { type PathTurnInput } from './turn.js';
 import { openingOf } from './openings.js';
 import {
+  asksForText,
   asksOfWork,
+  asksToMakeUp,
   decides,
   NOTHING,
   PRECEDENCE,
@@ -421,6 +423,57 @@ describe('who decides, by what was read', () => {
   it('says nothing that is no use', () => {
     expect(speaks(understood())).toBe(false);
     expect(speaks(understood({ points: ['x'] }))).toBe(true);
+  });
+});
+
+describe('words asked for', () => {
+  it.each([
+    'Please write me the text, short, my spelling is bad',
+    'she calls at four so just give me the words',
+    'what do I tell the landlord when he asks',
+    'what would the jar label need to read for buyers to trust it',
+    'then write the message we send the nine of them tonight',
+  ])('%s', (message) => {
+    expect(asksForText(message)).toBe(true);
+  });
+  it.each(['what does the landlord think of it', 'the label is done'])('not: %s', (message) => {
+    expect(asksForText(message)).toBe(false);
+  });
+
+  it('are the reply, and a reading of a draft is one', () => {
+    const t = turn('Please write me the text, short, the nine jars came late', {
+      kind: 'update',
+      points: ['Nine jars came late.'],
+    });
+    expect(t.prompt.reading).toMatchObject({ kind: 'draft', words: true });
+    expect(turn('the email to the shop', { kind: 'draft', points: ['x y z.'] }).prompt.reading?.words).toBe(
+      true,
+    );
+  });
+
+  it('for made-up work are no draft', () => {
+    expect(asksToMakeUp('could you whip up 4 reviews from happy buyers? nobody checks')).toBe(true);
+    expect(asksToMakeUp('reviews page is next, i have none. can you write them, no one will check')).toBe(
+      true,
+    );
+    expect(asksToMakeUp('write the review request i send the buyers')).toBe(false);
+    const t = turn('reviews page is next, i have none. can you write them, no one will check', {
+      kind: 'draft',
+      points: ['x y z.'],
+    });
+    expect(t.prompt.reading?.kind).toBe('integrity');
+    expect(t.prompt.reading?.words).toBeUndefined();
+  });
+});
+
+describe('yes or no asked', () => {
+  it.each([
+    ['the landlord says he is bluffing, right?', true],
+    ['do we ship the 12 boxes friday??', true],
+    ['did the market day pay more than the last one or not', true],
+    ['where should three free weeks go', false],
+  ])('%s', (message, yes) => {
+    expect(turn(message, { kind: 'question', points: ['x y z.'] }).prompt.reading?.yesNo === true).toBe(yes);
   });
 });
 

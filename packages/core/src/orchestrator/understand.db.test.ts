@@ -274,7 +274,7 @@ describe('on', () => {
 
   it('SUMS that wrote a plan and no sum is asked once more, metered, and no more', async () => {
     const off = await say(coreWith(false), ASK);
-    const plan = { q: 'what comes in', w: 'labs times the fee', s: [], m: null };
+    const plan = { q: 'what comes in', w: 'labs times the fee', n: ['labs=13@message'], s: [], m: null };
     gateway = new ReadingGateway({
       streamDelayMs: 0,
       fixtures: { [UNDERSTAND_SCHEMA_NAMES.sums]: () => plan },
@@ -286,7 +286,9 @@ describe('on', () => {
     expect(sums[1]?.timeoutMs).toBeLessThan(UNDERSTAND_TIMEOUT_MS.text);
     expect(run.read).toMatchObject({ code: 'ok', sumsAgain: 'plan', sums: 0 });
     const turns = (r: Run) => r.ledger.filter((x) => x.purpose === 'turn').length;
-    expect(turns(run)).toBe(turns(off) + 4);
+    // The mock writes no step line: a whole reply has that line asked for once more, metered too.
+    const asked = logger.records.findLast((r) => r.event === 'turn.phase_a')?.fields.stepAsk === 'ok' ? 1 : 0;
+    expect(turns(run)).toBe(turns(off) + 4 + asked);
     gateway = new ReadingGateway({ streamDelayMs: 0 });
     const plain = await say(coreWith(true), 'how much comes in if 13 labs pay $24 each?');
     expect(plain.read).toMatchObject({ sumsAgain: null, sums: 1 });

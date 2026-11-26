@@ -51,6 +51,7 @@ from conversation_lab.config import (
     live_judges,
     model_family,
     polly_usd_per_million_characters,
+    run_understand,
     split_budget,
     suites_for,
     understand_caps,
@@ -317,6 +318,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
         try:
             scenarios = planned(ctx.scenario_ids, ctx.client_groups)
+            reading = run_understand(models, understand)
             if not args.mock:
                 # Before anything is called or seeded: a run that would not fit is refused with the numbers.
                 plan = check_plan(
@@ -327,9 +329,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                     judge=client_judges[0],
                     simulator=lab.live_simulator[0],
                     think=ctx.coach_think,
-                    understand={**models.env(), **understand}.get("CORE_UNDERSTAND") == "on",
-                    understand_model={**models.env(), **understand}.get("MODEL_UNDERSTAND_ID"),
-                    understand_sums_model=understand.get("MODEL_UNDERSTAND_SUMS_ID"),
+                    # The reading the lab's API process makes: understand=default plans production's, sums included.
+                    understand=reading.enabled,
+                    understand_model=reading.model_id,
+                    understand_sums_model=reading.sums_model_id,
                 )
                 app_share = plan.app_share
                 ctx.client["plan"] = plan.public()

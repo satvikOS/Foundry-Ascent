@@ -66,7 +66,7 @@ describe('the system prompts', () => {
 
   it('stay small: each its own work', () => {
     expect(SYSTEMS.route.length).toBeLessThan(4_700);
-    expect(SYSTEMS.sums.length).toBeLessThan(4_400);
+    expect(SYSTEMS.sums.length).toBeLessThan(4_500);
     expect(SYSTEMS.judge.length).toBeLessThan(4_700);
     expect(SYSTEMS.judgeVoice.length).toBeLessThan(2_900);
   });
@@ -208,7 +208,7 @@ describe('what a model may get wrong in the form', () => {
     ['route', 'a referral nobody has', { f: 'astrology' }],
     ['route', 'a record as one string', { r: 'R1, R2' }],
     ['route', 'a word for yes', { h: 'high' }],
-    ['sums', 'slots as objects', { s: [{ l: 'x', u: '$', k: 'total', a: [{ name: 'a' }], e: null }] }],
+    ['sums', 'numbers as objects', { n: [{ name: 'a' }] }],
     ['sums', 'a sum with no unit', { s: [{ l: 'x', e: 'a * 2' }] }],
     ['sums', 'a sum as a string', { s: ['a * 2'] }],
     ['judge', 'a verdict that is none', { t: { v: 'superb', s: 'x', n: null, e: null } }],
@@ -285,16 +285,17 @@ describe('an answer one field swallowed', () => {
   const whole = {
     q: 'what an hour pays',
     w: 'fee by hours',
-    s: [{ l: 'x', u: '$', k: 'free', a: ['fee=$30@R1'], e: 'fee / 2' }],
+    n: ['fee=$30@R1'],
+    s: [{ l: 'x', u: '$', e: 'fee / 2' }],
     m: null,
   };
   const rest = JSON.stringify(whole).slice('{"q":"'.length);
   it('is put back', () => {
     for (const q of [rest, rest.slice(0, -1), rest.replace(/"/gu, '\\"')])
-      expect(readSums({ q, w: null, s: [], m: null })).toEqual(whole);
+      expect(readSums({ q, w: null, n: [], s: [], m: null })).toEqual(whole);
   });
   it('is what stands before it, where the rest cannot be read', () => {
-    expect(readSums({ q: 'an hour","w":{{{', w: null, s: [], m: null }).q).toBe('an hour');
+    expect(readSums({ q: 'an hour","w":{{{', w: null, n: [], s: [], m: null }).q).toBe('an hour');
   });
   it('leaves what is whole alone', () => {
     expect(readSums(whole)).toEqual(whole);
@@ -347,15 +348,8 @@ describe('the parts as one', () => {
   const sums = {
     q: 'what is left',
     w: 'all less costs',
-    s: [
-      {
-        l: 'what is left',
-        u: '$',
-        k: 'free',
-        a: ['price=$24@message', 'people=13@message'],
-        e: 'price * people',
-      },
-    ],
+    n: ['price=$24@message', 'people=13@message'],
+    s: [{ l: 'what is left', u: '$', e: 'price * people' }],
     m: null,
   };
   const judge = { x: null, o: null, t: null, g: ['Ask them.'] };
@@ -596,7 +590,7 @@ describe('what reads a whole message or a long answer is linear', () => {
           readParts(
             {
               route,
-              sums: { q: text, w: null, s: [{ l: text, u: text, k: text, a: [text], e: text }], m: text },
+              sums: { q: text, w: null, n: [text], s: [{ l: text, u: text, e: text }], m: text },
               judge: {
                 x: { q: text, r: text, w: text },
                 o: { o: [text, 'wait'], p: text, b: text, f: text },

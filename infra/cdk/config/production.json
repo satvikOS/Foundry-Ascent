@@ -16,15 +16,21 @@
     "accessCodeHash": "scrypt$N=32768,r=8,p=1$3EVOFO9pqROC_L4H7mo98g$RtIal90yLMyXBPUP_M2t51rYP2irq5D3k3DB6iweVY8"
   },
   "models": {
-    "primary": "us.amazon.nova-2-lite-v1:0",
-    "fallback": "global.amazon.nova-2-lite-v1:0",
+    "primary": "mistral.mistral-large-3-675b-instruct",
+    "fallback": "us.amazon.nova-2-lite-v1:0",
     "background": {
       "primary": "us.amazon.nova-2-lite-v1:0",
       "fallback": "global.amazon.nova-2-lite-v1:0",
       "purposes": ["classification", "eval", "ingestion", "seed"]
     },
     "embeddings": "amazon.titan-embed-text-v2:0",
-    "note": "Owner decision 2026-11-24 (ADR-0024): the coach is Amazon Nova 2 Lite through its US inference profile, with the same model through the global profile behind it, in place of Claude Haiku 4.5 (about a fifth of the cost of a reply and half the time to a whole one in the lab, 2026-11-24). GPT-6 Luna is prepared (models.primary = us.openai.gpt-6-luna) but the account is refused it (AccessDeniedException in lab run 45515468231); switching is one line once AWS grants it. primary and fallback serve every purpose a founder reads: a turn (its streamed reply and its fields), a recap, the distillation (it writes the notebook and the next opener) and a studio test conversation. background serves the rest: the safety screen (classification), evaluations, ingestion and seeding. The spend caps are unchanged.",
+    "understand": {
+      "enabled": true,
+      "modelId": "us.amazon.nova-2-lite-v1:0",
+      "sumsModelId": "openai.gpt-oss-120b-1:0",
+      "note": "Owner decision 2026-11-26 (ADR-0025): every turn is read first (docs/architecture/understand.md) by Nova 2 Lite, its sums by gpt-oss-120b, the best of each in the lab's understand suite; the reply is Mistral Large 3's."
+    },
+    "note": "Owner decision 2026-11-26 (ADR-0025): the coach is Mistral Large 3, with Nova 2 Lite through its US profile behind it, after unseen lab conversations scored 4.08 of 5 with Mistral writing against 3.36 with Nova (cost about USD 0.009 a turn against 0.005, first word about a second later). Earlier, owner decision 2026-11-24 (ADR-0024): the coach is Amazon Nova 2 Lite through its US inference profile, with the same model through the global profile behind it, in place of Claude Haiku 4.5 (about a fifth of the cost of a reply and half the time to a whole one in the lab, 2026-11-24). GPT-6 Luna is prepared (models.primary = us.openai.gpt-6-luna) but the account is refused it (AccessDeniedException in lab run 45515468231); switching is one line once AWS grants it. primary and fallback serve every purpose a founder reads: a turn (its streamed reply and its fields), a recap, the distillation (it writes the notebook and the next opener) and a studio test conversation. background serves the rest: the safety screen (classification), evaluations, ingestion and seeding. The spend caps are unchanged.",
     "luna": {
       "modelId": "openai.gpt-6-luna",
       "enabled": false,

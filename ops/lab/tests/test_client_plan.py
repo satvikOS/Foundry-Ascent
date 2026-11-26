@@ -36,6 +36,9 @@ NOVA = "us.amazon.nova-2-lite-v1:0"
 HAIKU = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 HAIKU_5_5 = "us.anthropic.claude-haiku-5-5"
 LUNA = "us.openai.gpt-6-luna"
+#: Production's coach (ADR-0025) and the SUMS model of its reading.
+MISTRAL = "mistral.mistral-large-3-675b-instruct"
+OSS = "openai.gpt-oss-120b-1:0"
 ALL = list(load(DAY).scenarios)
 #: What an unnamed run plays: the held-out groups are beside it.
 EVERY = in_groups(ALL, ())
@@ -148,7 +151,8 @@ def test_groups_are_read_in_run_order() -> None:
 
 
 @pytest.mark.parametrize(
-    ("group", "first"), [("heldout", "HO-01"), ("heldoutb", "HB-01"), ("heldoutc", "HC-01")]
+    ("group", "first"),
+    [("heldout", "HO-01"), ("heldoutb", "HB-01"), ("heldoutc", "HC-01"), ("heldoutd", "HZ-01")],
 )
 def test_a_held_out_group_is_played_only_when_named(group: str, first: str) -> None:
     assert group in HELD_OUT
@@ -164,7 +168,7 @@ def test_a_held_out_group_is_played_only_when_named(group: str, first: str) -> N
     assert [s.id for s in suite.planned((), group, DAY)] == [s.id for s in held]
 
 
-@pytest.mark.parametrize(("group", "with_calls"), [("heldoutb", 3), ("heldoutc", 4)])
+@pytest.mark.parametrize(("group", "with_calls"), [("heldoutb", 3), ("heldoutc", 4), ("heldoutd", 6)])
 def test_a_later_held_out_group_is_nearly_all_judged(group: str, with_calls: int) -> None:
     held = in_groups(ALL, parse_groups(group))
     turns = sum(s.turns for s in held)
@@ -184,7 +188,7 @@ def test_the_coach_a_b_offers_haiku_5_5_and_luna_to_the_lab_alone() -> None:
     # The live suite does not offer it, and production is none of it.
     with pytest.raises(ValueError, match="coach_model must be"):
         config.coach_app_models(HAIKU_5_5, LAB)
-    assert config.app_models().primary == NOVA
+    assert config.app_models().primary == MISTRAL
     assert "haiku-5" not in config.PRODUCTION_CONFIG.read_text(encoding="utf-8").replace("haiku-5-5 ", "")
     # Never below its list price, and planned at no less than Nova's.
     assert LAB.prices["anthropic.claude-haiku-5-5"].input >= 0.11
@@ -206,7 +210,37 @@ def test_the_open_weight_candidates_are_offered_to_the_lab_alone_and_judged_by_a
         assert judge_candidates(coach, LAB)[0] == HAIKU
         # The whole set or some of its groups: what does not fit is refused before any call.
         assert plan(in_groups(EVERY, ("numbers", "news")), coach=coach).total_usd <= PLAN_LIMIT_USD / 2
-        assert coach not in config.PRODUCTION_CONFIG.read_text(encoding="utf-8")
+    # Production names two of them (ADR-0025): Mistral Large 3 coaches, gpt-oss-120b sums; the others are the lab's alone.
+    production = config.app_models()
+    assert (production.primary, production.understand and production.understand.sums_model_id) == (
+        MISTRAL,
+        OSS,
+    )
+    text = config.PRODUCTION_CONFIG.read_text(encoding="utf-8")
+    for coach in ("openai.gpt-oss-20b-1:0", "qwen.qwen3-next-80b-a3b", "deepseek.v3.2"):
+        assert coach not in text
+
+
+def test_the_default_coach_is_productions_and_is_planned_at_its_price() -> None:
+    """coach_model=default runs the lab's API process on production's coach, Mistral Large 3, judged first by Claude
+    Haiku 4.5 (another family), and the plan prices Mistral's tokens."""
+    app = config.coach_app_models(config.DEFAULT_COACH, LAB, offered=LAB.client_coach)
+    assert app == config.app_models()
+    assert app.primary == MISTRAL
+    assert judge_candidates(app.primary, LAB)[0] == HAIKU
+    assert all(config.model_family(j) != "mistral" for j in judge_candidates(app.primary, LAB))
+    # The plan follows Mistral's price: doubling it moves the estimate, doubling Nova's (the baseline) does not lower it.
+    dear = {**LAB.prices, "mistral.mistral-large-3-675b-instruct": config.Price(1.0, 3.0)}
+    assert (
+        estimate(EVERY, prices=dear, coach=app.primary, judge=None, simulator=None).app_usd
+        > estimate(EVERY, prices=LAB.prices, coach=app.primary, judge=None, simulator=None).app_usd
+    )
+    assert plan(coach=MISTRAL).app_usd >= plan(coach=NOVA).app_usd
+    # A named judge of the coach's own family is refused, and an A/B coach of the judge's family is judged by another.
+    with pytest.raises(ValueError, match="coach's own family"):
+        judge_candidates(HAIKU_5_5, LAB, HAIKU)
+    assert config.model_family(judge_candidates(HAIKU_5_5, LAB)[0]) != "anthropic"
+    assert judge_candidates(NOVA, LAB)[0] == HAIKU
 
 
 def test_reasoning_is_planned_for() -> None:

@@ -355,6 +355,12 @@ const SPOKEN_UNIT_CHARS = 280;
  * from the end of the first draft. Over it, the reply is completed from the claims it was to make.
  */
 export const REPAIR_BUDGET_MS = { text: 2_500, voice: 1_200 } as const;
+/** Longest the step line of a whole reply that came without one is waited for, from the end of the reply. */
+export const STEP_ASK_BUDGET_MS = { text: 1_500, voice: 1_000 } as const;
+/** What the writer is asked when its whole reply came without its step line. */
+export const STEP_ASK = (reply: string): string =>
+  `[Your reply was: "${reply.replace(/\s+/gu, ' ').trim().slice(0, 900)}"\nIt has no last line. Write only that line now, about the thing the reply tells them to do, in the form NEXT: <one thing to do> | DONE: <what will be true then>, or NEXT: same. Nothing else.]`;
+const STEP_ASK_TOKENS = 90;
 
 function wordCount(text: string): number {
   return text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
@@ -513,6 +519,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     callerContinues: true,
     // A whole reply that is none once its false sentences are out is written again ({@link repairReply}).
     repairs: true,
+    // A whole reply without its step line has that line asked for alone ({@link askStep}).
+    asksStep: true,
   });
   const speech =
     voice && a.speechKey
@@ -797,6 +805,56 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     return added;
   };
 
+  /** What became of the step line asked for alone ({@link STEP_ASK_BUDGET_MS}): codes and times, never words. */
+  const stepAsk = { code: 'none' as 'none' | 'ok' | 'late' | 'failed', ms: 0 };
+  /** The step line of a whole reply that came without one, asked for once, in its budget; else the play's step stands. */
+  const askStep = async (): Promise<void> => {
+    const began = performance.now();
+    const halt = new AbortController();
+    const timer = setTimeout(() => {
+      halt.abort();
+    }, STEP_ASK_BUDGET_MS[a.channel]);
+    let line = '';
+    try {
+      const answer = await gateway.streamText(
+        {
+          purpose: a.meter.purpose,
+          system: answerSystemPrompt(a.system, {
+            channel: a.channel,
+            mode: a.mode,
+            allowedModes: a.allowedModes,
+            stableChars: a.promptCache?.systemChars ?? 0,
+            guided: gate.guided,
+          }),
+          messages: [...a.messages, { role: 'user', content: STEP_ASK(gate.text) }],
+          ...(a.promptCache ? { promptCache: a.promptCache } : {}),
+          maxOutputTokens: STEP_ASK_TOKENS,
+          timeoutMs: STEP_ASK_BUDGET_MS[a.channel],
+          requestId: a.ctx.requestId,
+          signal: a.signal ? AbortSignal.any([a.signal, halt.signal]) : halt.signal,
+        },
+        (chunk) => {
+          line += chunk;
+          return Promise.resolve();
+        },
+      );
+      attempts.push(...answer.attempts);
+      await record(a, answer.attempts);
+      stepAsk.code = 'ok';
+    } catch (err) {
+      const failed = attemptsOf(err);
+      attempts.push(...failed);
+      await record(a, failed);
+      stepAsk.code = halt.signal.aborted ? 'late' : 'failed';
+      line = '';
+    } finally {
+      clearTimeout(timer);
+    }
+    stepAsk.ms = Math.round(performance.now() - began);
+    await release(gate.settleStep(line));
+    fitted = gate.step?.fitted ?? null;
+  };
+
   /** What became of a whole reply that was none ({@link REPAIR_BUDGET_MS}): codes and times, never words. */
   const repair = { code: 'none' as 'none' | 'ok' | 'late' | 'failed' | 'unfit', ms: 0, why: '' };
   let fitted: Fitted | null;
@@ -826,7 +884,16 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
             stableChars: a.promptCache?.systemChars ?? 0,
             guided: gate.guided,
           }),
-          messages: [...a.messages, { role: 'user', content: repairBrief(gate.text, cuts) }],
+          messages: [
+            ...a.messages,
+            {
+              role: 'user',
+              content: repairBrief(gate.text, cuts, {
+                words: a.gate.guidance?.reading?.words === true,
+                ...(gate.figureCut ? { figure: (a.gate.guidance?.calc ?? [])[0] ?? '' } : {}),
+              }),
+            },
+          ],
           ...(a.promptCache ? { promptCache: a.promptCache } : {}),
           maxOutputTokens: ANSWER_MAX_TOKENS[a.channel],
           timeoutMs: REPAIR_BUDGET_MS[a.channel],
@@ -993,6 +1060,10 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   fitted = gate.step?.fitted ?? null;
   if (gate.repair !== null && gate.blocked === null && a.signal?.aborted !== true)
     await repairReply(gate.repair);
+  if (gate.stepDue) {
+    if (a.signal?.aborted === true) await release(gate.settleStep(''));
+    else await askStep();
+  }
   // The gate ended the reply before the model's narration (while streaming, or on its last sentence at the end), or
   // a short reply's budget was used up.
   if (gate.cut !== null || gate.full) said.cut = true;
@@ -1066,6 +1137,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
           repair: repair.code,
           repairMs: repair.ms,
           repairWhy: repair.why,
+          stepAsk: stepAsk.code,
+          stepAskMs: stepAsk.ms,
           step: fitted === null ? (gate.step?.reason ?? 'missing') : fitted === 'same' ? 'same' : 'fitted',
         }),
     replyWords: wordCount(reply.text),

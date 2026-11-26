@@ -220,15 +220,23 @@ export function conversationLabAccess(
     [...reasoningModelIds(app).filter((id) => !isMantleModel(id)), app.embeddings, ...own],
     region,
   );
+  // One entry per foundation model, its regions merged: a candidate the app also calls in region (the coach, Mistral
+  // Large 3; the SUMS part's gpt-oss-120b) is listed once.
+  const regional = new Map<string, Set<string>>();
+  const grant = (modelId: string, regions: readonly string[]): void => {
+    const known = regional.get(modelId) ?? new Set<string>();
+    for (const r of regions) known.add(r);
+    regional.set(modelId, known);
+  };
+  for (const { modelId, regions } of all.regionalFoundationModels) grant(modelId, regions);
+  for (const id of inRegion.filter((id) => !all.foundationModels.includes(id))) grant(id, [region]);
+  for (const { id, region: where } of lab.benchmark.rerankers) grant(id, [where]);
   return {
     ...all,
-    regionalFoundationModels: [
-      ...all.regionalFoundationModels,
-      ...inRegion
-        .filter((id) => !all.foundationModels.includes(id))
-        .map((modelId) => ({ modelId, regions: [region] })),
-      ...lab.benchmark.rerankers.map(({ id, region: where }) => ({ modelId: id, regions: [where] })),
-    ],
+    regionalFoundationModels: [...regional].map(([modelId, regions]) => ({
+      modelId,
+      regions: [...regions].sort(),
+    })),
     // A bare reasoning id's `us.` retry profile (reasoningAccess) comes with it.
     inferenceProfiles: [...new Set([...all.inferenceProfiles, ...appAccess.inferenceProfiles])],
   };

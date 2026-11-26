@@ -588,9 +588,10 @@ def test_the_coach_model_ab_runs_the_lab_only_and_keeps_the_judge_independent(
     haiku = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
     sonnet = "us.anthropic.claude-sonnet-4-6"
     nova = "us.amazon.nova-2-lite-v1:0"
-    # default: production's models, untouched (the coach is Amazon Nova 2 Lite since 2026-11-24, ADR-0024).
+    mistral = "mistral.mistral-large-3-675b-instruct"
+    # default: production's models, untouched (the coach is Mistral Large 3 since 2026-11-26, ADR-0025).
     assert coach_app_models(DEFAULT_COACH, lab) == production
-    assert production.primary == nova
+    assert production.primary == mistral
     # An A/B arm: that model alone, primary and fallback, production's embeddings and background route.
     arm = coach_app_models(nova, lab)
     assert (arm.primary, arm.fallback, arm.embeddings, arm.background) == (
@@ -608,14 +609,18 @@ def test_the_coach_model_ab_runs_the_lab_only_and_keeps_the_judge_independent(
         "us.amazon.nova-premier-v1:0",
     )
     assert all(model_family(j) != "anthropic" for j in judges_for(sonnet, lab.live_judge))
-    # A Nova coach (production's) is judged by Claude Haiku 4.5, the first live.judge candidate of another family;
-    # the conversation-lab role may invoke it (it is listed under live.judge), and Nova never judges Nova.
+    # Production's Mistral coach is judged by Claude Haiku 4.5, the first live.judge candidate of another family (the
+    # conversation-lab role may invoke it: it is listed under live.judge); no judge is of Mistral's family.
     assert judges_for(production.primary, lab.live_judge)[0] == haiku
-    assert all(model_family(j) != "amazon" for j in judges_for(production.primary, lab.live_judge))
+    assert all(model_family(j) != "mistral" for j in judges_for(production.primary, lab.live_judge))
     assert model_family(judges_for(production.primary, lab.live_judge)[0]) != model_family(production.primary)
+    # A Nova coach (an A/B arm) is judged by Claude Haiku 4.5 too, and Nova never judges Nova.
+    assert judges_for(nova, lab.live_judge)[0] == haiku
+    assert all(model_family(j) != "amazon" for j in judges_for(nova, lab.live_judge))
     # The estimate prices the chosen coach (Nova 2 Lite is the baseline, 1.0; Haiku about 3.5x, Sonnet about 10x a
-    # turn), production's included; the app's share follows it.
-    assert coach_cost_factor(lab.prices, None) == coach_cost_factor(lab.prices, nova) == 1.0
+    # turn), production's included: the default arm is priced as Mistral; the app's share follows it.
+    assert coach_cost_factor(lab.prices, None) == coach_cost_factor(lab.prices, mistral) > 1.0
+    assert coach_cost_factor(lab.prices, nova) == 1.0
     assert 3.0 < coach_cost_factor(lab.prices, haiku) < 4.0
     assert coach_cost_factor(lab.prices, sonnet) > 9
     picks = select(dataset.scenarios, families=list(range(1, 31)), sample=10, seed=1)
@@ -685,16 +690,20 @@ def test_an_ab_is_graded_by_one_judge_independent_of_every_arm() -> None:
     # A non-default arm on auto is an A/B arm: pinned the same way.
     assert live_judges(nova, JUDGE_AUTO, lab)[0] == JUDGE_AB
     assert live_judges(nova, JUDGE_AUTO, lab)[2] == (maverick,)
-    # A standalone default run: production's coach is Nova 2 Lite, so its judge is of another family (Claude Haiku 4.5
-    # first, then Llama 4 Maverick), never Nova.
+    # A standalone default run: production's coach is Mistral Large 3, so its judge is of another family: Claude Haiku
+    # 4.5 first, then Llama 4 Maverick, then Nova Premier; never Mistral.
+    mistral = "mistral.mistral-large-3-675b-instruct"
     policy, coach, judges = live_judges("default", JUDGE_AUTO, lab)
-    assert (policy, coach) == (JUDGE_AUTO, nova)
-    assert judges == (haiku, maverick)
-    assert all(model_family(j) != "amazon" for j in judges)
-    # A named judge of the coach's own family is refused (Nova Premier judging the Nova coach), as is one the lab does
-    # not list.
+    assert (policy, coach) == (JUDGE_AUTO, mistral)
+    assert judges == (haiku, maverick, "us.amazon.nova-premier-v1:0")
+    assert all(model_family(j) != "mistral" for j in judges)
+    # A named judge of the coach's own family is refused (Nova Premier judging a Nova coach, Claude Haiku 4.5 a Claude
+    # one), as is one the lab does not list.
     with pytest.raises(ValueError, match="coach's own family"):
-        live_judges("default", "us.amazon.nova-premier-v1:0", lab)
+        live_judges(nova, "us.amazon.nova-premier-v1:0", lab)
+    with pytest.raises(ValueError, match="coach's own family"):
+        live_judges(sonnet, haiku, lab)
+    assert live_judges("default", "us.amazon.nova-premier-v1:0", lab)[2] == ("us.amazon.nova-premier-v1:0",)
     with pytest.raises(ValueError, match="judge_model must be"):
         live_judges("default", "us.example.judge-v1:0", lab)
     # No candidate of a family no arm has: refused, never a confounded judge.

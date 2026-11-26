@@ -252,6 +252,9 @@ path, a page to fill in, a step withheld) stands unless the reading holds what i
 who decides, another ask. A rule that counted friends, no customers or a denied growth as proof gives way. Added to a rule's turn: who
 decides, where the ask is that decision, and a figure asked beside a recall or a report. With no rule, or one that is only near by
 words or meaning, the reading decides, by the table below. The rule's name is logged (`turn.path` `rule`).
+A rule that read the message as another kind of thing gives way too (`misreads`): news, a report, a result, a text of the program's
+or a smaller step, where the reading is of words to send beside news, of how they feel, of made-up work, or of a complaint read as a
+result. A text of the program's asked with no news, and a choice read as news, stay the rule's.
 
 **Who decides** where the rules and the reading disagree is one table, `understood.ts` `PRECEDENCE`; the first row that holds
 decides, and each row is a test.
@@ -305,12 +308,25 @@ decides, and each row is a test.
   (`repairBrief`), within `REPAIR_BUDGET_MS` (typed 2.5 s, call 1.2 s), checked the same way; late, failed or unfit, it is completed from
   the claims (`composedWhole`). An asked figure, who decides and a denial are added when the reply has none of them (`missingOf`).
   `turn.phase_a` logs `cuts`, `repair`, `repairMs`, `repairWhy` and `step`: codes and milliseconds, never words.
+- **What they asked opens the reply.** A yes or no ("do we send?", "… right?", "… or not") is said first, with the reason from their
+  facts (`reading.yesNo`); "you must decide" or "it depends" goes. Words they ask for (a message, what to say, a sign, a text to send;
+  `asksForText`, or a reading of a draft) are the reply: in quotes or as lines of their own, first, shown once the quote is closed, and
+  nothing in them is cut but what is false or unsafe, after which they are written again whole. Made-up work (testimonials, reviews,
+  interviews nobody gave; `asksToMakeUp`) is integrity, and words for it are never written.
+- **A figure cut as false** (no figure of theirs, nobody worked it out, against code's) leaves no scraps: where they asked for a
+  figure and code shows none, the reply is written again with code's figure or, with none, what it needs; late, it says it will not
+  guess (`NO_GUESS`). An amount they said in words ("forty eight") is theirs in digits.
 - **The fitted step** (`validators/fitted-step.ts`). The writer ends with `NEXT: <what to do> | DONE: <what shows it is done>`, or
   `NEXT: same`. It is never shown. The method, its parts, the trap, the open step and the hours they have are in its notes
   (`PromptGuidance.fit`). Code keeps it when it is one thing to do, in their reach, of their words: no figure, name or date nobody gave, not
   what they refused or have done, no ruling, no made-up work. The day is code's, before a meeting or deadline they named. Kept, it is the
   step of the turn (`fitTurn`) and of its stored row, title and done-when, with the play's parts; asked next, it is said as it is stored.
-  Their own step is never displaced by it. Not kept, the step is the play's.
+  Their own step is never displaced by it. Not kept, the step is the play's. The step follows the news they bring (a deal, an
+  offer, a deadline, a call, a complaint, a refusal, a limit); `same` only where the open step still serves what they ask, and it is
+  the one thing the reply tells them to do. A reply that came whole without the line has that line asked for alone, once, within
+  `STEP_ASK_BUDGET_MS` (typed 1.5 s, call 1 s); `turn.phase_a` logs `stepAsk` and `stepAskMs`.
+- **Another business they run** ("the pottery is a separate business"; `other-business.ts`) is never the venture's: its facts are not
+  kept as the venture's notes and not listed as what the venture has.
 - **Who decides** is said once in a conversation, and again only where the new ask is that decision (`toldEnough`).
 
 ## Without a reading

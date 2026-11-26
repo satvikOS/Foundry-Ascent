@@ -2,7 +2,13 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import { conversationLabAccess, LAB_MODELS, LAB_MODELS_FILE, parseLabModels } from '../src/lib/lab-models.js';
-import { effectiveModels, reasoningAccess } from '../src/lib/models.js';
+import {
+  effectiveModels,
+  foundationModelId,
+  reasoningAccess,
+  reasoningModelIds,
+  type BedrockRuntimeAccess,
+} from '../src/lib/models.js';
 
 /** Lab candidates with no inference profile (their Bedrock model cards). */
 const OPEN_WEIGHT = [
@@ -11,6 +17,27 @@ const OPEN_WEIGHT = [
   'qwen.qwen3-next-80b-a3b',
   'deepseek.v3.2',
   'mistral.mistral-large-3-675b-instruct',
+];
+
+/**
+ * The models production's own configuration names (ADR-0025: Mistral Large 3 coaches, Nova 2 Lite behind it and in the
+ * background and reading each turn, gpt-oss-120b doing the reading's sums): the only lab candidates the app may hold.
+ */
+const APP_MODELS = [
+  'mistral.mistral-large-3-675b-instruct',
+  'amazon.nova-2-lite-v1:0',
+  'openai.gpt-oss-120b-1:0',
+  'amazon.titan-embed-text-v2:0',
+];
+
+/** Every foundation model a grant reaches (profiles mapped to their model). */
+const grantedModels = (access: BedrockRuntimeAccess): string[] => [
+  ...new Set([
+    ...access.foundationModels,
+    ...access.globalFoundationModels,
+    ...access.regionalFoundationModels.map((m) => m.modelId),
+    ...access.inferenceProfiles.map(foundationModelId),
+  ]),
 ];
 
 const raw = (): Record<string, unknown> =>
@@ -70,14 +97,21 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       'anthropic.claude-haiku-5-5',
       'openai.gpt-6-luna',
     ]);
-    // Claude Haiku 4.5 (the coach, and a judge) is reached only through its US profile: granted where it routes.
     expect(access.regionalFoundationModels).toEqual([
+      // The app's own in-region models (the coach, Mistral Large 3; the sums' gpt-oss-120b): in the lab's region
+      // alone, once, though the lab lists both as candidates too.
+      { modelId: 'mistral.mistral-large-3-675b-instruct', regions: ['us-east-1'] },
+      { modelId: 'openai.gpt-oss-120b-1:0', regions: ['us-east-1'] },
+      // Claude Haiku 4.5 (a judge) is reached only through its US profile: granted where it routes.
       {
         modelId: 'anthropic.claude-haiku-4-5-20251001-v1:0',
         regions: ['us-east-1', 'us-east-2', 'us-west-2'],
       },
-      // Candidates with no profile: served in the lab's region, granted there alone.
-      ...OPEN_WEIGHT.map((modelId) => ({ modelId, regions: ['us-east-1'] })),
+      // The other candidates with no profile: served in the lab's region, granted there alone.
+      ...OPEN_WEIGHT.filter((id) => !APP_MODELS.includes(id)).map((modelId) => ({
+        modelId,
+        regions: ['us-east-1'],
+      })),
       // Rerankers: only where the models suite calls them.
       { modelId: 'cohere.rerank-v3-5:0', regions: ['us-east-1'] },
       { modelId: 'amazon.rerank-v1:0', regions: ['us-west-2'] },
@@ -98,15 +132,30 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       'us.meta.llama4-maverick-17b-instruct-v1:0',
       'us.openai.gpt-6-luna',
     ]);
+    // No profile exists for a model served in region (its model card): none is granted.
+    for (const id of OPEN_WEIGHT) expect(access.inferenceProfiles).not.toContain(`us.${id}`);
   });
 
-  it('never gives a candidate of the models suite to the app', () => {
+  it('never gives the app a candidate of the models suite its configuration does not name', () => {
     const app = effectiveModels(loadConfig().models);
-    const granted = [
-      ...reasoningAccess(app).inferenceProfiles,
-      ...reasoningAccess(app).foundationModels,
-    ].join(' ');
-    expect(granted).not.toMatch(/openai|cohere|rerank|multimodal|haiku-5|qwen|deepseek|mistral/);
+    // What the app holds is exactly what production.json names: no lab candidate rides along.
+    expect(grantedModels(reasoningAccess(app)).sort()).toEqual(
+      reasoningModelIds(app)
+        .map(foundationModelId)
+        .filter((id, i, all) => all.indexOf(id) === i)
+        .sort(),
+    );
+    expect(grantedModels(reasoningAccess(app)).sort()).toEqual(
+      APP_MODELS.filter((id) => !id.includes('titan')).sort(),
+    );
+    const candidates = [
+      ...LAB_MODELS.benchmark.reasoning,
+      ...LAB_MODELS.benchmark.embeddings,
+      ...LAB_MODELS.benchmark.rerankers.map((r) => r.id),
+    ].map(foundationModelId);
+    const granted = grantedModels(reasoningAccess(app));
+    for (const id of candidates.filter((c) => !APP_MODELS.includes(c))) expect(granted).not.toContain(id);
+    expect(granted.join(' ')).not.toMatch(/luna|gpt-oss-20b|cohere|rerank|multimodal|haiku|qwen|deepseek/);
     expect(LAB_MODELS.benchmark.reasoning).toEqual([
       'us.openai.gpt-6-luna',
       'global.openai.gpt-6-luna',
@@ -134,8 +183,8 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
   });
 
   it('grants the A/B coach candidates (live.coach) to the lab only, priced, and never to the app', () => {
-    // Nova 2 Lite (the coach before 2026-11-06), Claude Sonnet 4.6 and GPT-6 Luna (ADR-0024); production's coach is
-    // Claude Haiku 4.5.
+    // Nova 2 Lite (the coach from 2026-11-24 to 2026-11-26, ADR-0024), Claude Sonnet 4.6 and GPT-6 Luna; production's
+    // coach is Mistral Large 3 (ADR-0025).
     expect(LAB_MODELS.live.coach).toEqual([
       'us.amazon.nova-2-lite-v1:0',
       'us.anthropic.claude-sonnet-4-6',
@@ -176,8 +225,18 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       input: 0.1375,
       output: 0.55,
     });
-    const models = Object.values(effectiveModels(loadConfig().models));
-    expect(JSON.stringify(models)).not.toMatch(/haiku-5|openai|qwen|deepseek|mistral/);
+    // Of the A/B coaches, the app runs exactly those its configuration names (Mistral Large 3 coaches, Nova 2 Lite
+    // behind it, gpt-oss-120b sums), and no other.
+    const app = reasoningModelIds(effectiveModels(loadConfig().models));
+    expect(LAB_MODELS.client.coach.filter((id) => app.includes(id))).toEqual([
+      'us.amazon.nova-2-lite-v1:0',
+      'openai.gpt-oss-120b-1:0',
+      'mistral.mistral-large-3-675b-instruct',
+    ]);
+    const granted = grantedModels(reasoningAccess(effectiveModels(loadConfig().models)));
+    for (const id of LAB_MODELS.client.coach.map(foundationModelId).filter((c) => !APP_MODELS.includes(c)))
+      expect(granted).not.toContain(id);
+    expect(granted.join(' ')).not.toMatch(/haiku-5|luna|gpt-oss-20b|qwen|deepseek/);
     const { client: _client, ...without } = raw();
     expect(parseLabModels(without).client).toEqual({ judge: [], coach: [] });
     const { client } = LAB_MODELS;
@@ -210,7 +269,7 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
     ).toThrow(/1 to 3 model ids/);
   });
 
-  it('grants the understand suite’s candidates to the lab only, priced, and never to the app', () => {
+  it('grants the understand suite’s candidates to the lab only, priced, and to the app only those it reads with', () => {
     expect(LAB_MODELS.understand).toEqual([
       'us.amazon.nova-2-lite-v1:0',
       'openai.gpt-oss-120b-1:0',
@@ -225,8 +284,13 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
     expect(() => parseLabModels({ ...raw(), understand: [{ id: 'us.acme.model-v1:0' }] })).toThrow(
       /no price/,
     );
-    const granted = JSON.stringify(reasoningAccess(effectiveModels(loadConfig().models)));
-    expect(granted).not.toMatch(/gpt-oss|qwen|nova-micro|nova-lite/);
+    // The app reads each turn with Nova 2 Lite and sums with gpt-oss-120b (models.understand); no other candidate.
+    const granted = grantedModels(reasoningAccess(effectiveModels(loadConfig().models)));
+    expect(LAB_MODELS.understand.map(foundationModelId).filter((id) => granted.includes(id))).toEqual([
+      'amazon.nova-2-lite-v1:0',
+      'openai.gpt-oss-120b-1:0',
+    ]);
+    expect(granted.join(' ')).not.toMatch(/gpt-oss-20b|qwen|nova-micro|nova-lite-v1/);
   });
 
   it('follows the app when its models change (Luna enabled: Mantle stays out of the lab grant)', () => {
@@ -235,13 +299,23 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       effectiveModels({ ...models, luna: { modelId: 'openai.gpt-6-luna', enabled: true } }),
       LAB_MODELS,
     );
-    // The bare (Mantle) id adds nothing: without the lab's own Luna profiles, no OpenAI model is granted.
+    // The bare (Mantle) id adds nothing: without the lab's own Luna profiles, no Luna model is granted; the configured
+    // primary goes behind Luna and stays granted, in region as before, and the sums keep gpt-oss-120b.
     const { benchmark: _benchmark, live: _live, client: _client, understand: _understand, ...own } = raw();
     const appOnly = conversationLabAccess(
       effectiveModels({ ...models, luna: { modelId: 'openai.gpt-6-luna', enabled: true } }),
       parseLabModels(own),
     );
-    expect(JSON.stringify(appOnly)).not.toContain('openai');
+    expect(JSON.stringify(appOnly)).not.toContain('luna');
+    expect(grantedModels(appOnly).filter((id) => id.startsWith('openai.'))).toEqual([
+      'openai.gpt-oss-120b-1:0',
+    ]);
+    expect(appOnly.regionalFoundationModels).toEqual(
+      expect.arrayContaining([
+        { modelId: 'mistral.mistral-large-3-675b-instruct', regions: ['us-east-1'] },
+        { modelId: 'openai.gpt-oss-120b-1:0', regions: ['us-east-1'] },
+      ]),
+    );
     expect(access.inferenceProfiles).toContain('us.amazon.nova-2-lite-v1:0');
   });
 });

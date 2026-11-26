@@ -210,7 +210,7 @@ describe('a run', () => {
   });
 
   it('asks SUMS once more for a plan and no sum, and pays for both', async () => {
-    const plan = { q: 'what comes in', w: 'people by price', s: [], m: null };
+    const plan = { q: 'what comes in', w: 'people by price', n: ['people=13@message'], s: [], m: null };
     class Planning extends Priced {
       override generateStructured<T>(
         request: GenerateStructuredRequest<T>,

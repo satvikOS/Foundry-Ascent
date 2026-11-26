@@ -96,6 +96,24 @@ describe('who has the answer', () => {
     expect(read.guidance).toEqual(bare.guidance);
   });
 
+  it.each(['draft', 'feelings', 'integrity'] as const)(
+    'a rule that read the message as news gives way to a reading of %s',
+    (kind) => {
+      const message = 'The hotel buyer turned us down. She says they already have a supplier.';
+      expect(readTurnOf(message, understood(FULL), on('price-test')).decision.fired).toBe('news');
+      expect(
+        readTurnOf(message, understood({ ...FULL, kind }), on('price-test')).decision.decidedBy?.answer,
+      ).toBe('reading');
+    },
+  );
+
+  it('the program’s own text, asked with no news, stays the rule’s', () => {
+    const message = 'Could you draft the note I send them?';
+    const t = readTurnOf(message, understood({ ...FULL, kind: 'draft' }), on('find-ten-people'));
+    expect([t.decision.fired, t.decision.decidedBy?.answer]).toEqual(['message', 'rule']);
+    expect(t.prompt).toEqual(readTurnOf(message, null, on('find-ten-people')).prompt);
+  });
+
   it('the rule that fired is named', () => {
     const t = readTurnOf('and if the cooks refuse?', understood(FULL), {
       ...on('find-ten-people'),

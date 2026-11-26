@@ -229,7 +229,7 @@ function concludes(text: string, guidance: PromptGuidance): boolean {
 }
 
 /** Whether a quotation is open at the end of `before`. */
-function inQuote(before: string): boolean {
+export function inQuote(before: string): boolean {
   let open = false;
   for (const ch of before) {
     if (ch === '"') open = !open;
@@ -238,6 +238,10 @@ function inQuote(before: string): boolean {
   }
   return open;
 }
+
+/** What hands over made-up work: "here are three", "these are made up, but". */
+const MADE_UP_SAID =
+  /^(?:here (?:are|is)|these are (?:made up|invented|examples)|this is (?:made up|invented))\b|\b(?:made up|invented),? but\b/iu;
 
 /** Friends who like it, said as if it showed something. */
 const FRIENDS_LIKE =
@@ -255,7 +259,8 @@ export type FalseReason =
   | 'rules'
   | 'gone'
   | 'own_sum'
-  | 'friends';
+  | 'friends'
+  | 'made_up';
 
 /** Why a unit of the writer's is false, or not theirs to say; null: it stands. */
 export function falseUnit(unit: string, guidance: PromptGuidance, before = ''): FalseReason | null {
@@ -278,5 +283,6 @@ export function falseUnit(unit: string, guidance: PromptGuidance, before = ''): 
   if (concludes(text, guidance)) return 'own_sum';
   if (NO_FRIENDS.test(text)) return null;
   if (reading.kind === 'integrity' && FRIENDS.test(text)) return 'friends';
+  if (reading.kind === 'integrity' && MADE_UP_SAID.test(text)) return 'made_up';
   return FRIENDS_LIKE.test(text) && SHOWS_IT.test(text) ? 'friends' : null;
 }
