@@ -382,6 +382,16 @@ def ran(tmp_path: Path, **over: object) -> tuple[list[str], list[str]]:
     return seen, ids
 
 
+def test_a_sums_model_is_read_beside_the_arms_and_planned_for(tmp_path: Path) -> None:
+    oss = "openai.gpt-oss-120b-1:0"
+    plain, cases = ran(tmp_path / "a")
+    beside, fewer = ran(tmp_path / "b", sums_model=oss)
+    assert "--sums-model" not in plain
+    assert beside[beside.index("--sums-model") + 1] == oss
+    # Planned as one more arm each: never more cases than without it.
+    assert len(fewer) <= len(cases)
+
+
 @pytest.mark.parametrize("group", sorted(bench.UNSEEN))
 def test_an_unseen_group_is_read_only_where_it_is_named(tmp_path: Path, group: str) -> None:
     unseen = {s.id for s in SCENARIOS if s.group == group}
@@ -536,6 +546,7 @@ def test_the_command_refuses_what_it_does_not_offer(
     assert cli.main([*base, "--budget-usd", "1", "--understand-model", "us.amazon.nova-pro-v1:0"]) == 2
     assert cli.main([*base, "--budget-usd", "1", "--groups", "sums"]) == 2
     assert cli.main([*base, "--budget-usd", "1", "--understand-ms", "9"]) == 2
+    assert cli.main([*base, "--budget-usd", "1", "--understand-sums-model", "us.amazon.nova-pro-v1:0"]) == 2
     assert not (tmp_path / "o").exists()
 
 
@@ -549,6 +560,15 @@ def test_the_client_suites_inputs_reach_the_api_process_alone() -> None:
         {}, models=models, database_url="d", speech=False, understand=config.understand_env("on", NOVA, LAB)
     )
     assert (on["CORE_UNDERSTAND"], on["MODEL_UNDERSTAND_ID"]) == ("on", NOVA)
+    sums = api_env(
+        {},
+        models=models,
+        database_url="d",
+        speech=False,
+        understand=config.understand_env("on", "", LAB, None, "openai.gpt-oss-120b-1:0"),
+    )
+    assert sums["MODEL_UNDERSTAND_SUMS_ID"] == "openai.gpt-oss-120b-1:0"
+    assert "MODEL_UNDERSTAND_ID" not in sums
 
 
 def test_the_workflow_runs_the_suite_without_an_app_under_its_cap() -> None:

@@ -221,7 +221,7 @@ def test_reasoning_is_planned_for() -> None:
 
 
 def test_the_understand_call_is_planned_for() -> None:
-    def planned(understand: bool, model: str | None = None) -> float:
+    def planned(understand: bool, model: str | None = None, sums: str | None = None) -> float:
         return estimate(
             EVERY,
             prices=LAB.prices,
@@ -230,10 +230,15 @@ def test_the_understand_call_is_planned_for() -> None:
             simulator=None,
             understand=understand,
             understand_model=model,
+            understand_sums_model=sums,
         ).app_usd
 
     off, nova = planned(False), planned(True)
     assert off < planned(True, "openai.gpt-oss-20b-1:0") < nova
+    # A SUMS model of its own is planned at the dearer of the two: never below what it costs.
+    small = "openai.gpt-oss-20b-1:0"
+    assert planned(True, sums=small) == nova
+    assert planned(True, small, sums=NOVA) == nova
     # Every turn pays for it: a run that would not fit is refused before any call.
     assert nova - off < 1.0
     held = in_groups(ALL, ("heldout",))
@@ -307,6 +312,10 @@ def test_the_workflow_offers_the_groups_the_coaches_and_the_judges_of_the_code()
     assert inputs["coach_model"]["default"] == config.DEFAULT_COACH
     assert inputs["understand"]["options"] == list(config.UNDERSTAND_CHOICES)
     assert inputs["understand_model"]["options"] == [config.DEFAULT_UNDERSTAND, *LAB.understand_models]
+    assert inputs["understand_sums_model"]["options"] == [config.DEFAULT_UNDERSTAND, *LAB.understand_models]
+    for options in ("understand_model", "understand_sums_model"):
+        offered = "|".join([config.DEFAULT_UNDERSTAND, *LAB.understand_models])
+        assert f'case "${{{options.upper()}}}" in {offered})' in text
     assert inputs["groups"]["default"] == ""
     listed = re.search(r"for known in ([a-z ]+); do", text)
     assert listed is not None
@@ -318,6 +327,7 @@ def test_the_workflow_offers_the_groups_the_coaches_and_the_judges_of_the_code()
         '--judge-model "${LAB_JUDGE_MODEL}"',
         '--understand "${LAB_UNDERSTAND}"',
         '--understand-model "${LAB_UNDERSTAND_MODEL}"',
+        '--understand-sums-model "${LAB_UNDERSTAND_SUMS_MODEL}"',
     ):
         assert flag in run["run"]
     # Only the client suite is given them.
@@ -328,5 +338,6 @@ def test_the_workflow_offers_the_groups_the_coaches_and_the_judges_of_the_code()
         "LAB_JUDGE_MODEL",
         "LAB_UNDERSTAND",
         "LAB_UNDERSTAND_MODEL",
+        "LAB_UNDERSTAND_SUMS_MODEL",
     ):
         assert "matrix.suite == 'client'" in env[name]

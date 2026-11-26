@@ -21,13 +21,26 @@ const context = (message: string, record: readonly string[] = []): UnderstandCon
   plays: [],
   stepCandidates: new Set(),
 });
-const reading = (over: Partial<SumsReading>): SumsReading => ({
-  q: 'the figure',
-  w: 'the plan',
-  n: [],
-  s: [],
-  m: null,
-  ...over,
+/** A reading of free sums over the numbers `n`. */
+interface Old {
+  readonly q?: string | null;
+  readonly w?: string | null;
+  readonly m?: string | null;
+  readonly n?: readonly string[];
+  readonly s?: readonly {
+    readonly l: string;
+    readonly u: string;
+    readonly e: string | null;
+    readonly k?: string;
+    readonly a?: readonly string[];
+  }[];
+}
+const reading = (over: Old): SumsReading & { readonly n: readonly string[] } => ({
+  q: over.q === undefined ? 'the figure' : over.q,
+  w: over.w === undefined ? 'the plan' : over.w,
+  m: over.m ?? null,
+  n: over.n ?? [],
+  s: (over.s ?? []).map((s) => ({ ...s, k: s.k ?? 'free', a: [...(s.a ?? over.n ?? [])] })),
 });
 const worked = (c: UnderstandContext, n: string[], e: string, l = 'what you make', u = '$') => {
   const { understanding, report } = readParts({ sums: reading({ n, s: [{ l, u, e }] }) }, c);
@@ -211,17 +224,17 @@ describe('what is asked once more', () => {
     for (const no of [
       first,
       reading({}),
-      reading({ ...second, s: [{ l: 'x', u: '$', e: 'fee - nothing' }] }),
+      reading({ q: second.q, n: second.n, s: [{ l: 'x', u: '$', e: 'fee - nothing' }] }),
     ])
       expect(betterSums(first, no, doubt, c)).toBe(first);
   });
 
   it('a plan with no sum, and a sum code could not work out', () => {
-    const bare = reading({ ...first, s: [] });
+    const bare = reading({ q: first.q, n: first.n, s: [] });
     expect(sumsDoubt(bare, c)).toMatchObject({ code: 'plan' });
     expect(
       sumsDoubt(
-        reading({ ...first, n: [...first.n, 'made=19@R1'], s: [{ l: 'x', u: '$', e: 'fee - made' }] }),
+        reading({ q: first.q, n: [...first.n, 'made=19@R1'], s: [{ l: 'x', u: '$', e: 'fee - made' }] }),
         c,
       ),
     ).toMatchObject({

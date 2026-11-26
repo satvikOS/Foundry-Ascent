@@ -263,7 +263,7 @@ export async function understandTurn(
         const request = {
           purpose: meter.purpose,
           requestId: meter.ctx.requestId,
-          route: 'understand' as const,
+          route: name === 'sums' ? ('understand_sums' as const) : ('understand' as const),
           system: prepared.system,
           messages,
           promptCache: prepared.promptCache,

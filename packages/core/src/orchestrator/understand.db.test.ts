@@ -184,7 +184,8 @@ describe('on', () => {
     for (const request of gateway.requests) {
       expect(request).toMatchObject({
         purpose: 'turn',
-        route: 'understand',
+        // SUMS on its own model, where one is named (MODEL_UNDERSTAND_SUMS_ID), with no fallback.
+        route: request.schemaName === UNDERSTAND_SCHEMA_NAMES.sums ? 'understand_sums' : 'understand',
         timeoutMs: UNDERSTAND_TIMEOUT_MS.text,
         estimateCut: true,
       });
@@ -273,7 +274,7 @@ describe('on', () => {
 
   it('SUMS that wrote a plan and no sum is asked once more, metered, and no more', async () => {
     const off = await say(coreWith(false), ASK);
-    const plan = { q: 'what comes in', w: 'labs times the fee', n: ['labs=13@message'], s: [], m: null };
+    const plan = { q: 'what comes in', w: 'labs times the fee', s: [], m: null };
     gateway = new ReadingGateway({
       streamDelayMs: 0,
       fixtures: { [UNDERSTAND_SCHEMA_NAMES.sums]: () => plan },
@@ -290,6 +291,19 @@ describe('on', () => {
     const plain = await say(coreWith(true), 'how much comes in if 13 labs pay $24 each?');
     expect(plain.read).toMatchObject({ sumsAgain: null, sums: 1 });
     expect(gateway.requests).toHaveLength(3);
+  });
+
+  it('a SUMS that fails is left out, never asked again, and the turn goes on', async () => {
+    gateway.behaviour = { sums: 'fails' };
+    const run = await say(coreWith(true), 'how much comes in if 13 labs pay $24 each?');
+    expect(run.read).toMatchObject({
+      code: 'partial',
+      sums: 0,
+      sumsCode: 'model_unavailable',
+      sumsAgain: null,
+    });
+    expect(gateway.requests.filter((r) => r.schemaName === UNDERSTAND_SCHEMA_NAMES.sums)).toHaveLength(1);
+    expect(run.turn?.status).toBe('completed');
   });
 
   it('without ROUTE, what the others say of a figure stands', async () => {

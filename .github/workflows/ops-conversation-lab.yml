@@ -29,8 +29,9 @@ name: Ops - conversation lab
 #           the client and held-out scenarios with a turn's own prompt, checks and sums, each on every model, and the lab
 #           grades the readings against the scenarios' expectations without a judge. No app, browser or database. At most
 #           USD 2. `groups` and `scenario_ids` narrow the scenarios (empty = all of them, the first held-out group
-#           included; `heldoutb` and `heldoutc` only where they are named), `understand_model` compares one model alone and
-#           `understand_ms` sets the caps the readings are graded at. The summary prints numbers, model ids, group names and
+#           included; `heldoutb` and `heldoutc` only where they are named), `understand_model` compares one model alone,
+#           `understand_sums_model` reads SUMS on that model too, beside each model's own, on the same ROUTE and JUDGE (one
+#           more arm each), and `understand_ms` sets the caps the readings are graded at. The summary prints numbers, model ids, group names and
 #           codes; the messages, the readings and each case's grades are sealed.
 #   face    (on its own, never in `all`) the HeyGen LiveAvatar FULL stock face against the vendor's free SANDBOX
 #           (the Wayne avatar, sessions of about a minute, no credits): the app runs with the face wired as for the
@@ -67,7 +68,7 @@ name: Ops - conversation lab
 #           Claude Haiku 5.5, gpt-oss, Qwen3, DeepSeek, Mistral: benchmark only, production unchanged; the summary names
 #           the coach), `coach_think` lets a Nova 2 coach reason before the replies that judge something, or every typed
 #           one (CORE_THINK of the lab's API process), `understand` reads every message against the record first
-#           (CORE_UNDERSTAND) on `understand_model` within `understand_ms`, `judge_model` names
+#           (CORE_UNDERSTAND) on `understand_model` (its SUMS part on `understand_sums_model`) within `understand_ms`, `judge_model` names
 #           the judge (never one of the coach's family). Capped at USD 2. The exact wording of the client's questions and the other tools'
 #           recorded scores come from the optional repository secret LAB_CLIENT_PACK (never committed, run step
 #           only); without it our equivalent wording is used and the summary says so.
@@ -167,6 +168,18 @@ on:
           - us.amazon.nova-micro-v1:0
           - us.amazon.nova-lite-v1:0
         default: default
+      understand_sums_model:
+        description: client with understand=on - the model of the SUMS part alone (default = the understand model's); understand - read SUMS on this model too, beside each candidate's own
+        type: choice
+        options:
+          - default
+          - us.amazon.nova-2-lite-v1:0
+          - openai.gpt-oss-120b-1:0
+          - openai.gpt-oss-20b-1:0
+          - qwen.qwen3-next-80b-a3b
+          - us.amazon.nova-micro-v1:0
+          - us.amazon.nova-lite-v1:0
+        default: default
       understand_ms:
         description: client with understand=on - how long a turn waits for the reading, typed,voice in milliseconds (such as 4500,2500); understand - the caps it is graded at; empty = the app's own
         type: string
@@ -232,6 +245,7 @@ jobs:
           COACH_THINK: ${{ inputs.coach_think }}
           UNDERSTAND: ${{ inputs.understand }}
           UNDERSTAND_MODEL: ${{ inputs.understand_model }}
+          UNDERSTAND_SUMS_MODEL: ${{ inputs.understand_sums_model }}
           UNDERSTAND_MS: ${{ inputs.understand_ms }}
           JUDGE_MODEL: ${{ inputs.judge_model }}
         run: |
@@ -298,14 +312,19 @@ jobs:
             echo "::error::coach_model, coach_think, understand and judge_model are the client suite's."
             exit 1
           fi
-          if [ "${SUITE}" != client ] && [ "${SUITE}" != understand ] && { [ -n "${SCENARIO_GROUPS}" ] || [ "${UNDERSTAND_MODEL}" != default ]; }; then
-            echo "::error::groups and understand_model are the client and understand suites'."
+          if [ "${SUITE}" != client ] && [ "${SUITE}" != understand ] && { [ -n "${SCENARIO_GROUPS}" ] || [ "${UNDERSTAND_MODEL}" != default ] || [ "${UNDERSTAND_SUMS_MODEL}" != default ]; }; then
+            echo "::error::groups, understand_model and understand_sums_model are the client and understand suites'."
             exit 1
           fi
           case "${UNDERSTAND}" in default|off|on) ;; *) echo "::error::understand must be default, off or on."; exit 1;; esac
           case "${UNDERSTAND_MODEL}" in default|us.amazon.nova-2-lite-v1:0|openai.gpt-oss-120b-1:0|openai.gpt-oss-20b-1:0|qwen.qwen3-next-80b-a3b|us.amazon.nova-micro-v1:0|us.amazon.nova-lite-v1:0) ;; *) echo "::error::understand_model is not one of its options."; exit 1;; esac
           if [ "${SUITE}" = client ] && [ "${UNDERSTAND_MODEL}" != default ] && [ "${UNDERSTAND}" != on ]; then
             echo "::error::understand_model is for understand=on."
+            exit 1
+          fi
+          case "${UNDERSTAND_SUMS_MODEL}" in default|us.amazon.nova-2-lite-v1:0|openai.gpt-oss-120b-1:0|openai.gpt-oss-20b-1:0|qwen.qwen3-next-80b-a3b|us.amazon.nova-micro-v1:0|us.amazon.nova-lite-v1:0) ;; *) echo "::error::understand_sums_model is not one of its options."; exit 1;; esac
+          if [ "${SUITE}" = client ] && [ "${UNDERSTAND_SUMS_MODEL}" != default ] && [ "${UNDERSTAND}" != on ]; then
+            echo "::error::understand_sums_model is for understand=on."
             exit 1
           fi
           if [ -n "${UNDERSTAND_MS}" ]; then
@@ -399,6 +418,7 @@ jobs:
       LAB_GROUPS: ${{ (matrix.suite == 'client' || matrix.suite == 'understand') && inputs.groups || '' }}
       LAB_UNDERSTAND: ${{ matrix.suite == 'client' && inputs.understand || 'default' }}
       LAB_UNDERSTAND_MODEL: ${{ (matrix.suite == 'client' || matrix.suite == 'understand') && inputs.understand_model || 'default' }}
+      LAB_UNDERSTAND_SUMS_MODEL: ${{ (matrix.suite == 'client' || matrix.suite == 'understand') && inputs.understand_sums_model || 'default' }}
       LAB_UNDERSTAND_MS: ${{ (matrix.suite == 'client' || matrix.suite == 'understand') && inputs.understand_ms || '' }}
       LAB_COACH_THINK: ${{ matrix.suite == 'client' && inputs.coach_think || 'default' }}
       LAB_COACH_MODEL: ${{ matrix.suite == 'client' && inputs.coach_model || 'default' }}
@@ -554,7 +574,7 @@ jobs:
             --face-mode "${LAB_FACE_MODE}" --groups "${LAB_GROUPS}" --coach-model "${LAB_COACH_MODEL}" \
             --judge-model "${LAB_JUDGE_MODEL}" --coach-think "${LAB_COACH_THINK}" \
             --understand "${LAB_UNDERSTAND}" --understand-model "${LAB_UNDERSTAND_MODEL}" \
-            --understand-ms "${LAB_UNDERSTAND_MS}"
+            --understand-sums-model "${LAB_UNDERSTAND_SUMS_MODEL}" --understand-ms "${LAB_UNDERSTAND_MS}"
 
       - name: Seal the private outputs
         if: always() && env.LAB_PUBLIC_KEY != ''

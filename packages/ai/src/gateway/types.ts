@@ -130,9 +130,11 @@ export interface GenerateStructuredRequest<T> {
   promptCache?: PromptCacheHint;
   /**
    * The call of the model named for it (`MODEL_UNDERSTAND_ID`; the purpose's own models when none is), with the purpose's
-   * primary as its fallback. Absent: the purpose's models.
+   * primary as its fallback. `understand_sums`: the SUMS part's own model (`MODEL_UNDERSTAND_SUMS_ID`) with no fallback (a
+   * part that fails or is late is left out of its turn); the understand route's when none is named. Absent: the purpose's
+   * models.
    */
-  route?: 'understand';
+  route?: 'understand' | 'understand_sums';
   /** Let the model reason first, as {@link StreamTextRequest.think} does (default: what the route says, else not). */
   think?: ThinkEffort;
   /**
@@ -259,6 +261,8 @@ export interface ModelGatewayInfo {
   background: BackgroundModels | null;
   /** The understand call's own model (`MODEL_UNDERSTAND_ID`); absent: the purpose's primary. */
   understandModelId?: string;
+  /** The SUMS part's own model, when one is named. */
+  understandSumsModelId?: string;
   embeddingsModelId: string;
   embeddingDimensions: number;
 }

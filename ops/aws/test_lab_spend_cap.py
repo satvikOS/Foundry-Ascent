@@ -49,6 +49,7 @@ VALID = {
         "COACH_THINK": "default",
         "UNDERSTAND": "default",
         "UNDERSTAND_MODEL": "default",
+        "UNDERSTAND_SUMS_MODEL": "default",
         "JUDGE_MODEL": "auto",
     },
     LIVE: {
@@ -338,6 +339,14 @@ def test_the_runbook_documents_the_cap_and_the_approval() -> None:
             True,
         ),
         ({"SUITE": "understand", "UNDERSTAND_MODEL": "qwen.qwen3-next-80b-a3b"}, True),
+        ({"SUITE": "understand", "UNDERSTAND_SUMS_MODEL": "openai.gpt-oss-120b-1:0"}, True),
+        (
+            {"SUITE": "client", "UNDERSTAND": "on", "UNDERSTAND_SUMS_MODEL": "openai.gpt-oss-120b-1:0"},
+            True,
+        ),
+        ({"SUITE": "client", "UNDERSTAND_SUMS_MODEL": "openai.gpt-oss-120b-1:0"}, False),
+        ({"SUITE": "recall", "UNDERSTAND_SUMS_MODEL": "openai.gpt-oss-120b-1:0"}, False),
+        ({"SUITE": "understand", "UNDERSTAND_SUMS_MODEL": "us.amazon.nova-pro-v1:0"}, False),
         ({"SUITE": "client", "UNDERSTAND": "yes"}, False),
         ({"SUITE": "client", "UNDERSTAND": "on", "UNDERSTAND_MODEL": "us.amazon.nova-pro-v1:0"}, False),
         # A model is named for a call that is made.

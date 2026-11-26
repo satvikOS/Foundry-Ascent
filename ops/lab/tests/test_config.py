@@ -115,6 +115,17 @@ def test_the_understand_call_is_the_deployments_unless_a_run_says_otherwise(tmp_
     assert config.understand_env("default", "default", lab) == {}
     assert config.understand_env("off", "", lab) == {"CORE_UNDERSTAND": "off"}
     assert config.understand_env("on", nova, lab) == {"CORE_UNDERSTAND": "on", "MODEL_UNDERSTAND_ID": nova}
+    oss = "openai.gpt-oss-120b-1:0"
+    assert config.understand_env("on", "", lab, None, oss) == {
+        "CORE_UNDERSTAND": "on",
+        "MODEL_UNDERSTAND_SUMS_ID": oss,
+    }
+    for choice, sums, said in (
+        ("on", "us.amazon.nova-pro-v1:0", "understand_sums_model must be"),
+        ("off", oss, "understand_sums_model is for understand=on"),
+    ):
+        with pytest.raises(ValueError, match=said):
+            config.understand_env(choice, "", lab, None, sums)
     for choice, model, said in (
         ("yes", "", "understand must be"),
         ("on", "us.amazon.nova-pro-v1:0", "understand_model must be"),
@@ -126,7 +137,13 @@ def test_the_understand_call_is_the_deployments_unless_a_run_says_otherwise(tmp_
     # Production names none today; once it does, the lab's API process gets the same variables.
     assert config.app_models().understand is None
     raw = json.loads(config.PRODUCTION_CONFIG.read_text(encoding="utf-8"))
-    raw["models"]["understand"] = {"enabled": True, "modelId": nova, "think": "low"}
+    raw["models"]["understand"] = {
+        "enabled": True,
+        "modelId": nova,
+        "think": "low",
+        "sumsModelId": oss,
+        "sumsThink": "low",
+    }
     path = tmp_path / "production.json"
     path.write_text(json.dumps(raw), encoding="utf-8")
     assert config.app_models(path).env() == {
@@ -134,6 +151,8 @@ def test_the_understand_call_is_the_deployments_unless_a_run_says_otherwise(tmp_
         "CORE_UNDERSTAND": "on",
         "MODEL_UNDERSTAND_ID": nova,
         "MODEL_UNDERSTAND_THINK": "low",
+        "MODEL_UNDERSTAND_SUMS_ID": oss,
+        "MODEL_UNDERSTAND_SUMS_THINK": "low",
     }
     arm = config.coach_app_models(nova, lab, config.app_models(path))
     assert arm.understand == config.app_models(path).understand

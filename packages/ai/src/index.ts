@@ -55,6 +55,8 @@ export {
   type BedrockGatewayConfig,
   type MockGatewayConfig,
   type ModelGatewayConfig,
+  SUMS_THINKS,
+  type SumsThink,
 } from './gateway/router.js';
 export {
   MOCK_EMBEDDINGS_MODEL_ID,

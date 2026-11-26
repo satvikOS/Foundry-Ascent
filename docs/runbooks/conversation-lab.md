@@ -520,15 +520,20 @@ gh workflow run ops-conversation-lab.yml -f suite=understand -f budget_usd=2 -f 
 gh workflow run ops-conversation-lab.yml -f suite=understand -f groups=heldout,numbers -f budget_usd=2 -f public_key="$KEY"
 gh workflow run ops-conversation-lab.yml -f suite=understand -f understand_model=us.amazon.nova-2-lite-v1:0 -f budget_usd=1
 gh workflow run ops-conversation-lab.yml -f suite=understand -f understand_model=us.amazon.nova-2-lite-v1:0 -f understand_ms=4000,2000 -f budget_usd=1
+gh workflow run ops-conversation-lab.yml -f suite=understand -f understand_model=us.amazon.nova-2-lite-v1:0 -f understand_sums_model=openai.gpt-oss-120b-1:0 -f budget_usd=2
 ```
+
+- **A SUMS model beside each.** `understand_sums_model` (one of `understand` in models.json) reads SUMS on that model too, beside
+  each candidate's own, on the candidate's same ROUTE and JUDGE: one more arm each, `<candidate>+sums:<model>`, graded as the others.
+  Its calls are billed once each, the shared ROUTE and JUDGE once; the plan counts it as a whole arm more, so fewer cases fit.
 
 - **Cases.** Every turn of the client and held-out scenarios with an expectation (a number, a referral, a pick, news, history, a
   kind, friends offered as proof): 229 today. A case is the message, the founder's lines before it in that conversation, what they
   told in earlier ones (as dated facts) and the scenario's record; no reply exists, so follow-ups that lean on the mentor's words are
   harder here than in a turn. `groups` and `scenario_ids` narrow them (empty: all, the first held-out group too; `heldoutb` and
   `heldoutc`, which nobody has looked at, only where they are named).
-- **Own cases.** `ops/lab/scenarios/understand/*.yaml` holds 90 cases invented for the suite (50 of sums, 40 of results, referrals, second
-  questions and picks), in two halves of the same shapes. They are read first; `groups=own` or `ownheld` names a half. The held-back
+- **Own cases.** `ops/lab/scenarios/understand/*.yaml` holds 121 cases invented for the suite (81 of sums, one of each shape of a sum
+  in each half among them, and 40 of results, referrals, second questions and picks), in two halves of the same shapes. They are read first; `groups=own` or `ownheld` names a half. The held-back
   half is counted and kept nowhere: its messages, readings and grades are taken out of the sealed files, and its totals alone are public.
 - **What fits the budget.** Cases are chosen, the same ones on every run of one budget, so that all candidates fit: the rarest
   expectations first, the held-out before the others (about 130 cases for the seven candidates at USD 2; one model alone reads them
@@ -1033,7 +1038,8 @@ gh workflow run ops-conversation-lab.yml -f suite=client -f groups=news,followup
 
 **Reading the message first.** `-f understand=on` (or `off`; `default` leaves the deployment's own) sets `CORE_UNDERSTAND` of this
 run's API process, and `-f understand_model=…` (with `on`; one of `understand` in models.json) its `MODEL_UNDERSTAND_ID`
-([understand.md](../architecture/understand.md)); `-f understand_ms=4500,2500` (with `on`) how long a turn waits for it, typed and on
+([understand.md](../architecture/understand.md)), `-f understand_sums_model=…` (with `on`) the SUMS part's own
+(`MODEL_UNDERSTAND_SUMS_ID`; the plan counts the reading at the dearer of the two); `-f understand_ms=4500,2500` (with `on`) how long a turn waits for it, typed and on
 a call. The summary names them, and the app's log numbers say how the calls ended and how long they took, by part. Every turn pays
 for three small calls more: the estimate counts 5,000 tokens in and 400 out together at that model's price, so the whole set does not fit beside the judge on Nova 2 Lite. The two arms of a comparison:
 

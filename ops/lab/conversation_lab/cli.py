@@ -121,6 +121,8 @@ class Context:
     #: The client suite's understand call (config.UNDERSTAND_CHOICES) and the model it names ("" the deployment's own).
     understand: str = DEFAULT_UNDERSTAND
     understand_model: str = ""
+    #: The SUMS part's own model ("" the understand call's).
+    understand_sums_model: str = ""
     #: How long it may take, ``typed,voice`` in milliseconds ("" the app's own).
     understand_ms: str = ""
     #: The live judge policy (config.live_judges): ``auto``, ``ab`` (one judge for every A/B arm) or a live.judge id.
@@ -273,6 +275,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         coach_think=str(getattr(args, "coach_think", DEFAULT_THINK) or DEFAULT_THINK),
         understand=str(getattr(args, "understand", DEFAULT_UNDERSTAND) or DEFAULT_UNDERSTAND),
         understand_model=_named(getattr(args, "understand_model", "")),
+        understand_sums_model=_named(getattr(args, "understand_sums_model", "")),
         understand_ms=_named(getattr(args, "understand_ms", "")),
         judge_model=str(getattr(args, "judge_model", JUDGE_AUTO) or JUDGE_AUTO),
         client_pack=str(getattr(args, "client_pack", "") or ""),
@@ -288,7 +291,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             ctx.coach_model, lab, offered=lab.client_coach if suite == "client" else None
         )
         understand = understand_env(
-            ctx.understand, ctx.understand_model, lab, understand_caps(ctx.understand_ms)
+            ctx.understand,
+            ctx.understand_model,
+            lab,
+            understand_caps(ctx.understand_ms),
+            ctx.understand_sums_model,
         )
         if suite == "client":
             from conversation_lab.client.judge import judge_candidates
@@ -322,6 +329,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     think=ctx.coach_think,
                     understand={**models.env(), **understand}.get("CORE_UNDERSTAND") == "on",
                     understand_model={**models.env(), **understand}.get("MODEL_UNDERSTAND_ID"),
+                    understand_sums_model=understand.get("MODEL_UNDERSTAND_SUMS_ID"),
                 )
                 app_share = plan.app_share
                 ctx.client["plan"] = plan.public()
@@ -347,6 +355,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             "coach_think": ctx.coach_think,
             "understand": ctx.understand,
             "understand_model": ctx.understand_model or "default",
+            "understand_sums_model": ctx.understand_sums_model or "default",
             "understand_ms": ctx.understand_ms or "default",
             "judge_policy": judge_policy,
         },
@@ -655,6 +664,10 @@ def cmd_run_understand(args: argparse.Namespace) -> int:
     if model and model not in lab.understand_models:
         print("run: understand_model names no candidate of models.json", file=sys.stderr)
         return 2
+    sums_model = _named(getattr(args, "understand_sums_model", ""))
+    if sums_model and sums_model not in lab.understand_models:
+        print("run: understand_sums_model names no candidate of models.json", file=sys.stderr)
+        return 2
     try:
         named = [g.strip() for g in str(args.groups or "").split(",") if g.strip()]
         own = tuple(g for g in OWN_GROUPS if g in named)
@@ -685,6 +698,7 @@ def cmd_run_understand(args: argparse.Namespace) -> int:
             lab=lab,
             groups=groups,
             model=model,
+            sums_model=sums_model,
             caps=caps,
             scenario_ids=tuple(i.strip() for i in (args.scenarios or "").split(",") if i.strip()),
         )
@@ -1456,6 +1470,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=DEFAULT_UNDERSTAND,
         help="client, with --understand on: that call's model; understand: compare this candidate alone; default or one "
         "of models.json understand",
+    )
+    run.add_argument(
+        "--understand-sums-model",
+        default=DEFAULT_UNDERSTAND,
+        help="client, with --understand on: the SUMS part's own model; understand: read SUMS on it too, beside each "
+        "candidate's own, on the same ROUTE and JUDGE; default or one of models.json understand",
     )
     run.add_argument(
         "--understand-ms",

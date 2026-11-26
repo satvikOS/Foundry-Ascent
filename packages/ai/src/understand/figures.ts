@@ -56,7 +56,7 @@ export const withoutDates = (text: string): string =>
 const FOREIGN_WORD =
   'euros?|pounds?|quid|cedis?|naira|shillings?|rand|rupees?|pesos?|reais|yen|yuan|dirhams?|riyals?|francs?|birr|kwacha|taka|ringgit|baht|lira|zloty|pence|pesewas|kobo|eur|gbp|ghs|ngn|kes|zar|inr|ugx';
 const FIGURE = new RegExp(
-  String.raw`(?:([$£€₦₵¥₹₩])\s?|\b(EUR|GBP|GHS|NGN|KES|KSh|ZAR|INR|UGX|USD)\s?)?((?<![\d.])\d(?:[\d,]*\d)?(?:\.\d+)?|(?<![\d.])\.\d+)(?:\s?(k|thousand|million|m|bn|billion)(?![a-z]))?\s?(?:(%|percent\b|per cent\b)|-?\s?(dollars?\b|bucks?\b|usd\b)|(cents?\b)|(?:(${FOREIGN_WORD})\b))?`,
+  String.raw`(?:([$£€₦₵¥₹₩])\s?|\b(EUR|GBP|GHS|NGN|KES|KSh|ZAR|INR|UGX|USD)\s?)?((?<![\d.])\d(?:[\d,]*\d)?(?:\.\d+)?|(?<![\d.])\.\d+)(?:[^\S\n]?(k|thousand|million|m|bn|billion)(?![a-z]))?[^\S\n]?(?:(%|percent\b|per cent\b)|-?\s?(dollars?\b|bucks?\b|usd\b)|(cents?\b)|(?:(${FOREIGN_WORD})\b))?`,
   'giu',
 );
 
@@ -132,9 +132,15 @@ const NO_THING = new Set(
   ).split(' '),
 );
 const NEXT_WORD = /^[ -]?(\p{L}{3,20})/u;
-const countsSomething = (after: string): boolean => {
+/** Plurals that do not end in s. */
+const PLURAL = new Set(
+  'people children men women sheep fish deer staff crew cattle geese mice teeth feet police folk'.split(' '),
+);
+/** "40 hives" counts hives; "the 600 website" is what one website costs, not 600 of them. */
+const countsSomething = (after: string, value: number): boolean => {
   const word = NEXT_WORD.exec(after)?.[1]?.toLowerCase();
-  return word !== undefined && !NO_THING.has(word);
+  if (word === undefined || NO_THING.has(word)) return false;
+  return value === 1 || word.endsWith('s') || PLURAL.has(word);
 };
 
 const periodOf = (word: string): Period => {
@@ -216,7 +222,9 @@ export function placedIn(text: string): Placed[] {
       ...(mark === '%' && ON_TOP.test(after) ? { onTop: true as const } : {}),
       ...(takes === undefined ? {} : { takes }),
       ...(mark === '%' && (OF_PRICE.test(after) || A_MARGIN.test(before)) ? { ofPrice: true as const } : {}),
-      ...(mark === null && m[7] === undefined && countsSomething(after) ? { counts: true as const } : {}),
+      ...(mark === null && m[7] === undefined && countsSomething(after, value)
+        ? { counts: true as const }
+        : {}),
     };
     if (m[7] !== undefined && mark === null)
       out.push({ figure: { value: value / 100, mark: '$', ...more }, before, after });

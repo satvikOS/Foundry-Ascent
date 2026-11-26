@@ -82,17 +82,22 @@ class BackgroundModels:
 @dataclass(frozen=True)
 class UnderstandSettings:
     """The understand call of a turn (``models.understand``, docs/architecture/understand.md): whether it is made, its own
-    model and whether that reasons first. Absent from production.json: the API's default, off."""
+    model and whether that reasons first, and its SUMS part's own model and effort. Absent from production.json: the
+    API's default, off."""
 
     enabled: bool
     model_id: str | None = None
     think: str | None = None
+    sums_model_id: str | None = None
+    sums_think: str | None = None
 
     def env(self) -> dict[str, str]:
         return {
             "CORE_UNDERSTAND": "on" if self.enabled else "off",
             **({"MODEL_UNDERSTAND_ID": self.model_id} if self.model_id else {}),
             **({"MODEL_UNDERSTAND_THINK": self.think} if self.think else {}),
+            **({"MODEL_UNDERSTAND_SUMS_ID": self.sums_model_id} if self.sums_model_id else {}),
+            **({"MODEL_UNDERSTAND_SUMS_THINK": self.sums_think} if self.sums_think else {}),
         }
 
 
@@ -141,6 +146,8 @@ def app_models(path: Path = PRODUCTION_CONFIG) -> AppModels:
             enabled=asked.get("enabled") is True,
             model_id=asked.get("modelId"),
             think=asked.get("think"),
+            sums_model_id=asked.get("sumsModelId"),
+            sums_think=asked.get("sumsThink"),
         )
         if isinstance(asked, dict)
         else None
@@ -282,18 +289,24 @@ def understand_caps(value: str) -> UnderstandCaps | None:
 
 
 def understand_env(
-    choice: str, model: str, lab: LabModels, caps: UnderstandCaps | None = None
+    choice: str,
+    model: str,
+    lab: LabModels,
+    caps: UnderstandCaps | None = None,
+    sums_model: str = "",
 ) -> dict[str, str]:
     """The API process's variables for the client suite's inputs; raises ValueError on one it does not offer."""
     if choice not in UNDERSTAND_CHOICES:
         raise ValueError(f"understand must be one of {', '.join(UNDERSTAND_CHOICES)}")
     named = "" if model in ("", DEFAULT_UNDERSTAND) else model
-    if named and named not in lab.understand_models:
-        raise ValueError(
-            f"understand_model must be {DEFAULT_UNDERSTAND} or one of {', '.join(lab.understand_models)}"
-        )
-    if named and choice != "on":
-        raise ValueError("understand_model is for understand=on")
+    sums = "" if sums_model in ("", DEFAULT_UNDERSTAND) else sums_model
+    for key, value in (("understand_model", named), ("understand_sums_model", sums)):
+        if value and value not in lab.understand_models:
+            raise ValueError(
+                f"{key} must be {DEFAULT_UNDERSTAND} or one of {', '.join(lab.understand_models)}"
+            )
+        if value and choice != "on":
+            raise ValueError(f"{key} is for understand=on")
     if caps and choice != "on":
         raise ValueError("understand_ms is for understand=on")
     if choice == DEFAULT_UNDERSTAND:
@@ -301,6 +314,7 @@ def understand_env(
     return {
         "CORE_UNDERSTAND": choice,
         **({"MODEL_UNDERSTAND_ID": named} if named else {}),
+        **({"MODEL_UNDERSTAND_SUMS_ID": sums} if sums else {}),
         **(
             {
                 "CORE_UNDERSTAND_TYPED_MS": str(caps.typed_ms),

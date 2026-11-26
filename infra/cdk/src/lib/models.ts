@@ -6,7 +6,7 @@
  * becomes primary and the configured `primary` becomes the fallback. The background route (`models.background`) is
  * never changed by Luna. The runtime contract (MODEL_PRIMARY_ID / MODEL_FALLBACK_ID / MODEL_EMBEDDINGS_ID and
  * MODEL_BACKGROUND_PRIMARY_ID / MODEL_BACKGROUND_FALLBACK_ID / MODEL_BACKGROUND_PURPOSES) carries the effective ids.
- * The understand call's own model (`models.understand`) is granted with them when it names one.
+ * The understand call's own model and its SUMS part's (`models.understand`) are granted with them when it names them.
  */
 import type { BackgroundPurpose, PlatformConfig } from '../config.js';
 
@@ -22,6 +22,8 @@ export interface EffectiveModels {
   };
   /** The understand call's own model, when the configuration names one (docs/architecture/understand.md). */
   readonly understand?: string;
+  /** Its SUMS part's own model, when the configuration names one. */
+  readonly understandSums?: string;
 }
 
 /** Cross-region inference profile prefixes (`us.amazon.nova-2-lite-v1:0`, `global.…`). */
@@ -31,6 +33,9 @@ export function effectiveModels(models: PlatformConfig['models']): EffectiveMode
   const background = {
     ...(models.background ? { background: models.background } : {}),
     ...(models.understand?.modelId === undefined ? {} : { understand: models.understand.modelId }),
+    ...(models.understand?.sumsModelId === undefined
+      ? {}
+      : { understandSums: models.understand.sumsModelId }),
   };
   if (models.luna?.enabled) {
     return {
@@ -43,13 +48,17 @@ export function effectiveModels(models: PlatformConfig['models']): EffectiveMode
   return { primary: models.primary, fallback: models.fallback, embeddings: models.embeddings, ...background };
 }
 
-/** Every reasoning model id the app may call: the conversation's pair, the background pair and the understand call's. */
+/**
+ * Every reasoning model id the app may call: the conversation's pair, the background pair, the understand call's and its
+ * SUMS part's.
+ */
 export function reasoningModelIds(models: EffectiveModels): string[] {
   return unique([
     models.primary,
     models.fallback,
     ...(models.background ? [models.background.primary, models.background.fallback] : []),
     ...(models.understand === undefined ? [] : [models.understand]),
+    ...(models.understandSums === undefined ? [] : [models.understandSums]),
   ]);
 }
 
@@ -77,6 +86,8 @@ export function understandEnvironment(models: PlatformConfig['models']): Record<
     CORE_UNDERSTAND: understand.enabled ? 'on' : 'off',
     ...(understand.modelId === undefined ? {} : { MODEL_UNDERSTAND_ID: understand.modelId }),
     ...(understand.think === undefined ? {} : { MODEL_UNDERSTAND_THINK: understand.think }),
+    ...(understand.sumsModelId === undefined ? {} : { MODEL_UNDERSTAND_SUMS_ID: understand.sumsModelId }),
+    ...(understand.sumsThink === undefined ? {} : { MODEL_UNDERSTAND_SUMS_THINK: understand.sumsThink }),
   };
 }
 

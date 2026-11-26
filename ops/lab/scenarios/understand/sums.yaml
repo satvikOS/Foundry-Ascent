@@ -54,7 +54,8 @@ cases:
     tag: break-even
     record: ['Knife sharpening is 6 dollars a knife and a stone lasts about 100 knives and costs 80.']
     say: the new grinder is 312 and with it the stone cost goes away. how many knives till its paid
-    number: ['52']
+    # From what the knives bring (52), or from what the stones no longer cost (390): both are a reading of it.
+    number: ['52', '390']
   - id: US-09
     half: held
     tag: earn-back
@@ -338,3 +339,203 @@ cases:
       ]
     say: can you tell me again what we said about the visits
     none: true
+  # One of each shape, in both halves ----------------------------------------------------------------------------------
+  - id: US-51
+    half: open
+    tag: cover
+    record: ['A mural class is 25 dollars a head and paint is 5 a head.']
+    say: the hall is 160 for the evening, hw many ppl do i need so it isnt on me
+    number: ['8']
+  - id: US-52
+    half: held
+    tag: cover
+    record: ['A ferry picnic sells for 16 dollars and the food costs 7.']
+    say: boat hire is 270 a trip. whats the smallest crowd that covers it
+    number: ['30']
+  - id: US-53
+    half: open
+    tag: cover-target
+    record: ['Bike tune-ups are 35 dollars; parts are about 9 each.']
+    say: shop rent is 400 a month and i want 640 a month for me after it. tune-ups needed?
+    number: ['40']
+  - id: US-54
+    half: held
+    tag: cover-target
+    record: ['A dog walk is 20 dollars; the app fee is 2 a walk.']
+    say: insurance 90 a month, and id like to keep 450 on top. how many walks a month
+    number: ['30']
+  - id: US-55
+    half: open
+    tag: cover-ours
+    record: ['A gallery print sells for 80 dollars.']
+    say: we get 15% of each print the artists sell through us. how many prints till the 600 website is paid
+    number: ['50']
+  - id: US-56
+    half: held
+    tag: cover-ours
+    record: ['Tutors on our list charge 50 dollars a session.']
+    say: our fee is a fifth of every session. how many sessions before the 900 for ads comes back
+    number: ['90']
+  - id: US-57
+    half: open
+    tag: payback-months
+    record: ['The kiln saves about 120 dollars a month in firing fees.']
+    say: new kiln is 1,440. in months, when has it paid for itself
+    number: ['12']
+  - id: US-58
+    half: held
+    tag: payback-months
+    record: ['The van brings in 250 dollars a month more than the bike did.']
+    say: if the van costs 3,000 how many months to get that back
+    number: ['12']
+  - id: US-59
+    half: open
+    tag: hours-week
+    record: ['Twelve students pay 40 dollars a month for coding club; it is 6 hours a week to run.']
+    say: per hour, what is the club giving me
+    number: ['18.46', '18.5', '20']
+  - id: US-60
+    half: held
+    tag: hours-week
+    record: ['Seven houses pay 90 dollars a month for pool cleaning, which is 9 hours every week.']
+    say: so whats my hourly then
+    number: ['16.15', '16.2', '17.5']
+  - id: US-61
+    half: open
+    tag: share-theirs
+    record: ['A ticket is 30 dollars on the booking site.']
+    say: the site keeps 12% of every ticket. on 50 tickets what reaches me
+    number: ['1320', '1,320']
+  - id: US-62
+    half: held
+    tag: share-theirs
+    record: ['A jar of jam is 9 dollars at the farm shop.']
+    say: the farm shop holds back a third of the price. 60 jars, whats mine
+    number: ['360']
+  - id: US-63
+    half: open
+    tag: share-ours
+    record: ['The cleaners on the app earn 1,200 dollars a week between them.']
+    say: we take 10 percent from them. what does that make for us a week
+    number: ['120']
+  - id: US-64
+    half: held
+    tag: share-ours
+    record: ['Drivers booked through us brought in 4,500 dollars last month.']
+    say: with our 8% commission what did we earn of that
+    number: ['360']
+  - id: US-65
+    half: open
+    tag: stake
+    say: a guy from the club says 30 thousand for 15 percent. on paper thats saying the whole thing is what
+    number: ['200000', '200,000']
+  - id: US-66
+    half: held
+    tag: stake
+    say: investor offers 50k for a quarter of the business, what does that put us at
+    number: ['200000', '200,000']
+  - id: US-67
+    half: open
+    tag: total
+    talk:
+      - ['bought the stall for 120 last week', 'Noted.']
+      - ['and the canopy was 65', 'Noted.']
+    say: plus 30 for the sign. what's it all come to
+    number: ['215']
+  - id: US-68
+    half: held
+    tag: total
+    talk:
+      - ['spent 90 on the domain and logo', 'Noted.']
+    say: then 240 for the first batch and 25 for the stand permit. whats my total so far
+    number: ['355']
+  - id: US-69
+    half: open
+    tag: runway-income
+    say: account has 8,000, we spend 1,100 a month and 300 comes in. how long do we have
+    number: ['10']
+  - id: US-70
+    half: held
+    tag: runway-weekly
+    record: ['The account holds 6,500 dollars.']
+    say: we burn 500 a week. months left?
+    number: ['3', '3.25', '3.3']
+  - id: US-71
+    half: open
+    tag: price-margin
+    record: ['A candle tin costs 6 dollars to pour and ship.']
+    say: what do i charge so a quarter of the price is profit
+    number: ['8']
+  - id: US-72
+    half: held
+    tag: price-markup
+    record: ['One bowl costs me 12 dollars to throw and fire.']
+    say: i put 75% on top of my cost, what is the price then
+    number: ['21']
+  - id: US-73
+    half: open
+    tag: change
+    record: ['The waitlist had 40 names in September and has 58 now.']
+    say: how much did it grow, as a percent
+    number: ['45']
+  - id: US-74
+    half: held
+    tag: change
+    record: ['Returns were 25 a month in spring and are 15 a month now.']
+    say: by what percent did returns drop
+    number: ['40']
+  - id: US-75
+    half: open
+    tag: rate
+    record: ['The seed vending machine took 80 orders and 6 of them jammed.']
+    say: whats the jam rate
+    number: ['7.5']
+  - id: US-76
+    half: held
+    tag: rate
+    record: ['Of 64 trial boxes, 48 were renewed.']
+    say: what share renewed
+    number: ['75']
+  - id: US-77
+    half: open
+    tag: chain
+    say: 600 got the flyer, 20 percent visited the page and a quarter of those signed up. how many sign ups
+    number: ['30']
+  - id: US-78
+    half: held
+    tag: chain
+    say: of 900 at the fair, 10% stopped at the table and half of them bought something, how many buyers is that
+    number: ['45']
+  - id: US-79
+    half: open
+    tag: missing
+    record: ['A sauce jar sells for 7 dollars.']
+    say: how many jars to pay for the market stall
+    missing: true
+  - id: US-80
+    half: held
+    tag: missing
+    say: whats my hourly on the walks
+    missing: true
+  - id: US-81
+    half: open
+    tag: total-counts
+    record: ['A tile class is 15 dollars a seat.']
+    talk:
+      - ['tuesday had 6 in the class', 'Noted.']
+    say: and thursday 9. what did the two bring in together
+    number: ['225']
+  - id: US-82
+    half: held
+    tag: total-counts
+    record: ['A glass bead workshop is 18 dollars a place.']
+    talk:
+      - ['the first workshop had 7', 'Noted.']
+    say: second had 11, so both together brought in how much
+    number: ['324']
+  - id: US-83
+    half: held
+    tag: hours-month
+    record: ['Four shops pay 75 dollars a week for window displays; dressing them is 20 hours a month.']
+    say: per hour what does that come to
+    number: ['65', '65.0']

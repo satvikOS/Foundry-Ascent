@@ -513,7 +513,14 @@ def own_result(rows: Sequence[Mapping[str, Any]], own: Mapping[str, OwnCase]) ->
 
 
 def understand_command(
-    *, pnpm: str, budget_usd: float, cases: Path, out: Path, model: str, caps: UnderstandCaps | None = None
+    *,
+    pnpm: str,
+    budget_usd: float,
+    cases: Path,
+    out: Path,
+    model: str,
+    caps: UnderstandCaps | None = None,
+    sums_model: str = "",
 ) -> list[str]:
     return [
         pnpm,
@@ -533,6 +540,7 @@ def understand_command(
         str(CONCURRENCY),
         *(["--typed-ms", str(caps.typed_ms), "--voice-ms", str(caps.voice_ms)] if caps else []),
         *(["--candidates", model] if model else []),
+        *(["--sums-model", sums_model] if sums_model else []),
     ]
 
 
@@ -547,6 +555,7 @@ def run_understand(
     model: str = "",
     scenario_ids: Sequence[str] = (),
     caps: UnderstandCaps | None = None,
+    sums_model: str = "",
     today: dt.date | None = None,
     runner: Runner = subprocess.run,
 ) -> tuple[dict[str, Any], int]:
@@ -562,7 +571,9 @@ def run_understand(
     available = cases_of(scenarios)
     names = arms(lab, model)
     own = own_cases(groups, scenario_ids)
-    cases = chosen_cases(available, max(0, affordable(lab, names, budget_usd) - len(own)))
+    # A SUMS model beside each arm is planned as a whole arm more each: never less than it costs.
+    planned = [*names, *(arms(lab, sums_model)[:1] * len(names) if sums_model else [])]
+    cases = chosen_cases(available, max(0, affordable(lab, planned, budget_usd) - len(own)))
     private = out / "private"
     logs = private / "logs"
     logs.mkdir(parents=True, exist_ok=True)
@@ -571,7 +582,9 @@ def run_understand(
     path.write_text(json.dumps({"version": 1, "cases": told}), encoding="utf-8")
     if not told:
         return {"script_exit": 0, "report": False, "cases_available": 0}, 2
-    cmd = understand_command(pnpm=pnpm, budget_usd=budget_usd, cases=path, out=out, model=model, caps=caps)
+    cmd = understand_command(
+        pnpm=pnpm, budget_usd=budget_usd, cases=path, out=out, model=model, caps=caps, sums_model=sums_model
+    )
     try:
         done = runner(cmd, cwd=REPO, env=dict(env), capture_output=True, timeout=TIMEOUT_SECONDS, check=False)
         (logs / "understand-bench.log").write_bytes((done.stdout or b"") + (done.stderr or b""))
@@ -592,6 +605,8 @@ def run_understand(
     raw.write_text(
         json.dumps({**doc, "rows": [r for r in rows if r.get("caseId") not in held]}), encoding="utf-8"
     )
+    # Each arm, and beside it the same arm with its SUMS read on the SUMS model (lab-understand.ts sumsKey).
+    read_as = [*names, *([f"{n}+sums:{sums_model}" for n in names] if sums_model else [])]
     open_own = {c.case_id: c for c in own if not c.held}
     (private / GRADES_FILE).write_text(
         json.dumps(
@@ -622,9 +637,9 @@ def run_understand(
         encoding="utf-8",
     )
     result = public_result(
-        doc.get("report") or {}, rows, cases, exit_code=code, available=len(available), known=names
+        doc.get("report") or {}, rows, cases, exit_code=code, available=len(available), known=read_as
     )
-    result["own"] = own_arms(rows, own, names)
+    result["own"] = own_arms(rows, own, read_as)
     return result, code
 
 

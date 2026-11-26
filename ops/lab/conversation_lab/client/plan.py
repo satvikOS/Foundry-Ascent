@@ -92,6 +92,7 @@ def estimate(
     think: str = DEFAULT_THINK,
     understand: bool = False,
     understand_model: str | None = None,
+    understand_sums_model: str | None = None,
 ) -> Estimate:
     factor = coach_cost_factor(prices, coach)
     turns = sum(s.turns for s in scenarios)
@@ -112,7 +113,10 @@ def estimate(
         # The ``us.`` profile is billed 10% above the global rate the price list holds.
         app += thought * output * 1.1 / 1_000_000
     if understand:
-        reader = prices[foundation_model_id(understand_model or coach or COACH_BASELINE_MODEL)]
+        main = prices[foundation_model_id(understand_model or coach or COACH_BASELINE_MODEL)]
+        # A SUMS model of its own: the reading is planned at the dearer of the two.
+        sums = prices[foundation_model_id(understand_sums_model)] if understand_sums_model else main
+        reader = max(main, sums, key=lambda p: _tokens_usd(p, UNDERSTAND_TOKENS))
         app += turns * _tokens_usd(reader, UNDERSTAND_TOKENS) * 1.1
     return Estimate(len(scenarios), turns, judged, round(app, 4), round(lab, 4))
 
@@ -144,6 +148,7 @@ def refusal(
     think: str = DEFAULT_THINK,
     understand: bool = False,
     understand_model: str | None = None,
+    understand_sums_model: str | None = None,
 ) -> str | None:
     """Why the run must not start (its estimate does not fit), in numbers and group names; None when it may."""
     limit = min(budget_usd, PLAN_LIMIT_USD)
@@ -162,6 +167,7 @@ def refusal(
                 think=think,
                 understand=understand,
                 understand_model=understand_model,
+                understand_sums_model=understand_sums_model,
             )
             parts.append(f"{group} {one.total_usd:.2f}")
     return (

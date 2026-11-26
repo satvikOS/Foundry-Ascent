@@ -213,7 +213,7 @@ becomes `MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID` and `MODEL
 the flag is a config change plus a normal deploy.
 
 `models.understand` (`enabled`, and optionally `modelId` and `think: "low"`; unset today) turns the understand call of a turn on
-(docs/architecture/understand.md): `CORE_UNDERSTAND`, `MODEL_UNDERSTAND_ID` and `MODEL_UNDERSTAND_THINK` go to the API alone, and a model
+(docs/architecture/understand.md): `CORE_UNDERSTAND`, `MODEL_UNDERSTAND_ID`, `MODEL_UNDERSTAND_THINK`, `MODEL_UNDERSTAND_SUMS_ID` and `MODEL_UNDERSTAND_SUMS_THINK` (`sumsModelId`, `sumsThink`: the SUMS part's own model, absent = the understand call's) go to the API alone, and a model
 of its own is granted with the effective models. Unset, no variable is passed and the API's default, off, stands.
 
 Production's coach model is this configuration: an A/B on another Bedrock model runs in the conversation lab first

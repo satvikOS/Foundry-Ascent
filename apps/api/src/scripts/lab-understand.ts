@@ -41,6 +41,7 @@ import {
   type ChatMessage,
   type GenerateStructuredResult,
   type ModelGateway,
+  type ModelGatewayConfig,
   type Understanding,
   type UnderstandContext,
   type UnderstandPart,
@@ -216,20 +217,21 @@ const charsOf = (p: PreparedPart): number =>
  * answer, read again for a repair, and the gateway's fallback (the same model) doing the same.
  */
 export function worstUsd(arm: Arm, prepared: PreparedUnderstand): number {
-  return UNDERSTAND_PARTS.reduce((sum, name) => {
-    const part = prepared.parts[name];
-    return part === null
-      ? sum
-      : sum +
-          // SUMS may be asked once more.
-          (name === 'sums' ? 2 : 1) *
-            reasoningWorstUsd(
-              arm.modelId,
-              charsOf(part),
-              UNDERSTAND_MAX_OUTPUT_TOKENS[part.form],
-              arm.effort === 'low' && thinksOnRequest(arm.modelId),
-            );
-  }, 0);
+  return UNDERSTAND_PARTS.reduce((sum, name) => sum + partWorstUsd(arm, name, prepared.parts[name]), 0);
+}
+
+/** The most one part can be billed on an arm. */
+export function partWorstUsd(arm: Arm, name: UnderstandPart, part: PreparedPart | null): number {
+  return part === null
+    ? 0
+    : // SUMS may be asked once more.
+      (name === 'sums' ? 2 : 1) *
+        reasoningWorstUsd(
+          arm.modelId,
+          charsOf(part),
+          UNDERSTAND_MAX_OUTPUT_TOKENS[part.form],
+          arm.effort === 'low' && thinksOnRequest(arm.modelId),
+        );
 }
 
 /** How long a call may take here: longer than a turn gives it, so a late one is measured. */
@@ -260,7 +262,7 @@ async function readPart(
       // Sampled as a turn is.
       purpose: 'turn',
       requestId: randomUUID(),
-      route: 'understand',
+      route: name === 'sums' ? 'understand_sums' : 'understand',
       system: prepared.system,
       messages,
       promptCache: prepared.promptCache,
@@ -347,14 +349,48 @@ export function inTimeParts(
     (name !== 'judge' || judgeLeads(route) || parts.judge.ms <= needed + UNDERSTAND_JUDGE_WAIT_MS[channel]);
 }
 
-async function readOnce(gateway: ModelGateway, arm: Arm, c: Case, caps: Caps): Promise<Row> {
+/** A SUMS model read beside an arm's own SUMS, on the arm's ROUTE and JUDGE. */
+export interface SumsArm {
+  readonly arm: Arm;
+  readonly gateway: ModelGateway;
+}
+
+/** The key of an arm whose SUMS is another model's. */
+export const sumsKey = (arm: Arm, sums: Arm): string => `${arm.key}+sums:${sums.key}`;
+
+/** A case on an arm, and on each SUMS model beside it: one row each, their ROUTE and JUDGE read once. */
+async function readOnce(
+  gateway: ModelGateway,
+  arm: Arm,
+  c: Case,
+  caps: Caps,
+  sumsArms: readonly SumsArm[] = [],
+): Promise<Row[]> {
   const prepared = prepareCase(c);
-  const phrasePlay = phraseIntent(PLAYBOOK, c.message)?.intent.playId ?? null;
-  const [route, sums, judge] = await Promise.all([
+  const [route, sums, judge, ...others] = await Promise.all([
     readPart(gateway, arm, 'route', prepared.parts.route, prepared.context),
     readPart(gateway, arm, 'sums', prepared.parts.sums, prepared.context),
     readPart(gateway, arm, 'judge', prepared.parts.judge, prepared.context),
+    ...sumsArms.map((s) => readPart(s.gateway, s.arm, 'sums', prepared.parts.sums, prepared.context)),
   ]);
+  return [
+    rowOf(arm.key, c, caps, prepared, route, sums, judge),
+    ...sumsArms.map((s, i) =>
+      rowOf(sumsKey(arm, s.arm), c, caps, prepared, route, others[i] ?? NOT_ASKED, judge),
+    ),
+  ];
+}
+
+function rowOf(
+  key: string,
+  c: Case,
+  caps: Caps,
+  prepared: PreparedUnderstand,
+  route: PartRow,
+  sums: PartRow,
+  judge: PartRow,
+): Row {
+  const phrasePlay = phraseIntent(PLAYBOOK, c.message)?.intent.playId ?? null;
   const late = (p: PartRow): PartRow & { late: boolean } => ({ ...p, late: p.ms > caps[c.channel] });
   const parts = { route: late(route), sums: late(sums), judge: late(judge) };
   const all = [route, sums, judge];
@@ -370,7 +406,7 @@ async function readOnce(gateway: ModelGateway, arm: Arm, c: Case, caps: Caps): P
   const play = PLAYBOOK.plays.find((p) => p.id === understanding?.playId);
   const total = (of: (p: PartRow) => number): number => all.reduce((n, p) => n + of(p), 0);
   return {
-    arm: arm.key,
+    arm: key,
     caseId: c.id,
     code: understanding === null ? (failed?.code ?? 'nothing_held') : 'ok',
     ms: Math.max(...all.map((p) => p.ms)),
@@ -396,6 +432,8 @@ export interface BenchOptions {
   readonly caps?: Caps;
   /** The most a case can be billed on an arm (default {@link worstUsd}). */
   readonly worst?: (arm: Arm, prepared: PreparedUnderstand) => number;
+  /** A SUMS model read beside each arm's own SUMS (`--sums-model`), and its gateway. */
+  readonly sums?: { readonly arm: Arm; readonly gateway: (arm: Arm) => ModelGateway };
 }
 
 /**
@@ -408,6 +446,13 @@ export async function runBench(
   options: BenchOptions,
 ): Promise<{ rows: Row[]; spentUsd: number; budgetReached: boolean; casesRead: number }> {
   const gateways = new Map(arms.map((arm) => [arm.key, options.gatewayFor(arm)]));
+  const sums = options.sums;
+  const sumsArms = new Map(
+    arms.map((arm): [string, SumsArm[]] => [
+      arm.key,
+      sums === undefined ? [] : [{ arm: sums.arm, gateway: sums.gateway(arm) }],
+    ]),
+  );
   const worstOf = options.worst ?? worstUsd;
   const caps = options.caps ?? UNDERSTAND_TIMEOUT_MS;
   const rows: Row[] = [];
@@ -421,7 +466,13 @@ export async function runBench(
       const c = cases[next];
       if (c === undefined || budgetReached) return;
       const prepared = prepareCase(c);
-      const worst = arms.reduce((sum, arm) => sum + worstOf(arm, prepared), 0);
+      const worst = arms.reduce(
+        (sum, arm) =>
+          sum +
+          worstOf(arm, prepared) +
+          (sums === undefined ? 0 : partWorstUsd(sums.arm, 'sums', prepared.parts.sums)),
+        0,
+      );
       if (spent + reserved + worst > options.budgetUsd) {
         budgetReached = true;
         return;
@@ -432,9 +483,11 @@ export async function runBench(
       for (const arm of arms) {
         const gateway = gateways.get(arm.key);
         if (gateway === undefined) continue;
-        const row = await readOnce(gateway, arm, c, caps);
-        spent += row.costUsd;
-        rows.push(row);
+        const [row, ...beside] = await readOnce(gateway, arm, c, caps, sumsArms.get(arm.key));
+        if (row === undefined) continue;
+        // ROUTE and JUDGE are shared: billed once.
+        spent += row.costUsd + beside.reduce((n, b) => n + b.parts.sums.costUsd, 0);
+        rows.push(row, ...beside);
       }
       reserved -= worst;
     }
@@ -455,6 +508,8 @@ interface Args {
   readonly budgetUsd: number;
   readonly out: string;
   readonly caps: Caps;
+  /** A SUMS model to read beside each arm's own. */
+  readonly sumsModel: string | null;
 }
 
 /** The owner's cap on a paid run. */
@@ -468,6 +523,7 @@ const FLAGS = [
   '--out',
   '--typed-ms',
   '--voice-ms',
+  '--sums-model',
 ];
 
 export function parseArgs(argv: readonly string[]): Args {
@@ -504,6 +560,8 @@ export function parseArgs(argv: readonly string[]): Args {
       voice: cap('--voice-ms', 5_000, UNDERSTAND_TIMEOUT_MS.voice),
     },
     candidates: (given.get('--candidates') ?? '').split(',').filter((c) => c.trim() !== ''),
+    sumsModel:
+      (given.get('--sums-model') ?? '').trim() === '' ? null : (given.get('--sums-model') ?? '').trim(),
   };
 }
 
@@ -516,11 +574,26 @@ export function chosenArms(arms: readonly Arm[], named: readonly string[]): Arm[
     : arms.filter((a) => named.includes(a.key) || named.includes(a.modelId));
 }
 
+/** A gateway of the candidate alone: a failure is counted, never answered by another model. */
+function armConfig(config: ModelGatewayConfig, arm: Arm): ModelGatewayConfig {
+  return config.provider === 'mock'
+    ? config
+    : {
+        ...config,
+        primaryModelId: arm.modelId,
+        fallbackModelId: arm.modelId,
+        ...(arm.effort === null || thinksOnRequest(arm.modelId) ? {} : { reasoningEffort: arm.effort }),
+      };
+}
+
 async function main(argv: readonly string[]): Promise<void> {
   const args = parseArgs(argv);
-  const arms = chosenArms(armsOf(JSON.parse(await readFile(CANDIDATES_FILE, 'utf8'))), args.candidates);
+  const known = armsOf(JSON.parse(await readFile(CANDIDATES_FILE, 'utf8')));
+  const arms = chosenArms(known, args.candidates);
   const { cases } = Cases.parse(JSON.parse(await readFile(args.cases, 'utf8')));
   const config = modelGatewayConfigFromEnv(process.env);
+  if (args.sumsModel !== null && !known.some((a) => a.modelId === args.sumsModel))
+    throw new UsageError('--sums-model names no candidate of models.json');
   const started = performance.now();
   const { rows, ...run } = await runBench(arms, cases, {
     budgetUsd: args.budgetUsd,
@@ -528,22 +601,28 @@ async function main(argv: readonly string[]): Promise<void> {
     caps: args.caps,
     // The mock bills nothing.
     ...(config.provider === 'mock' ? { worst: () => 0 } : {}),
-    gatewayFor: (arm) =>
-      createModelGateway(
-        config.provider === 'mock'
-          ? config
-          : {
-              ...config,
-              // The candidate alone: a failure is counted, never answered by another model.
-              primaryModelId: arm.modelId,
-              fallbackModelId: arm.modelId,
-              ...(arm.effort === null || thinksOnRequest(arm.modelId) ? {} : { reasoningEffort: arm.effort }),
+    gatewayFor: (arm) => createModelGateway(armConfig(config, arm)),
+    ...(args.sumsModel === null
+      ? {}
+      : {
+          sums: {
+            // At the model's own effort (gpt-oss: low).
+            arm: { key: args.sumsModel, modelId: args.sumsModel, effort: null },
+            gateway: (arm: Arm) => {
+              const own = armConfig(config, arm);
+              return createModelGateway(
+                own.provider === 'mock'
+                  ? own
+                  : { ...own, understand: { ...own.understand, sumsModelId: args.sumsModel ?? '' } },
+              );
             },
-      ),
+          },
+        }),
   });
   const report = {
     provider: config.provider,
     arms: arms.map((a) => a.key),
+    ...(args.sumsModel === null ? {} : { sumsModel: args.sumsModel }),
     cases: cases.length,
     ...run,
     budgetUsd: args.budgetUsd,

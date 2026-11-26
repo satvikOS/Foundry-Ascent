@@ -469,6 +469,15 @@ describe('config', () => {
     expect(() => read({ ...understand, modelId: 'GPT OSS' })).toThrow(/models.understand.modelId/);
     expect(() => read({ ...understand, think: 'high' })).toThrow(/models.understand.think/);
     expect(() => read({ ...understand, model: 'x' })).toThrow(/models.understand.model/);
+    const sums = { ...understand, sumsModelId: 'openai.gpt-oss-120b-1:0', sumsThink: 'medium' as const };
+    expect(read(sums)).toEqual(sums);
+    expect(read({ enabled: false, sumsModelId: 'openai.gpt-oss-20b-1:0' })).toEqual({
+      enabled: false,
+      sumsModelId: 'openai.gpt-oss-20b-1:0',
+    });
+    expect(() => read({ ...sums, sumsThink: 'max' })).toThrow(/models.understand.sumsThink/);
+    expect(() => read({ ...understand, sumsThink: 'low' })).toThrow(/models.understand.sumsThink/);
+    expect(() => read({ ...sums, sumsModelId: 'GPT OSS' })).toThrow(/models.understand.sumsModelId/);
   });
 
   it('lists as background purposes exactly the gateway’s model purposes but speech and embedding', () => {

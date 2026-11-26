@@ -55,12 +55,16 @@ export interface PlatformConfig {
     /**
      * The understand call of a turn (docs/architecture/understand.md): whether the API makes it (`CORE_UNDERSTAND`), on
      * which model (`MODEL_UNDERSTAND_ID`; default: `primary`) and whether that model reasons first
-     * (`MODEL_UNDERSTAND_THINK`, Amazon Nova 2). Absent: the API's own default, off, and no variable is passed.
+     * (`MODEL_UNDERSTAND_THINK`, Amazon Nova 2); its SUMS part's own model (`MODEL_UNDERSTAND_SUMS_ID`; default: the
+     * understand call's) and how much that one reasons (`MODEL_UNDERSTAND_SUMS_THINK`: an OpenAI model's effort, or Nova 2's
+     * thinking at low). Absent: the API's own default, off, and no variable is passed.
      */
     readonly understand?: {
       readonly enabled: boolean;
       readonly modelId?: string;
       readonly think?: 'low';
+      readonly sumsModelId?: string;
+      readonly sumsThink?: 'low' | 'medium' | 'high';
     };
     readonly embeddings: string;
     /** GPT-6 Luna on Bedrock Mantle, gated per account by AWS. See lib/models.ts for how it is applied. */
@@ -382,14 +386,25 @@ function parseBackground(raw: unknown): NonNullable<PlatformConfig['models']['ba
 function parseUnderstand(raw: unknown): NonNullable<PlatformConfig['models']['understand']> {
   const path = '$.models.understand';
   const understand = obj(raw, path);
-  const unknown = Object.keys(understand).find((k) => !['enabled', 'modelId', 'think', 'note'].includes(k));
+  const unknown = Object.keys(understand).find(
+    (k) => !['enabled', 'modelId', 'think', 'sumsModelId', 'sumsThink', 'note'].includes(k),
+  );
   if (unknown !== undefined) throw new ConfigError(`${path}.${unknown}`, 'is not a setting of it');
   if (understand.think !== undefined && understand.think !== 'low')
     throw new ConfigError(`${path}.think`, 'must be low (or left out)');
+  const sumsThink = understand.sumsThink;
+  if (sumsThink !== undefined && sumsThink !== 'low' && sumsThink !== 'medium' && sumsThink !== 'high')
+    throw new ConfigError(`${path}.sumsThink`, 'must be low, medium or high (or left out)');
+  if (sumsThink !== undefined && understand.sumsModelId === undefined)
+    throw new ConfigError(`${path}.sumsThink`, 'is the sumsModelId model’s: name that model');
   return {
     enabled: bool(understand, 'enabled', path),
     ...(understand.modelId === undefined ? {} : { modelId: str(understand, 'modelId', path, MODEL_ID) }),
     ...(understand.think === undefined ? {} : { think: 'low' as const }),
+    ...(understand.sumsModelId === undefined
+      ? {}
+      : { sumsModelId: str(understand, 'sumsModelId', path, MODEL_ID) }),
+    ...(sumsThink === undefined ? {} : { sumsThink }),
   };
 }
 

@@ -71,10 +71,21 @@ export const SumsReading = z.object({
   q: z.string().nullable().catch(null),
   /** How it is worked out, in words: the plan the sum is written from, never shown. */
   w: z.string().nullable().catch(null),
-  /** The numbers, `name=value@where`. */
-  n: z.array(z.string()).catch([]),
-  /** The sums: label, unit (or what is counted), expression. */
-  s: z.array(z.object({ l: z.string(), u: z.string().catch('units'), e: z.string() })).catch([]),
+  /**
+   * The sums: label, unit (or what is counted), shape (shapes.ts), its slots `role=value@where`, and for the `free` shape the
+   * expression over the names of its slots.
+   */
+  s: z
+    .array(
+      z.object({
+        l: z.string(),
+        u: z.string().catch(''),
+        k: z.string().catch('free'),
+        a: z.array(z.string()).catch([]),
+        e: z.string().nullable().catch(null),
+      }),
+    )
+    .catch([]),
   /** The number that is nowhere. */
   m: z.string().nullable().catch(null),
 });

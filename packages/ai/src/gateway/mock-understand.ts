@@ -91,14 +91,21 @@ export function mockSums(prompt: string): SumsReading {
   const figures = figuresIn(message).filter((f) => f.value > 0 && f.mark !== 'foreign');
   const price = figures.find((f) => f.mark === '$');
   const count = figures.find((f) => f.mark === null);
-  if (kindOf(message) !== 'sum') return { q: null, w: null, n: [], s: [], m: null };
+  if (kindOf(message) !== 'sum') return { q: null, w: null, s: [], m: null };
   if (price === undefined || count === undefined)
-    return { q: 'the figure', w: null, n: [], s: [], m: 'the numbers it needs' };
+    return { q: 'the figure', w: null, s: [], m: 'the numbers it needs' };
   return {
     q: 'what comes in',
     w: 'the count times the price',
-    n: [`price=$${String(price.value)}@message`, `count=${String(count.value)}@message`],
-    s: [{ l: 'what comes in', u: '$', e: 'count * price' }],
+    s: [
+      {
+        l: 'what comes in',
+        u: '$',
+        k: 'total',
+        a: [`price=$${String(price.value)}@message`, `count=${String(count.value)}@message`],
+        e: null,
+      },
+    ],
     m: null,
   };
 }

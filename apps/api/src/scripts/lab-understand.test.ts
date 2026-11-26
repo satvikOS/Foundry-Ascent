@@ -20,6 +20,7 @@ import {
   parseArgs,
   prepareCase,
   runBench,
+  sumsKey,
   worstUsd,
   type Arm,
   type PartRow,
@@ -158,12 +159,39 @@ describe('a run', () => {
     for (const g of gateways) {
       expect(g.requests).toHaveLength(9);
       for (const r of g.requests) {
-        expect(r).toMatchObject({ purpose: 'turn', route: 'understand' });
+        expect(r).toMatchObject({
+          purpose: 'turn',
+          route: r.schemaName === UNDERSTAND_SCHEMA_NAMES.sums ? 'understand_sums' : 'understand',
+        });
         expect(Object.values(UNDERSTAND_SCHEMA_NAMES)).toContain(r.schemaName);
       }
     }
     expect(gateways[0]?.requests[0]).not.toHaveProperty('think');
     expect(gateways[1]?.requests[0]).toHaveProperty('think', 'low');
+  });
+
+  it('reads a SUMS model beside each arm’s own, on the arm’s ROUTE and JUDGE, and bills those once', async () => {
+    const own = new Priced(0.001);
+    const beside = new Priced(0.002);
+    const sums: Arm = { key: 'openai.gpt-oss-120b-1:0', modelId: 'openai.gpt-oss-120b-1:0', effort: null };
+    const run = await runBench(arms.slice(0, 1), CASES, {
+      budgetUsd: 2,
+      concurrency: 1,
+      gatewayFor: () => own,
+      sums: { arm: sums, gateway: () => beside },
+    });
+    const [arm] = arms;
+    if (arm === undefined) throw new Error('no arm');
+    const key = sumsKey(arm, sums);
+    expect(run.rows.map((r) => r.arm)).toEqual(CASES.flatMap(() => [arm.key, key]));
+    expect(beside.requests.every((r) => r.schemaName === UNDERSTAND_SCHEMA_NAMES.sums)).toBe(true);
+    expect(beside.requests.every((r) => r.route === 'understand_sums')).toBe(true);
+    const [first, second] = run.rows;
+    expect(second?.parts.route).toEqual(first?.parts.route);
+    expect(second?.parts.sums.costUsd).toBe(0.002);
+    expect(second?.understanding?.sums[0]).toMatchObject({ said: '$312' });
+    // Three calls a case on the arm, one beside it.
+    expect(run.spentUsd).toBeCloseTo(3 * 0.003 + 3 * 0.002, 6);
   });
 
   it('reads each case again as a turn at the caps would have', async () => {
@@ -182,7 +210,7 @@ describe('a run', () => {
   });
 
   it('asks SUMS once more for a plan and no sum, and pays for both', async () => {
-    const plan = { q: 'what comes in', w: 'people by price', n: ['people=13@message'], s: [], m: null };
+    const plan = { q: 'what comes in', w: 'people by price', s: [], m: null };
     class Planning extends Priced {
       override generateStructured<T>(
         request: GenerateStructuredRequest<T>,
@@ -288,7 +316,11 @@ describe('the command line', () => {
       concurrency: 3,
       candidates: ['a', 'b'],
       caps: UNDERSTAND_TIMEOUT_MS,
+      sumsModel: null,
     });
+    expect(parseArgs([...ok, '--sums-model', 'openai.gpt-oss-120b-1:0']).sumsModel).toBe(
+      'openai.gpt-oss-120b-1:0',
+    );
     expect(parseArgs([...ok, '--typed-ms', '4500', '--voice-ms', '2000']).caps).toEqual({
       text: 4_500,
       voice: 2_000,

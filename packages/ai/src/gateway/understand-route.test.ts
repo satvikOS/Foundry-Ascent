@@ -131,6 +131,83 @@ describe('the understand call’s own model (MODEL_UNDERSTAND_ID)', () => {
   });
 });
 
+describe('the SUMS part’s own model (MODEL_UNDERSTAND_SUMS_ID)', () => {
+  const sums = { ...request, route: 'understand_sums' as const };
+
+  it('serves SUMS alone, and the other parts stay on the understand model', async () => {
+    const { gw, inputs } = gateway({ sumsModelId: OSS });
+    expect((await gw.generateStructured(sums)).modelId).toBe(OSS);
+    expect((await gw.generateStructured({ ...request, route: 'understand' })).modelId).toBe(NOVA);
+    expect((await gw.generateStructured(request)).modelId).toBe(NOVA);
+    // gpt-oss at its own effort: low.
+    expect(inputs[0]).toMatchObject({ additionalModelRequestFields: { reasoning_effort: 'low' } });
+    expect(gw.info).toMatchObject({ understandSumsModelId: OSS });
+    expect(gw.info).not.toHaveProperty('understandModelId');
+  });
+
+  it('has no fallback: a SUMS that fails or is late is left out, never asked of another model', async () => {
+    const down = gateway({ sumsModelId: OSS }, [awsError('ThrottlingException', 'slow', 429), 'ok']);
+    await expect(down.gw.generateStructured(sums)).rejects.toThrow();
+    expect(down.inputs.every((i) => i.modelId === OSS)).toBe(true);
+    const late = gateway({ sumsModelId: OSS }, ['hang', 'ok']);
+    await expect(late.gw.generateStructured({ ...sums, timeoutMs: 20 })).rejects.toThrow();
+    expect(late.inputs.map((i) => i.modelId)).toEqual([OSS]);
+  });
+
+  it('is the understand route without one', async () => {
+    const { gw } = gateway({ modelId: OSS });
+    expect((await gw.generateStructured(sums)).modelId).toBe(OSS);
+    const down = gateway({ modelId: OSS }, [awsError('ThrottlingException', 'slow', 429)]);
+    expect(await down.gw.generateStructured(sums)).toMatchObject({ modelId: NOVA, fallbackUsed: true });
+    expect((await gateway(undefined).gw.generateStructured(sums)).modelId).toBe(NOVA);
+  });
+
+  it('reasons at its own effort', async () => {
+    const oss = gateway({ sumsModelId: OSS, sumsThink: 'medium' });
+    await oss.gw.generateStructured(sums);
+    expect(oss.inputs[0]).toMatchObject({ additionalModelRequestFields: { reasoning_effort: 'medium' } });
+    const nova = gateway({ modelId: OSS, sumsModelId: NOVA_GLOBAL, sumsThink: 'low' });
+    await nova.gw.generateStructured({ ...sums, maxOutputTokens: 300 });
+    await nova.gw.generateStructured({ ...request, route: 'understand' });
+    expect(nova.inputs[0]).toMatchObject({
+      additionalModelRequestFields: { reasoningConfig: { type: 'enabled', maxReasoningEffort: 'low' } },
+      inferenceConfig: { maxTokens: 300 + THINK_LOW_MAX_TOKENS },
+    });
+    expect(nova.inputs[1]).not.toHaveProperty('additionalModelRequestFields.reasoningConfig');
+  });
+
+  it('is read from the environment, and a wrong value names its key', () => {
+    const env = { APP_ENV: 'production', MODEL_PROVIDER: 'bedrock' };
+    expect(
+      modelGatewayConfigFromEnv({
+        ...env,
+        MODEL_UNDERSTAND_SUMS_ID: ' ',
+        MODEL_UNDERSTAND_SUMS_THINK: 'low',
+      }),
+    ).not.toHaveProperty('understand');
+    expect(
+      modelGatewayConfigFromEnv({
+        ...env,
+        MODEL_UNDERSTAND_SUMS_ID: OSS,
+        MODEL_UNDERSTAND_SUMS_THINK: 'high',
+      }),
+    ).toMatchObject({ understand: { sumsModelId: OSS, sumsThink: 'high' } });
+    expect(modelGatewayConfigFromEnv({ ...env, MODEL_UNDERSTAND_SUMS_ID: OSS })).toMatchObject({
+      understand: { sumsModelId: OSS },
+    });
+    expect(modelGatewayConfigFromEnv({ ...env, MODEL_UNDERSTAND_SUMS_ID: OSS })).not.toHaveProperty(
+      'understand.sumsThink',
+    );
+    expect(() =>
+      modelGatewayConfigFromEnv({
+        ...env,
+        MODEL_UNDERSTAND_SUMS_ID: OSS,
+        MODEL_UNDERSTAND_SUMS_THINK: 'max',
+      }),
+    ).toThrow(/MODEL_UNDERSTAND_SUMS_THINK/);
+  });
+});
+
 describe('reasoning before a structured answer', () => {
   const nova = (fake: ReturnType<typeof scripted>) =>
     new NovaProvider({ modelId: NOVA, region: 'us-east-1', ...fake });

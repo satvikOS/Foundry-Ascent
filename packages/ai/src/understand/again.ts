@@ -26,11 +26,16 @@ const TAKES_COSTS =
 
 /** The numbers a sum's expression works with. */
 function usedIn(reading: SumsReading): number[] {
-  const inputs = new Map(reading.n.flatMap((n) => inputOf(n) ?? []).map((i) => [nameKey(i.name), i.value]));
-  return reading.s.flatMap((s) => [
-    ...(s.e.match(/[a-z_][a-z0-9_]*/giu) ?? []).flatMap((w) => inputs.get(nameKey(w)) ?? []),
-    ...(s.e.match(/\d[\d,]*(?:\.\d+)?/gu) ?? []).map((n) => Number(n.replace(/,/gu, ''))),
-  ]);
+  return reading.s.flatMap((s) => {
+    const slots = s.a.flatMap((a) => inputOf(a) ?? []);
+    if (s.k.trim().toLowerCase() !== 'free') return slots.map((i) => i.value);
+    const inputs = new Map(slots.map((i) => [nameKey(i.name), i.value]));
+    const e = s.e ?? '';
+    return [
+      ...(e.match(/[a-z_][a-z0-9_]*/giu) ?? []).flatMap((w) => inputs.get(nameKey(w)) ?? []),
+      ...(e.match(/\d[\d,]*(?:\.\d+)?/gu) ?? []).map((n) => Number(n.replace(/,/gu, ''))),
+    ];
+  });
 }
 
 const uses = (used: readonly number[], f: Figure): boolean =>
@@ -62,9 +67,7 @@ function leftOut(reading: SumsReading, context: UnderstandContext): number[] {
 export function sumsDoubt(reading: SumsReading, context: UnderstandContext): SumsDoubt | null {
   if (!said(reading.q) || said(reading.m)) return null;
   if (reading.s.length === 0)
-    return reading.n.length === 0 && !said(reading.w)
-      ? null
-      : { code: 'plan', hint: 'It has no sum. Write the sum in s.', unused: [] };
+    return !said(reading.w) ? null : { code: 'plan', hint: 'It has no sum. Write the sum in s.', unused: [] };
   const { understanding, report } = readParts({ sums: reading }, context);
   if (understanding === null || understanding.sums.length === 0) {
     const [drop] = report.sumDrops;
@@ -102,7 +105,7 @@ export function sumsAgain(
 ): ChatMessage[] {
   const last = messages.at(-1);
   if (last === undefined) return [];
-  const answer = JSON.stringify({ q: reading.q, w: reading.w, n: reading.n, s: reading.s });
+  const answer = JSON.stringify({ q: reading.q, w: reading.w, s: reading.s });
   return [
     ...messages.slice(0, -1),
     {

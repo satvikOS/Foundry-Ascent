@@ -17,6 +17,8 @@ import {
   NovaProvider,
   isGptOssModelId,
   type ConverseReasoningEffort,
+  isOpenAiModelId,
+  thinksOnRequest,
 } from './nova.js';
 import type { ProviderStreamResult, StructuredProvider } from './provider.js';
 import type { AwsCredentialProvider, AwsCredentials, FetchFn } from './sigv4-fetch.js';
@@ -63,6 +65,10 @@ export const DEFAULT_MODEL_IDS = {
   embeddings: 'amazon.titan-embed-text-v2:0',
 } as const;
 
+/** How much the SUMS part's own model reasons: an OpenAI model's effort, or (any of them) Amazon Nova 2's thinking at `low`. */
+export const SUMS_THINKS = ['low', 'medium', 'high'] as const;
+export type SumsThink = (typeof SUMS_THINKS)[number];
+
 export interface BedrockGatewayConfig {
   provider: 'bedrock';
   region: string;
@@ -84,8 +90,17 @@ export interface BedrockGatewayConfig {
   credentials?: AwsCredentials | AwsCredentialProvider;
   embeddingConcurrency?: number;
   lunaReasoningEffort?: LunaReasoningEffort;
-  /** The understand call's own model and how much it reasons (`MODEL_UNDERSTAND_ID`, `MODEL_UNDERSTAND_THINK`). */
-  understand?: { readonly modelId?: string; readonly think?: ThinkEffort };
+  /**
+   * The understand call's own model and how much it reasons (`MODEL_UNDERSTAND_ID`, `MODEL_UNDERSTAND_THINK`), and its SUMS
+   * part's own (`MODEL_UNDERSTAND_SUMS_ID`, `MODEL_UNDERSTAND_SUMS_THINK`: an OpenAI model's reasoning effort, or Amazon Nova
+   * 2's thinking at `low`).
+   */
+  understand?: {
+    readonly modelId?: string;
+    readonly think?: ThinkEffort;
+    readonly sumsModelId?: string;
+    readonly sumsThink?: SumsThink;
+  };
   /**
    * OpenAI models on Converse (`us.`/`global.` profiles; `MODEL_REASONING_EFFORT`): how much they reason before
    * answering. Default `none`.
@@ -185,6 +200,9 @@ class BedrockModelGateway implements ModelGateway {
   /** The understand call's own model; null: the purpose's. */
   readonly #understand: StructuredProvider | null;
   readonly #understandThink: ThinkEffort | null;
+  /** The SUMS part's own model, and Nova 2's thinking for it; null: the understand route's. */
+  readonly #sums: StructuredProvider | null;
+  readonly #sumsThink: ThinkEffort | null;
   readonly #embedder: TitanEmbedder;
   readonly #pricing: PricingTable;
   readonly #logger: ModelLogger;
@@ -217,6 +235,7 @@ class BedrockModelGateway implements ModelGateway {
         config.background?.primaryModelId,
         config.background?.fallbackModelId,
         config.understand?.modelId,
+        config.understand?.sumsModelId,
       ].some((id) => id !== undefined && reasoningAdapterFor(id) === 'converse');
     const needsRuntime =
       (usesConverse && (!config.transports?.converse || !config.transports.converseStream)) ||
@@ -245,7 +264,10 @@ class BedrockModelGateway implements ModelGateway {
       providers.set(modelId, created);
       return created;
     };
-    const newReasoningProvider = (modelId: string): StructuredProvider =>
+    const newReasoningProvider = (
+      modelId: string,
+      reasoningEffort: ConverseReasoningEffort | undefined = config.reasoningEffort,
+    ): StructuredProvider =>
       reasoningAdapterFor(modelId) === 'mantle'
         ? new LunaProvider({
             modelId,
@@ -261,7 +283,7 @@ class BedrockModelGateway implements ModelGateway {
             ...(converse ? { converse } : {}),
             ...(converseStream ? { converseStream } : {}),
             promptCache: config.promptCache !== false,
-            ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
+            ...(reasoningEffort ? { reasoningEffort } : {}),
           });
     this.#route = {
       primary: config.providers?.primary ?? reasoningProvider(config.primaryModelId),
@@ -279,6 +301,17 @@ class BedrockModelGateway implements ModelGateway {
     const understandId = config.understand?.modelId;
     this.#understand = understandId === undefined ? null : reasoningProvider(understandId);
     this.#understandThink = config.understand?.think ?? null;
+    const sumsId = config.understand?.sumsModelId;
+    const sumsThink = config.understand?.sumsThink;
+    // Its own instance where it reasons at an effort of its own (an OpenAI model's is fixed when it is made).
+    this.#sums =
+      sumsId === undefined
+        ? null
+        : sumsThink === undefined || thinksOnRequest(sumsId) || !isOpenAiModelId(sumsId)
+          ? reasoningProvider(sumsId)
+          : newReasoningProvider(sumsId, sumsThink);
+    this.#sumsThink =
+      sumsId !== undefined && sumsThink !== undefined && thinksOnRequest(sumsId) ? 'low' : null;
     const invokeModel = config.transports?.invokeModel ?? runtime?.invokeModel;
     this.#embedder =
       config.providers?.embedder ??
@@ -303,6 +336,7 @@ class BedrockModelGateway implements ModelGateway {
               purposes: [...background.purposes],
             },
       ...(this.#understand === null ? {} : { understandModelId: this.#understand.modelId }),
+      ...(this.#sums === null ? {} : { understandSumsModelId: this.#sums.modelId }),
       embeddingsModelId: this.#embedder.modelId,
       embeddingDimensions: this.#embedder.dimensions,
     };
@@ -313,7 +347,9 @@ class BedrockModelGateway implements ModelGateway {
   }
 
   /** The providers a purpose is served by. */
-  #routeFor(purpose: GatewayPurpose, own?: 'understand'): Route {
+  #routeFor(purpose: GatewayPurpose, own?: 'understand' | 'understand_sums'): Route {
+    if (own === 'understand_sums' && this.#sums !== null)
+      return { primary: this.#sums, fallback: this.#sums };
     const route =
       this.#background !== null && this.#backgroundPurposes.has(purpose) ? this.#background : this.#route;
     return own === undefined || this.#understand === null
@@ -360,7 +396,10 @@ class BedrockModelGateway implements ModelGateway {
     }
     const started = performance.now();
     const route = this.#routeFor(request.purpose, request.route);
-    const think = request.think ?? (request.route === undefined ? null : this.#understandThink);
+    const ownSums = request.route === 'understand_sums' && this.#sums !== null;
+    const think =
+      request.think ??
+      (request.route === undefined ? null : ownSums ? this.#sumsThink : this.#understandThink);
     const strict = toStrictJsonSchema(request.zodSchema);
     const maxOutputTokens = request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
     const raw: RawModelAttempt[] = [];
@@ -421,7 +460,8 @@ class BedrockModelGateway implements ModelGateway {
       const result = await run(route.primary, request.timeoutMs ?? this.#primaryTimeoutMs, think);
       return finish(result.value, result.modelId, false);
     } catch (error) {
-      if (!shouldFallback(error)) return failWith(error);
+      // The SUMS part's own model has no fallback: its turn goes on without it.
+      if (!shouldFallback(error) || ownSums) return failWith(error);
       primaryError = error;
     }
 
@@ -618,6 +658,9 @@ const EnvSchema = z.object({
   /** The understand call's own model, and whether it reasons first (Amazon Nova 2); empty or unset: neither. */
   MODEL_UNDERSTAND_ID: z.string().optional(),
   MODEL_UNDERSTAND_THINK: z.union([z.literal(''), z.literal('low')]).optional(),
+  /** The SUMS part's own model and how much it reasons; empty or unset: the understand call's. */
+  MODEL_UNDERSTAND_SUMS_ID: z.string().optional(),
+  MODEL_UNDERSTAND_SUMS_THINK: z.union([z.literal(''), z.enum(SUMS_THINKS)]).optional(),
   /** The background purposes' own models (all three, or none): see {@link BackgroundModels}. */
   // Empty is unset (the deployed functions always receive the three; empty when there is no background route).
   MODEL_BACKGROUND_PRIMARY_ID: z.string().optional(),
@@ -670,7 +713,8 @@ function backgroundFromEnv(e: z.infer<typeof EnvSchema>): BackgroundModels | nul
  * optional `MODEL_PROMPT_CACHE` (`on` by default, `off` sends no cache checkpoints; the mock ignores it),
  * `MODEL_REASONING_EFFORT` and `MODEL_COACH_TEMPERATURE` (empty is the default), a reranker (`MODEL_RERANK_ID`,
  * `MODEL_RERANK_REGION`; empty is none), the understand call's model (`MODEL_UNDERSTAND_ID`,
- * `MODEL_UNDERSTAND_THINK`; empty is the purpose's own, not reasoning), and the
+ * `MODEL_UNDERSTAND_THINK`; empty is the purpose's own, not reasoning), its SUMS part's (`MODEL_UNDERSTAND_SUMS_ID`,
+ * `MODEL_UNDERSTAND_SUMS_THINK`; empty is the understand call's), and the
  * optional background route (`MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID`,
  * `MODEL_BACKGROUND_PURPOSES`: all three or none).
  * `MODEL_PROVIDER` defaults to `mock` outside production and is mandatory in production.
@@ -692,6 +736,9 @@ export function modelGatewayConfigFromEnv(
   const rerankId = e.MODEL_RERANK_ID?.trim() ?? '';
   const understandId = e.MODEL_UNDERSTAND_ID?.trim() ?? '';
   const understandThink = e.MODEL_UNDERSTAND_THINK === 'low' ? 'low' : null;
+  const sumsId = e.MODEL_UNDERSTAND_SUMS_ID?.trim() ?? '';
+  const sumsThink =
+    sumsId === '' || (e.MODEL_UNDERSTAND_SUMS_THINK ?? '') === '' ? null : e.MODEL_UNDERSTAND_SUMS_THINK;
   const rerankRegion = (e.MODEL_RERANK_REGION ?? '') === '' ? 'us-west-2' : (e.MODEL_RERANK_REGION ?? '');
   return {
     provider: 'bedrock',
@@ -699,12 +746,14 @@ export function modelGatewayConfigFromEnv(
     primaryModelId: e.MODEL_PRIMARY_ID,
     fallbackModelId: e.MODEL_FALLBACK_ID,
     ...(background === null ? {} : { background }),
-    ...(understandId === '' && understandThink === null
+    ...(understandId === '' && understandThink === null && sumsId === ''
       ? {}
       : {
           understand: {
             ...(understandId === '' ? {} : { modelId: understandId }),
             ...(understandThink === null ? {} : { think: understandThink }),
+            ...(sumsId === '' ? {} : { sumsModelId: sumsId }),
+            ...(sumsThink === null || sumsThink === undefined || sumsThink === '' ? {} : { sumsThink }),
           },
         }),
     ...(rerankId === '' ? {} : { reranker: { modelId: rerankId, region: rerankRegion } }),

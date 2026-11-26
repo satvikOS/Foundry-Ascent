@@ -262,6 +262,26 @@ describe('the understand call (models.understand)', () => {
     expect(usesMantle(effectiveModels(models))).toBe(false);
   });
 
+  it('names the SUMS part’s own model, granted, with its effort, when it is set', () => {
+    const models = {
+      ...loadConfig().models,
+      understand: { enabled: true, sumsModelId: OSS, sumsThink: 'low' as const },
+    };
+    const { templates, variables } = api(models);
+    expect(variables('FoundryAscent-Api')).toMatchObject({
+      CORE_UNDERSTAND: 'on',
+      MODEL_UNDERSTAND_SUMS_ID: OSS,
+      MODEL_UNDERSTAND_SUMS_THINK: 'low',
+    });
+    expect(variables('FoundryAscent-Api')).not.toHaveProperty('MODEL_UNDERSTAND_ID');
+    expect(effectiveModels(models)).toMatchObject({ understandSums: OSS });
+    expect(effectiveModels(models)).not.toHaveProperty('understand');
+    const runtime = functionPolicyStatements(templates.app, 'FoundryAscent-Api').find(
+      (s) => s.Sid === 'BedrockRuntimeModels',
+    );
+    expect(runtime?.Resource).toEqual(expect.arrayContaining([foundationModel(OSS)]));
+  });
+
   it('on the coach itself it grants nothing more', () => {
     const models = { ...loadConfig().models, understand: { enabled: true } };
     expect(reasoningAccess(effectiveModels(models))).toEqual(

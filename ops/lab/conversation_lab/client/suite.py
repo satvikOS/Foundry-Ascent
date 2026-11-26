@@ -57,6 +57,7 @@ def check_plan(
     think: str = DEFAULT_THINK,
     understand: bool = False,
     understand_model: str | None = None,
+    understand_sums_model: str | None = None,
 ) -> Any:
     """The run's estimate; raises ``PlanRefusedError`` when it does not fit its budget."""
     from conversation_lab.client.calibration import load as load_calibration
@@ -73,6 +74,7 @@ def check_plan(
         think=think,
         understand=understand,
         understand_model=understand_model,
+        understand_sums_model=understand_sums_model,
     )
     why = refusal(
         found,
@@ -84,6 +86,7 @@ def check_plan(
         think=think,
         understand=understand,
         understand_model=understand_model,
+        understand_sums_model=understand_sums_model,
     )
     if why is not None:
         raise PlanRefusedError(why)
@@ -187,6 +190,7 @@ def run_suite(
             "coach_think": ctx.coach_think,
             "understand": ctx.understand,
             "understand_model": ctx.understand_model or "default",
+            "understand_sums_model": ctx.understand_sums_model or "default",
             "understand_ms": ctx.understand_ms or "default",
             "groups": list(parse_groups(ctx.client_groups)) or "all",
             "plan": state.get("plan"),
