@@ -2426,7 +2426,9 @@ function recallLead(input: PathTurnInput, decision: Decision): Lead | null {
         `What changes: you show it again for the new customer, starting with ${listed(decision.missing.slice(0, 2).map(nameOf))}.`,
       );
   }
-  for (const f of facts) parts.push(sentence(f));
+  // A line of the record that says again what was just said (the change of direction, in the record's words) is not said.
+  const fresh = (text: string): boolean => !sameThing(text, parts.join(' '), 0.6);
+  for (const f of facts) if (fresh(f)) parts.push(sentence(f));
   if (asksDecided || asksLast || general) {
     const current = new Set(onRecord.map((m) => m.id));
     const decided = standingDecisions(input.reads.memory)
@@ -2435,6 +2437,7 @@ function recallLead(input: PathTurnInput, decision: Decision): Lead | null {
       .slice(0, 2);
     for (const m of distinct(decided, toldAs)) {
       const what = toldAs(m);
+      if (!fresh(what)) continue;
       parts.push(
         `${upperFirst(sayPast(input.today, dayOf(m, 'decided_on')))} ${/^you\b/.test(what) ? what : `you decided: ${what.replace(/:\s+/gu, ', ')}`}.`,
       );

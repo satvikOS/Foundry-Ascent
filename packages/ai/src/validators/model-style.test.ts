@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { STEP_ONLY, TODAY } from '../testing/path-fixtures.js';
 import { buildSupportIndex } from './citation-support.js';
+import { splitNext } from './fitted-step.js';
 import { heldStyle } from './model-style.js';
+import { deniesChange, ownStepSaid, withoutDeadline } from './reply-contract.js';
 import { SentenceGate } from './sentence-gate.js';
 
 /** What a writer adds in its own manner, held the same whichever model writes. A lab-kit venture of an invented student. */
@@ -123,5 +125,42 @@ describe('a wait of its own', () => {
     expect(heldStyle('In the body:\n"Hi Sam,\nI’m Priya, a student. Reply by Friday.', ctx).text).toBe(
       'In the body:\n"Hi Sam,\nThis is Priya, a student. Reply by [day].',
     );
+  });
+});
+
+describe('one step, said once', () => {
+  it('a step of the writer’s own in the body is one more step', () => {
+    expect(ownStepSaid('The next move is to test that one guess this week.')).toBe(true);
+    expect(ownStepSaid('Next, find out who signs for the lab budget.')).toBe(true);
+    expect(ownStepSaid('The smallest thing is to send one email to one lab today.')).toBe(true);
+    expect(ownStepSaid('Two labs already pay for it.')).toBe(false);
+  });
+
+  it('"Next step:" with a list after it is the reply’s own, and not its step line', () => {
+    const reply =
+      'Who owns it is theirs to say.\n\nNext step: email the office with:\n- your dates\n- what you signed';
+    expect(splitNext(reply).next).toBe('');
+    expect(splitNext(`${reply}\nNEXT: Email the office your dates | DONE: They answered`).next).toMatch(
+      /^\nNEXT:/u,
+    );
+    expect(splitNext('The office decides.\nNext step: email them your dates').next).toMatch(/Next step:/u);
+  });
+
+  it('under a change of direction, the step is never said to stay the same', () => {
+    const lead =
+      'From today you rent kits. What you showed was for the old idea, so you show it again: ten talks.';
+    expect(deniesChange('The step hasn’t changed: ten talks, with new people.', lead)).toBe(true);
+    expect(deniesChange('Start with two more talks this week.', lead)).toBe(true);
+    expect(deniesChange('The step hasn’t changed.', 'Two labs pay $40.')).toBe(false);
+  });
+
+  it('a day of its own before a dash goes too', () => {
+    expect(
+      withoutDeadline(
+        'You’ve got three more talks to run by Monday—ask what it costs them.',
+        { ...STEP_ONLY, said: SAID },
+        TODAY,
+      ),
+    ).toBe('You’ve got three more talks to run—ask what it costs them.');
   });
 });

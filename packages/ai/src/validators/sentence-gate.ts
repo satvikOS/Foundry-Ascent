@@ -69,6 +69,7 @@ import {
   pointsNowhere,
   repeatsLead,
   saysLeadAgain,
+  deniesChange,
   repeatsReferral,
   restates,
   meansNothing,
@@ -1518,6 +1519,7 @@ export class SentenceGate {
         this.#leadShown &&
         (repeatsLead(unit, this.#leadStems) ||
           saysLeadAgain(unit, this.#lead) ||
+          deniesChange(unit, this.#lead) ||
           this.#onlyRestates(unit) ||
           onlyVerdict(unit) ||
           saidInLead(unit, this.#lead) ||

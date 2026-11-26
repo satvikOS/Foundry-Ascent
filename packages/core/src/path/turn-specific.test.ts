@@ -629,6 +629,39 @@ describe('what they just found, asked about', () => {
     expect(turnOf('What does a pass line mean?', {}, ['hello there'], ['x']).prompt.finding).toBeUndefined();
   });
 
+  it('the plan recalled after a change of direction says it once, however the record says it again', () => {
+    const reads = {
+      ...NO_READS,
+      path: path({
+        stage: 'discovery',
+        intake: { ...EMPTY, idea: 'rent dry bags to crews' },
+        pivots: [{ on: '2026-11-20', from: 'mend sails', to: 'rent dry bags to crews', sessionId: 's1' }],
+      }),
+      memory: [
+        memory({
+          type: 'decision',
+          title: 'Change of direction',
+          content: 'You decided to stop mending sails and rent dry bags to crews.',
+          attributes: { decided_on: '2026-11-20' },
+        }),
+        memory({
+          type: 'fact',
+          title: 'Crews',
+          content:
+            'The venture decided to change direction and rent dry bags to the crews; the plan changes.',
+        }),
+      ],
+    };
+    const text = leadOf(
+      'We changed direction last week. What was our plan again, and what is different now?',
+      {
+        reads,
+      },
+    );
+    expect(text.match(/dry bags/g)?.length ?? 0).toBeLessThanOrEqual(2);
+    expect(text).not.toMatch(/venture decided/);
+  });
+
   it('"what changes?" after a change of direction: what stays, and what is shown again', () => {
     const reads = {
       ...NO_READS,

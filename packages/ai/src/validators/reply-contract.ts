@@ -428,6 +428,8 @@ function recalledStep(
   if (was === null) return stepLine(step, channel, today);
   const day = longDay(was) ?? was;
   const dueOn = step.dueOn === was ? null : step.dueOn;
+  // Moved to a new day: the new day alone, one date in the step line.
+  if (dueOn !== null) return stepLine(step, channel, today);
   return stepLine({ ...step, dueOn }, channel, today).replace(
     channel === 'voice' ? /\.$/u : /\. (?=Done when )/u,
     channel === 'voice' ? `. It was due ${day}.` : `. It was due ${day}. `,
@@ -472,9 +474,25 @@ export function opensStep(unit: string): boolean {
     /^(?:what to do|do this) next\b/iu.test(t) ||
     /^(?:so |and )?the next (?:concrete|clear|real|simple|small|logical|natural|best|practical) (?:step|move|thing)\b/iu.test(
       t,
+    ) ||
+    // "The smallest thing is to send one email": another step beside the one the reply gives.
+    /^(?:so |and )?the (?:smallest|easiest|quickest|tiniest) (?:thing|step|move)(?: you can (?:do|take))?(?: today| now| this week)? is\b/iu.test(
+      t,
     )
   );
 }
+
+/** A step of the writer's own in the reply's body, beside the step line: "The next move is …", "Next, ask …". */
+export const ownStepSaid = (unit: string): boolean => opensStep(unit) || NEXT_COMMA.test(bare(unit));
+
+/** "The step hasn't changed", under a lead that changed the direction: it goes against what the lead says. */
+const SAME_STEP_SAID =
+  /\b(?:the |your )?(?:step|plan)(?: itself)? (?:hasn['’]t|has not|doesn['’]t|does not|didn['’]t|did not) change|\bthe (?:step|plan) (?:stays|is still|remains) the same\b/iu;
+const LEAD_CHANGES = /\bchanged direction\b|\bshow (?:it )?again\b|\bfrom today you will\b/iu;
+/** "Start with two more interviews this week": a first step of its own, where the lead says what is shown again. */
+const STARTS_OWN = /^\W*(?:so |and )?start (?:with|by) (?:two|three|four|five|\d+|one|a|an)\b/iu;
+export const deniesChange = (unit: string, lead: string): boolean =>
+  LEAD_CHANGES.test(lead) && (SAME_STEP_SAID.test(unit) || STARTS_OWN.test(unit.trim()));
 
 /** Whether a unit by itself only says when it is due, how long it takes or what done means. */
 export function saysDue(unit: string): boolean {
@@ -872,7 +890,7 @@ export function isTemplateLine(unit: string, guidance: PromptGuidance | null | u
 }
 
 const DEADLINE_CLAUSE = new RegExp(
-  String.raw`,?\s+\b(by|before|no later than|due(?: on| by)?)\s+((?:the )?(?:end of )?(?:(?:this|next) )?(?:${WEEKDAY}|${MONTH}\.? \d{1,2}|today|tonight|tomorrow)(?:,? (?:the )?(?:${MONTH}\.? \d{1,2}|\d{1,2} ${MONTH})(?:st|nd|rd|th)?)?)(?=[.,;:!?)]|$|\s+(?:and|so|to|then)\b)`,
+  String.raw`,?\s+\b(by|before|no later than|due(?: on| by)?)\s+((?:the )?(?:end of )?(?:(?:this|next) )?(?:${WEEKDAY}|${MONTH}\.? \d{1,2}|today|tonight|tomorrow)(?:,? (?:the )?(?:${MONTH}\.? \d{1,2}|\d{1,2} ${MONTH})(?:st|nd|rd|th)?)?)(?=[.,;:!?)—–]|\s+[—–-]\s|$|\s+(?:and|so|to|then)\b)`,
   'giu',
 );
 

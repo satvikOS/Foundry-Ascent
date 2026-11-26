@@ -10,6 +10,7 @@ import {
   leadText,
   referralRest,
   rulesOnIt,
+  ownStepSaid,
   withoutDeadline,
   withoutLabel,
   withoutStart,
@@ -59,7 +60,7 @@ export function wholeUnit(
   const cut = (reason: string): { text: string; cut: string } => ({ text: '', cut: reason });
   const text = withoutWorks(withoutLabel(unit));
   if (text.trim() === '') return cut('empty');
-  if (STEP_LINE.test(text)) return cut('step_line');
+  if (STEP_LINE.test(text) || ownStepSaid(text)) return cut('step_line');
   if (saysAgain(text, context.said, SAID_WHOLE) || saysFigureAgain(text, guidance)) return cut('said');
   const reason = falseUnit(text, guidance, context.before) ?? (rulesOnIt(text, guidance) ? 'rules' : null);
   if (reason !== null) return cut(reason);

@@ -43,8 +43,19 @@ const NEXT_AT =
 
 /** The reply without its step line, and that line ('' when there is none yet). */
 export function splitNext(text: string): { readonly body: string; readonly next: string } {
-  const m = NEXT_AT.exec(text);
-  return m === null ? { body: text, next: '' } : { body: text.slice(0, m.index), next: text.slice(m.index) };
+  let from = 0;
+  for (;;) {
+    const m = NEXT_AT.exec(text.slice(from));
+    if (m === null) return { body: text, next: '' };
+    const at = from + m.index;
+    // "Next step: email them with:" and a list after it is the reply's own, not its step line: the step line is in
+    // capitals, or holds its DONE, or is the reply's last line.
+    const line = text.slice(at).replace(/^\n/u, '').split('\n')[0] ?? '';
+    const after = text.slice(at).replace(/^\n/u, '').slice(line.length);
+    if (m[0].includes('NEXT') || /\|\s*DONE\b|\bDONE\s*:/iu.test(line) || after.trim() === '')
+      return { body: text.slice(0, at), next: text.slice(at) };
+    from = at + m[0].length;
+  }
 }
 
 const bare = (text: string): string =>

@@ -252,15 +252,21 @@ describe('one next thing in a reply', () => {
     expect(new StepTalk(STEP_ONLY).drops('Draft the note and post it.')).toBe(false);
   });
 
-  it('a recall says the step with the day it was due and the new one', () => {
+  it('a recall of a step moved to a new day says that day alone: one date in the step line', () => {
     const guidance: PromptGuidance = {
       ...STEP_ONLY,
       kind: 'recall',
       step: { ...STEP, wasDue: '2026-11-20' },
     };
-    expect(
-      whole('You were going to list 20 office managers and message 5 of them.', guidance).text,
-    ).toContain('by Thursday, November 26. It was due Friday, November 20.');
+    const text = whole('You were going to list 20 office managers and message 5 of them.', guidance).text;
+    expect(text).toContain('by Thursday, November 26.');
+    expect(text).not.toContain('It was due');
+    // Not moved, the day it was due is said.
+    const late = whole('You were going to list 20 office managers.', {
+      ...guidance,
+      step: { ...STEP, dueOn: '2026-11-20', wasDue: '2026-11-20' },
+    }).text;
+    expect(late).toContain('It was due Friday, November 20.');
   });
 });
 

@@ -331,7 +331,11 @@ decides, and each row is a test.
   the step's reads "it is usually enough when"; inside words to send a day of its own is "[day]" and the founder introduces
   themself ("This is …"); an example figure or a made-up value of a sum goes; "any form you signed" is "you may have signed";
   "48 hours" of its own is "two days". Words in quotes are held until they close, and shown whole or, when a sentence of them
-  went, not at all; a question in them stays in them. An announcement ("Here's what to do today:") with only a paragraph after
+  went, not at all; a question in them stays in them. A step of the writer's own in the body ("The next move is …", "Next, …", "The smallest thing
+  is …") goes beside the step line; "Next step:" is the step line only in capitals, with its DONE, or as the last line. Under a
+  change of direction, "the step hasn't changed" and a first step of its own go. A day of its own goes before a dash too. A
+  recall says the change of direction once (a record line that says it again is not added), and a step moved to a new day says
+  that day alone. An announcement ("Here's what to do today:") with only a paragraph after
   it goes. A stop for length, in any model's word for it, is a cut reply.
 - **Another business they run** ("the pottery is a separate business"; `other-business.ts`) is never the venture's: its facts are not
   kept as the venture's notes and not listed as what the venture has.
