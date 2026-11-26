@@ -77,6 +77,42 @@ function gateway(understand: BedrockGatewayConfig['understand'], steps: (Error |
 const { schemaName, zodSchema, system, messages } = providerRequest(Answer);
 const request = { purpose: 'turn' as const, system, messages, schemaName, zodSchema, requestId: 'r' };
 
+describe('a short edit of a streamed reply on the understand route', () => {
+  it('is written by the reading’s quick model, which never reasons unasked, the coach behind it', async () => {
+    const models: (string | undefined)[] = [];
+    const fields: unknown[] = [];
+    const gw = createModelGateway({
+      provider: 'bedrock',
+      region: 'us-east-1',
+      primaryModelId: 'mistral.mistral-large-3-675b-instruct',
+      fallbackModelId: NOVA_GLOBAL,
+      understand: { modelId: NOVA, think: 'low' },
+      embeddingsModelId: DEFAULT_MODEL_IDS.embeddings,
+      credentials: STATIC_CREDENTIALS,
+      transports: {
+        converse: () => Promise.reject(new Error('unused')),
+        converseStream: (input) => {
+          models.push(input.modelId);
+          fields.push(input.additionalModelRequestFields);
+          return Promise.resolve(
+            (async function* () {
+              await Promise.resolve();
+              yield { contentBlockDelta: { contentBlockIndex: 0, delta: { text: 'NEXT: same' } } };
+              yield { messageStop: { stopReason: 'end_turn' } };
+            })() as never,
+          );
+        },
+        invokeModel: () => Promise.reject(new Error('unused')),
+      },
+    });
+    const ask = { purpose: 'turn' as const, system, messages, requestId: 'r' };
+    expect((await gw.streamText({ ...ask, route: 'understand' }, () => undefined)).modelId).toBe(NOVA);
+    expect((await gw.streamText(ask, () => undefined)).modelId).toBe('mistral.mistral-large-3-675b-instruct');
+    expect(models).toEqual([NOVA, 'mistral.mistral-large-3-675b-instruct']);
+    expect(fields[0]).toBeUndefined();
+  });
+});
+
 describe('the understand call’s own model (MODEL_UNDERSTAND_ID)', () => {
   it('serves that call alone, with the coach behind it', async () => {
     const { gw, inputs } = gateway({ modelId: OSS });

@@ -180,7 +180,8 @@ describe('a whole reply', () => {
       'Move it only if somebody there uses it. Nobody in that room was asked yet.',
       'NEXT: Ask 4 people in the second room what they borrow | DONE: 4 answered',
     ];
-    const run = await say(core(), ASK);
+    // News: the step they are on may change (asked again with none, the stored one stands).
+    const run = await say(core(), `the second room's manager called back. ${ASK}`);
     expect(gateway.wrote).toHaveLength(2);
     expect(gateway.wrote[1]?.messages.at(-1)?.content).toMatch(
       /It has no last line\. Write only that line now/,

@@ -948,6 +948,7 @@ function fitOf(
         open === null ? null : { title: open.title, doneWhen: doneSaid(open.doneWhen), dueOn: open.dueOn },
       hours: hoursFor(input),
       dueOn: fitDue(input, view.dueOn),
+      ...(NEWS_TOLD.test(input.message) || COMPLAINT.test(input.message) ? { news: true } : {}),
     },
   };
 }
@@ -1003,6 +1004,9 @@ export function fitTurn(playbook: Playbook, turn: PathTurn, fitted: Fitted | nul
   }
   const into = decision.fitInto;
   if (into === null) return turn;
+  // The step they are on, asked about again with no news: it stays as it is stored, in whatever words it was fitted.
+  if (prompt.fit.news !== true && into.storedVersion !== null && into.view.status === 'now')
+    return fitTurn(playbook, turn, 'same');
   // What they said they would do, in their own words, is never displaced.
   const theirs = own?.view.origin === 'founder' && own.view.status === 'now' && own.view.id !== into.view.id;
   const stored = into.storedVersion !== null;

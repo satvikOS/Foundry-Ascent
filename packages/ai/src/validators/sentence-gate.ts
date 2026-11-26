@@ -87,6 +87,7 @@ import {
 import { checkStep, splitNext, withFitted, type Fitted, type UnfitReason } from './fitted-step.js';
 import { composedWhole, isWholeReply, missingOf, NO_GUESS, wholeUnit } from './whole-reply.js';
 import { bareVerdict, inQuote } from './reading.js';
+import { heldStyle, onlyStage } from './model-style.js';
 import { saidSentences, saysAgain, type SaidSentence } from './said-before.js';
 import { danglingAsk, danglingLine, echoesThem, readsAgain, refusesUnderLead } from './second-reading.js';
 import { coverage, stemsOf } from './stems.js';
@@ -173,6 +174,10 @@ const FIGURE_CUTS: ReadonlySet<string> = new Set(['support', 'own_facts', 'own_s
 const asksFigure = (g: PromptGuidance): boolean =>
   g.reading?.opened !== 'sum' &&
   (g.asksSum === true || g.reading?.kind === 'sum' || (g.calc ?? []).length > 0);
+/** "Price: $5": a labelled line, what an announcement may stand before. */
+const LABELLED = /^[*_]*[A-Z][^\n:]{0,40}[*_]*:\s*\S/u;
+/** Most units words in quotes run to: a quotation mark that opens more is a stray one. */
+const MOST_QUOTED_UNITS = 10;
 const POINTS_BACK = /^(?:and |so |but )?(?:this|that|it|these|those|they|he|she|which)\b/iu;
 
 /** An acknowledgement said to the founder, not a thinking-aloud opener: it never waits for the next unit. */
@@ -587,6 +592,11 @@ export class SentenceGate {
   #repairDue = false;
   /** A sentence of the words they asked for was false: the words are written again whole, never shown with a hole. */
   #quoteBroken = false;
+  /** The whole reply came wrapped in quotation marks, as if said aloud: it is the mentor's own, and read as such. */
+  #selfQuoted = false;
+  /** Units of words in quotes, held until the quote closes; whether one of them was left out. */
+  #quoteQueue: GateUnit[] | null = null;
+  #quoteCut = false;
   /** The reply is shown and its step line never came: the caller asks for it ({@link SentenceGate.settleStep}). */
   #stepDue = false;
   /** The figure they asked for was cut and code worked out none: the reply is written again, never left with its scraps. */
@@ -926,12 +936,12 @@ export class SentenceGate {
 
   /** Nothing of the reply was released yet (shown, or withheld from the preview and said). */
   #nothingReleased(): boolean {
-    return this.#shown === '' && this.#stats.withheld === 0;
+    return this.#shown === '' && this.#stats.withheld === 0 && (this.#quoteQueue?.length ?? 0) === 0;
   }
 
   /** Nothing of the model's own was released yet. */
   #nothingModel(): boolean {
-    return this.#modelUnits === 0 && this.#stats.withheld === 0;
+    return this.#modelUnits === 0 && this.#stats.withheld === 0 && (this.#quoteQueue?.length ?? 0) === 0;
   }
 
   /**
@@ -1016,6 +1026,7 @@ export class SentenceGate {
       // Its sums worked out by code, before anything else reads it: a marker never goes further than here.
       const summed = this.#withSums(rawUnit);
       if (summed === '') {
+        this.#quoteLost(rawUnit, end, units);
         this.#cursor = end;
         continue;
       }
@@ -1100,9 +1111,46 @@ export class SentenceGate {
         rawUnit = withoutExampleFigures(rawUnit, this.#figures, this.#askedNumber).text;
         rawUnit = withoutInventedFigures(rawUnit, this.#figures, this.#askedNumber).text;
       }
+      if (this.#path !== null) {
+        // A reply wrapped whole in quotation marks, as if said aloud, is the mentor's: the marks go.
+        if (
+          this.#nothingModel() &&
+          this.#raw.slice(0, this.#cursor).trim() !== '' &&
+          onlyStage(this.#raw.slice(0, this.#cursor)) &&
+          !this.#selfQuoted &&
+          /^\s*["“]/u.test(rawUnit) &&
+          this.#path.draft !== true &&
+          this.#path.reading?.words !== true
+        ) {
+          this.#selfQuoted = true;
+          rawUnit = rawUnit.replace(/^(\s*)["“]/u, '$1');
+        }
+        if (this.#selfQuoted)
+          rawUnit = rawUnit.replace(/["”](\s*)$/u, (m, sp: string) =>
+            /["“]/u.test(rawUnit.slice(0, -m.length)) ? m : sp,
+          );
+        const styled = heldStyle(rawUnit, {
+          quoted: this.#quotedAt(rawUnit),
+          founderText: [this.#options.founderText ?? '', this.#path.said ?? ''].join('\n'),
+          founderName: this.#options.founderName ?? null,
+          known: `${this.#figures ?? ''}\n${this.#options.founderText ?? ''}\n${this.#path.said ?? ''}`,
+        });
+        if (styled.cut !== null) {
+          this.#cursor = end;
+          this.#rewritten = true;
+          this.#keepDropped('contract', rawUnit, styled.cut);
+          this.#quoteLost(rawUnit, end, units);
+          if (this.#whole !== null) this.#cuts.push({ text: rawUnit.trim(), why: styled.cut });
+          if (/^[ \t]*\n\s*\n/.test(rawUnit)) this.#paragraphLeft = true;
+          continue;
+        }
+        if (styled.text !== rawUnit) this.#rewritten = true;
+        rawUnit = styled.text;
+      }
       const held = this.#holdToContract(rawUnit, end, stable);
       if (held === 'wait') break;
       if (held === 'out') {
+        this.#quoteLost(rawUnit, end, units);
         this.#cursor = end;
         continue;
       }
@@ -1214,8 +1262,19 @@ export class SentenceGate {
           if (question === true) {
             this.#questionReleased = true;
             rawUnit = text + rawUnit;
-          } else if (this.#raw.slice(at, this.#cursor).trim() === '' || isListUnit(rawUnit))
+          } else if (
+            (this.#raw.slice(at, this.#cursor).trim() === '' &&
+              !(
+                /^[ \t]*\n[ \t]*\n/u.test(rawUnit) &&
+                !OPENS_QUOTE.test(rawUnit) &&
+                !LABELLED.test(rawUnit.trim()) &&
+                // A letter or a template to fill in is what it announced.
+                !/\[|\?|^\s*(?:hi|hello|hey|dear)\b/iu.test(rawUnit)
+              )) ||
+            isListUnit(rawUnit)
+          )
             rawUnit = text + rawUnit;
+          // "Here's what to do today:" with a paragraph after it, and no list: it announces nothing, and goes.
           else this.#leaveOut('contract', text);
         }
         if (
@@ -1238,6 +1297,7 @@ export class SentenceGate {
       this.#cursor = end;
       if (unit === 'identity' || unit === 'cross_venture') return this.#block(unit, units);
       if (unit === null) {
+        if (this.#quoteQueue !== null) this.#quoteCut = true;
         // The step line of a whole reply comes last: read on for it, saying nothing more.
         if (this.#spokenFull && this.#whole === null) break;
         continue;
@@ -1245,19 +1305,15 @@ export class SentenceGate {
       if (this.#leaks([this.#shown.slice(-CUMULATIVE_WINDOW_CHARS) + unit.text])) {
         return this.#block('cross_venture', units);
       }
-      this.#offer(unit, units);
-      this.#released.units += 1;
-      this.#released.words += words(unit.text);
-      this.#modelUnits += 1;
-      if (this.#path !== null) {
-        this.#releasedText += unit.text;
-        this.#modelText += unit.text;
-        this.#modelWords += words(unit.text);
-        this.#saidHere.push(...saidSentences(unit.text));
-        if (!/\?["'”’)\]*_]*\s*$/u.test(unit.text))
-          this.#answerWords += words(unit.text.replace(/\[E\d+[^\]]*\]/g, ''));
-      }
+      this.#accept(
+        unit,
+        units,
+        this.#path !== null && this.#quotedAt(rawUnit),
+        !inQuote(this.#raw.slice(0, end)),
+      );
     }
+    // A quote that never closed is shown as it stands, or not at all when part of it went.
+    if (this.#ended && this.#quoteQueue !== null) this.#settleQuote(units, true);
     if (this.#ended || this.#full || this.spokenFull) {
       this.#finish(units);
       if (this.blocked !== null) return this.#block(this.blocked, units);
@@ -1312,7 +1368,7 @@ export class SentenceGate {
     // On the path, a list is a draft or a template made better: an item of it is never left out of it.
     if (this.#path !== null && isListItem(unit)) return null;
     // The words they asked for are theirs to send: none of their sentences is left out for being said before.
-    if (this.#whole !== null && (inQuote(before) || OPENS_QUOTE.test(unit))) return null;
+    if (this.#path !== null && !this.#selfQuoted && (inQuote(before) || OPENS_QUOTE.test(unit))) return null;
     if (saysAgain(unit, this.#saidBefore)) return 'repeat';
     if (repeatsPrevious(unit, this.#previousGrams, { signOffs: !this.#signOffWelcome })) return 'repeat';
     // A question for someone else (in a quoted draft, a list of questions to send) is the founder's prep, never a
@@ -1509,7 +1565,10 @@ export class SentenceGate {
           return 'out';
         }
       }
-      const verdict = firstUnitVerdict(this.#raw.slice(0, this.#cursor), unit, guidance);
+      const read = firstUnitVerdict(this.#raw.slice(0, this.#cursor), unit, guidance);
+      // A question inside words to send or say stays where it is: held to the end, it would leave a hole in them.
+      const verdict: typeof read =
+        read.action === 'hold' && this.#quotedAt(rawUnit) ? { action: 'release' } : read;
       if (verdict.action === 'drop') {
         this.#leaveOut('contract', rawUnit);
         return 'out';
@@ -1859,7 +1918,7 @@ export class SentenceGate {
     this.#leanedOn = false;
     const protectedLine = isProtectedLine(rawUnit, this.#keepReferrals);
     // Words to send or say: nothing of them is cut but what is false (their facts) or unsafe, and then they are written again.
-    if (inQuote(this.#raw.slice(0, this.#cursor)) || OPENS_QUOTE.test(rawUnit)) {
+    if (this.#quotedAt(rawUnit)) {
       const read = wholeUnit(rawUnit, guidance, {
         said: [],
         before: this.#raw.slice(0, this.#cursor),
@@ -1918,6 +1977,60 @@ export class SentenceGate {
       this.#supportEdits += 1;
     }
     return { unit };
+  }
+
+  /** Whether a unit is of words in quotes (to send or say); never in a reply that was only wrapped in quotation marks. */
+  #quotedAt(rawUnit: string): boolean {
+    return !this.#selfQuoted && (inQuote(this.#raw.slice(0, this.#cursor)) || OPENS_QUOTE.test(rawUnit));
+  }
+
+  /** A unit of words in quotes went: the rest of them goes with it. */
+  #quoteLost(rawUnit: string, end: number, units: GateUnit[]): void {
+    if (this.#path === null || (this.#quoteQueue === null && !this.#quotedAt(rawUnit))) return;
+    this.#quoteQueue ??= [];
+    this.#quoteCut = true;
+    if (!inQuote(this.#raw.slice(0, end))) this.#settleQuote(units);
+  }
+
+  /** A unit of the writer's that stands: shown, or held with the words in quotes it belongs to until they close. */
+  #accept(unit: GateUnit, units: GateUnit[], quoted: boolean, closes: boolean): void {
+    if (quoted || this.#quoteQueue !== null) {
+      (this.#quoteQueue ??= []).push(unit);
+      // A quotation mark that never closes is no quote: what was held is shown as it stands.
+      if (closes || this.#quoteQueue.length >= MOST_QUOTED_UNITS) this.#settleQuote(units, !closes);
+      return;
+    }
+    this.#count(unit, units);
+  }
+
+  /** The words in quotes held so far: all of them shown, or none when one of them went (a draft is never shown with a hole). */
+  #settleQuote(units: GateUnit[], open = false): void {
+    const held = this.#quoteQueue ?? [];
+    this.#quoteQueue = null;
+    const cut = this.#quoteCut;
+    this.#quoteCut = false;
+    if (!cut || open) {
+      for (const unit of held) this.#count(unit, units);
+      return;
+    }
+    this.#rewritten = true;
+    for (const unit of held) this.#keepDropped('contract', unit.text, 'quote');
+    if (this.#whole !== null) this.#quoteBroken = true;
+  }
+
+  #count(unit: GateUnit, units: GateUnit[]): void {
+    this.#offer(unit, units);
+    this.#released.units += 1;
+    this.#released.words += words(unit.text);
+    this.#modelUnits += 1;
+    if (this.#path !== null) {
+      this.#releasedText += unit.text;
+      this.#modelText += unit.text;
+      this.#modelWords += words(unit.text);
+      this.#saidHere.push(...saidSentences(unit.text));
+      if (!/\?["'”’)\]*_]*\s*$/u.test(unit.text))
+        this.#answerWords += words(unit.text.replace(/\[E\d+[^\]]*\]/g, ''));
+    }
   }
 
   /** Shows a unit of the writer's, or keeps it until two sentences of a typed reply stand. */
@@ -2082,7 +2195,7 @@ export class SentenceGate {
   #process(raw: string): GateUnit | GateBlockReason | null {
     const core = raw.trimStart();
     const lead =
-      this.#shown === '' && this.#kept.length === 0
+      this.#shown === '' && this.#kept.length === 0 && (this.#quoteQueue?.length ?? 0) === 0
         ? ''
         : raw.slice(0, raw.length - core.length).replace(/\n{3,}/g, '\n\n');
     const md = sanitizeMarkdown(core);

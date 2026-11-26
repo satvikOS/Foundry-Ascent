@@ -898,12 +898,12 @@ export const IDEA_PLAYS: readonly Play[] = [
         15,
       ),
       step(
-        'Tell one person what you will finish by Friday',
+        'Tell one person what you will finish, and the day',
         'A teammate, a mentor or your EIR. A promise to a person is easier to keep.',
         10,
       ),
     ],
-    doneWhen: 'The 15-minute version is done, and one person knows what you will finish by Friday.',
+    doneWhen: 'The 15-minute version is done, and one person knows what you will finish and on which day.',
     days: 2,
     template: {
       title: 'Unstuck in four lines',

@@ -106,6 +106,19 @@ describe('NovaProvider.streamText (ConverseStream)', () => {
     return { provider, inputs };
   }
 
+  it('reads a stop for length, as another model names it, as a reply cut at its bound', async () => {
+    const { provider } = nova([
+      () =>
+        events([
+          textDelta('It is just for a high-level'),
+          { messageStop: { stopReason: 'length' as never } },
+          metadata,
+        ]),
+    ]);
+    const result = await provider.streamText(streamRequest(() => undefined));
+    expect(result.stopReason).toBe('max_tokens');
+  });
+
   it('bills the input the stream read from the prompt cache', async () => {
     const { provider } = nova([
       () =>

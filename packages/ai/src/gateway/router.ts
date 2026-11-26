@@ -488,7 +488,7 @@ class BedrockModelGateway implements ModelGateway {
       throw new TypeError(`Unknown model purpose: ${request.purpose}`);
     }
     const started = performance.now();
-    const route = this.#routeFor(request.purpose);
+    const route = this.#routeFor(request.purpose, request.route);
     const maxOutputTokens = request.maxOutputTokens ?? DEFAULT_STREAM_MAX_OUTPUT_TOKENS;
     const raw: RawModelAttempt[] = [];
     // An object, not a `let`: the handler sets it while the provider runs (control-flow analysis cannot see that).

@@ -190,6 +190,12 @@ export interface StreamTextRequest {
   think?: ThinkEffort;
   /** Where the prompt's unchanging prefix ends, for the provider's prompt cache (see {@link PromptCacheHint}). */
   promptCache?: PromptCacheHint;
+  /**
+   * `understand`: the call of the model named for the reading (`MODEL_UNDERSTAND_ID`), with the purpose's primary as its
+   * fallback, for a short bounded edit that must be quick (a reply's step line, a reply written again). It never reasons
+   * unless `think` says so. Absent: the purpose's models.
+   */
+  route?: 'understand';
   /** Budget for the primary model. Default 25 000 ms. */
   timeoutMs?: number;
   /** Correlates log lines and ledger rows. */

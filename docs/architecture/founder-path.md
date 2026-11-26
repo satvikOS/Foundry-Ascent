@@ -324,7 +324,15 @@ decides, and each row is a test.
   Their own step is never displaced by it. Not kept, the step is the play's. The step follows the news they bring (a deal, an
   offer, a deadline, a call, a complaint, a refusal, a limit); `same` only where the open step still serves what they ask, and it is
   the one thing the reply tells them to do. A reply that came whole without the line has that line asked for alone, once, within
-  `STEP_ASK_BUDGET_MS` (typed 1.5 s, call 1 s); `turn.phase_a` logs `stepAsk` and `stepAskMs`.
+  `STEP_ASK_BUDGET_MS` (typed 1.5 s, call 1 s); `turn.phase_a` logs `stepAsk` and `stepAskMs`. A stored step asked about again with no news stands as stored,
+  in a fresh session too, whatever the writer fits.
+- **The writer's manner** (`validators/model-style.ts`, held the same whichever model writes): a stage direction
+  ("_leans back_") is not said, and a reply wrapped in quotation marks after one is the mentor's own; a done-check of its own beside
+  the step's reads "it is usually enough when"; inside words to send a day of its own is "[day]" and the founder introduces
+  themself ("This is …"); an example figure or a made-up value of a sum goes; "any form you signed" is "you may have signed";
+  "48 hours" of its own is "two days". Words in quotes are held until they close, and shown whole or, when a sentence of them
+  went, not at all; a question in them stays in them. An announcement ("Here's what to do today:") with only a paragraph after
+  it goes. A stop for length, in any model's word for it, is a cut reply.
 - **Another business they run** ("the pottery is a separate business"; `other-business.ts`) is never the venture's: its facts are not
   kept as the venture's notes and not listed as what the venture has.
 - **Who decides** is said once in a conversation, and again only where the new ask is that decision (`toldEnough`).

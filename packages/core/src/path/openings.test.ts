@@ -664,8 +664,15 @@ describe('the step the writer fits', () => {
     const row = onStep('b2b-selling', { title: fitted.title, doneWhen: '6 jars stand on her shelf.' });
     const again = readTurnOf("what's my next step?", null, on([row]));
     expect(again.prompt.step?.title).toBe(fitted.title);
-    // Fitted again on the step they are on: its row is changed.
-    const refit = fitTurn(PLAYBOOK, readTurnOf(message, understood(B2B), on([row])), {
+    // Asked again with no news, in a fresh session too: the stored step stands, whatever the writer fitted.
+    const kept2 = fitTurn(PLAYBOOK, readTurnOf(message, understood(B2B), on([row])), {
+      title: 'Ask her for the two jars by the till',
+      doneWhen: '2 jars stand there',
+    });
+    expect([kept2.decision.keeps, kept2.guidance?.step?.title]).toEqual([null, fitted.title]);
+    // With news, fitted again on the step they are on: its row is changed.
+    const news = 'the gift shop owner called back and offered the two jars by the till';
+    const refit = fitTurn(PLAYBOOK, readTurnOf(news, understood(B2B), on([row])), {
       title: 'Ask her for the two jars by the till',
       doneWhen: '2 jars stand there',
     });

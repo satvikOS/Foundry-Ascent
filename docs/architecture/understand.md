@@ -24,7 +24,9 @@ Where no rule read the message precisely, the reading decides the turn and goes 
 and its one fitted step, and code checks them (founder-path.md, "Resting on a reading"). Where a rule did, or the switch is off, the turn is
 the one without a reading, to the byte. A reply that is none once its false sentences are out is written again once, within
 `REPAIR_BUDGET_MS` (`orchestrator/generate.ts`: 2.5 s typed, 1.2 s on a call, counted from the end of the first draft). A whole reply without its
-step line has that line asked for alone, once (`STEP_ASK_BUDGET_MS`: 1.5 s typed, 1 s on a call). A rule that read the message as
+step line has that line asked for alone, once (`STEP_ASK_BUDGET_MS`: 1.5 s typed, 1 s on a call). Both short edits, the line and the
+reply written again, go to the reading's model (`route: 'understand'`, Nova 2 Lite in production, the coach behind it): the coach
+(Mistral Large 3, about 96 output tokens a second and 1.3 s to a short answer) does not fit their budgets. A rule that read the message as
 another kind of thing (words to send beside news, feelings, made-up work, a complaint) gives way to the reading.
 
 ## The three calls

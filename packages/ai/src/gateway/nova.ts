@@ -274,6 +274,9 @@ function streamException(event: ConverseStreamOutput): Error | null {
 
 function streamStopReason(reason: StopReason | undefined): StreamStopReason {
   if (reason === 'end_turn' || reason === 'max_tokens' || reason === 'stop_sequence') return reason;
+  // Cut by its length, in another model's words (Mistral on Bedrock: "length"): the reply was truncated all the same.
+  const said: string = reason ?? '';
+  if (said === 'length' || said === 'model_context_window_exceeded') return 'max_tokens';
   return 'other';
 }
 

@@ -827,6 +827,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
             guided: gate.guided,
           }),
           messages: [...a.messages, { role: 'user', content: STEP_ASK(gate.text) }],
+          // A line of a few words, in a short budget: the reading's quick model writes it (docs/architecture/understand.md).
+          route: 'understand',
           ...(a.promptCache ? { promptCache: a.promptCache } : {}),
           maxOutputTokens: STEP_ASK_TOKENS,
           timeoutMs: STEP_ASK_BUDGET_MS[a.channel],
@@ -897,6 +899,9 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
           ...(a.promptCache ? { promptCache: a.promptCache } : {}),
           maxOutputTokens: ANSWER_MAX_TOKENS[a.channel],
           timeoutMs: REPAIR_BUDGET_MS[a.channel],
+          // The draft again without what was cut, in a short budget: the reading's quick model writes it, as it came within the
+          // budget where the coach's own did not (2.5 s typed, 1.2 s on a call; Mistral Large 3 wrote about 96 tokens a second).
+          route: 'understand',
           requestId: a.ctx.requestId,
           signal: a.signal ? AbortSignal.any([a.signal, halt.signal]) : halt.signal,
         },
