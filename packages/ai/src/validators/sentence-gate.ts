@@ -17,7 +17,7 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown } from './markdown.js';
-import { withoutExampleFigures, withoutInventedFigures } from './figures.js';
+import { ungroundedFigures, withoutExampleFigures, withoutInventedFigures } from './figures.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
 import { findMetaNarration, isThinkingAloudOpener, type NarrationNames } from './meta-narration.js';
 import {
@@ -1973,6 +1973,16 @@ export class SentenceGate {
       if (held.text === '') return out('own_facts');
       unit = held.text;
     }
+    // A figure nothing grounds (no number of theirs, and no arithmetic on what the reply shows): never said as theirs.
+    if (
+      !protectedLine &&
+      ungroundedFigures(unit, {
+        known: `${this.#figures ?? ''}\n${guidance.said ?? ''}`,
+        shownText: this.#releasedText,
+        founder: this.#options.founderText ?? '',
+      }).length > 0
+    )
+      return out('support');
     if (this.#terms !== null) unit = withMeanings(unit, this.#terms, channel === 'voice');
     if (unit !== rawUnit) {
       this.#rewritten = true;
@@ -2096,6 +2106,7 @@ export class SentenceGate {
       this.#nextRaw === '' &&
       this.#options.asksStep === true &&
       guidance.fit !== undefined &&
+      guidance.fit.keeps !== true &&
       this.#blocked === null
     ) {
       this.#stepDue = true;
@@ -2116,10 +2127,15 @@ export class SentenceGate {
   #finishTail(guidance: PromptGuidance, units: GateUnit[]): void {
     const channel = this.#options.spoken === true ? 'voice' : 'text';
     if (this.#nextRaw !== '') this.#rewritten = true;
-    this.#step = checkStep(this.#nextRaw, guidance, {
+    const checked = checkStep(this.#nextRaw, guidance, {
       founderText: this.#options.founderText ?? '',
       known: `${this.#figures ?? ''}\n${guidance.said ?? ''}`,
     });
+    // The step they are on, asked about again with no news, stands as stored: the line shown is the stored one.
+    this.#step =
+      guidance.fit?.keeps === true && checked.fitted !== null && guidance.fit.open !== null
+        ? { fitted: 'same', reason: checked.reason }
+        : checked;
     const add = (text: string): void => {
       this.#addWhole(text, units);
     };

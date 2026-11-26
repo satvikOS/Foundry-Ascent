@@ -551,3 +551,36 @@ describe('what a person decides of an invention', () => {
     expect(w.text).not.toMatch(/Send the drawings/);
   });
 });
+
+describe('the figure they asked for', () => {
+  const ASKED = guidance(
+    { kind: 'choice', opened: 'held', figures: [{ value: 160, unit: '$' }] },
+    { calc: ['A second kiln comes to $160 a month: 4 × $40.'] },
+  );
+  it('is placed as code worked it out when the reply does not hold it', () => {
+    expect(missingOf('Wait before you sign anything.', ASKED, 'text')).toContain(
+      'A second kiln comes to $160 a month: 4 × $40.',
+    );
+    expect(missingOf('Wait. It is $160 a month.', ASKED, 'text')).not.toContain(
+      'A second kiln comes to $160 a month: 4 × $40.',
+    );
+    expect(missingOf('Wait.', ASKED, 'voice')).toContain('A second kiln comes to $160 a month.');
+  });
+
+  it('is given to the writer under an opening of who decides, too', () => {
+    expect(
+      renderGuidance({ ...ASKED, lead: { text: 'Do not say yes yet.', voice: 'Not yet.' } }, 'text', {
+        today: TODAY,
+      }),
+    ).toMatch(/<sums>A second kiln comes to \$160 a month: 4 × \$40\.<\/sums>/);
+  });
+});
+
+describe('the step they are on, asked about again with no news', () => {
+  it('is said as stored, whatever line the writer fitted, and no line is asked for again', () => {
+    const kept = guidance({}, { fit: { ...FIT, keeps: true } });
+    const w = write(`${GOOD.split('\nNEXT:')[0]}\nNEXT: Ask the 3 who waited | DONE: All 3 answered`, kept);
+    expect(w.text).toMatch(/\*\*Next:\*\* List 12 studios in town/);
+    expect(w.gate.step?.fitted).toBe('same');
+  });
+});

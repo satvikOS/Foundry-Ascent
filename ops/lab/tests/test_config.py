@@ -12,7 +12,7 @@ from conversation_lab import config
 def test_app_models_follow_the_production_config_while_luna_is_disabled() -> None:
     models = config.app_models()
     # The coach is Mistral Large 3 with Nova 2 Lite's US profile behind it; every turn is read first by Nova 2 Lite,
-    # its sums on gpt-oss-120b; the background purposes run on Nova (ADR-0025).
+    # its sums too (gpt-oss-120b was late in production); the background purposes run on Nova (ADR-0025).
     assert models == config.AppModels(
         primary="mistral.mistral-large-3-675b-instruct",
         fallback="us.amazon.nova-2-lite-v1:0",
@@ -25,7 +25,6 @@ def test_app_models_follow_the_production_config_while_luna_is_disabled() -> Non
         understand=config.UnderstandSettings(
             enabled=True,
             model_id="us.amazon.nova-2-lite-v1:0",
-            sums_model_id="openai.gpt-oss-120b-1:0",
         ),
     )
     # The lab's API process gets the same route (packages/ai router.ts reads these variables), the reading included.
@@ -38,7 +37,6 @@ def test_app_models_follow_the_production_config_while_luna_is_disabled() -> Non
         "MODEL_BACKGROUND_PURPOSES": "classification,eval,ingestion,seed",
         "CORE_UNDERSTAND": "on",
         "MODEL_UNDERSTAND_ID": "us.amazon.nova-2-lite-v1:0",
-        "MODEL_UNDERSTAND_SUMS_ID": "openai.gpt-oss-120b-1:0",
     }
     assert models.for_purpose("turn") == (
         "mistral.mistral-large-3-675b-instruct",
@@ -145,9 +143,7 @@ def test_the_understand_call_is_the_deployments_unless_a_run_says_otherwise(tmp_
         with pytest.raises(ValueError, match=said):
             config.understand_env(choice, model, lab)
     # Production names it (ADR-0025): the lab's API process gets the same variables; a run's own go over them.
-    assert config.app_models().understand == config.UnderstandSettings(
-        enabled=True, model_id=nova, sums_model_id=oss
-    )
+    assert config.app_models().understand == config.UnderstandSettings(enabled=True, model_id=nova)
     # What a client run reads with (and is planned at): default is production's, off turns it off, on names its own.
     production = config.app_models()
     assert (

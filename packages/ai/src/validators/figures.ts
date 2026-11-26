@@ -476,3 +476,58 @@ export function withoutInventedFigures(
   );
   return removed === 0 ? { text: answer, removed: 0 } : { text, removed };
 }
+
+/** Counts this small stand by themselves (the lab's `SMALL_COUNT`): "three of them", "5 people". */
+const SMALL_COUNT = 12;
+const MONTHS =
+  /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*$|\b(?:on|by|until|before|since|from)\s*$/iu;
+
+/**
+ * Figures of a unit that nothing grounds, as the lab's `grounded_figures` reads a reply: money and percentages of any size,
+ * and counts above a dozen, that are neither given (`known`) nor arithmetic on the numbers the reply has shown so far
+ * (`shownText`, those of them that are known) or the founder's message (`founder`). Days, times, years and list numbers are
+ * no figures.
+ */
+export function ungroundedFigures(
+  unit: string,
+  options: { readonly known: string; readonly shownText: string; readonly founder: string },
+): string[] {
+  const known = knownNumbersIn(options.known);
+  const isKnown = (v: number): boolean => known.some((k) => close(v, k));
+  // What the reply showed already passed this check: it grounds what follows.
+  const pool = new Set([
+    ...numbersIn(options.shownText),
+    ...knownNumbersIn(options.founder),
+    ...numbersIn(unit).filter(isKnown),
+  ]);
+  const open: { readonly text: string; readonly values: number[]; readonly percent: boolean }[] = [];
+  const taken: [number, number][] = [];
+  for (const m of unit.matchAll(FIGURE)) {
+    taken.push([m.index, m.index + m[0].length]);
+    open.push({ text: m[0].trim(), values: numbersIn(m[0]), percent: PERCENT.test(m[0]) });
+  }
+  for (const m of unit.matchAll(/(?<![\d.,:/$€£])\d[\d,]*(?:\.\d+)?(?![\d,:/]|\.\d)/gu)) {
+    if (taken.some(([a, b]) => m.index >= a && m.index < b)) continue;
+    const v = Number(m[0].replace(/,/g, ''));
+    if (!Number.isFinite(v) || (Number.isInteger(v) && v <= SMALL_COUNT) || (v >= 1900 && v <= 2100))
+      continue;
+    const before = unit.slice(Math.max(0, m.index - 12), m.index);
+    if (MONTHS.test(before) || /\[E?$/u.test(before) || /^\s*[.)]\s/u.test(unit.slice(m.index + m[0].length)))
+      continue;
+    open.push({ text: m[0], values: [v], percent: false });
+  }
+  // Figures may build on each other ("41 of 50 lit up, so 82%"): read until nothing changes.
+  let left = open.filter((f) => !f.values.every(isKnown));
+  for (let changed = true; changed;) {
+    changed = false;
+    const ops = [...pool];
+    for (const f of left) {
+      if (f.values.every((v) => isKnown(v) || derivable(v, ops, f.percent, ops))) {
+        for (const v of f.values) pool.add(v);
+        changed = true;
+      }
+    }
+    if (changed) left = left.filter((f) => !f.values.every((v) => pool.has(v)));
+  }
+  return left.map((f) => f.text);
+}

@@ -948,7 +948,11 @@ function fitOf(
         open === null ? null : { title: open.title, doneWhen: doneSaid(open.doneWhen), dueOn: open.dueOn },
       hours: hoursFor(input),
       dueOn: fitDue(input, view.dueOn),
-      ...(NEWS_TOLD.test(input.message) || COMPLAINT.test(input.message) ? { news: true } : {}),
+      ...(NEWS_TOLD.test(input.message) || COMPLAINT.test(input.message)
+        ? { news: true }
+        : into.storedVersion !== null && view.status === 'now'
+          ? { keeps: true }
+          : {}),
     },
   };
 }

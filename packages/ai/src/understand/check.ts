@@ -345,7 +345,12 @@ export function readUnderstanding(raw: RawUnderstanding, context: UnderstandCont
   const askText = 'drop' in ask ? null : ask.line;
   const checked = checkSums(
     raw,
-    { message: context.message, history: conversation, record: context.record },
+    {
+      message: context.message,
+      history: conversation,
+      record: context.record,
+      ...(context.history.length === 0 ? {} : { lastReply: context.history.at(-1)?.reply ?? '' }),
+    },
     {
       labelOk: (label) => claim('label', toThem(label.replace(/[.:]+$/u, '')), before, 'plain', 16),
       askText: `${context.message} ${askText ?? ''}`,

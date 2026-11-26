@@ -1,4 +1,4 @@
-# ADR-0025: The coach on Mistral Large 3, every turn read first by Nova 2 Lite with its sums on gpt-oss-120b
+# ADR-0025: The coach on Mistral Large 3, every turn read first by Nova 2 Lite
 
 - **Status:** Accepted on 2026-11-26. It supersedes [ADR-0024](0024-coach-on-luna.md) for the coach: the coach is
   Mistral Large 3, not Amazon Nova 2 Lite, which stays behind it. ADR-0024's Luna half stands as it is: prepared, off,
@@ -38,12 +38,18 @@ reply is written; its parts were measured on their own in the understand suite.
    Mistral and DeepSeek score the same. Mistral leaves fewer turns unanswered, costs less and speaks sooner, so it is
    the coach.
 
-1. **Every turn is read first** (`models.understand.enabled: true`): the reading on Nova 2 Lite (`modelId`
-   `us.amazon.nova-2-lite-v1:0`) and its sums on gpt-oss-120b (`sumsModelId` `openai.gpt-oss-120b-1:0`). In the
-   understand suite Nova 2 Lite was the best of seven candidates at routing and judging a turn. gpt-oss-120b got about
-   90 % of the sums right where the others got about 65 %, in the same time (about 1 s). The split setup (Nova reading,
-   gpt-oss sums, Mistral writing) is being measured in the lab now. The numbers above are from runs where the coach
-   model did the reading too.
+1. **Every turn is read first** (`models.understand.enabled: true`), on Nova 2 Lite (`modelId`
+   `us.amazon.nova-2-lite-v1:0`), its sums included. In the understand suite Nova 2 Lite was the best of seven
+   candidates at routing and judging a turn. The numbers above are from runs where the coach model did the reading too.
+
+   **Amended 2026-11-26: the sums are back on Nova 2 Lite.** For one release they ran on gpt-oss-120b (`sumsModelId`
+   `openai.gpt-oss-120b-1:0`), which had got about 90 % of the sums right on the bench where Nova got about 65 %. In
+   production it was late: on the lab's set 3 (Mistral writing) 9 of the 16 asked figures that went missing were a
+   SUMS call on gpt-oss past the turn's 3.0 s cap, and 12 of 70 of its SUMS calls were late on hc-mix15. It reported no
+   cached tokens, so every call paid its whole prompt. Once the code-side fixes of the sums were in (the asked figure
+   decided by code, numbers read as people write them), Nova and gpt-oss sum the same on the common bench cases (21 of
+   24 each, replayed), and Nova is cached and faster. So `sumsModelId` is gone from production; it stays a setting the
+   lab can name (`understand_sums_model`).
 
 2. **List prices** (Amazon Bedrock on demand, us-east-1, USD per million tokens, input / output), the reason for the
    cost row above:
@@ -56,18 +62,18 @@ reply is written; its parts were measured on their own in the understand suite.
    | Claude Haiku 4.5  | 1.00  | 5.00   |
    | Claude Sonnet 5.5 | 2.00  | 10.00  |
 
-   `packages/ai/src/pricing.ts` meters Mistral Large 3 and gpt-oss-120b at their rates, so the spend caps see them.
+   `packages/ai/src/pricing.ts` meters Mistral Large 3 (and gpt-oss-120b, for the lab) at their rates, so the spend
+   caps see them.
 
-3. **Permissions follow the configuration, and stay as narrow.** Mistral Large 3 and gpt-oss-120b have no inference
-   profile: their model cards list in-region serving only, with "Not supported" as the Geo and the Global inference
-   ID. So each is granted only as its foundation model in us-east-1
-   (`arn:aws:bedrock:us-east-1::foundation-model/<id>`), for `bedrock:InvokeModel` and
-   `bedrock:InvokeModelWithResponseStream`. That covers Converse and ConverseStream. No `us.` profile is granted for
-   either, because none exists (`infra/cdk/src/lib/models.ts` `IN_REGION_ONLY`). gpt-oss-120b goes to the API role
-   alone: only the API runs the understand call and gets its variables (`CORE_UNDERSTAND`, `MODEL_UNDERSTAND_ID`,
-   `MODEL_UNDERSTAND_SUMS_ID`). gpt-oss runs on the Bedrock runtime through Converse, not Bedrock Mantle, so no
-   Mantle permission is granted, and no Claude model is granted. `infra/cdk/test/models.test.ts` proves these exact
-   grants.
+3. **Permissions follow the configuration, and stay as narrow.** Mistral Large 3 has no inference profile: its model
+   card lists in-region serving only, with "Not supported" as the Geo and the Global inference ID. So it is granted
+   only as its foundation model in us-east-1 (`arn:aws:bedrock:us-east-1::foundation-model/<id>`), for
+   `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`. That covers Converse and ConverseStream. No `us.`
+   profile is granted for it, because none exists (`infra/cdk/src/lib/models.ts` `IN_REGION_ONLY`). Only the API runs
+   the understand call and gets its variables (`CORE_UNDERSTAND`, `MODEL_UNDERSTAND_ID`); its model is Nova 2 Lite,
+   granted already as the coach's fallback. With the sums back on Nova, gpt-oss-120b is no longer granted to the app
+   (the lab's role keeps it as a candidate). No Mantle permission and no Claude model are granted.
+   `infra/cdk/test/models.test.ts` proves these exact grants.
 
 4. **The Luna switch is still one line**: `models.primary` `us.openai.gpt-6-luna` replaces Mistral, with Nova 2 Lite
    behind it. `models.luna.enabled` makes Luna primary with the configured primary (Mistral) behind it. Both stay off
@@ -94,7 +100,7 @@ permission leaves with it. No data changes. To also stop reading every turn firs
 
 ## Revisit when
 
-- The lab's measurement of the split setup (Nova reading, gpt-oss sums, Mistral writing) is in: if it scores below
-  4.08, or costs or waits more than the table above, decide again.
+- A sums model scores better than Nova 2 Lite on the bench and stays within the turn's cap in the lab's client runs
+  (`understand_sums_model`): then name it again as `sumsModelId`.
 - A candidate scores higher on the unseen set at no more cost and latency, or the account is granted GPT-6 Luna.
 - AWS offers Mistral Large 3 behind a cross-region inference profile.

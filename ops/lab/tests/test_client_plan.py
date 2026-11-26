@@ -210,14 +210,20 @@ def test_the_open_weight_candidates_are_offered_to_the_lab_alone_and_judged_by_a
         assert judge_candidates(coach, LAB)[0] == HAIKU
         # The whole set or some of its groups: what does not fit is refused before any call.
         assert plan(in_groups(EVERY, ("numbers", "news")), coach=coach).total_usd <= PLAN_LIMIT_USD / 2
-    # Production names two of them (ADR-0025): Mistral Large 3 coaches, gpt-oss-120b sums; the others are the lab's alone.
+    # Production names one of them (ADR-0025): Mistral Large 3 coaches, and its sums are Nova 2 Lite's again (gpt-oss-120b
+    # was late); the others are the lab's alone.
     production = config.app_models()
     assert (production.primary, production.understand and production.understand.sums_model_id) == (
         MISTRAL,
-        OSS,
+        None,
     )
     text = config.PRODUCTION_CONFIG.read_text(encoding="utf-8")
-    for coach in ("openai.gpt-oss-20b-1:0", "qwen.qwen3-next-80b-a3b", "deepseek.v3.2"):
+    for coach in (
+        "openai.gpt-oss-120b-1:0",
+        "openai.gpt-oss-20b-1:0",
+        "qwen.qwen3-next-80b-a3b",
+        "deepseek.v3.2",
+    ):
         assert coach not in text
 
 

@@ -229,6 +229,8 @@ export interface PromptGuidance {
     readonly done?: boolean;
     /** They bring news (somebody did, said or offered something new, or something went wrong): the step may change. */
     readonly news?: boolean;
+    /** The open step is the one fitted, stored, and they bring no news: it stands as stored, whatever line is written. */
+    readonly keeps?: boolean;
   };
   /** What opens the reply denies what they claim, by their own record: nothing beside it agrees. Additive. */
   readonly denies?: boolean;
@@ -752,7 +754,8 @@ function renderRead(
   const limits = g.limits ?? [];
   if (limits.length > 0)
     lines.push(`They set this: ${limits.map((l) => line(l.said, 40)).join(', ')}. Keep to it.`);
-  if ((g.calc ?? []).length > 0 && lead == null)
+  // The figure code worked out, wherever the reply opens otherwise (who decides, a pick): the writer says it as it is.
+  if ((g.calc ?? []).length > 0 && (lead == null || r.opened !== 'sum'))
     lines.push(
       `<sums>${(g.calc ?? []).map((c) => line(c, 240)).join(' ')}</sums>`,
       'Worked out: say them as they are.',

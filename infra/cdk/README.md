@@ -95,9 +95,8 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
     region-less ARN for the global profile (`arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0`), the coach
     Mistral Large 3 in `us-east-1` alone (`arn:aws:bedrock:us-east-1::foundation-model/mistral.mistral-large-3-675b-instruct`,
     ADR-0025: its model card offers no inference profile, so none is granted: `src/lib/models.ts` `IN_REGION_ONLY`)
-    and Titan; the API alone also gets the understand call's SUMS model, gpt-oss-120b, the same way
-    (`arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-oss-120b-1:0`; the worker never runs that call);
-    `bedrock-mantle:CreateInference` on `*` only while GPT-6 Luna is enabled (gpt-oss is Converse's, not Mantle's).
+    and Titan (a SUMS model of its own, `models.understand.sumsModelId`, would go to the API alone; production names
+    none); `bedrock-mantle:CreateInference` on `*` only while GPT-6 Luna is enabled.
 - `Custom::FoundryMigrations` with properties `{ version: appVersion, migrationsChecksum }`, so it runs on
   every deploy. **The API, worker and site deployments depend on it**: new code goes live only after its migrations applied,
   and a failed migration rolls the stack back before any function changes.
@@ -221,8 +220,8 @@ the flag is a config change plus a normal deploy.
 `models.understand` (`enabled`, and optionally `modelId` and `think: "low"`) turns the understand call of a turn on
 (docs/architecture/understand.md): `CORE_UNDERSTAND`, `MODEL_UNDERSTAND_ID`, `MODEL_UNDERSTAND_THINK`, `MODEL_UNDERSTAND_SUMS_ID` and `MODEL_UNDERSTAND_SUMS_THINK` (`sumsModelId`, `sumsThink`: the SUMS part's own model, absent = the understand call's) go to the API alone, and a model
 of its own is granted to the API alone. Unset, no variable is passed and the API's default, off, stands. Production sets it
-(ADR-0025): `enabled: true`, `modelId` `us.amazon.nova-2-lite-v1:0` (the reading), `sumsModelId` `openai.gpt-oss-120b-1:0`
-(its sums; Converse, not Mantle), so the API gets `CORE_UNDERSTAND=on`, `MODEL_UNDERSTAND_ID` and `MODEL_UNDERSTAND_SUMS_ID`.
+(ADR-0025): `enabled: true`, `modelId` `us.amazon.nova-2-lite-v1:0` (the reading and its sums; the sums ran on gpt-oss-120b
+for one release and were late), so the API gets `CORE_UNDERSTAND=on` and `MODEL_UNDERSTAND_ID`.
 
 Production's coach model is this configuration: an A/B on another Bedrock model runs in the conversation lab first
 (`coach_model`, docs/runbooks/conversation-lab.md), never by changing production; the lab role may invoke the A/B

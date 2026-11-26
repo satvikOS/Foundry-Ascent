@@ -329,7 +329,7 @@ def understand_env(
 def run_understand(models: AppModels, understand: Mapping[str, str]) -> UnderstandSettings:
     """The reading the lab's API process makes (stack.api_env): production's understand variables (``models.env()``)
     with the run's own (``understand_env``) over them. ``understand=default`` is production's own (on since ADR-0025,
-    Nova 2 Lite with its sums on gpt-oss-120b); ``understand=off`` turns it off for the run."""
+    Nova 2 Lite, its sums too); ``understand=off`` turns it off for the run."""
     env = {**models.env(), **understand}
     return UnderstandSettings(
         enabled=env.get("CORE_UNDERSTAND") == "on",

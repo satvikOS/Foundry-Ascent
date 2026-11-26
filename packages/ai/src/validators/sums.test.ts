@@ -700,3 +700,26 @@ describe('the mock writes a sum as a model is asked to', () => {
     expect(markedSum(ask, sources)).toBe(marker);
   });
 });
+
+describe('a number of theirs in another unit', () => {
+  const TRIP =
+    'A trip takes 45 minutes and leaves 30 dollars. The show had 2,400 listeners and the spot is 120 dollars.';
+  it('minutes as hours, and listeners in thousands, may stand in a sum', () => {
+    expect(said('That is [[30 / 0.75 dollars]] an hour.', false, TRIP)).toBe(
+      'That is 30 / 0.75 = 40 dollars an hour.',
+    );
+    expect(said('Per thousand: [[120 / 2.4 dollars]].', false, TRIP)).toBe(
+      'Per thousand: 120 / 2.40 = 50 dollars.',
+    );
+  });
+
+  it('the unit after a result of its own goes with that result', () => {
+    expect(
+      said(
+        'All of it takes [[3 * 3 * 25 minutes]] = 3.75 hours.',
+        false,
+        'three people, three items each, 25 minutes an item',
+      ),
+    ).toBe('All of it takes 3 x 3 x 25 = 225 minutes.');
+  });
+});

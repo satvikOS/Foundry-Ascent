@@ -164,3 +164,15 @@ describe('one step, said once', () => {
     ).toBe('You’ve got three more talks to run—ask what it costs them.');
   });
 });
+
+describe('markup of its own', () => {
+  it('a rule across the reply, a heading alone, a blank written as a letter', () => {
+    expect(heldStyle('---', ctx).cut).toBe('markup');
+    expect(heldStyle('## What the lab owns', ctx).cut).toBe('markup');
+    expect(heldStyle('**What the lab owns:**', ctx).cut).toBeNull();
+    expect(heldStyle('**Next:** ask them', ctx).cut).toBeNull();
+    expect(
+      heldStyle('I would like to pay myself $X a month and keep X% back.', { ...ctx, quoted: true }).text,
+    ).toBe('I would like to pay myself [amount] a month and keep [share] back.');
+  });
+});

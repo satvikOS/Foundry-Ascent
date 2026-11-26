@@ -34,6 +34,10 @@ const QUESTION_PUT =
 /** They put options side by side. */
 const OPTIONS_PUT =
   /\b(?:or|vs|versus|which|either|between|one of|both|pick|choose|rather|instead|should (?:i|we)|shld (?:i|we))\b/iu;
+/**
+ * Whether the figure SUMS names is asked for: ROUTE reads the message as a sum, or the message asks for a figure in its own
+ * words. Without ROUTE, SUMS's own word stands where the message asks something, and never where it asks for a step.
+ */
 const asks = (
   figure: string | null,
   route: boolean,
@@ -41,7 +45,11 @@ const asks = (
   message: string,
 ): boolean =>
   figure !== null &&
-  (!route || kinds.includes('sum') || (FIGURE_ASKED.test(message) && QUESTION_PUT.test(message)));
+  (route
+    ? kinds.includes('sum') ||
+      (FIGURE_ASKED.test(message) && QUESTION_PUT.test(message) && !ASKS_A_STEP.test(message))
+    : // Without ROUTE, SUMS's word stands for a question, never for one that asks for a step ("what's next?").
+      QUESTION_PUT.test(message) && !ASKS_A_STEP.test(message));
 
 /** The play that says nothing of other founders: a message it answers asks about one. */
 const PRIVACY_PLAY = 'other-teams-privacy';
@@ -65,8 +73,12 @@ export function mergeReadings(
   const asked = asks(figure, route !== null, kinds, message);
   const reads = sums === null ? [] : sums.s.map((s) => sumOf(s, text(sums.w) ?? ''));
   // The figure is asked for where the call says so or the message's own words do.
-  const put = asked || (figure !== null && ASK_FORM.test(message));
-  const worked = reads.flatMap((r) => (r === 'lacks' ? [] : [{ ...r, asked: put }]));
+  const put = asked || (figure !== null && asksForFigure(message));
+  // A count of other things than the message asks for ("tins" where it asks how many studios) is not its figure.
+  const wanted = countAsked(message);
+  const worked = reads.flatMap((r) =>
+    r === 'lacks' ? [] : [{ ...r, asked: put && (wanted === null || !countsOther(wanted, r)) }],
+  );
   const lacks = put && reads.includes('lacks') ? LACKS_REST : null;
   const missing = put ? (text(sums?.m) ?? (worked.length === 0 ? lacks : null)) : null;
   const choice = judge?.o != null && (kinds.includes('choice') || OPTIONS_PUT.test(message)) ? judge.o : null;
@@ -78,7 +90,7 @@ export function mergeReadings(
       ? judge.t
       : null;
   const found: UnderstoodKind[] = [
-    ...(put && (worked.length > 0 || missing !== null) ? (['sum'] as const) : []),
+    ...(put && (worked.some((x) => x.asked) || missing !== null) ? (['sum'] as const) : []),
     ...(choice === null ? [] : (['choice'] as const)),
     ...(result === null || pushed ? [] : (['result'] as const)),
     ...(tellsUpdate(message) ? (['update'] as const) : []),
@@ -165,6 +177,41 @@ const TIME_UNITS: readonly (readonly [RegExp, SumUnit])[] = [
 const PEOPLE =
   /\b(?:people|persons?|customers?|users?|students?|buyers?|famil(?:y|ies)|members?|visitors?|guests?|clients?|subscribers?|strangers?|parents?|teachers?)$/iu;
 
+const COUNT_ASKED = [
+  /\bhow many ([a-z][a-z'-]{2,20})\b/iu,
+  /\bnumber of ([a-z][a-z'-]{2,20})\b/iu,
+  /\b([a-z][a-z'-]{2,20}) (?:are |is )?(?:needed|required|(?:do )?(?:we|i) (?:need|have to (?:get|sign|sell|find)))\b/iu,
+];
+/** Words that stand after "how many" and count nothing. */
+const NO_NOUN =
+  /^(?:more|less|fewer|of|do|does|did|would|will|are|is|was|can|could|should|have|has|times?|must|we|i|you|they|the|a|an|those|these|them|people|this|thus|plus|yes|its|his|hers|ours|yours|theirs|always|perhaps|sometimes)$/iu;
+const TIME_WORD = /^(?:minutes?|hours?|hrs?|days?|nights?|weeks?|months?|years?|shifts?)$/iu;
+/** What a message asks to count ("how many studios", "studios we need"); null: no count, or of time. */
+export function countAsked(message: string): string | null {
+  for (const pattern of COUNT_ASKED) {
+    const word = pattern.exec(message)?.[1]?.toLowerCase();
+    // A plural noun: "how many leave" counts people who do something, and asks nothing of what is counted.
+    if (word !== undefined && word.endsWith('s') && !NO_NOUN.test(word) && !TIME_WORD.test(word)) return word;
+  }
+  return null;
+}
+const stem = (word: string): string =>
+  word
+    .toLowerCase()
+    .replace(/ies$/u, 'y')
+    .replace(/(?:ches|shes|sses|xes)$/u, (m) => m.slice(0, -2))
+    .replace(/s$/u, '');
+/** A count of another thing than the one asked for: never so for money, shares, times or people asked as people. */
+export function countsOther(
+  wanted: string,
+  sum: { readonly unit: SumUnit; readonly noun: string | null },
+): boolean {
+  if (sum.unit === 'people') return !PEOPLE.test(wanted);
+  if (sum.unit !== 'units' || sum.noun === null) return false;
+  const last = sum.noun.split(/\s+/u).at(-1) ?? '';
+  return stem(last) !== stem(wanted);
+}
+
 /** A unit as a sum is said in: `$`, `%`, a time, or what is counted. */
 export function unitOf(said: string): { readonly unit: SumUnit; readonly noun: string | null } {
   const u = said.trim().toLowerCase();
@@ -180,8 +227,19 @@ export function unitOf(said: string): { readonly unit: SumUnit; readonly noun: s
 }
 
 /** Asking for a figure, as people write it. */
+/**
+ * A figure asked for in the message's own words, as people write them: "how much", "hw many", "what does that make", "what am
+ * I into it for", "whats the total". "What's" alone is no figure: "what's next" asks for a step.
+ */
 const ASK_FORM =
-  /\b(?:how (?:much|many|long|often|far|soon|mu?ch)|hw (?:much|many|long)|howmuch|howmany|wh?at(?:['’]?s|s| is| are| was)\b|wh?at (?:does|do|did|would|will|am) (?:i|we|you|they|it|that|this|us|the \w+)(?: \w+){0,2} (?:make|makes|earn|keep|charge|ask|get|clear|pocket|bring|land|leave|cost|pay|need|spend|come|owe|put|into|left)\b|wh?at (?:does|do) (?:that|it|this) say\b|tell me (?:the|what)|work (?:it )?out|add(?:s)? up|in total|all in|so far)/iu;
+  /\b(?:how (?:much|many|long|often|far|soon|mu?ch)|hw (?:much|many|long)|howmuch|howmany|wh?at(?:['’]?s|s| is| are| was| were) (?:(?:the|my|our|your|it|that|this|a|an|all|in|for|of|per|each|one|we|i|left) ){0,4}(?:total|sum|cost|costs|price|prices|margin|profit|hourly|hour|rate|share|number|figure|split|worth|average|runway|mine|ours|month|week|year|come|comes|coming|\$?\d)\b|wh?at(?:['’]?s|s| is) left\b(?! (?:to|for (?:me|us) to))|wh?at (?:does|do|did|would|will|am) (?:i|we|you|they|it|that|this|us|the \w+)(?: \w+){0,2} (?:make|makes|earn|keep|charge|ask|get|clear|pocket|bring|land|leave|cost|pay|need|spend|come|owe|put|into|left)\b|wh?at (?:does|do) (?:that|it|this) say\b)/iu;
+/** Words that ask for a figure only where nothing else is asked: "so far", "all in". */
+const ASK_SUM_UP = /\b(?:so far|all in|in total|altogether|adds? up|add (?:it|them) up|work (?:it )?out)\b/iu;
+/** A step, a plan or advice asked for: then "so far" is no figure. */
+const ASKS_A_STEP =
+  /\b(?:wh?at(?:['’]?s|s| is)? (?:next|now|new|the plan|the next|left to do)|what (?:should|shall|do|can|could) (?:i|we) (?:do|try|start)|where do (?:i|we) (?:start|go)|now what)\b/iu;
+const asksForFigure = (message: string): boolean =>
+  ASK_FORM.test(message) || (ASK_SUM_UP.test(message) && !ASKS_A_STEP.test(message));
 /** A plan that takes something off: a sum of one number of theirs then lacks the rest. */
 const COMES_OFF = /\b(?:minus|less|after|once|without|net of|take away|takes? off|subtract\w*)\b|\s[-−]\s/iu;
 const LACKS_REST = 'the other numbers it needs';

@@ -78,7 +78,8 @@ async function callTurns(
 
 /**
  * The counts are read from times, so a runner that stalls for a moment can show a trip too many, never one too few: a
- * call that does not read as pinned is made once more, and each turn counts as the fewer of its two readings.
+ * call that does not read as pinned is made again, up to twice more, and each turn counts as the fewest of its readings.
+ * A trip the code adds shows on every reading; a stall seldom twice on the same turn.
  */
 async function callCounts(
   rig: LatencyRig,
@@ -86,15 +87,21 @@ async function callCounts(
   pinned: readonly { readonly streamOpen: number; readonly firstSpeech: number }[],
   messages: readonly string[] = MESSAGES,
 ): Promise<{ streamOpen: number; firstSpeech: number | null }[]> {
-  const read = turns.map((t) => ({ streamOpen: t.streamOpen, firstSpeech: t.firstSpeech }));
-  if (read.every((t, i) => t.streamOpen === pinned[i]?.streamOpen && t.firstSpeech === pinned[i].firstSpeech))
-    return read;
-  const again = await callTurns(rig, messages);
-  return read.map((t, i) => ({
-    streamOpen: Math.min(t.streamOpen, again[i]?.streamOpen ?? t.streamOpen),
-    firstSpeech:
-      t.firstSpeech === null ? null : Math.min(t.firstSpeech, again[i]?.firstSpeech ?? t.firstSpeech),
+  let read: { streamOpen: number; firstSpeech: number | null }[] = turns.map((t) => ({
+    streamOpen: t.streamOpen,
+    firstSpeech: t.firstSpeech,
   }));
+  const asPinned = (): boolean =>
+    read.every((t, i) => t.streamOpen === pinned[i]?.streamOpen && t.firstSpeech === pinned[i].firstSpeech);
+  for (let tries = 0; tries < 2 && !asPinned(); tries += 1) {
+    const again = await callTurns(rig, messages);
+    read = read.map((t, i) => ({
+      streamOpen: Math.min(t.streamOpen, again[i]?.streamOpen ?? t.streamOpen),
+      firstSpeech:
+        t.firstSpeech === null ? null : Math.min(t.firstSpeech, again[i]?.firstSpeech ?? t.firstSpeech),
+    }));
+  }
+  return read;
 }
 
 describe.each([

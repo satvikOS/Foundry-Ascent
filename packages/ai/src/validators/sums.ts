@@ -211,10 +211,20 @@ export class SumFacts {
   operand(value: number, percent: boolean): boolean {
     if (percent) return this.givenPercent(value) || this.given(value);
     if (this.given(value)) return true;
+    // A number of theirs in another unit: minutes as hours ("75 minutes" is 1.25 hours), listeners per thousand.
+    if (this.#converted(value)) return true;
     if (value > 1 && value < 2 && this.toldPercent(Math.round((value - 1) * 1e8) / 1e6)) return true;
     // "3.25" of "2.80 for tea and 0.45 for the cup": two amounts of theirs together, to the cent.
     if (!Number.isInteger(value) && this.#together(value)) return true;
     return value > 0 && value < 1 && this.#percents.length > 0 && this.givenPercent(value * 100);
+  }
+
+  #converted(value: number): boolean {
+    if (!(value > 0)) return false;
+    return [...this.#dims.keys()].some(
+      (g) =>
+        g > 0 && [g / 60, g * 60, g / 1000, g / 100].some((c) => Math.abs(c - value) < 1e-6 * Math.max(1, c)),
+    );
   }
 
   #together(value: number): boolean {
@@ -927,7 +937,16 @@ export function sumsUnit(unit: string, facts: SumFacts, options: SumsOptions = {
         continue;
       }
       // "[[a - b]] = c": the result the model wrote goes.
-      const tail = /^\s*=\s*[$£€]?\s?\d[\d,]*(?:\.\d+)?/u.exec(text.slice(end));
+      // The marker names its unit: a unit after the model's own result is that result's, and goes with it.
+      const named =
+        /\b(?:percent|dollars?|cents?|hours?|minutes?|days?|weeks?|months?|people|liters?|litres?)\b|%/iu.test(
+          content,
+        );
+      const tail = (
+        named
+          ? /^\s*=\s*[$£€]?\s?\d[\d,]*(?:\.\d+)?(?:\s?(?:%|percent|dollars?|cents?|hours?|minutes?|days?|weeks?|months?|people|liters?|litres?)\b)?/u
+          : /^\s*=\s*[$£€]?\s?\d[\d,]*(?:\.\d+)?/u
+      ).exec(text.slice(end));
       if (tail !== null) end += tail[0].length;
       const said = renderMarker(content, facts, {
         before: text.slice(0, start),

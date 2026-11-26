@@ -140,6 +140,22 @@ export function composedWhole(guidance: PromptGuidance, channel: TurnChannel, sa
 /** What the server adds because the reply lacks it, each a whole text: what the record denies, then who decides. */
 export function missingOf(released: string, guidance: PromptGuidance, channel: TurnChannel): string[] {
   const out: string[] = [];
+  // The figure they asked for, as code worked it out, when the reply does not hold it.
+  const asked = guidance.reading?.figures ?? [];
+  const said = knownNumbersIn(released);
+  const holds = (v: number): boolean =>
+    said.some(
+      (n) => Math.abs(n - v) < 0.006 || Math.abs(n - Math.round(v * 10) / 10) < 0.006 || n === Math.round(v),
+    );
+  if (
+    guidance.reading?.opened !== 'sum' &&
+    asked.length > 0 &&
+    !asked.some((f) => holds(Math.abs(f.value)))
+  ) {
+    const figure = (guidance.calc ?? [])[0];
+    if (figure !== undefined && figure.trim() !== '')
+      out.push(channel === 'voice' ? spokenFigure(figure) : figure);
+  }
   const against = guidance.reading?.contradicts ?? null;
   if (against !== null && against.says !== '' && coverage(stemsOf(against.line), stemsOf(released)) < 0.4)
     out.push(against.says);
@@ -152,6 +168,9 @@ export function missingOf(released: string, guidance: PromptGuidance, channel: T
   if (referral !== '') out.push(referral);
   return out;
 }
+
+/** A worked figure said on a call: the sentence without its working. */
+const spokenFigure = (text: string): string => text.replace(/:\s[^.]*[×÷+−-][^.]*\./u, '.');
 
 /** What stands for a figure nobody worked out, when the reply is completed without the writer. */
 export const NO_GUESS: Readonly<Record<TurnChannel, string>> = {

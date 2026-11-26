@@ -21,6 +21,8 @@ import { RecordingLogger } from '../testing/fakes.js';
 import { createCoreHarness, type CoreHarness } from '../testing/harness.js';
 
 const ASK = 'the second room has empty shelves, does the kit go there or not';
+/** With news, the step they are on may be fitted again (asked again with none, the stored one stands). */
+const NEWS = `the second room's manager called back. ${ASK}`;
 const GOOD =
   'Move it only if somebody there uses it. Nobody in that room was asked yet.\n' +
   'NEXT: Ask 5 people in the second room what they borrow | DONE: 5 answered, and you know if 3 of 5 would use it';
@@ -134,7 +136,7 @@ describe('a whole reply', () => {
 
   it('that is none is written again once, with what was cut and why', async () => {
     drafts = ['The founder has a kit. It is on the shelf.', GOOD];
-    const run = await say(core(), ASK);
+    const run = await say(core(), NEWS);
     expect(run.shown).toMatch(/^Move it only if somebody there uses it\./);
     expect(run.shown).not.toMatch(/founder/);
     expect(gateway.wrote).toHaveLength(2);
@@ -147,20 +149,20 @@ describe('a whole reply', () => {
   it('is completed when the second draft is late, or is none either', async () => {
     drafts = ['The founder has a kit.'];
     gateway.hangs = true;
-    const late = await say(core(), ASK);
+    const late = await say(core(), NEWS);
     expect(late.phase).toMatchObject({ repair: 'late' });
     expect(late.shown.trim()).not.toBe('');
     expect(late.turn?.status).toBe('completed');
     gateway.hangs = false;
     drafts = ['The founder has a kit.', 'The founder has a kit.'];
-    const none = await say(core(), ASK);
+    const none = await say(core(), NEWS);
     expect(none.phase).toMatchObject({ repair: 'unfit' });
     expect(none.shown).toMatch(/\*\*(?:Next|On your path, next is):\*\*/);
   }, 30_000);
 
   it('whose step is made up has the play’s own', async () => {
     drafts = [GOOD.replace('Ask 5 people', 'Sell 500 boxes at $75 to people')];
-    const run = await say(core(), ASK);
+    const run = await say(core(), NEWS);
     expect(run.phase).toMatchObject({ step: 'figure' });
     expect(run.shown).not.toMatch(/500|\$75/);
     expect(run.shown).toMatch(/\*\*(?:Next|On your path, next is):\*\*/);
@@ -194,7 +196,7 @@ describe('a whole reply', () => {
   it('whose step line, asked for again, is late, has the play’s own step', async () => {
     drafts = ['Move it only if somebody there uses it. Nobody in that room was asked yet.'];
     gateway.hangs = true;
-    const run = await say(core(), ASK);
+    const run = await say(core(), NEWS);
     expect(run.phase).toMatchObject({ stepAsk: 'late', step: 'missing' });
     expect(run.shown).toMatch(/\*\*(?:Next|On your path, next is):\*\*/);
   });

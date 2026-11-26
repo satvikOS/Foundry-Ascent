@@ -55,7 +55,9 @@ without it. What each part writes is what its decision needs, so a reading takes
   against 14/21) at about the same median (978 ms against 947) and for less, while its ROUTE and JUDGE were worse: so only SUMS. It
   has no fallback: a SUMS that fails or is late on it is not asked of the other model (there is no time), and the turn goes on with
   the parts it has, as for any late part. gpt-oss reports no cached tokens, so the SUMS prompt is kept short (about 4,400
-  characters).
+  characters). Production named gpt-oss-120b for its sums for one release and went back to Nova 2 Lite (ADR-0025): on the
+  lab's set 3 it was late on 9 of the 16 asked figures that went missing, while after the code-side fixes the two sum the
+  same on the bench's common cases (21 of 24).
 - **On a call** JUDGE has a form of its own (`judgeVoice`): the pick and what happened, which open the reply, and nothing else (about 70
   tokens); a contradiction, points and a first action are the typed turn's.
 - **Their budget.** 3.0 s on a typed turn, 1.7 s on a call, the fallback included (`CORE_UNDERSTAND_TYPED_MS` 500 to 10,000,
@@ -65,9 +67,15 @@ without it. What each part writes is what its decision needs, so a reading takes
 - **A part that is late or failed** leaves its fields empty. Without ROUTE the others say what the message is: a figure they asked
   for is a `sum`, a pick a `choice`, a verdict a `result`; nothing of those is no reading, and the turn goes on by its rules. ROUTE
   and JUDGE each name a line the message denies; without either there is no contradiction.
-- **What code decides of a sum.** Whether it was **asked**: the call says so or the message's own words ask for a figure (how
-  much, how many, what is, what does that make, what am I into, written as people write them; "what can the page say" is no
-  figure). What is **missing** where nothing can be worked out: the model's `m`, else the number that is nowhere, else, for a sum of
+- **Meanings code puts right** (`meaning.ts`), each over the same numbers: a share they take used as yours, yours used as
+  theirs, a share of yours used as what reaches another person ("we hold back 10%" and the sitter's hour: the 90%), margins and
+  markups, needless period turns, and a follow-up's new number put where the like one stood ("and at 25 instead?" after
+  "$1,500 × (20% − 2%)": 25% for 20%, never $25 for $1,500).
+- **What code decides of a sum.** Whether it was **asked**: ROUTE reads the message as a sum, or the message's own words ask for
+  a figure (how much, how many, what is the total, what is left after, what does that make, what am I into, written as people
+  write them). "What's next", "what now", "what's left to do", "what can the page say" ask for a step or words, never a figure,
+  even beside numbers they tell; "so far" and "all in" count only where no step is asked. Without ROUTE, SUMS's own word stands
+  for a question that asks for no step. Only an asked sum opens or decides a reply. What is **missing** where nothing can be worked out: the model's `m`, else the number that is nowhere, else, for a sum of
   one number of theirs whose plan takes something off it, "the other numbers it needs". How a number is read: "a third" is a share,
   "350 every week" an amount and not a time, a number before one thing ("the 600 website") is no count of it, a number at a line's end
   counts nothing of the next line, and a bracket left at the end of an expression is the answer's. A sum asked as named shapes with
@@ -75,7 +83,9 @@ without it. What each part writes is what its decision needs, so a reading takes
   10), so SUMS writes the expression.
 - **SUMS again.** A cheap check that disagrees with the sum asks for it once more, in what is left of the budget (`again.ts`): a plan
   with no sum, a sum code could not work out (with the reason), or a figure of what is kept, reached or charged that leaves out an
-  amount, a share or a count told in the line it takes a number from. The second stands only where it answers the doubt. A field that
+  amount, a share or a count told in the line it takes a number from, or a count of other things than the message asks for
+  ("tins" where it asks how many studios; such a sum is never the asked figure). It is asked only with a second left of
+  the budget (a second call on Nova 2 Lite takes 0.6 to 1.0 s). The second stands only where it answers the doubt. A field that
   swallowed the rest of its object is read back (`salvage.ts`). `sumsAgain` in the log says which check it was.
 - **Their price.** Metered like every call (purpose `turn`, one usage-ledger row per attempt), so the daily caps count them. An
   attempt that was cut off is metered by an estimate of its prompt (`estimateCut`).

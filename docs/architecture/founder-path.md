@@ -335,7 +335,12 @@ decides, and each row is a test.
   is …") goes beside the step line; "Next step:" is the step line only in capitals, with its DONE, or as the last line. Under a
   change of direction, "the step hasn't changed" and a first step of its own go. A day of its own goes before a dash too. A
   recall says the change of direction once (a record line that says it again is not added), and a step moved to a new day says
-  that day alone. An announcement ("Here's what to do today:") with only a paragraph after
+  that day alone. The open step asked about again with no news is shown as stored, never the writer's new line.
+- **Figures of a reply whose message was read** stand only when they are theirs or arithmetic on numbers the reply has shown (the
+  lab's `grounded_figures`, `ungroundedFigures`): an example ("say, 1,000"), a range or a bar of the writer's own goes. The figure
+  they asked for is given to the writer under any opening, and placed as code worked it out when the reply does not hold it. In a
+  marker a number of theirs may stand in another unit (minutes as hours, per thousand), and the unit after the model's own result
+  goes with it. A rule ("---"), a heading alone and a blank written as a letter ("$X") are no part of a reply. An announcement ("Here's what to do today:") with only a paragraph after
   it goes. A stop for length, in any model's word for it, is a cut reply.
 - **Another business they run** ("the pottery is a separate business"; `other-business.ts`) is never the venture's: its facts are not
   kept as the venture's notes and not listed as what the venture has.

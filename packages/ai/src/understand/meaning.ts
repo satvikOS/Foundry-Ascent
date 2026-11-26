@@ -1,12 +1,12 @@
 import type { Expr } from './expr.js';
-import type { Figure, Period } from './figures.js';
+import { figuresIn, type Figure, type Period } from './figures.js';
 
 /**
  * The meaning of a sum, corrected where the founder's words say the opposite: commissions earned against commissions paid,
  * margins against markups, conversions between periods without need, parts bigger than their wholes. Every correction
  * rewrites the expression over the same inputs; no number enters that was not given.
  */
-export type SumMend = 'ours' | 'theirs' | 'margin' | 'time' | 'share';
+export type SumMend = 'ours' | 'theirs' | 'part' | 'margin' | 'time' | 'share' | 'instead';
 
 type Leaf = Expr & { t: 'num' | 'name' };
 /** A leaf as its source text describes it. */
@@ -22,6 +22,10 @@ export interface SumMeaning {
   readonly asked: string;
   readonly unit: string;
   readonly of: (leaf: Leaf) => LeafFacts;
+  /** The value a leaf stands for. */
+  readonly value?: (leaf: Leaf) => number;
+  /** The message and the reply before it, for a follow-up that changes one number ("and at 25 instead?"). */
+  readonly followUp?: { readonly message: string; readonly lastReply: string };
 }
 
 const num = (v: number): Expr => ({ t: 'num', v });
@@ -59,7 +63,7 @@ function restOf(
 
 /** Another person's part is wanted. */
 const THEIR_PART =
-  /\b(?:they|them|their|he|she|his|her|(?:lender|seller|owner|tutor|driver|maker|artist|provider|host|farmer|cook|supplier|cleaner|coach|baker|painter|teacher|sitter|rider|lister|creator|vendor)s?)\b/iu;
+  /\b(?:they|them|their|he|she|his|her|(?:lender|seller|owner|tutor|driver|maker|artist|provider|host|farmer|cook|supplier|cleaner|coach|baker|painter|teacher|sitter|rider|lister|creator|vendor|helper|worker|assistant|guide|nanny|carer|freelancer|contractor|member|student)s?|staff|crew)\b/iu;
 const YOUR_PART = /\b(?:you|your|we|our|us|i|me|my)\b/iu;
 
 /** "We take 8%": income is that share, never its complement. */
@@ -87,6 +91,42 @@ function ours(e: Expr, m: SumMeaning): Expr | null {
     return bin('*', a ?? node.a, b ?? node.b);
   });
   return hits.length > 0 ? out : null;
+}
+
+/**
+ * "We hold back 10%" and the figure is the sitter's: what reaches them is the complement. A share of ours used as their part is
+ * turned; a share already taken off is left.
+ */
+function part(e: Expr, m: SumMeaning): Expr | null {
+  const is = (leaf: Leaf): boolean => {
+    const f = m.of(leaf);
+    return f.percent && f.takes === 'us' && f.onTop !== true && f.ofPrice !== true;
+  };
+  if (!THEIR_PART.test(m.label) || YOUR_PART.test(m.label)) return null;
+  const done: Expr[] = [];
+  // "x × p ÷ 100" is read as it stands.
+  rebuilt(e, (node) => {
+    if (node.t === 'bin' && node.op === '/' && isNum(node.b, 100)) done.push(node);
+    return null;
+  });
+  rebuilt(e, (node) => {
+    if (restOf(node, is) !== null || (node.t === 'bin' && node.op === '-' && holds(node.b, is)))
+      done.push(node);
+    return null;
+  });
+  if (done.length > 0) return null;
+  const hits: Expr[] = [];
+  const out = rebuilt(e, (node) => {
+    if (node.t !== 'bin' || node.op !== '*') return null;
+    const right = shareOf(node.b, is);
+    const left = right === null ? shareOf(node.a, is) : null;
+    if (right === null && left === null) return null;
+    hits.push(node);
+    return right === null
+      ? bin('*', bin('-', num(1), node.a), node.b)
+      : bin('*', node.a, bin('-', num(1), node.b));
+  });
+  return hits.length === 1 ? out : null;
 }
 
 const KEEPS =
@@ -227,6 +267,70 @@ function time(e: Expr, m: SumMeaning): Expr | null {
   return hits.length > 0 ? out : null;
 }
 
+/** A follow-up that changes one number: "and at 25 instead?", "what if it's 4.50". */
+const INSTEAD =
+  /\b(?:instead|in place of|rather than)\b|^\W*(?:(?:and|ok|okay|so|but|now)\W+)?(?:with|at|if (?:it(?:['’]?s| is| was)|we (?:charge|take|keep)))\b/iu;
+/** The working of a reply's figure: what follows its colon ("You keep $270: $1,500 × (20% − 2%)."). */
+const WORKING = /:\s*([^\n:]*?\d[^\n:]*?)(?:\.(?:\s|$)|\n|$)/u;
+
+/**
+ * The number a follow-up brings takes the place of the earlier number it is like, not of another: "and at 25 instead?"
+ * after "$1,500 × (20% − 2%)" is 25% for 20%, never $25 for $1,500. Only where the sum is the reply's working
+ * with one number changed, the number it put aside is far from the new one (ten times or more) and another is near it
+ * (within three times) and still in the sum: then the two change places.
+ */
+function instead(e: Expr, m: SumMeaning): Expr | null {
+  const f = m.followUp;
+  const value = m.value;
+  if (f === undefined || value === undefined || !INSTEAD.test(f.message)) return null;
+  const told = figuresIn(f.message).filter((x) => x.value > 0);
+  const [n] = told;
+  if (told.length !== 1 || n === undefined) return null;
+  const working = WORKING.exec(f.lastReply)?.[1];
+  if (working === undefined) return null;
+  const before = figuresIn(working).filter((x) => x.value > 0);
+  const leaves: Leaf[] = [];
+  /** Leaves written with their own %: "18%". */
+  const marked = new Set<Expr>();
+  rebuilt(e, (node) => {
+    if (isLeaf(node)) leaves.push(node);
+    if (node.t === 'pct') marked.add(node.a);
+    return null;
+  });
+  const same = (a: number, b: number): boolean => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a));
+  const valueOf = (leaf: Leaf): number => {
+    const v = value(leaf);
+    return m.of(leaf).percent && v < 1 ? v * 100 : v;
+  };
+  const newLeaves = leaves.filter((l) => same(valueOf(l), n.value));
+  const [fresh] = newLeaves;
+  if (newLeaves.length !== 1 || fresh === undefined) return null;
+  const kept = leaves.filter((l) => l !== fresh).map(valueOf);
+  const gone = before.filter((b) => !same(b.value, n.value) && !kept.some((k) => same(k, b.value)));
+  const [put] = gone;
+  if (gone.length !== 1 || put === undefined) return null;
+  const far = (a: number, b: number): number => Math.abs(Math.log(a / b));
+  const near = before
+    .filter((b) => b !== put && !same(b.value, n.value))
+    .sort((a, b) => far(a.value, n.value) - far(b.value, n.value))[0];
+  if (near === undefined || far(near.value, n.value) >= Math.log(3) || far(put.value, n.value) < Math.log(10))
+    return null;
+  const nearLeaves = leaves.filter((l) => l !== fresh && same(valueOf(l), near.value));
+  const [old] = nearLeaves;
+  if (nearLeaves.length !== 1 || old === undefined) return null;
+  // A share written with its own % that held the wrong number cannot take a sum of money.
+  if (marked.has(fresh) && put.mark !== '%') return null;
+  const as = (leaf: Leaf, v: number, percent: boolean): Expr =>
+    percent && !marked.has(leaf) ? { t: 'pct', a: num(v) } : num(v);
+  return rebuilt(e, (node) =>
+    node === old
+      ? as(old, n.value, near.mark === '%' || m.of(old).percent)
+      : node === fresh
+        ? as(fresh, put.value, put.mark === '%')
+        : null,
+  );
+}
+
 /** Expression and corrections. */
 export function meant(e: Expr, m: SumMeaning): { readonly expr: Expr; readonly mends: readonly SumMend[] } {
   let expr = e;
@@ -234,8 +338,10 @@ export function meant(e: Expr, m: SumMeaning): { readonly expr: Expr; readonly m
   for (const [code, mend] of [
     ['ours', ours],
     ['theirs', theirs],
+    ['part', part],
     ['margin', margin],
     ['time', time],
+    ['instead', instead],
   ] as const) {
     const put = mend(expr, m);
     if (put === null) continue;

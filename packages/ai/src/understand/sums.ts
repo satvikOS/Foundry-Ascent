@@ -28,6 +28,8 @@ export interface SumSources {
   /** The conversation in view, both sides. */
   readonly history: string;
   readonly record: readonly RecordLine[];
+  /** The reply just before the message, where there is one. */
+  readonly lastReply?: string;
 }
 
 /** Why a sum was left out (codes for logs and the bench, never words). */
@@ -481,7 +483,15 @@ function sumOf(raw: RawSum, c: SumContext): Summed {
       ...(own?.time === undefined || (leaf.t === 'num' && isStandard(leaf.v)) ? {} : { time: own.time }),
     };
   };
-  const put = meant(whole, { label: raw.label, asked: c.askText, unit: raw.unit, of: facts });
+  const lastReply = c.sources.lastReply;
+  const put = meant(whole, {
+    label: raw.label,
+    asked: c.askText,
+    unit: raw.unit,
+    of: facts,
+    value: (leaf) => (leaf.t === 'num' ? leaf.v : inputOfName(leaf.name).value),
+    ...(lastReply === undefined ? {} : { followUp: { message: c.sources.message, lastReply } }),
+  });
   c.earlier.set(nameKey(raw.label), put.expr);
   const mends = [...put.mends];
   const shown = withOnTop(

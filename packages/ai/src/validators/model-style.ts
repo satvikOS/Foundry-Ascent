@@ -22,7 +22,7 @@ export interface Styled {
   /** The unit as it may stand. */
   readonly text: string;
   /** Why it goes, or null. */
-  readonly cut: 'stage' | 'example' | 'made_up_value' | null;
+  readonly cut: 'stage' | 'example' | 'made_up_value' | 'markup' | null;
 }
 
 /** "*leans back, arms crossed*": an action in emphasis, alone on its line, that is not said. */
@@ -94,17 +94,28 @@ function openQuoteAt(text: string): number | null {
 export const onlyStage = (text: string): boolean =>
   text.split('\n').every((line) => line.trim() === '' || (STAGE.test(line.trim()) && STAGE_WORDS.test(line)));
 
+/** A rule across the reply ("---"), and a heading alone on its line ("## What we own"): no part of a reply. */
+const RULE_LINE = /(^|\n)[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*(?=\n|$)/gu;
+// A bold line stays: it labels the list or the template under it.
+const HEADING_ALONE = /^\s*#{1,6}\s+[^\n]{2,80}\s*$/u;
+const STEP_LABEL = /^\s*\*\*\s*(?:next|on your path|done when)\b/iu;
+/** "$X", "X%": a blank written as a letter, which reads as a figure; a bracket is a blank. */
+const LETTER_BLANK = /\$\s?X\b|\bX\s?%|\$\s?\?\?+/gu;
+
 /** One unit of the writer's, held to what the reply may hold: see the module comment. */
 export function heldStyle(unit: string, ctx: StyleContext): Styled {
-  const text = unit.trim();
+  const text = unit.replace(RULE_LINE, '$1').trim();
+  if (text === '') return { text: '', cut: 'markup' };
   if (STAGE.test(text) && STAGE_WORDS.test(text) && !/\d/u.test(text)) return { text: '', cut: 'stage' };
+  if (!ctx.quoted && HEADING_ALONE.test(text) && !STEP_LABEL.test(text)) return { text: '', cut: 'markup' };
   if (!ctx.quoted && EXAMPLE.test(text) && SUPPOSES.test(text) && unknownFigures(text, ctx.known).length > 0)
     return { text: '', cut: 'example' };
   if (!ctx.quoted && ASSIGNED.test(text) && unknownFigures(text, ctx.known).length > 0)
     return { text: '', cut: 'made_up_value' };
-  let out = unit.replace(HOURS, (whole, n: string) =>
-    ctx.founderText.includes(n) ? whole : (HOURS_SAID[n] ?? whole),
-  );
+  let out = unit
+    .replace(RULE_LINE, '$1')
+    .replace(LETTER_BLANK, (m) => (m.includes('%') ? '[share]' : '[amount]'))
+    .replace(HOURS, (whole, n: string) => (ctx.founderText.includes(n) ? whole : (HOURS_SAID[n] ?? whole)));
   if (ctx.quoted) out = heldDraft(out, ctx);
   else {
     out = out.replace(

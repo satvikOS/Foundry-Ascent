@@ -483,7 +483,11 @@ export function opensStep(unit: string): boolean {
 }
 
 /** A step of the writer's own in the reply's body, beside the step line: "The next move is …", "Next, ask …". */
-export const ownStepSaid = (unit: string): boolean => opensStep(unit) || NEXT_COMMA.test(bare(unit));
+export const ownStepSaid = (unit: string): boolean =>
+  opensStep(unit) ||
+  NEXT_COMMA.test(bare(unit)) ||
+  // "Next talk: ask each of the remaining five …".
+  /^\W*next (?:talk|call|email|message|meeting|visit|test|one|thing)\s*:/iu.test(bare(unit));
 
 /** "The step hasn't changed", under a lead that changed the direction: it goes against what the lead says. */
 const SAME_STEP_SAID =
@@ -890,7 +894,7 @@ export function isTemplateLine(unit: string, guidance: PromptGuidance | null | u
 }
 
 const DEADLINE_CLAUSE = new RegExp(
-  String.raw`,?\s+\b(by|before|no later than|due(?: on| by)?)\s+((?:the )?(?:end of )?(?:(?:this|next) )?(?:${WEEKDAY}|${MONTH}\.? \d{1,2}|today|tonight|tomorrow)(?:,? (?:the )?(?:${MONTH}\.? \d{1,2}|\d{1,2} ${MONTH})(?:st|nd|rd|th)?)?)(?=[.,;:!?)—–]|\s+[—–-]\s|$|\s+(?:and|so|to|then)\b)`,
+  String.raw`,?\s+\b(by|before|until|no later than|due(?: on| by)?)\s+((?:the )?(?:end of )?(?:(?:this|next) )?(?:${WEEKDAY}|${MONTH}\.? \d{1,2}|today|tonight|tomorrow)(?:,? (?:the )?(?:${MONTH}\.? \d{1,2}|\d{1,2} ${MONTH})(?:st|nd|rd|th)?)?)(?=[.,;:!?)—–]|\s+[—–-]\s|$|\s+(?:and|so|to|then)\b)`,
   'giu',
 );
 

@@ -566,7 +566,6 @@ def test_the_client_suites_inputs_reach_the_api_process_alone() -> None:
     assert {k: v for k, v in plain.items() if "UNDERSTAND" in k} == {
         "CORE_UNDERSTAND": "on",
         "MODEL_UNDERSTAND_ID": NOVA,
-        "MODEL_UNDERSTAND_SUMS_ID": "openai.gpt-oss-120b-1:0",
     }
     # understand=off is the arm without it.
     off = api_env(

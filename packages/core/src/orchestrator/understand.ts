@@ -202,8 +202,12 @@ interface PartOutcome {
 }
 const SKIPPED: PartOutcome = { code: 'skipped', ms: null, modelId: null, fallbackUsed: false };
 
-/** Time SUMS needs to be asked once more. */
-const SUMS_AGAIN_MS = 450;
+/**
+ * Time SUMS needs to be asked once more: a second call on Nova 2 Lite took 0.6 to 1.0 s in the lab (set 3, release 14:
+ * a first answer and its second together 1.0 to 2.4 s, none past the 3.0 s cap). One begun with less left would be cut
+ * off at the cap, and the turn would wait for it in vain.
+ */
+const SUMS_AGAIN_MS = 1_000;
 
 /** Kinds of message whose reply opens on what JUDGE says: it is waited for as long as there is. */
 const JUDGED: ReadonlySet<string> = new Set(['choice', 'result', 'update', 'pushback']);

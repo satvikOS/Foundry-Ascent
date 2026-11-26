@@ -3,15 +3,15 @@ import { escapeData, truncate } from '../prompts/escape.js';
 import { readParts, type UnderstandContext } from './check.js';
 import { nameKey } from './expr.js';
 import { figuresIn, placedIn, sameNumber, type Figure } from './figures.js';
-import { inputOf } from './merge.js';
-import type { SumsReading } from './schema.js';
+import { countAsked, countsOther, inputOf, unitOf } from './merge.js';
+import type { RouteReading, SumsReading } from './schema.js';
 
 /**
  * A second opinion on a sum, asked for once and only where a cheap check disagrees with the first: a plan with no sum, a sum
  * code could not work out, a figure of what is kept or reached that leaves out a cost or a count told in the same line.
  */
 export interface SumsDoubt {
-  readonly code: 'plan' | 'drop' | 'unused';
+  readonly code: 'plan' | 'drop' | 'unused' | 'noun';
   /** What to look at again, in words: ours, with numbers of theirs alone. */
   readonly hint: string;
   /** The numbers left out (`unused`). */
@@ -58,6 +58,19 @@ function leftOut(reading: SumsReading, context: UnderstandContext): number[] {
   return [...new Set(out)].slice(0, 4);
 }
 
+/** SUMS read as the figure asked, whatever the message's words: the check is of the sum, not of whether it was asked. */
+const asSum = (reading: SumsReading): RouteReading => ({
+  a: reading.q ?? '',
+  b: null,
+  k: ['sum'],
+  r: [],
+  c: null,
+  f: null,
+  p: null,
+  s: null,
+  h: false,
+});
+
 /** What to ask again about; null: the first answer stands. */
 export function sumsDoubt(reading: SumsReading, context: UnderstandContext): SumsDoubt | null {
   if (!said(reading.q) || said(reading.m)) return null;
@@ -65,7 +78,7 @@ export function sumsDoubt(reading: SumsReading, context: UnderstandContext): Sum
     return reading.n.length === 0 && !said(reading.w)
       ? null
       : { code: 'plan', hint: 'It has no sum. Write the sum in s.', unused: [] };
-  const { understanding, report } = readParts({ sums: reading }, context);
+  const { understanding, report } = readParts({ route: asSum(reading), sums: reading }, context);
   if (understanding === null || understanding.sums.length === 0) {
     const [drop] = report.sumDrops;
     const hint =
@@ -80,6 +93,16 @@ export function sumsDoubt(reading: SumsReading, context: UnderstandContext): Sum
               : null;
     return hint === null ? null : { code: 'drop', hint, unused: [] };
   }
+  // It counts other things than the message asks for.
+  const wanted = countAsked(context.message);
+  const other =
+    wanted === null ? undefined : reading.s.map((x) => unitOf(x.u)).find((u) => countsOther(wanted, u));
+  if (wanted !== null && other !== undefined && !reading.s.some((x) => !countsOther(wanted, unitOf(x.u))))
+    return {
+      code: 'noun',
+      hint: `It asks how many ${wanted}, and the sum counts ${other.noun ?? 'something else'}. Work out how many ${wanted} it takes, with u "${wanted}".`,
+      unused: [],
+    };
   // A share, a rate or a time takes no cost.
   if (reading.s.every((s) => /^(?:%|percent|x$|months?|weeks?|days?|hours?|minutes?)/iu.test(s.u.trim())))
     return null;
@@ -119,8 +142,13 @@ export function betterSums(
   doubt: SumsDoubt,
   context: UnderstandContext,
 ): SumsReading {
-  const { understanding } = readParts({ sums: second }, context);
+  const { understanding } = readParts({ route: asSum(second), sums: second }, context);
   const worked = (understanding?.sums.length ?? 0) > 0;
+  if (doubt.code === 'noun') {
+    const wanted = countAsked(context.message);
+    const counts = wanted !== null && second.s.some((x) => !countsOther(wanted, unitOf(x.u)));
+    return (worked && counts) || said(second.m) ? second : first;
+  }
   if (doubt.code !== 'unused') return worked || said(second.m) ? second : first;
   const used = usedIn(second);
   return worked && doubt.unused.some((n) => used.some((u) => sameNumber(u, n) || sameNumber(u, n / 100)))

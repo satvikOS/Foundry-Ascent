@@ -105,7 +105,6 @@ describe('FoundryAscent-App', () => {
       const understand = {
         CORE_UNDERSTAND: 'on',
         MODEL_UNDERSTAND_ID: 'us.amazon.nova-2-lite-v1:0',
-        MODEL_UNDERSTAND_SUMS_ID: 'openai.gpt-oss-120b-1:0',
       };
       for (const [name, role] of FUNCTIONS) {
         const env = envOf(name);

@@ -294,7 +294,6 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "MODEL_PRIMARY_ID": "mistral.mistral-large-3-675b-instruct",
             "MODEL_PROVIDER": "bedrock",
             "MODEL_UNDERSTAND_ID": "us.amazon.nova-2-lite-v1:0",
-            "MODEL_UNDERSTAND_SUMS_ID": "openai.gpt-oss-120b-1:0",
             "NODE_OPTIONS": "--enable-source-maps",
             "RECORDINGS_BUCKET": {
               "Fn::GetStackOutput": {
@@ -577,18 +576,6 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                         "Ref": "AWS::Partition",
                       },
                       ":bedrock:us-east-1::foundation-model/mistral.mistral-large-3-675b-instruct",
-                    ],
-                  ],
-                },
-                {
-                  "Fn::Join": [
-                    "",
-                    [
-                      "arn:",
-                      {
-                        "Ref": "AWS::Partition",
-                      },
-                      ":bedrock:us-east-1::foundation-model/openai.gpt-oss-120b-1:0",
                     ],
                   ],
                 },

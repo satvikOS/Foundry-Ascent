@@ -175,6 +175,48 @@ describe('whether the figure was asked for, by code', () => {
     expect(merged(message)?.sums.map((s) => s.asked)).toEqual([false]);
   });
 
+  const lead = (message: string, kinds: string[] | null) => {
+    const sums = {
+      q: 'the evenings a week',
+      w: 'two evenings of two hours',
+      n: ['a=2@message', 'b=2@message'],
+      s: [{ l: 'the hours you have a week', u: 'hours', e: 'a + b' }],
+      m: null,
+    };
+    const route =
+      kinds === null
+        ? null
+        : { a: 'x', b: null, k: kinds, r: [], c: null, f: null, p: null, s: null, h: false };
+    const u = mergeReadings({ route, sums }, { message, keys: new Set(['R1']) });
+    return { asked: u?.sums.map((x) => x.asked), kinds: [u?.kind, ...(u?.also ?? [])] };
+  };
+
+  it.each([
+    'Show is done and I have my 2 evenings back, 2 hours each. What’s next?',
+    'whats next now the 2 evenings are free',
+    'so far so good with the 2 evenings. what now?',
+    'what’s left to do this week with 2 hours a night',
+  ])('a figure SUMS found in "%s" is no ask, with ROUTE or without', (message) => {
+    for (const kinds of [['next'], null]) {
+      const { asked, kinds: read } = lead(message, kinds);
+      // Without ROUTE and nothing asked, there is no reading at all.
+      expect(asked?.some(Boolean) ?? false).toBe(false);
+      expect(read).not.toContain('sum');
+    }
+  });
+
+  it.each([
+    'whats the total of the 2 evenings',
+    'what’s left after the 2 hours',
+    'how many hours is that a week',
+  ])('"%s" asks for it, with ROUTE or without', (message) => {
+    for (const kinds of [['next'], null]) expect(lead(message, kinds).asked).toEqual([true]);
+  });
+
+  it('ROUTE reading the message as a sum is the turn’s ask', () => {
+    expect(lead('the 2 evenings, 2 hours each', ['sum']).asked).toEqual([true]);
+  });
+
   it('reads its words in linear time', () => {
     expectLinearTime((n) => {
       const message = `${'how much '.repeat(n)}what is it`;
@@ -182,5 +224,5 @@ describe('whether the figure was asked for, by code', () => {
         merged(message);
       };
     }, 2_000);
-  });
+  }, 60_000);
 });

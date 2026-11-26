@@ -114,19 +114,15 @@ describe('model selection', () => {
         purposes: ['classification', 'eval', 'ingestion', 'seed'],
       },
       understand: 'us.amazon.nova-2-lite-v1:0',
-      understandSums: OSS,
     });
     expect(reasoningAccess(production)).toEqual({
       // Nova is also reached through its global profile (the background's fallback): the widest grant wins, so Nova
       // is granted in every region and no Claude model is granted to the app at all.
       foundationModels: ['amazon.nova-2-lite-v1:0'],
       globalFoundationModels: ['amazon.nova-2-lite-v1:0'],
-      // Mistral Large 3 and gpt-oss-120b have no inference profile (their model cards): served in the platform
-      // region, granted there alone, and no `us.` retry profile is granted for them (none exists).
-      regionalFoundationModels: [
-        { modelId: MISTRAL, regions: ['us-east-1'] },
-        { modelId: OSS, regions: ['us-east-1'] },
-      ],
+      // Mistral Large 3 has no inference profile (its model card): served in the platform region, granted there alone,
+      // and no `us.` retry profile is granted for it (none exists).
+      regionalFoundationModels: [{ modelId: MISTRAL, regions: ['us-east-1'] }],
       inferenceProfiles: ['us.amazon.nova-2-lite-v1:0', 'global.amazon.nova-2-lite-v1:0'],
     });
     expect(JSON.stringify(reasoningAccess(production))).not.toContain('anthropic');
@@ -167,7 +163,7 @@ describe('model selection', () => {
 const LUNA_COACH: PlatformConfig['models'] = { ...loadConfig().models, primary: 'us.openai.gpt-6-luna' };
 
 describe('GPT-6 Luna as the coach (ADR-0024: prepared, off)', () => {
-  it('is off: production coaches on Mistral Large 3, and its only OpenAI model is gpt-oss-120b (the sums, Converse)', () => {
+  it('is off: production coaches on Mistral Large 3, and calls no OpenAI model', () => {
     const models = effectiveModels(loadConfig().models);
     expect(models.primary).toBe(MISTRAL);
     const access = reasoningAccess(models);
@@ -178,7 +174,7 @@ describe('GPT-6 Luna as the coach (ADR-0024: prepared, off)', () => {
         ...access.regionalFoundationModels.map((m) => m.modelId),
         ...access.inferenceProfiles,
       ].filter((id) => id.includes('openai')),
-    ).toEqual([OSS]);
+    ).toEqual([]);
     expect(usesOpenAiProfile(access.inferenceProfiles)).toBe(false);
     expect(usesMantle(models)).toBe(false);
   });
@@ -196,7 +192,6 @@ describe('GPT-6 Luna as the coach (ADR-0024: prepared, off)', () => {
       globalFoundationModels: ['amazon.nova-2-lite-v1:0'],
       regionalFoundationModels: [
         { modelId: 'openai.gpt-6-luna', regions: ['us-east-1', 'us-east-2', 'us-west-2'] },
-        { modelId: OSS, regions: ['us-east-1'] },
       ],
       inferenceProfiles: [
         'us.openai.gpt-6-luna',
@@ -239,9 +234,8 @@ describe('GPT-6 Luna as the coach (ADR-0024: prepared, off)', () => {
       regionlessFoundationModel('amazon.nova-2-lite-v1:0'),
       foundationModel('amazon.titan-embed-text-v2:0'),
     ];
-    // The understand call's SUMS model (gpt-oss-120b, in region) is the API's alone: only it runs that call.
     const roles: [string, unknown[]][] = [
-      ['FoundryAscent-Api', [...expected, regionalFoundationModel(OSS, 'us-east-1')]],
+      ['FoundryAscent-Api', expected],
       ['FoundryAscent-Worker', expected],
     ];
     for (const [name, resources] of roles) {
@@ -270,17 +264,14 @@ describe('the understand call (models.understand)', () => {
     return { templates, variables };
   };
 
-  it('production turns it on (ADR-0025): Nova 2 Lite reads, gpt-oss-120b sums, the API alone gets its variables and the sums model', () => {
+  it('production turns it on (ADR-0025): Nova 2 Lite reads and sums, the API alone gets its variables, no model of its own', () => {
     const { models } = loadConfig();
-    expect(models.understand).toMatchObject({
-      enabled: true,
-      modelId: 'us.amazon.nova-2-lite-v1:0',
-      sumsModelId: OSS,
-    });
+    expect(models.understand).toMatchObject({ enabled: true, modelId: 'us.amazon.nova-2-lite-v1:0' });
+    // Its sums are back on the understand model: gpt-oss was late in production (ADR-0025).
+    expect(models.understand).not.toHaveProperty('sumsModelId');
     const expected = {
       CORE_UNDERSTAND: 'on',
       MODEL_UNDERSTAND_ID: 'us.amazon.nova-2-lite-v1:0',
-      MODEL_UNDERSTAND_SUMS_ID: OSS,
     };
     expect(understandEnvironment(models)).toEqual(expected);
     const { templates, variables } = api(models);
@@ -291,8 +282,8 @@ describe('the understand call (models.understand)', () => {
     const runtime = (name: string) =>
       functionPolicyStatements(templates.app, name).find((s) => s.Sid === 'BedrockRuntimeModels')
         ?.Resource as unknown[];
-    expect(runtime('FoundryAscent-Api')).toContainEqual(regionalFoundationModel(OSS, 'us-east-1'));
-    expect(JSON.stringify(runtime('FoundryAscent-Worker'))).not.toContain('gpt-oss');
+    for (const name of ['FoundryAscent-Api', 'FoundryAscent-Worker'])
+      expect(JSON.stringify(runtime(name))).not.toContain('gpt-oss');
     // Nova 2 Lite, the reading's model, is the coach's fallback already: the worker keeps it for that.
     expect(runtime('FoundryAscent-Worker')).toContainEqual(profile('us.amazon.nova-2-lite-v1:0'));
   });
@@ -458,11 +449,11 @@ describe('Bedrock permissions in production (config/production.json)', () => {
     'arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0',
   ];
   it.each([
-    // The understand call's SUMS part runs on the API alone.
-    ['FoundryAscent-Api', [...both, `arn:aws:bedrock:us-east-1::foundation-model/${OSS}`]],
+    // The understand call and its sums are on Nova 2 Lite: the API needs no model the worker has not.
+    ['FoundryAscent-Api', both],
     ['FoundryAscent-Worker', both],
   ] as const)(
-    '%s may invoke (incl. streaming) Mistral Large 3 in the platform region, both Nova profiles, the Nova model in every region and region-less, Titan, gpt-oss-120b on the API alone, and no Claude model',
+    '%s may invoke (incl. streaming) Mistral Large 3 in the platform region, both Nova profiles, the Nova model in every region and region-less, Titan, and no Claude or OpenAI model',
     (name, expected) => {
       const runtime = functionPolicyStatements(templates.app, name).find(
         (s) => s.Sid === 'BedrockRuntimeModels',
@@ -470,8 +461,8 @@ describe('Bedrock permissions in production (config/production.json)', () => {
       expect(runtime?.Action).toEqual(['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream']);
       const resources = ((runtime?.Resource as unknown[] | undefined) ?? []).map(render);
       expect(resources.sort()).toEqual([...expected].sort());
-      expect(resources.join(' ')).not.toMatch(/anthropic|luna|project\/default/);
-      // Luna stays gated (models.luna.enabled=false) and gpt-oss is Converse's: no Mantle permission at all.
+      expect(resources.join(' ')).not.toMatch(/anthropic|luna|gpt-oss|project\/default/);
+      // Luna stays gated (models.luna.enabled=false): no Mantle permission at all.
       expect(
         functionPolicyStatements(templates.app, name).some((s) => s.Sid === 'BedrockMantleInference'),
       ).toBe(false);
